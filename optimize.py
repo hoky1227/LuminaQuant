@@ -1,0 +1,323 @@
+import itertools
+import multiprocessing
+import sys
+from datetime import datetime
+
+# Engine Imports
+from quants_agent.backtest import Backtest
+from quants_agent.data import HistoricCSVDataHandler
+from quants_agent.execution import SimulatedExecutionHandler
+from quants_agent.portfolio import Portfolio
+
+# Strategy Imports
+from strategies.moving_average import MovingAverageCrossStrategy
+from strategies.rsi_strategy import RsiStrategy
+
+# Optuna Import
+try:
+    import optuna
+
+    OPTUNA_AVAILABLE = True
+except ImportError:
+    OPTUNA_AVAILABLE = False
+    print("Warning: Optuna not found. Run 'pip install optuna'.")
+
+# ==========================================
+# USER CONFIGURATION FOR TUNING
+# ==========================================
+
+# 1. Select Method: "GRID" or "OPTUNA"
+OPTIMIZATION_METHOD = "OPTUNA"
+
+# 2. Select Strategy
+STRATEGY_CLASS = RsiStrategy
+
+# 3. Data Settings (Generic)
+CSV_DIR = "data"
+SYMBOL_LIST = ["BTCUSDT"]
+
+# 4. Optimization Settings (Grid / Optuna)
+# OPTION A: GRID
+GRID_PARAMS = {
+    "rsi_period": [10, 14, 20],
+    "oversold": [20, 25, 30],
+    "overbought": [70, 75, 80],
+}
+
+# OPTION B: OPTUNA
+OPTUNA_CONFIG = {
+    "rsi_period": {"type": "int", "low": 5, "high": 30},
+    "oversold": {"type": "int", "low": 20, "high": 40},
+    "overbought": {"type": "int", "low": 60, "high": 90},
+}
+OPTUNA_TRIALS = 20
+
+# 5. Data Splitting Settings (WFA)
+# Define Date Ranges Explicitly
+TRAIN_START = datetime(2022, 1, 1)
+TRAIN_END = datetime(2023, 1, 1)
+
+VAL_START = datetime(2023, 1, 1)
+VAL_END = datetime(2023, 6, 1)
+
+TEST_START = datetime(2023, 6, 1)
+TEST_END = datetime(2024, 1, 1)  # or up to now
+
+# ==========================================
+# IMPLEMENTATION
+# ==========================================
+
+
+def _execute_backtest(strategy_cls, params, csv_dir, symbol_list, start_date, end_date):
+    """
+    Core execution logic shared by Grid and Optuna.
+    """
+    try:
+        backtest = Backtest(
+            csv_dir=csv_dir,
+            symbol_list=symbol_list,
+            start_date=start_date,  # Specific Start
+            end_date=end_date,  # Specific End
+            data_handler_cls=HistoricCSVDataHandler,
+            execution_handler_cls=SimulatedExecutionHandler,
+            portfolio_cls=Portfolio,
+            strategy_cls=strategy_cls,
+            strategy_params=params,
+        )
+        backtest.simulate_trading()
+
+        stats = backtest.portfolio.output_summary_stats()
+        stats_dict = {k: v for k, v in stats}
+
+        # We prioritize Sharpe Ratio for optimization
+        sharpe = float(stats_dict.get("Sharpe Ratio", 0.0))
+        if sharpe != sharpe:
+            sharpe = -999.0  # Handle NaN
+
+        return {
+            "params": params,
+            "sharpe": sharpe,
+            "cagr": stats_dict.get("CAGR", "0.0%").strip("%"),
+            "mdd": stats_dict.get("Max Drawdown", "0.0%").strip("%"),
+        }
+    except Exception as e:
+        return {"params": params, "error": str(e), "sharpe": -999.0}
+
+
+def run_single_backtest_train(args):
+    strategy_cls, params, csv_dir, symbol_list, start_date, end_date = args
+    return _execute_backtest(
+        strategy_cls, params, csv_dir, symbol_list, start_date, end_date
+    )
+
+
+class GridSearchOptimizer:
+    def __init__(
+        self, strategy_cls, param_grid, csv_dir, symbol_list, start_date, end_date
+    ):
+        self.strategy_cls = strategy_cls
+        self.param_grid = param_grid
+        self.csv_dir = csv_dir
+        self.symbol_list = symbol_list
+        self.start_date = start_date
+        self.end_date = end_date
+
+    def generate_param_combinations(self):
+        keys = self.param_grid.keys()
+        values = self.param_grid.values()
+        combinations = list(itertools.product(*values))
+        return [dict(zip(keys, combo)) for combo in combinations]
+
+    def run(self, max_workers=4):
+        combinations = self.generate_param_combinations()
+        print(
+            f"Starting Grid Search (Train Phase) with {len(combinations)} combinations..."
+        )
+
+        pool_args = [
+            (
+                self.strategy_cls,
+                params,
+                self.csv_dir,
+                self.symbol_list,
+                self.start_date,
+                self.end_date,
+            )
+            for params in combinations
+        ]
+
+        with multiprocessing.Pool(processes=max_workers) as pool:
+            results = pool.map(run_single_backtest_train, pool_args)
+
+        valid_results = [r for r in results if "error" not in r]
+        sorted_results = sorted(valid_results, key=lambda x: x["sharpe"], reverse=True)
+        return sorted_results
+
+
+class OptunaOptimizer:
+    def __init__(
+        self, strategy_cls, optuna_config, csv_dir, symbol_list, start_date, end_date
+    ):
+        self.strategy_cls = strategy_cls
+        self.optuna_config = optuna_config
+        self.csv_dir = csv_dir
+        self.symbol_list = symbol_list
+        self.start_date = start_date
+        self.end_date = end_date
+
+    def objective(self, trial):
+        params = {}
+        for key, conf in self.optuna_config.items():
+            p_type = conf.get("type")
+            if p_type == "int":
+                params[key] = trial.suggest_int(key, conf["low"], conf["high"])
+            elif p_type == "float":
+                step = conf.get("step", None)
+                params[key] = trial.suggest_float(
+                    key, conf["low"], conf["high"], step=step
+                )
+            elif p_type == "categorical":
+                params[key] = trial.suggest_categorical(key, conf["choices"])
+
+        # Train on Train Set specific date range
+        result = _execute_backtest(
+            self.strategy_cls,
+            params,
+            self.csv_dir,
+            self.symbol_list,
+            self.start_date,
+            self.end_date,
+        )
+        return result["sharpe"]
+
+    def run(self, n_trials=20):
+        if not OPTUNA_AVAILABLE:
+            print("Error: Optuna not installed.")
+            return []
+
+        study = optuna.create_study(direction="maximize")
+        study.optimize(self.objective, n_trials=n_trials)
+
+        best_trials = sorted(
+            study.trials, key=lambda t: t.value if t.value else -999, reverse=True
+        )
+
+        params_list = []
+        for t in best_trials[:10]:
+            if t.state != optuna.trial.TrialState.COMPLETE:
+                continue
+            params_list.append(
+                {"params": t.params, "sharpe": t.value, "cagr": "N/A", "mdd": "N/A"}
+            )
+        return params_list
+
+
+if __name__ == "__main__":
+    print(f"=== PHASE 1: TRAINING [{TRAIN_START.date()} ~ {TRAIN_END.date()}] ===")
+    if OPTIMIZATION_METHOD == "GRID":
+        optimizer = GridSearchOptimizer(
+            STRATEGY_CLASS, GRID_PARAMS, CSV_DIR, SYMBOL_LIST, TRAIN_START, TRAIN_END
+        )
+        train_results = optimizer.run(max_workers=4)
+
+    elif OPTIMIZATION_METHOD == "OPTUNA":
+        optimizer = OptunaOptimizer(
+            STRATEGY_CLASS, OPTUNA_CONFIG, CSV_DIR, SYMBOL_LIST, TRAIN_START, TRAIN_END
+        )
+        train_results = optimizer.run(n_trials=OPTUNA_TRIALS)
+
+    else:
+        print(f"Unknown method: {OPTIMIZATION_METHOD}")
+        sys.exit(1)
+
+    if not train_results:
+        print("No valid results found in optimization.")
+        sys.exit(0)
+
+    print("\n[Train] Top Candidate:")
+    best_candidate = train_results[0]
+    print(
+        f"Params: {best_candidate['params']} | Sharpe: {best_candidate['sharpe']:.4f}"
+    )
+
+    # ==========================================
+    # VALIDATION PHASE
+    # ==========================================
+    print(f"\n=== PHASE 2: VALIDATION [{VAL_START.date()} ~ {VAL_END.date()}] ===")
+    print("Verifying Top 3 Candidates on Validation Set...")
+
+    val_candidates = []
+    # Test top 3 or less
+    limit = min(3, len(train_results))
+    for cand in train_results[:limit]:
+        res = _execute_backtest(
+            STRATEGY_CLASS, cand["params"], CSV_DIR, SYMBOL_LIST, VAL_START, VAL_END
+        )
+        res["train_sharpe"] = cand["sharpe"]
+        val_candidates.append(res)
+        print(
+            f"Params: {cand['params']} -> Val Sharpe: {res['sharpe']:.4f} (Train: {cand['sharpe']:.4f})"
+        )
+
+    # Robustness Check & Ranking
+    # We penalize candidates where Train and Validation performance diverge significantly (Overfitting).
+    # Score = Val_Sharpe - Penalty * abs(Train - Val)
+    # Penalty of 0.5 means if Train=2.0 and Val=1.0, Score = 1.0 - 0.5*1.0 = 0.5 (Heavy penalty)
+
+    for c in val_candidates:
+        train_s = float(c["train_sharpe"])
+        val_s = float(c["sharpe"])
+
+        # Robustness Score
+        divergence = abs(train_s - val_s)
+        penalty_factor = 0.5
+        c["robustness_score"] = val_s - (divergence * penalty_factor)
+
+    # Sort by Robustness Score instead of raw Sharpe
+    val_candidates.sort(key=lambda x: x["robustness_score"], reverse=True)
+    final_best = val_candidates[0]
+
+    print(f"\n[Validation] Selected Best Robust Params: {final_best['params']}")
+
+    # ==========================================
+    # TEST PHASE (FINAL)
+    # ==========================================
+    print(f"\n=== PHASE 3: FINAL TEST [{TEST_START.date()} ~ {TEST_END.date()}] ===")
+    print("Running Final Simulation on Unseen Test Data...")
+
+    test_res = _execute_backtest(
+        STRATEGY_CLASS, final_best["params"], CSV_DIR, SYMBOL_LIST, TEST_START, TEST_END
+    )
+
+    print(f"\n>>>> FINAL REPORT <<<<")
+    print(f"Best Params: {final_best['params']}")
+    print(f"Train Sharpe : {best_candidate['sharpe']:.4f}")
+    print(f"Val Sharpe   : {final_best['sharpe']:.4f}")
+    print(f"Test Sharpe  : {test_res['sharpe']:.4f}")
+    print(f"Test CAGR    : {test_res['cagr']}")
+    print(f"Test MaxDD   : {test_res['mdd']}")
+
+    # Overfitting Check
+    train_score = float(best_candidate["sharpe"])
+    test_score = float(test_res["sharpe"])
+
+    if test_score < train_score * 0.5:
+        print("\n[WARNING] Test performance dropped significantly (>50%) vs Train.")
+        print("This suggests OVERFITTING. Consider simpler logic or fewer parameters.")
+    else:
+        print("\n[SUCCESS] Strategy appears robust across datasets.")
+
+    # Save Best Parameters
+    import json
+    import os
+
+    strategy_name = STRATEGY_CLASS.__name__
+    # Create directory: best_optimized_parameters/<StrategyName>
+    save_dir = os.path.join("best_optimized_parameters", strategy_name)
+    os.makedirs(save_dir, exist_ok=True)
+
+    best_params_file = os.path.join(save_dir, "best_params.json")
+
+    with open(best_params_file, "w") as f:
+        json.dump(final_best["params"], f, indent=4)
+    print(f"\n[Artifact] Best Parameters saved to '{best_params_file}'")
