@@ -8,6 +8,7 @@ from lumina_quant.backtest import Backtest
 from lumina_quant.data import HistoricCSVDataHandler
 from lumina_quant.execution import SimulatedExecutionHandler
 from lumina_quant.portfolio import Portfolio
+from lumina_quant.config import BacktestConfig, OptimizationConfig, BaseConfig
 
 # Strategy Imports
 from strategies.moving_average import MovingAverageCrossStrategy
@@ -23,45 +24,79 @@ except ImportError:
     print("Warning: Optuna not found. Run 'pip install optuna'.")
 
 # ==========================================
-# USER CONFIGURATION FOR TUNING
+# CONFIGURATION FROM YAML
 # ==========================================
 
-# 1. Select Method: "GRID" or "OPTUNA"
-OPTIMIZATION_METHOD = "OPTUNA"
+# 1. Select Method
+OPTIMIZATION_METHOD = OptimizationConfig.METHOD
 
 # 2. Select Strategy
-STRATEGY_CLASS = RsiStrategy
+STRATEGY_MAP = {
+    "RsiStrategy": RsiStrategy,
+    "MovingAverageCrossStrategy": MovingAverageCrossStrategy,
+}
+strategy_name = OptimizationConfig.STRATEGY_NAME
+STRATEGY_CLASS = STRATEGY_MAP.get(strategy_name, RsiStrategy)
 
-# 3. Data Settings (Generic)
+# 3. Data Settings
 CSV_DIR = "data"
-SYMBOL_LIST = ["BTCUSDT"]
+SYMBOL_LIST = BaseConfig.SYMBOLS
 
-# 4. Optimization Settings (Grid / Optuna)
-# OPTION A: GRID
-GRID_PARAMS = {
-    "rsi_period": [10, 14, 20],
-    "oversold": [20, 25, 30],
-    "overbought": [70, 75, 80],
-}
-
-# OPTION B: OPTUNA
-OPTUNA_CONFIG = {
-    "rsi_period": {"type": "int", "low": 5, "high": 30},
-    "oversold": {"type": "int", "low": 20, "high": 40},
-    "overbought": {"type": "int", "low": 60, "high": 90},
-}
-OPTUNA_TRIALS = 20
+# 4. Optimization Settings
+GRID_PARAMS = OptimizationConfig.GRID_CONFIG.get("params", {})
+OPTUNA_CONFIG = OptimizationConfig.OPTUNA_CONFIG.get("params", {})
+OPTUNA_TRIALS = int(OptimizationConfig.OPTUNA_CONFIG.get("n_trials", 20))
 
 # 5. Data Splitting Settings (WFA)
-# Define Date Ranges Explicitly
-TRAIN_START = datetime(2022, 1, 1)
-TRAIN_END = datetime(2023, 1, 1)
+# Using strings from config and converting to datetime
+try:
+    TRAIN_START = datetime.strptime(BacktestConfig.START_DATE, "%Y-%m-%d")
+    # Define arbitrary split logic if not in config, or add WFA dates to config.
+    # For now, let's keep the split logic hardcoded relative to config START_DATE or similar?
+    # Actually, the previous code had hardcoded WFA dates.
+    # Let's define them relative to the config START_DATE for simplicity or just keep them fixed?
+    # The config has START_DATE. Let's assume the user wants to test from that start.
 
-VAL_START = datetime(2023, 1, 1)
-VAL_END = datetime(2023, 6, 1)
+    # Let's make it simple: Use config Start Date as Train Start.
+    # Then define 1 year train, 6 mo val, 6 mo test.
 
-TEST_START = datetime(2023, 6, 1)
-TEST_END = datetime(2024, 1, 1)  # or up to now
+    TRAIN_END = TRAIN_START.replace(year=TRAIN_START.year + 1)
+    VAL_START = TRAIN_END
+    VAL_END = (
+        VAL_START.replace(month=VAL_START.month + 6)
+        if VAL_START.month <= 6
+        else VAL_START.replace(year=VAL_START.year + 1, month=VAL_START.month - 6)
+    )
+    # Simple relative date math is tricky without explicit external lib like relativedelta,
+    # but let's just stick to the hardcoded ones if the user didn't put them in config,
+    # OR better: Add these dates to config?
+
+    # Re-reading config.yaml, I only put backtest start/end.
+    # I will stick to the hardcoded dates in the original file for now,
+    # BUT updated to use the start date as a base if possible.
+    # Actually, the original file had explicit dates. config.yaml has 2024-01-01.
+    # I'll update these to match the config's Start Date roughly.
+
+    # If the user put 2024-01-01 in config, we can't train in 2022.
+    # Let's derive dates from the config's start date?
+    # NO, simpler: Just use the dates from the code but update the years to be more current if needed,
+    # OR, just rely on the config start date as the beginning of training.
+
+    TRAIN_START = datetime.strptime(BacktestConfig.START_DATE, "%Y-%m-%d")
+    TRAIN_END = datetime(TRAIN_START.year + 1, 1, 1)
+    VAL_START = TRAIN_END
+    VAL_END = datetime(VAL_START.year, 7, 1)
+    TEST_START = VAL_END
+    TEST_END = datetime(TEST_START.year + 1, 1, 1)
+
+except Exception as e:
+    print(f"Error parsing dates from config: {e}. Using defaults.")
+    TRAIN_START = datetime(2023, 1, 1)
+    TRAIN_END = datetime(2024, 1, 1)
+    VAL_START = datetime(2024, 1, 1)
+    VAL_END = datetime(2024, 6, 1)
+    TEST_START = datetime(2024, 6, 1)
+    TEST_END = datetime(2025, 1, 1)
 
 # ==========================================
 # IMPLEMENTATION

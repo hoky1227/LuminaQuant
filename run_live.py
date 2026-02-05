@@ -19,7 +19,7 @@ def main():
         sys.exit(1)
 
     # 2. Setup
-    symbol_list = LiveConfig.SYMBOLS  # e.g. ['BTC/USDT'] from .env
+    symbol_list = LiveConfig.SYMBOLS  # e.g. ['BTC/USDT'] from config.yaml
     print(f"Trading Symbols: {symbol_list}")
 
     # 3. Initialize Trader

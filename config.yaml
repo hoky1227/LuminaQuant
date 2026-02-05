@@ -1,0 +1,73 @@
+# ==========================================
+# LuminaQuant Configuration
+# ==========================================
+
+# ------------------------------------------
+# System Settings
+# ------------------------------------------
+system:
+  log_level: "INFO"
+
+# ------------------------------------------
+# Trading Settings (Live & Backtest)
+# ------------------------------------------
+trading:
+  symbols:
+    - "BTC/USDT"
+    #- "ETH/USDT"
+  timeframe: "1m"
+  initial_capital: 10000.0
+  target_allocation: 0.1  # 10% of capital per trade
+  min_trade_qty: 0.001
+
+# ------------------------------------------
+# Backtest Specific Settings
+# ------------------------------------------
+backtest:
+  start_date: "2024-01-01"
+  end_date: null  # null means "up to now" or end of data
+  commission_rate: 0.001  # 0.1%
+  slippage_rate: 0.0005   # 0.05%
+  annual_periods: 252     # Daily: 252, 1h: 252*24, 1m: 252*24*60
+
+# ------------------------------------------
+# Live Trading Specific Settings
+# ------------------------------------------
+live:
+  testnet: true
+  poll_interval: 2  # Seconds
+  order_timeout: 10 # Seconds
+  # API Keys are best loaded from .env, but can be set here if needed (NOT RECOMMENDED for git)
+  # api_key: "YOUR_KEY"
+  # secret_key: "YOUR_SECRET"
+
+# ------------------------------------------
+# Optimization (Hyperparameter Tuning)
+# ------------------------------------------
+optimization:
+  method: "OPTUNA" # Options: "GRID", "OPTUNA"
+  strategy: "RsiStrategy" # Class name of the strategy to optimize
+  
+  # Optuna Settings
+  optuna:
+    n_trials: 20
+    params:
+      rsi_period:
+        type: "int"
+        low: 5
+        high: 30
+      oversold:
+        type: "int"
+        low: 20
+        high: 40
+      overbought:
+        type: "int"
+        low: 60
+        high: 90
+
+  # Grid Search Settings
+  grid:
+    params:
+      rsi_period: [10, 14, 20]
+      oversold: [20, 25, 30]
+      overbought: [70, 75, 80]
