@@ -4,10 +4,10 @@ import sys
 from datetime import datetime
 
 # Engine Imports
-from quants_agent.backtest import Backtest
-from quants_agent.data import HistoricCSVDataHandler
-from quants_agent.execution import SimulatedExecutionHandler
-from quants_agent.portfolio import Portfolio
+from lumina_quant.backtest import Backtest
+from lumina_quant.data import HistoricCSVDataHandler
+from lumina_quant.execution import SimulatedExecutionHandler
+from lumina_quant.portfolio import Portfolio
 
 # Strategy Imports
 from strategies.moving_average import MovingAverageCrossStrategy

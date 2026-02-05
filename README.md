@@ -1,6 +1,6 @@
 [Korean Version (한국어 가이드)](README_KR.md)
 
-# Quants Agent - Event-Driven Quantitative Trading System
+# LuminaQuant - Event-Driven Quantitative Trading System
 
 An advanced, event-driven quantitative trading pipeline designed for robust backtesting and live trading on Binance. Built with a modular architecture to ensure consistency between simulation and real-world execution.
 
@@ -21,8 +21,8 @@ An advanced, event-driven quantitative trading pipeline designed for robust back
 ## Project Structure
 
 ```
-quants-agent/
-├── quants_agent/           # Core Package
+lumina-quant/
+├── lumina_quant/           # Core Package
 │   ├── backtest.py         # Backtesting Engine
 │   ├── live_trader.py      # Live Trading Engine
 │   ├── ...

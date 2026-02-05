@@ -4,11 +4,11 @@ import sys
 import os
 from datetime import datetime
 
-# Add Parent Dir to Path to import quants_agent
+# Add Parent Dir to Path to import lumina_quant
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from quants_agent.events import MarketEvent, OrderEvent
-from quants_agent.execution import SimulatedExecutionHandler
+from lumina_quant.events import MarketEvent, OrderEvent
+from lumina_quant.execution import SimulatedExecutionHandler
 
 
 # Mock classes

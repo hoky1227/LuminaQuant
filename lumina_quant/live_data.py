@@ -1,9 +1,9 @@
 import time
 import threading
 import ccxt
-from quants_agent.events import MarketEvent
-from quants_agent.data import DataHandler
-from quants_agent.config import LiveConfig
+from lumina_quant.events import MarketEvent
+from lumina_quant.data import DataHandler
+from lumina_quant.config import LiveConfig
 
 
 class LiveBinanceDataHandler(DataHandler):

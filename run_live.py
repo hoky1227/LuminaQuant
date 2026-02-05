@@ -1,8 +1,8 @@
-from quants_agent.live_trader import LiveTrader
-from quants_agent.live_data import LiveBinanceDataHandler
-from quants_agent.binance_execution import BinanceExecutionHandler
-from quants_agent.portfolio import Portfolio
-from quants_agent.config import LiveConfig
+from lumina_quant.live_trader import LiveTrader
+from lumina_quant.live_data import LiveBinanceDataHandler
+from lumina_quant.binance_execution import BinanceExecutionHandler
+from lumina_quant.portfolio import Portfolio
+from lumina_quant.config import LiveConfig
 from strategies.moving_average import MovingAverageCrossStrategy
 import sys
 

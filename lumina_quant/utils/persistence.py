@@ -11,7 +11,7 @@ class StateManager:
 
     def __init__(self, file_path="state.json"):
         self.file_path = file_path
-        self.logger = logging.getLogger("quants_agent.state_manager")
+        self.logger = logging.getLogger("lumina_quant.state_manager")
 
     def load_state(self):
         """

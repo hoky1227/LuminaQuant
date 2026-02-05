@@ -1,9 +1,8 @@
 import ccxt
 import time
 from functools import wraps
-from quants_agent.events import FillEvent
-from quants_agent.execution import ExecutionHandler
-from quants_agent.execution import ExecutionHandler
+from lumina_quant.events import FillEvent
+from lumina_quant.execution import ExecutionHandler
 
 
 def api_retry(retries=3, delay=1, backoff=2):
@@ -66,15 +65,32 @@ class BinanceExecutionHandler(ExecutionHandler):
         balance = self.exchange.fetch_balance()
         return float(balance["USDT"]["free"])
 
+    @api_retry(retries=3, delay=1)
     def get_all_positions(self):
         """
         Returns a dict of {symbol: quantity} for open positions.
         """
         positions = {}
         try:
-            # Assuming Spot for now based on Config default symbols (BTC/USDT)
-            self.exchange.fetch_balance()
-            # Logic here is complex for spot symbol mapping, simplified for robustness check
+            # fetch_balance returns 'total', 'free', 'used'
+            bal = self.exchange.fetch_balance()
+
+            # Map coins to symbols if possible, or just return coin quantities
+            # Converting Coin -> Symbol (e.g. BTC -> BTC/USDT) is tricky without context,
+            # but usually we just want to know "How much BTC do I have?".
+            # The Strategy assumes 'BTC/USDT' as key.
+            # We will return {'BTC/USDT': 0.1} by iterating known symbols in config or just matching coins.
+
+            # For simplicity, we iterate through non-zero balances and try to match with symbols
+            # Note: This checks 'total' (free + used)
+            if "total" in bal:
+                for coin, qty in bal["total"].items():
+                    if qty > 0:
+                        # HACK: Simple mapping for standard pairs. ideally use self.bars.symbol_list
+                        # We try to append '/USDT' and see if it helps.
+                        symbol = f"{coin}/USDT"
+                        positions[symbol] = qty
+
             return positions
         except Exception as e:
             print(f"Error fetching positions: {e}")

@@ -1,6 +1,6 @@
 [English Version](README.md)
 
-# Quants Agent - 이벤트 기반 퀀트 트레이딩 시스템 (Event-Driven Quantitative Trading System)
+# LuminaQuant - 이벤트 기반 퀀트 트레이딩 시스템 (Event-Driven Quantitative Trading System)
 
 바이낸스(Binance)에서의 백테스팅(Backtesting) 및 실전 매매(Live Trading)를 위해 설계된 고성능 이벤트 기반 거래 파이프라인입니다. 시뮬레이션과 실전 실행 간의 일관성을 보장하기 위해 모듈식 아키텍처로 구축되었습니다.
 
@@ -21,8 +21,8 @@
 ## 프로젝트 구조
 
 ```
-quants-agent/
-├── quants_agent/           # 핵심 패키지
+lumina-quant/
+├── lumina_quant/           # 핵심 패키지
 │   ├── backtest.py         # 백테스트 엔진
 │   ├── live_trader.py      # 실전거래 엔진
 │   ├── ...

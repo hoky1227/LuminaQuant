@@ -1,13 +1,14 @@
 [project]
-name = "quants-agent"
+name = "lumina-quant"
 version = "0.1.0"
-description = "Add your description here"
+description = "High-perf event-driven algo trading engine"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "ccxt>=4.5.35",
     "matplotlib>=3.10.8",
     "numpy>=2.4.2",
+    "optuna>=4.7.0",
     "polars>=1.37.1",
     "python-dotenv>=1.2.1",
     "ta-lib>=0.6.8",

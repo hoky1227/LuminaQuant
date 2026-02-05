@@ -1,8 +1,8 @@
 import queue
 import collections
 from pprint import pprint
-from quants_agent.config import BacktestConfig
-from quants_agent.engine import TradingEngine
+from lumina_quant.config import BacktestConfig
+from lumina_quant.engine import TradingEngine
 
 
 class FastQueue:

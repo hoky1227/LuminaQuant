@@ -2,7 +2,7 @@ import pandas as pd
 import json
 import os
 from datetime import datetime
-from quants_agent.utils.performance import (
+from lumina_quant.utils.performance import (
     create_sharpe_ratio,
     create_drawdowns,
     create_cagr,

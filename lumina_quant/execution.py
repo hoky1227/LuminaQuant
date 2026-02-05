@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Tuple
 import random
-from quants_agent.events import FillEvent
+from lumina_quant.events import FillEvent
 
 
 class ExecutionHandler(ABC):
@@ -162,11 +162,27 @@ class SimulatedExecutionHandler(ExecutionHandler):
                         # 1. Liquidity Constraint (Partial Fill)
                         # Cap at 10% of Bar Volume
                         max_trade_vol = bar_volume * 0.1
-                        if order["quantity"] > max_trade_vol:
+                        original_qty = order["quantity"]
+
+                        if original_qty > max_trade_vol:
                             print(
-                                f"[Realism] Partial Fill: Req {order['quantity']} > Limit {max_trade_vol:.4f}. Capped."
+                                f"[Realism] Partial Fill: Req {original_qty} > Limit {max_trade_vol:.4f}. Filling {max_trade_vol} and keeping remainder."
                             )
+                            # Update this order to execute only max_trade_vol
                             order["quantity"] = max_trade_vol
+
+                            # Create a NEW pending order for the remainder
+                            remainder = original_qty - max_trade_vol
+                            remainder_order = {
+                                "symbol": order["symbol"],
+                                "type": "MKT",
+                                "quantity": remainder,
+                                "direction": order["direction"],
+                                "status": "PENDING",  # Queue for NEXT bar
+                            }
+                            # Append to active_orders to try again next bar
+                            # (We append to list, but we are iterating a slice, so it's safe)
+                            self.active_orders.append(remainder_order)
 
                     # STOP ORDER
                     elif order["type"] == "STOP":

@@ -3,7 +3,7 @@ import os
 from abc import ABC, abstractmethod
 from typing import List, Tuple, Optional, Any, Union, Dict
 from datetime import datetime
-from quants_agent.events import MarketEvent
+from lumina_quant.events import MarketEvent
 
 
 class DataHandler(ABC):

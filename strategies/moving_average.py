@@ -1,8 +1,8 @@
 import talib
 import numpy as np
 
-from quants_agent.strategy import Strategy
-from quants_agent.events import SignalEvent
+from lumina_quant.strategy import Strategy
+from lumina_quant.events import SignalEvent
 
 
 class MovingAverageCrossStrategy(Strategy):

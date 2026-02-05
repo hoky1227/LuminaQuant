@@ -1,10 +1,10 @@
 import logging
 import os
 from logging.handlers import RotatingFileHandler
-from quants_agent.config import BaseConfig
+from lumina_quant.config import BaseConfig
 
 
-def setup_logging(name="quants_agent"):
+def setup_logging(name="lumina_quant"):
     """
     Sets up a logger with a StreamHandler and FileHandler.
     """

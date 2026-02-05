@@ -1,12 +1,12 @@
 import queue
 import time
-from quants_agent.config import LiveConfig
-from quants_agent.utils.logging_utils import setup_logging
-from quants_agent.binance_execution import BinanceExecutionHandler
-from quants_agent.utils.persistence import StateManager
-
-
-from quants_agent.engine import TradingEngine
+from lumina_quant.config import LiveConfig
+from lumina_quant.utils.logging_utils import setup_logging
+from lumina_quant.binance_execution import BinanceExecutionHandler
+from lumina_quant.utils.persistence import StateManager
+import time
+import threading
+from lumina_quant.engine import TradingEngine
 
 
 class LiveTrader(TradingEngine):
@@ -88,10 +88,6 @@ class LiveTrader(TradingEngine):
         Syncs the internal portfolio state with the exchange state.
         This runs AFTER load_state, so we should be careful not to overwrite valid persistent state
         with partial exchange data unless warranted.
-
-        Strategy:
-        1. Trust 'Cash' from Exchange always (source of truth).
-        2. Trust 'Positions' from Exchange if available.
         """
         if isinstance(self.execution_handler, BinanceExecutionHandler):
             self.logger.info("Syncing Portfolio with Binance Exchange...")
@@ -101,19 +97,43 @@ class LiveTrader(TradingEngine):
                 balance = self.execution_handler.get_balance()
                 if balance > 0:
                     self.logger.info(f"Exchange USDT Balance: {balance}")
-                    self.portfolio.initial_capital = balance
                     self.portfolio.current_holdings["cash"] = balance
-                    self.portfolio.current_holdings["total"] = (
-                        balance  # Will update on first tick
-                    )
+                    # If total is 0 (first run), init with balance.
+                    # If not, let it be recalced below.
+                    if (
+                        self.portfolio.current_holdings["total"]
+                        == self.portfolio.initial_capital
+                    ):
+                        self.portfolio.initial_capital = balance
 
-                # 2. Sync Positions (TODO: Implement robust mapping if needed)
-                # positions = self.execution_handler.get_all_positions()
-                # for s, qty in positions.items():
-                #     if s in self.symbol_list:
-                #         self.portfolio.current_positions[s] = qty
+                # 2. Sync Positions
+                # We need to fetch actual positions from Binance
+                # Assuming execution_handler has a way to get all positions, or we access exchange directly here?
+                # Best practice: Add get_all_positions to ExecutionHandler interface or specific class.
+                # For now, we'll try to use the exchange object from data_handler if accessible, or add method to execution handler.
 
-                # 3. Reconcile Strategy State with Portfolio State
+                # Let's assume we added `get_all_positions` to BinanceExecutionHandler.
+                if hasattr(self.execution_handler, "get_all_positions"):
+                    exchange_positions = self.execution_handler.get_all_positions()
+                    self.logger.info(f"Exchange Positions: {exchange_positions}")
+
+                    for s, qty in exchange_positions.items():
+                        if s in self.symbol_list:
+                            self.portfolio.current_positions[s] = qty
+
+                # 3. Recalculate Total Holdings (Cash + Position Value)
+                total_equity = self.portfolio.current_holdings["cash"]
+                for s in self.symbol_list:
+                    qty = self.portfolio.current_positions.get(s, 0.0)
+                    if qty != 0:
+                        last_price = self.data_handler.get_latest_bar_value(s, "close")
+                        # If price is 0 (no data yet), we can't value it perfectly.
+                        if last_price > 0:
+                            total_equity += qty * last_price
+
+                self.portfolio.current_holdings["total"] = total_equity
+
+                # 4. Reconcile Strategy State with Portfolio State
                 if hasattr(self.strategy, "bought"):
                     for s in self.symbol_list:
                         position_qty = self.portfolio.current_positions.get(s, 0)
@@ -132,7 +152,9 @@ class LiveTrader(TradingEngine):
                                 "LONG" if position_qty > 0 else "SHORT"
                             )
 
-                self.logger.info("Portfolio Sync Completed.")
+                self.logger.info(
+                    f"Portfolio Sync Completed. Total Equity: {total_equity}"
+                )
             except Exception as e:
                 self.logger.error(f"Portfolio Sync Failed: {e}")
 

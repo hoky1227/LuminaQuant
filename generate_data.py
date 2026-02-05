@@ -43,5 +43,5 @@ def generate_random_data(symbol, days=100):
 
 
 if __name__ == "__main__":
-    generate_random_data("BTCUSDT", 300)
-    generate_random_data("ETHUSDT", 300)
+    generate_random_data("BTCUSDT", 1000)
+    generate_random_data("ETHUSDT", 1000)

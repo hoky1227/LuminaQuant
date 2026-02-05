@@ -1,8 +1,8 @@
 from datetime import datetime
-from quants_agent.backtest import Backtest
-from quants_agent.data import HistoricCSVDataHandler
-from quants_agent.execution import SimulatedExecutionHandler
-from quants_agent.portfolio import Portfolio
+from lumina_quant.backtest import Backtest
+from lumina_quant.data import HistoricCSVDataHandler
+from lumina_quant.execution import SimulatedExecutionHandler
+from lumina_quant.portfolio import Portfolio
 from quants_agent.config import BacktestConfig
 
 # ==========================================

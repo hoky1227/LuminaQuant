@@ -1,5 +1,5 @@
 import polars as pl
-from quants_agent.events import OrderEvent
+from lumina_quant.events import OrderEvent
 
 
 class Portfolio:
@@ -306,7 +306,7 @@ class Portfolio:
         if len(total_series) < 2:
             return [("Status", "Not enough data")]
 
-        from quants_agent.utils.performance import (
+        from lumina_quant.utils.performance import (
             create_sharpe_ratio,
             create_drawdowns,
             create_cagr,

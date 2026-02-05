@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Any
-from quants_agent.events import SignalEvent
+from lumina_quant.events import SignalEvent
 
 
 class Strategy(ABC):
