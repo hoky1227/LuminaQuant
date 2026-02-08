@@ -1,21 +1,23 @@
 import time
 import threading
-import ccxt
 from lumina_quant.events import MarketEvent
 from lumina_quant.data import DataHandler
-from lumina_quant.config import LiveConfig
+from lumina_quant.interfaces import ExchangeInterface
 
 
-class LiveBinanceDataHandler(DataHandler):
+class LiveDataHandler(DataHandler):
     """
-    LiveBinanceDataHandler is designed to fetch live market data
-    from Binance via CCXT and push MarketEvents to the queue.
+    LiveDataHandler is designed to fetch live market data
+    from an ExchangeInterface and push MarketEvents to the queue.
     It uses a separate thread to poll data so the main loop isn't blocked.
     """
 
-    def __init__(self, events, symbol_list):
+    def __init__(self, events, symbol_list, config, exchange: ExchangeInterface):
         self.events = events
         self.symbol_list = symbol_list
+        self.config = config
+        self.exchange = exchange
+
         # Column Index Mapping
         self.col_idx = {
             "datetime": 0,
@@ -27,17 +29,6 @@ class LiveBinanceDataHandler(DataHandler):
         }
 
         self.continue_backtest = True  # Kept for compatibility, serves as "is_running"
-
-        self.exchange = ccxt.binance(
-            {
-                "apiKey": LiveConfig.BINANCE_API_KEY,
-                "secret": LiveConfig.BINANCE_SECRET_KEY,
-                "enableRateLimit": True,
-            }
-        )
-
-        if LiveConfig.IS_TESTNET:
-            self.exchange.set_sandbox_mode(True)
 
         self.latest_symbol_data = {s: [] for s in symbol_list}
         self.lock = threading.Lock()
@@ -55,7 +46,7 @@ class LiveBinanceDataHandler(DataHandler):
         Fetches historical data to warm up indicators.
         """
         print("Warming up data buffers...")
-        timeframe = LiveConfig.TIMEFRAME
+        timeframe = getattr(self.config, "TIMEFRAME", "1m")
         for s in self.symbol_list:
             try:
                 # Fetch N candles (e.g. 100)
@@ -79,13 +70,13 @@ class LiveBinanceDataHandler(DataHandler):
         while self.continue_backtest:
             try:
                 for s in self.symbol_list:
-                    timeframe = LiveConfig.TIMEFRAME
+                    timeframe = getattr(self.config, "TIMEFRAME", "1m")
                     ohlcv = self.exchange.fetch_ohlcv(s, timeframe, limit=2)
 
                     if ohlcv:
                         # Strategy logic usually waits for close.
                         current_bar = ohlcv[-1]
-                        # current_bar is [ts, o, h, l, c, v] list. Convert to tuple.
+                        # current_bar is [ts, o, h, l, c, v] tuple.
                         bar_tuple = tuple(current_bar[:6])
 
                         timestamp = bar_tuple[0]
@@ -117,7 +108,7 @@ class LiveBinanceDataHandler(DataHandler):
                                 )
                             )
 
-                time.sleep(LiveConfig.POLL_INTERVAL)  # Configurable
+                time.sleep(getattr(self.config, "POLL_INTERVAL", 2))
 
             except Exception as e:
                 print(f"Error polling data: {e}")

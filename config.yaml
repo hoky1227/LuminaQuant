@@ -34,12 +34,19 @@ backtest:
 # Live Trading Specific Settings
 # ------------------------------------------
 live:
+  exchange:
+    driver: "ccxt" # Options: "ccxt", "mt5"
+    name: "binance" # Specific exchange name for driver (e.g. "binance" for ccxt)
   testnet: true
   poll_interval: 2  # Seconds
   order_timeout: 10 # Seconds
   # API Keys are best loaded from .env, but can be set here if needed (NOT RECOMMENDED for git)
   # api_key: "YOUR_KEY"
   # secret_key: "YOUR_SECRET"
+
+  # MT5 Specific Settings
+  mt5_magic: 234000
+  mt5_deviation: 20
 
 # ------------------------------------------
 # Optimization (Hyperparameter Tuning)

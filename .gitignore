@@ -215,3 +215,4 @@ live_data/
 equity.csv
 trades.csv
 reports/
+test_output.txt

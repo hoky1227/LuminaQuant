@@ -13,4 +13,5 @@ dependencies = [
     "python-dotenv>=1.2.1",
     "ta-lib>=0.6.8",
     "PyYAML>=6.0",
+    "MetaTrader5>=5.0.0",
 ]

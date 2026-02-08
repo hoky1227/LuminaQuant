@@ -1,10 +1,9 @@
 from lumina_quant.live_trader import LiveTrader
-from lumina_quant.live_data import LiveBinanceDataHandler
-from lumina_quant.binance_execution import BinanceExecutionHandler
+from lumina_quant.live_data import LiveDataHandler
+from lumina_quant.live_execution import LiveExecutionHandler
 from lumina_quant.portfolio import Portfolio
 from lumina_quant.config import LiveConfig
 from strategies.moving_average import MovingAverageCrossStrategy
-import sys
 
 
 def main():
@@ -12,11 +11,8 @@ def main():
     print("=== Quants Agent Live Trader ===")
     print(f"Mode: {'TESTNET' if LiveConfig.IS_TESTNET else 'REAL TRADING'}")
 
-    if not LiveConfig.BINANCE_API_KEY or not LiveConfig.BINANCE_SECRET_KEY:
-        print(
-            "ERROR: API Keys not found. Please set BINANCE_API_KEY and BINANCE_SECRET_KEY in .env file."
-        )
-        sys.exit(1)
+    # Note: Exchange-specific keys might need check based on config.EXCHANGE_ID
+    # For now, we assume binance-like environment vars if usage is binance.
 
     # 2. Setup
     symbol_list = LiveConfig.SYMBOLS  # e.g. ['BTC/USDT'] from config.yaml
@@ -26,8 +22,8 @@ def main():
     try:
         trader = LiveTrader(
             symbol_list=symbol_list,
-            data_handler_cls=LiveBinanceDataHandler,
-            execution_handler_cls=BinanceExecutionHandler,
+            data_handler_cls=LiveDataHandler,
+            execution_handler_cls=LiveExecutionHandler,
             portfolio_cls=Portfolio,
             strategy_cls=MovingAverageCrossStrategy,
         )
