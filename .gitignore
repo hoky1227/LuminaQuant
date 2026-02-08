@@ -217,14 +217,15 @@ trades.csv
 reports/
 test_output.txt
 
-# User Privacy Settings
-strategies/*.py
-!strategies/__init__.py
-equity.csv
-trades.csv
-details.csv
-reports/
-best_optimized_parameters/
-*.png
-test_output.txt
-data/
+# User Privacy Settings - UNCOMMENTED FOR PRIVATE REPO
+# strategies/*.py
+# !strategies/__init__.py
+# equity.csv
+# trades.csv
+# details.csv
+# reports/
+# best_optimized_parameters/
+# *.png
+# test_output.txt
+# data/
+# logs/
