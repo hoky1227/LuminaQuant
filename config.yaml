@@ -43,7 +43,7 @@ execution:
   funding_interval_hours: 8
   maintenance_margin_rate: 0.005
   liquidation_buffer_rate: 0.0005
-  compute_backend: "cpu" # cpu|torch
+  compute_backend: "cpu" # cpu only
 
 # ------------------------------------------
 # Storage / Audit

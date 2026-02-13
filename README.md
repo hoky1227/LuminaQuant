@@ -70,8 +70,6 @@ cd lumina-quant
 
 # Install dependencies
 uv sync  # or pip install ".[live,optimize,dashboard]"
-# Optional GPU backend:
-# pip install ".[compute]"
 
 # Verify install and tests
 python scripts/verify_install.py

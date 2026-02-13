@@ -240,6 +240,16 @@ def build_runtime_config(data: dict[str, Any], env: Mapping[str, str]) -> Runtim
     runtime.risk.risk_per_trade = _as_float(runtime.risk.risk_per_trade, 0.005)
     runtime.risk.max_daily_loss_pct = _as_float(runtime.risk.max_daily_loss_pct, 0.03)
     runtime.execution.slippage_rate = _as_float(runtime.execution.slippage_rate, 0.0005)
+    runtime.execution.compute_backend = (
+        str(runtime.execution.compute_backend).strip().lower() or "cpu"
+    )
+    if runtime.execution.compute_backend != "cpu":
+        warnings.warn(
+            "execution.compute_backend only supports 'cpu'. Falling back to 'cpu'.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        runtime.execution.compute_backend = "cpu"
     runtime.live.exchange.leverage = _as_int(runtime.live.exchange.leverage, 3)
     runtime.live.poll_interval = _as_int(runtime.live.poll_interval, 2)
     runtime.live.reconciliation_interval_sec = _as_int(runtime.live.reconciliation_interval_sec, 30)

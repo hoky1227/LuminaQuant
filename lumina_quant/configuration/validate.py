@@ -42,6 +42,8 @@ def validate_runtime_config(runtime: RuntimeConfig, *, for_live: bool = False) -
         raise ValueError("risk.risk_per_trade must be in (0, 0.05].")
     if runtime.risk.max_daily_loss_pct <= 0 or runtime.risk.max_daily_loss_pct > 1:
         raise ValueError("risk.max_daily_loss_pct must be in (0, 1].")
+    if runtime.execution.compute_backend != "cpu":
+        raise ValueError("execution.compute_backend must be 'cpu'.")
     if runtime.backtest.leverage < 1 or runtime.backtest.leverage > 20:
         raise ValueError("backtest.leverage must be in range [1, 20].")
     if runtime.live.order_timeout < 1:

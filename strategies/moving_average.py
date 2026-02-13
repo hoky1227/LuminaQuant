@@ -2,9 +2,6 @@ import logging
 
 import numpy as np
 import talib
-from lumina_quant.compute.indicators import compute_sma
-from lumina_quant.config import BaseConfig
-
 from lumina_quant.events import SignalEvent
 from lumina_quant.strategy import Strategy
 
@@ -22,16 +19,9 @@ class MovingAverageCrossStrategy(Strategy):
         self.short_window = short_window
         self.long_window = long_window
         self.symbol_list = self.bars.symbol_list
-        self.bought = {s: "OUT" for s in self.symbol_list}
-        self.compute_backend = getattr(BaseConfig, "COMPUTE_BACKEND", "cpu")
-        if str(self.compute_backend).lower() == "torch":
-            self._short_ma_fn = lambda values: compute_sma(
-                values, self.short_window, backend="torch"
-            )
-            self._long_ma_fn = lambda values: compute_sma(values, self.long_window, backend="torch")
-        else:
-            self._short_ma_fn = lambda values: talib.SMA(values, timeperiod=self.short_window)
-            self._long_ma_fn = lambda values: talib.SMA(values, timeperiod=self.long_window)
+        self.bought = dict.fromkeys(self.symbol_list, "OUT")
+        self._short_ma_fn = lambda values: talib.SMA(values, timeperiod=self.short_window)
+        self._long_ma_fn = lambda values: talib.SMA(values, timeperiod=self.long_window)
 
     def get_state(self):
         return {"bought": dict(self.bought)}

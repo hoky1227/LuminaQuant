@@ -71,8 +71,6 @@ cd lumina-quant
 
 # 의존성 설치
 uv sync  # 또는 pip install ".[live,optimize,dashboard]"
-# (선택) GPU 백엔드
-# pip install ".[compute]"
 
 # (선택 사항) MT5 지원을 위한 설치
 pip install MetaTrader5
