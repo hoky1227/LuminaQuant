@@ -57,6 +57,8 @@ class StorageConfig:
 
     backend: str = "sqlite"
     sqlite_path: str = "logs/lumina_quant.db"
+    market_data_sqlite_path: str = "logs/lumina_quant.db"
+    market_data_exchange: str = "binance"
     export_csv: bool = True
 
 

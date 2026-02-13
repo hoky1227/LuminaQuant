@@ -16,6 +16,7 @@ from lumina_quant.backtesting.data import HistoricCSVDataHandler
 from lumina_quant.backtesting.execution_sim import SimulatedExecutionHandler
 from lumina_quant.backtesting.portfolio_backtest import Portfolio
 from lumina_quant.config import BacktestConfig, BaseConfig, OptimizationConfig
+from lumina_quant.market_data import load_data_dict_from_db, resolve_symbol_csv_path
 from lumina_quant.optimization.storage import save_optimization_rows
 from lumina_quant.optimization.walkers import build_walk_forward_splits
 
@@ -26,9 +27,12 @@ from strategies.rsi_strategy import RsiStrategy
 # Optuna Import
 try:
     import optuna
+    from optuna.trial import TrialState
 
     OPTUNA_AVAILABLE = True
 except ImportError:
+    optuna = None
+    TrialState = None
     OPTUNA_AVAILABLE = False
     print("Warning: Optuna not found. Run 'pip install optuna'.")
 
@@ -50,6 +54,8 @@ STRATEGY_CLASS = STRATEGY_MAP.get(strategy_name, RsiStrategy)
 # 3. Data Settings
 CSV_DIR = "data"
 SYMBOL_LIST = BaseConfig.SYMBOLS
+MARKET_DB_PATH = getattr(BaseConfig, "MARKET_DATA_SQLITE_PATH", BaseConfig.STORAGE_SQLITE_PATH)
+MARKET_DB_EXCHANGE = getattr(BaseConfig, "MARKET_DATA_EXCHANGE", "binance")
 
 # 4. Optimization Settings
 GRID_PARAMS = OptimizationConfig.GRID_CONFIG.get("params", {})
@@ -70,20 +76,49 @@ except Exception as e:
 DATA_DICT = {}
 
 
-def load_all_data(csv_dir, symbol_list):
+def load_all_data(
+    csv_dir,
+    symbol_list,
+    *,
+    data_source="auto",
+    market_db_path=None,
+    market_exchange="binance",
+    timeframe="1m",
+):
     """
-    Loads all data into memory using Polars once.
+    Load all data into memory once.
+    Priority: DB (when selected/available) then CSV fallback.
     """
-    print(f"Loading data for {len(symbol_list)} symbols from {csv_dir}...")
+    source = str(data_source).strip().lower()
     data = {}
+
+    if source in {"db", "auto"} and market_db_path:
+        db_data = load_data_dict_from_db(
+            market_db_path,
+            exchange=market_exchange,
+            symbol_list=symbol_list,
+            timeframe=timeframe,
+        )
+        if db_data:
+            data.update(db_data)
+            print(
+                f"Loaded {len(db_data)}/{len(symbol_list)} symbols from DB "
+                f"{market_db_path} (exchange={market_exchange}, timeframe={timeframe})."
+            )
+        elif source == "db":
+            print(
+                f"Warning: no OHLCV rows found in DB {market_db_path} for "
+                f"exchange={market_exchange}, timeframe={timeframe}."
+            )
+
+    if source == "db":
+        return data
+
+    print(f"Loading CSV fallback for missing symbols from {csv_dir}...")
     for s in symbol_list:
-        candidates = [
-            os.path.join(csv_dir, f"{s}.csv"),
-            os.path.join(csv_dir, f"{s.replace('/', '')}.csv"),
-            os.path.join(csv_dir, f"{s.replace('/', '_')}.csv"),
-            os.path.join(csv_dir, f"{s.replace('/', '-')}.csv"),
-        ]
-        csv_path = next((p for p in candidates if os.path.exists(p)), candidates[0])
+        if s in data:
+            continue
+        csv_path = resolve_symbol_csv_path(csv_dir, s)
         try:
             if os.path.exists(csv_path):
                 df = pl.read_csv(csv_path, try_parse_dates=True)
@@ -97,6 +132,53 @@ def load_all_data(csv_dir, symbol_list):
         except Exception as e:
             print(f"Error loading {s}: {e}")
     return data
+
+
+def _data_datetime_range(data_dict):
+    starts = []
+    ends = []
+    for df in data_dict.values():
+        if df is None or "datetime" not in df.columns or df.height == 0:
+            continue
+        starts.append(df["datetime"].min())
+        ends.append(df["datetime"].max())
+    if not starts or not ends:
+        return None, None
+    # Use intersection across symbols for robust multi-asset walk-forward windows.
+    return max(starts), min(ends)
+
+
+def _build_data_aware_split(data_start, data_end):
+    total_seconds = (data_end - data_start).total_seconds()
+    if total_seconds <= 0:
+        return None
+
+    train_end = data_start + (data_end - data_start) * 0.7
+    val_end = train_end + (data_end - data_start) * 0.15
+
+    if train_end <= data_start or val_end <= train_end or data_end <= val_end:
+        return None
+
+    return {
+        "fold": 1,
+        "train_start": data_start,
+        "train_end": train_end,
+        "val_start": train_end,
+        "val_end": val_end,
+        "test_start": val_end,
+        "test_end": data_end,
+    }
+
+
+def _filter_valid_splits(splits, data_start, data_end):
+    valid = []
+    for split in splits:
+        if split["train_start"] < data_start:
+            continue
+        if split["test_end"] > data_end:
+            continue
+        valid.append(split)
+    return valid
 
 
 # ==========================================
@@ -130,6 +212,7 @@ def _execute_backtest(
             data_dict=current_data,
             record_history=False,
             track_metrics=True,
+            record_trades=False,
         )
         backtest.simulate_trading(output=False)
         stats = backtest.portfolio.output_summary_stats_fast()
@@ -149,7 +232,7 @@ def _execute_backtest(
             "sharpe": sharpe,
             "cagr": f"{cagr_pct:.4f}",
             "mdd": f"{mdd_pct:.4f}",
-            "num_trades": len(backtest.portfolio.trades),
+            "num_trades": int(getattr(backtest.portfolio, "trade_count", 0)),
             "no_data": no_data,
         }
     except Exception as e:
@@ -225,13 +308,19 @@ class GridSearchOptimizer:
             for params in combinations
         ]
 
-        # Use explicit spawn context for cross-platform consistency.
-        ctx = multiprocessing.get_context("spawn")
-        chunksize = max(1, len(pool_args) // max(1, max_workers * 4))
-        with ctx.Pool(
-            processes=max_workers, initializer=pool_initializer, initargs=(DATA_DICT,)
-        ) as pool:
-            results = pool.map(run_single_backtest_train, pool_args, chunksize)
+        worker_count = max(1, int(max_workers))
+        if worker_count == 1 or len(pool_args) <= 1:
+            results = [run_single_backtest_train(args) for args in pool_args]
+        else:
+            # Use explicit spawn context for cross-platform consistency.
+            ctx = multiprocessing.get_context("spawn")
+            chunksize = max(1, len(pool_args) // max(1, worker_count * 4))
+            with ctx.Pool(
+                processes=worker_count,
+                initializer=pool_initializer,
+                initargs=(DATA_DICT,),
+            ) as pool:
+                results = pool.map(run_single_backtest_train, pool_args, chunksize)
 
         valid_results = [r for r in results if "error" not in r]
         sorted_results = sorted(valid_results, key=lambda x: x["sharpe"], reverse=True)
@@ -274,19 +363,20 @@ class OptunaOptimizer:
         )
         return result["sharpe"]
 
-    def run(self, n_trials=20):
-        if not OPTUNA_AVAILABLE:
+    def run(self, n_trials=20, n_jobs=1):
+        if not OPTUNA_AVAILABLE or optuna is None or TrialState is None:
             print("Error: Optuna not installed.")
             return []
 
         study = optuna.create_study(direction="maximize")
-        study.optimize(self.objective, n_trials=n_trials)
+        worker_count = max(1, int(n_jobs))
+        study.optimize(self.objective, n_trials=n_trials, n_jobs=worker_count)
 
         best_trials = sorted(study.trials, key=lambda t: t.value if t.value else -999, reverse=True)
 
         params_list = []
         for t in best_trials[:10]:
-            if t.state != optuna.trial.TrialState.COMPLETE:
+            if t.state != TrialState.COMPLETE:
                 continue
             params_list.append({"params": t.params, "sharpe": t.value, "cagr": "N/A", "mdd": "N/A"})
         return params_list
@@ -326,7 +416,7 @@ def run_walk_forward_fold(split):
         optimizer = OptunaOptimizer(
             STRATEGY_CLASS, OPTUNA_CONFIG, CSV_DIR, SYMBOL_LIST, train_start, train_end
         )
-        train_results = optimizer.run(n_trials=OPTUNA_TRIALS)
+        train_results = optimizer.run(n_trials=OPTUNA_TRIALS, n_jobs=MAX_WORKERS)
     else:
         raise ValueError(f"Unknown optimization method: {OPTIMIZATION_METHOD}")
 
@@ -416,6 +506,22 @@ if __name__ == "__main__":
         action="store_true",
         help="Write winning params into best_optimized_parameters/<strategy>/best_params.json.",
     )
+    parser.add_argument(
+        "--data-source",
+        choices=["auto", "csv", "db"],
+        default="auto",
+        help="Market data source for optimization (auto: DB then CSV fallback).",
+    )
+    parser.add_argument(
+        "--market-db-path",
+        default=MARKET_DB_PATH,
+        help="SQLite path for market OHLCV data.",
+    )
+    parser.add_argument(
+        "--market-exchange",
+        default=MARKET_DB_EXCHANGE,
+        help="Exchange key used in OHLCV DB rows.",
+    )
     args = parser.parse_args()
 
     run_id = str(uuid.uuid4())
@@ -425,17 +531,44 @@ if __name__ == "__main__":
     persist_best_params = bool(args.save_best_params or OptimizationConfig.PERSIST_BEST_PARAMS)
 
     # Load Data Once
-    DATA_DICT = load_all_data(CSV_DIR, SYMBOL_LIST)
+    DATA_DICT = load_all_data(
+        CSV_DIR,
+        SYMBOL_LIST,
+        data_source=args.data_source,
+        market_db_path=args.market_db_path,
+        market_exchange=args.market_exchange,
+        timeframe=BaseConfig.TIMEFRAME,
+    )
     splits = build_walk_forward_splits(
         BASE_START,
         args.folds,
     )
-    if not splits:
+    data_start, data_end = _data_datetime_range(DATA_DICT)
+    if data_start is None or data_end is None:
+        print("No usable datetime range found in loaded data.")
+        sys.exit(1)
+
+    valid_splits = _filter_valid_splits(splits, data_start, data_end)
+    if not valid_splits:
+        fallback_split = _build_data_aware_split(data_start, data_end)
+        if fallback_split is None:
+            print(
+                "Could not build a valid walk-forward split from current data range. "
+                "Check your dataset coverage and config dates."
+            )
+            sys.exit(1)
+        valid_splits = [fallback_split]
+        print(
+            "[INFO] Default walk-forward windows were outside available data range. "
+            "Using one data-aware fallback split."
+        )
+
+    if not valid_splits:
         print("No walk-forward splits generated.")
         sys.exit(1)
 
     fold_reports = []
-    for split in splits:
+    for split in valid_splits:
         try:
             report = run_walk_forward_fold(split)
             if report is None:

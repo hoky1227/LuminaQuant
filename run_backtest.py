@@ -1,3 +1,4 @@
+import argparse
 import json
 import os
 from datetime import datetime
@@ -7,6 +8,7 @@ from lumina_quant.backtesting.data import HistoricCSVDataHandler
 from lumina_quant.backtesting.execution_sim import SimulatedExecutionHandler
 from lumina_quant.backtesting.portfolio_backtest import Portfolio
 from lumina_quant.config import BacktestConfig, BaseConfig, OptimizationConfig
+from lumina_quant.market_data import load_data_dict_from_db
 
 # ==========================================
 # CONFIGURATION FROM YAML
@@ -58,32 +60,95 @@ try:
 except Exception:
     START_DATE = datetime(2024, 1, 1)
 
+try:
+    END_DATE = (
+        datetime.strptime(BacktestConfig.END_DATE, "%Y-%m-%d") if BacktestConfig.END_DATE else None
+    )
+except Exception:
+    END_DATE = None
+
+MARKET_DB_PATH = getattr(BaseConfig, "MARKET_DATA_SQLITE_PATH", BaseConfig.STORAGE_SQLITE_PATH)
+MARKET_DB_EXCHANGE = getattr(BaseConfig, "MARKET_DATA_EXCHANGE", "binance")
+
 # ==========================================
 # EXECUTION (Do not modify generally)
 # ==========================================
 
 
-def run():
+def _load_data_dict(data_source, market_db_path, market_exchange):
+    source = str(data_source).strip().lower()
+    if source == "csv":
+        return None
+
+    data_dict = load_data_dict_from_db(
+        market_db_path,
+        exchange=market_exchange,
+        symbol_list=SYMBOL_LIST,
+        timeframe=BaseConfig.TIMEFRAME,
+        start_date=START_DATE,
+        end_date=END_DATE,
+    )
+    if data_dict:
+        print(
+            f"[INFO] Loaded {len(data_dict)}/{len(SYMBOL_LIST)} symbols from DB "
+            f"{market_db_path} (exchange={market_exchange}, timeframe={BaseConfig.TIMEFRAME})."
+        )
+        return data_dict
+    if source == "db":
+        raise RuntimeError(
+            "No market data found in DB for requested symbols/timeframe. "
+            "Run scripts/sync_binance_ohlcv.py first or switch to --data-source csv."
+        )
+    return None
+
+
+def run(data_source="auto", market_db_path=MARKET_DB_PATH, market_exchange=MARKET_DB_EXCHANGE):
     print("------------------------------------------------")
     print(f"Running Backtest for {SYMBOL_LIST}")
     print(f"Strategy: {STRATEGY_CLASS.__name__}")
     print(f"Params: {STRATEGY_PARAMS}")
     print("------------------------------------------------")
 
+    data_dict = _load_data_dict(data_source, market_db_path, market_exchange)
+
     # Initialize Backtest
     backtest = Backtest(
         csv_dir=CSV_DIR,
         symbol_list=SYMBOL_LIST,
         start_date=START_DATE,
+        end_date=END_DATE,
         data_handler_cls=HistoricCSVDataHandler,
         execution_handler_cls=SimulatedExecutionHandler,
         portfolio_cls=Portfolio,
         strategy_cls=STRATEGY_CLASS,
         strategy_params=STRATEGY_PARAMS,
+        data_dict=data_dict,
     )
 
     backtest.simulate_trading()
 
 
 if __name__ == "__main__":
-    run()
+    parser = argparse.ArgumentParser(description="Run LuminaQuant backtest.")
+    parser.add_argument(
+        "--data-source",
+        choices=["auto", "csv", "db"],
+        default="auto",
+        help="Market data source (auto: DB first then CSV fallback).",
+    )
+    parser.add_argument(
+        "--market-db-path",
+        default=MARKET_DB_PATH,
+        help="SQLite path for market OHLCV data.",
+    )
+    parser.add_argument(
+        "--market-exchange",
+        default=MARKET_DB_EXCHANGE,
+        help="Exchange key used in OHLCV DB rows.",
+    )
+    args = parser.parse_args()
+    run(
+        data_source=args.data_source,
+        market_db_path=args.market_db_path,
+        market_exchange=args.market_exchange,
+    )
