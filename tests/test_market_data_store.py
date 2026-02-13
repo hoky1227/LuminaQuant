@@ -1,0 +1,95 @@
+"""Tests for market OHLCV storage helpers."""
+
+from __future__ import annotations
+
+import tempfile
+import unittest
+from pathlib import Path
+
+from lumina_quant.market_data import (
+    connect_market_data_db,
+    ensure_market_ohlcv_schema,
+    get_last_ohlcv_timestamp_ms,
+    load_data_dict_from_db,
+    load_ohlcv_from_db,
+    normalize_symbol,
+    upsert_ohlcv_rows,
+)
+
+
+class TestMarketDataStore(unittest.TestCase):
+    """Validate SQLite OHLCV upsert and load behavior."""
+
+    def test_symbol_normalization(self):
+        self.assertEqual(normalize_symbol("btcusdt"), "BTC/USDT")
+        self.assertEqual(normalize_symbol("BTC-USDT"), "BTC/USDT")
+        self.assertEqual(normalize_symbol("eth_usdt"), "ETH/USDT")
+
+    def test_upsert_and_load_roundtrip(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = str(Path(tmp_dir) / "market_data.db")
+            conn = connect_market_data_db(db_path)
+            try:
+                ensure_market_ohlcv_schema(conn)
+                rows = [
+                    (1704067200000, 100.0, 101.0, 99.0, 100.5, 10.0),
+                    (1704067260000, 100.5, 102.0, 100.0, 101.5, 12.0),
+                ]
+                count = upsert_ohlcv_rows(
+                    conn,
+                    exchange="binance",
+                    symbol="BTC/USDT",
+                    timeframe="1m",
+                    rows=rows,
+                    source="test",
+                )
+                self.assertEqual(count, 2)
+
+                # Idempotent update on same primary key
+                updated_rows = [
+                    (1704067260000, 100.5, 102.0, 100.0, 111.5, 12.0),
+                ]
+                upsert_ohlcv_rows(
+                    conn,
+                    exchange="binance",
+                    symbol="BTC/USDT",
+                    timeframe="1m",
+                    rows=updated_rows,
+                    source="test",
+                )
+            finally:
+                conn.close()
+
+            df = load_ohlcv_from_db(
+                db_path,
+                exchange="binance",
+                symbol="BTCUSDT",
+                timeframe="1m",
+            )
+            self.assertEqual(df.height, 2)
+            self.assertAlmostEqual(float(df["close"][1]), 111.5)
+
+            conn2 = connect_market_data_db(db_path)
+            try:
+                last_ts = get_last_ohlcv_timestamp_ms(
+                    conn2,
+                    exchange="binance",
+                    symbol="BTC/USDT",
+                    timeframe="1m",
+                )
+            finally:
+                conn2.close()
+            self.assertEqual(last_ts, 1704067260000)
+
+            data_dict = load_data_dict_from_db(
+                db_path,
+                exchange="binance",
+                symbol_list=["BTC/USDT", "ETH/USDT"],
+                timeframe="1m",
+            )
+            self.assertIn("BTC/USDT", data_dict)
+            self.assertNotIn("ETH/USDT", data_dict)
+
+
+if __name__ == "__main__":
+    unittest.main()
