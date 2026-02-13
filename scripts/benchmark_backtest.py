@@ -31,6 +31,11 @@ from lumina_quant.portfolio import Portfolio
 from strategies.moving_average import MovingAverageCrossStrategy
 from strategies.rsi_strategy import RsiStrategy
 
+try:
+    import psutil
+except ImportError:
+    psutil = None
+
 STRATEGY_MAP = {
     "RsiStrategy": RsiStrategy,
     "MovingAverageCrossStrategy": MovingAverageCrossStrategy,
@@ -73,13 +78,13 @@ def _load_best_params(strategy_name: str) -> dict[str, Any]:
 
 def _get_rss_mb() -> float | None:
     """Return current resident set size in MB when available."""
-    try:
-        import psutil
-
-        process = psutil.Process(os.getpid())
-        return float(process.memory_info().rss) / (1024.0 * 1024.0)
-    except (ImportError, OSError):
+    if psutil is None:
         return None
+    try:
+        process = psutil.Process(os.getpid())
+    except OSError:
+        return None
+    return float(process.memory_info().rss) / (1024.0 * 1024.0)
 
 
 @dataclass(slots=True)
@@ -119,6 +124,7 @@ def _run_once(
     symbols: list[str],
     start_date: datetime,
     params: dict[str, Any],
+    record_history: bool,
 ) -> BenchmarkSample:
     """Execute one backtest and collect timing/memory metrics."""
     strategy_cls = STRATEGY_MAP[strategy_name]
@@ -135,13 +141,14 @@ def _run_once(
         portfolio_cls=Portfolio,
         strategy_cls=strategy_cls,
         strategy_params=params,
+        record_history=record_history,
     )
     backtest.simulate_trading(output=False)
     ended = time.perf_counter()
     _current, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
 
-    bars_processed = max(0, len(backtest.portfolio.all_holdings) - 1)
+    bars_processed = int(backtest.market_events)
     seconds = ended - started
     bars_per_sec = float(bars_processed) / seconds if seconds > 0 else 0.0
     rss_after = _get_rss_mb()
@@ -188,6 +195,7 @@ def build_benchmark_summary(args: argparse.Namespace) -> BenchmarkSummary:
             symbols=symbols,
             start_date=start_date,
             params=params,
+            record_history=args.record_history,
         )
 
     samples: list[BenchmarkSample] = []
@@ -197,6 +205,7 @@ def build_benchmark_summary(args: argparse.Namespace) -> BenchmarkSummary:
             symbols=symbols,
             start_date=start_date,
             params=params,
+            record_history=args.record_history,
         )
         samples.append(sample)
 
@@ -242,6 +251,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--iters", type=int, default=5, help="Measured iterations.")
     parser.add_argument("--warmup", type=int, default=1, help="Warmup iterations.")
     parser.add_argument("--seed", type=int, default=42, help="Deterministic seed value.")
+    parser.add_argument(
+        "--record-history",
+        action="store_true",
+        help="Keep full portfolio history during the benchmark run.",
+    )
     parser.add_argument(
         "--output",
         default=os.path.join("reports", "benchmarks", "baseline_snapshot.json"),

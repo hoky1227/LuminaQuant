@@ -14,6 +14,7 @@ class TradingEngine(ABC):
         self.execution_handler = execution_handler
 
         # Stats
+        self.market_events = 0
         self.signals = 0
         self.orders = 0
         self.fills = 0
@@ -31,6 +32,7 @@ class TradingEngine(ABC):
                 self.handle_fill_event(event)
 
     def handle_market_event(self, event):
+        self.market_events += 1
         self.strategy.calculate_signals(event)
         self.portfolio.update_timeindex(event)
         # Optional: Simulated execution handler might need to check open orders

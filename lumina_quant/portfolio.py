@@ -10,11 +10,13 @@ class Portfolio:
     Refactored to use Polars for equity curve storage.
     """
 
-    def __init__(self, bars, events, start_date, config):
+    def __init__(self, bars, events, start_date, config, record_history=True):
         self.bars = bars
         self.events = events
         self.config = config
         self.symbol_list = self.bars.symbol_list
+        self._single_symbol = len(self.symbol_list) == 1
+        self.record_history = bool(record_history)
         self.start_date = start_date
         self.initial_capital = self.config.INITIAL_CAPITAL
 
@@ -106,52 +108,76 @@ class Portfolio:
         """Updates the positions from the current locations to the
         latest available bar.
         """
-        latest_datetime = self.bars.get_latest_bar_datetime(self.symbol_list[0])
+        _ = event
+        primary_symbol = self.symbol_list[0]
+        latest_datetime = self.bars.get_latest_bar_datetime(primary_symbol)
         self._update_day_boundary(latest_datetime)
         self._apply_funding(latest_datetime)
         self._check_liquidations(latest_datetime)
 
+        current_positions = self.current_positions
+        current_holdings = self.current_holdings
+        cash = current_holdings["cash"]
+        commission = current_holdings["commission"]
+
+        if self._single_symbol:
+            symbol = primary_symbol
+            qty = current_positions[symbol]
+            close_price = self.bars.get_latest_bar_value(symbol, "close")
+            market_value = qty * close_price if qty != 0 else 0.0
+            current_holdings[symbol] = market_value
+            total = cash + market_value
+            current_holdings["total"] = total
+
+            if self.record_history:
+                self.all_positions.append((latest_datetime, qty))
+                self.all_holdings.append(
+                    (
+                        latest_datetime,
+                        cash,
+                        commission,
+                        total,
+                        market_value,
+                        close_price,
+                    )
+                )
+            return
+
+        total = cash
+        market_vals = []
+        for symbol in self.symbol_list:
+            qty = current_positions[symbol]
+            market_value = (
+                qty * self.bars.get_latest_bar_value(symbol, "close") if qty != 0 else 0.0
+            )
+            market_vals.append(market_value)
+            total += market_value
+            current_holdings[symbol] = market_value
+
+        current_holdings["total"] = total
+        if not self.record_history:
+            return
+
         # Update positions
         # Tuple: (datetime, s1, s2...)
-        pos_row = [latest_datetime] + [self.current_positions[s] for s in self.symbol_list]
-        self.all_positions.append(tuple(pos_row))
-
-        # Update holdings
-        # Tuple: (datetime, cash, commission, total, s1, s2...)
-        dh = dict.fromkeys(self.symbol_list, 0.0)
-        dh["datetime"] = latest_datetime
-        dh["cash"] = self.current_holdings["cash"]
-        dh["commission"] = self.current_holdings["commission"]
-        dh["total"] = self.current_holdings["cash"]
-
-        market_vals = []
-        for s in self.symbol_list:
-            market_value = 0.0
-            if self.current_positions[s] != 0:
-                market_value = self.current_positions[s] * self.bars.get_latest_bar_value(
-                    s, "close"
-                )
-            market_vals.append(market_value)
-            dh["total"] += market_value
-            # Update current holdings dict for state (still useful for logic)
-            self.current_holdings[s] = market_value
-
-        self.current_holdings["total"] = dh["total"]
+        self.all_positions.append(
+            (latest_datetime, *[current_positions[s] for s in self.symbol_list])
+        )
 
         # Store Tuple
         # Schema: (datetime, cash, commission, total, s1_val, s2_val, ..., benchmark_price)
         # Benchmark: Close price of first symbol (Primary Asset)
-        bench_price = self.bars.get_latest_bar_value(self.symbol_list[0], "close")
-
-        h_row = [
-            latest_datetime,
-            dh["cash"],
-            dh["commission"],
-            dh["total"],
-            *market_vals,
-            bench_price,
-        ]
-        self.all_holdings.append(tuple(h_row))
+        bench_price = self.bars.get_latest_bar_value(primary_symbol, "close")
+        self.all_holdings.append(
+            (
+                latest_datetime,
+                cash,
+                commission,
+                total,
+                *market_vals,
+                bench_price,
+            )
+        )
 
     def update_positions_from_fill(self, fill):
         fill_dir = 0
