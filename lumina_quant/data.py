@@ -1,17 +1,19 @@
 import heapq
 import os
 from abc import ABC, abstractmethod
+from collections import deque
 from typing import Any
 
 import polars as pl
 from lumina_quant.events import MarketEvent
+from lumina_quant.market_data import resolve_symbol_csv_path
 
 
 class DataHandler(ABC):
     """DataHandler abstract base class."""
 
     @abstractmethod
-    def get_latest_bar(self, symbol: str) -> tuple:
+    def get_latest_bar(self, symbol: str) -> tuple | None:
         raise NotImplementedError
 
     @abstractmethod
@@ -59,7 +61,7 @@ class HistoricCSVDataHandler(DataHandler):
         self._single_symbol = len(symbol_list) == 1
 
         self.symbol_data = {}
-        self.latest_symbol_data = {s: [] for s in symbol_list}
+        self.latest_symbol_data = {s: deque(maxlen=self.max_lookback) for s in symbol_list}
         self.continue_backtest = True
 
         # Column Index Mapping for Speed
@@ -140,16 +142,7 @@ class HistoricCSVDataHandler(DataHandler):
             self.continue_backtest = False
 
     def _resolve_symbol_csv_path(self, symbol):
-        candidates = [
-            os.path.join(self.csv_dir, f"{symbol}.csv"),
-            os.path.join(self.csv_dir, f"{symbol.replace('/', '')}.csv"),
-            os.path.join(self.csv_dir, f"{symbol.replace('/', '_')}.csv"),
-            os.path.join(self.csv_dir, f"{symbol.replace('/', '-')}.csv"),
-        ]
-        for path in candidates:
-            if os.path.exists(path):
-                return path
-        return candidates[0]
+        return resolve_symbol_csv_path(self.csv_dir, symbol)
 
     def _push_heap(self, symbol, bar):
         heapq.heappush(self._bar_heap, (bar[0], self._heap_seq, symbol))
@@ -184,9 +177,6 @@ class HistoricCSVDataHandler(DataHandler):
                 return
 
             self.latest_symbol_data[symbol].append(bar)
-            if len(self.latest_symbol_data[symbol]) > self.max_lookback:
-                overflow = len(self.latest_symbol_data[symbol]) - self.max_lookback
-                del self.latest_symbol_data[symbol][:overflow]
             self.events.put(
                 MarketEvent(
                     bar[0],
@@ -237,9 +227,6 @@ class HistoricCSVDataHandler(DataHandler):
             bar = self.next_bar[s]
             # bar is a Tuple: (datetime, open, high, low, close, volume)
             self.latest_symbol_data[s].append(bar)
-            if len(self.latest_symbol_data[s]) > self.max_lookback:
-                overflow = len(self.latest_symbol_data[s]) - self.max_lookback
-                del self.latest_symbol_data[s][:overflow]
 
             # Publish MarketEvent
             self.events.put(
@@ -276,7 +263,9 @@ class HistoricCSVDataHandler(DataHandler):
         history = self.latest_symbol_data.get(symbol)
         if not history:
             return []
-        return history[-N:]
+        if N <= 0:
+            return []
+        return list(history)[-N:]
 
     def get_latest_bar_datetime(self, symbol):
         if not self.latest_symbol_data.get(symbol):

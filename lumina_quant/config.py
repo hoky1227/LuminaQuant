@@ -63,6 +63,8 @@ class BaseConfig:
 
     STORAGE_BACKEND = _RUNTIME.storage.backend
     STORAGE_SQLITE_PATH = _RUNTIME.storage.sqlite_path
+    MARKET_DATA_SQLITE_PATH = _RUNTIME.storage.market_data_sqlite_path
+    MARKET_DATA_EXCHANGE = _RUNTIME.storage.market_data_exchange
     STORAGE_EXPORT_CSV = bool(_RUNTIME.storage.export_csv)
 
 
