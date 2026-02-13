@@ -1,12 +1,12 @@
-import polars as pl
 import math
-from datetime import datetime, date
-from lumina_quant.events import OrderEvent, FillEvent
+from datetime import date, datetime
+
+import polars as pl
+from lumina_quant.events import FillEvent, OrderEvent
 
 
 class Portfolio:
-    """
-    The Portfolio class handles the positions and market value.
+    """The Portfolio class handles the positions and market value.
     Refactored to use Polars for equity curve storage.
     """
 
@@ -19,7 +19,7 @@ class Portfolio:
         self.initial_capital = self.config.INITIAL_CAPITAL
 
         self.all_positions = []
-        self.current_positions = {s: 0.0 for s in self.symbol_list}
+        self.current_positions = dict.fromkeys(self.symbol_list, 0.0)
 
         self.all_holdings = []
         self.current_holdings = self.construct_current_holdings()
@@ -30,17 +30,15 @@ class Portfolio:
         # Circuit Breaker (Safety)
         self.circuit_breaker_tripped = False
         self.day_start_equity = self.initial_capital
-        self.max_daily_loss_pct = getattr(
-            config, "MAX_DAILY_LOSS_PCT", 0.05
-        )  # 5% default
+        self.max_daily_loss_pct = getattr(config, "MAX_DAILY_LOSS_PCT", 0.05)  # 5% default
         self.risk_per_trade = getattr(config, "RISK_PER_TRADE", 0.005)
         self.max_symbol_exposure_pct = getattr(config, "MAX_SYMBOL_EXPOSURE_PCT", 0.25)
         self.max_order_value = getattr(config, "MAX_ORDER_VALUE", 5000.0)
         self.default_stop_loss_pct = getattr(config, "DEFAULT_STOP_LOSS_PCT", 0.01)
         self._current_day = None
-        self._last_funding_ts = {s: None for s in self.symbol_list}
+        self._last_funding_ts = dict.fromkeys(self.symbol_list)
         self.total_funding_paid = 0.0
-        self.entry_prices = {s: None for s in self.symbol_list}
+        self.entry_prices = dict.fromkeys(self.symbol_list)
         self.liquidation_events = []
         self._pending_liquidation = set()
 
@@ -48,7 +46,7 @@ class Portfolio:
         self.update_initial_record()
 
     def construct_current_holdings(self):
-        d = {s: 0.0 for s in self.symbol_list}
+        d = dict.fromkeys(self.symbol_list, 0.0)
         d["cash"] = self.initial_capital
         d["commission"] = 0.0
         d["total"] = self.initial_capital
@@ -105,8 +103,7 @@ class Portfolio:
             self._pending_liquidation = set(state["pending_liquidation"])
 
     def update_timeindex(self, event):
-        """
-        Updates the positions from the current locations to the
+        """Updates the positions from the current locations to the
         latest available bar.
         """
         latest_datetime = self.bars.get_latest_bar_datetime(self.symbol_list[0])
@@ -116,14 +113,12 @@ class Portfolio:
 
         # Update positions
         # Tuple: (datetime, s1, s2...)
-        pos_row = [latest_datetime] + [
-            self.current_positions[s] for s in self.symbol_list
-        ]
+        pos_row = [latest_datetime] + [self.current_positions[s] for s in self.symbol_list]
         self.all_positions.append(tuple(pos_row))
 
         # Update holdings
         # Tuple: (datetime, cash, commission, total, s1, s2...)
-        dh = {s: 0.0 for s in self.symbol_list}
+        dh = dict.fromkeys(self.symbol_list, 0.0)
         dh["datetime"] = latest_datetime
         dh["cash"] = self.current_holdings["cash"]
         dh["commission"] = self.current_holdings["commission"]
@@ -133,9 +128,9 @@ class Portfolio:
         for s in self.symbol_list:
             market_value = 0.0
             if self.current_positions[s] != 0:
-                market_value = self.current_positions[
-                    s
-                ] * self.bars.get_latest_bar_value(s, "close")
+                market_value = self.current_positions[s] * self.bars.get_latest_bar_value(
+                    s, "close"
+                )
             market_vals.append(market_value)
             dh["total"] += market_value
             # Update current holdings dict for state (still useful for logic)
@@ -148,16 +143,14 @@ class Portfolio:
         # Benchmark: Close price of first symbol (Primary Asset)
         bench_price = self.bars.get_latest_bar_value(self.symbol_list[0], "close")
 
-        h_row = (
-            [
-                latest_datetime,
-                dh["cash"],
-                dh["commission"],
-                dh["total"],
-            ]
-            + market_vals
-            + [bench_price]
-        )
+        h_row = [
+            latest_datetime,
+            dh["cash"],
+            dh["commission"],
+            dh["total"],
+            *market_vals,
+            bench_price,
+        ]
         self.all_holdings.append(tuple(h_row))
 
     def update_positions_from_fill(self, fill):
@@ -246,18 +239,14 @@ class Portfolio:
                     "quantity": event.quantity,
                     "fill_cost": event.fill_cost,
                     "commission": event.commission,
-                    "price": event.fill_cost / event.quantity
-                    if event.quantity > 0
-                    else 0.0,
+                    "price": event.fill_cost / event.quantity if event.quantity > 0 else 0.0,
                 }
             )
 
             self._check_circuit_breaker()
 
     def _check_circuit_breaker(self):
-        """
-        Circuit Breaker: Halt trading if daily loss exceeds threshold.
-        """
+        """Circuit Breaker: Halt trading if daily loss exceeds threshold."""
         if self.circuit_breaker_tripped:
             return  # Already tripped
 
@@ -361,8 +350,7 @@ class Portfolio:
         )
 
         def calc_liq_price(entry_price, qty):
-            """
-            Approximate isolated USDT-M liquidation price with maintenance margin and fee/buffer safety.
+            """Approximate isolated USDT-M liquidation price with maintenance margin and fee/buffer safety.
             Long  : entry * (1 - 1/L + MMR + fee + buffer)
             Short : entry * (1 + 1/L - MMR - fee - buffer)
             """
@@ -402,7 +390,9 @@ class Portfolio:
                 breached = (bar_high > 0 and bar_high >= liq_price) or close_price >= liq_price
                 direction = "BUY"
                 position_side = "SHORT"
-                trigger_price = bar_high if (bar_high > 0 and bar_high >= liq_price) else close_price
+                trigger_price = (
+                    bar_high if (bar_high > 0 and bar_high >= liq_price) else close_price
+                )
 
             if not breached:
                 continue
@@ -466,9 +456,7 @@ class Portfolio:
             return None
 
     def _get_symbol_limits(self, symbol):
-        """
-        Returns fallback limits from config for symbols that don't have exchange metadata.
-        """
+        """Returns fallback limits from config for symbols that don't have exchange metadata."""
         if hasattr(self.bars, "get_market_spec"):
             try:
                 spec = self.bars.get_market_spec(symbol) or {}
@@ -478,7 +466,9 @@ class Portfolio:
                     min_notional = spec.get("min_notional")
                     return {
                         "min_qty": float(min_qty) if min_qty else float(self.config.MIN_TRADE_QTY),
-                        "qty_step": float(qty_step) if qty_step else float(self.config.MIN_TRADE_QTY),
+                        "qty_step": float(qty_step)
+                        if qty_step
+                        else float(self.config.MIN_TRADE_QTY),
                         "min_notional": float(min_notional) if min_notional else 5.0,
                     }
             except Exception:
@@ -498,8 +488,7 @@ class Portfolio:
         return math.floor(quantity / step) * step
 
     def _risk_based_quantity(self, signal, current_price):
-        """
-        Futures-oriented position sizing:
+        """Futures-oriented position sizing:
         risk_amount = equity * risk_per_trade
         qty = risk_amount / stop_distance
         """
@@ -550,8 +539,7 @@ class Portfolio:
         return qty
 
     def generate_order_from_signal(self, signal) -> OrderEvent:
-        """
-        Generates an OrderEvent from a SignalEvent.
+        """Generates an OrderEvent from a SignalEvent.
         Uses risk-based sizing with exchange constraints.
         """
         order = None
@@ -631,16 +619,10 @@ class Portfolio:
                 self.events.put(order_event)
 
     def create_equity_curve_dataframe(self):
-        """
-        Creates a Polars DataFrame from the all_holdings list (list of Tuples).
-        """
+        """Creates a Polars DataFrame from the all_holdings list (list of Tuples)."""
         # Define Schema matches Tuple order
         # (datetime, cash, commission, total, s1, s2, ..., benchmark_price)
-        cols = (
-            ["datetime", "cash", "commission", "total"]
-            + self.symbol_list
-            + ["benchmark_price"]
-        )
+        cols = ["datetime", "cash", "commission", "total", *self.symbol_list, "benchmark_price"]
 
         # Polars handles list of tuples with 'schema' or 'columns' arg
         # Note: If list is empty, this might crash, but typically not in backtest.
@@ -655,10 +637,9 @@ class Portfolio:
         # Using benchmark_price column
         self.equity_curve = self.equity_curve.with_columns(
             [
-                (
-                    pl.col("benchmark_price").diff()
-                    / pl.col("benchmark_price").shift(1)
-                ).alias("benchmark_returns")
+                (pl.col("benchmark_price").diff() / pl.col("benchmark_price").shift(1)).alias(
+                    "benchmark_returns"
+                )
             ]
         )
 
@@ -674,28 +655,24 @@ class Portfolio:
             self.equity_curve.write_csv(filename)
 
     def output_summary_stats(self):
-        """
-        Creates a list of summary statistics.
-        """
+        """Creates a list of summary statistics."""
         # Convert to numpy for calc
         total_series = self.equity_curve["total"].to_numpy()
         returns = self.equity_curve["returns"].fill_null(0.0).to_numpy()
-        benchmark_returns = (
-            self.equity_curve["benchmark_returns"].fill_null(0.0).to_numpy()
-        )
+        benchmark_returns = self.equity_curve["benchmark_returns"].fill_null(0.0).to_numpy()
 
         if len(total_series) < 2:
             return [("Status", "Not enough data")]
 
         from lumina_quant.utils.performance import (
-            create_sharpe_ratio,
-            create_drawdowns,
-            create_cagr,
-            create_sortino_ratio,
-            create_calmar_ratio,
-            create_annualized_volatility,
             create_alpha_beta,
+            create_annualized_volatility,
+            create_cagr,
+            create_calmar_ratio,
+            create_drawdowns,
             create_information_ratio,
+            create_sharpe_ratio,
+            create_sortino_ratio,
         )
 
         # Use period from config if available (check BacktestConfig)
@@ -708,9 +685,7 @@ class Portfolio:
         # Note: Initial price might be 0 if recorded before first bar.
         # Check indices.
         first_price = (
-            self.equity_curve["benchmark_price"][1]
-            if len(self.equity_curve) > 1
-            else 1.0
+            self.equity_curve["benchmark_price"][1] if len(self.equity_curve) > 1 else 1.0
         )  # Index 1 is usually first bar
         last_price = self.equity_curve["benchmark_price"][-1]
 
@@ -719,9 +694,7 @@ class Portfolio:
         benchmark_unrealized = (last_price - first_price) / first_price
 
         # 2. CAGR
-        cagr = create_cagr(
-            total_series[-1], total_series[0], len(total_series), periods
-        )
+        cagr = create_cagr(total_series[-1], total_series[0], len(total_series), periods)
 
         # 3. Volatility
         volatility = create_annualized_volatility(returns, periods)
@@ -771,9 +744,7 @@ class Portfolio:
         return stats
 
     def output_trade_log(self, filename="trades.csv"):
-        """
-        Outputs the trade log to a CSV file.
-        """
+        """Outputs the trade log to a CSV file."""
         if not self.trades:
             # print("No trades generated.") # Optional: don't spam
             return

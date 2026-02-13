@@ -10,13 +10,19 @@ import argparse
 import json
 import os
 import statistics
+import sys
 import time
 import tracemalloc
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import yaml
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from lumina_quant.backtest import Backtest
 from lumina_quant.data import HistoricCSVDataHandler
@@ -206,7 +212,7 @@ def build_benchmark_summary(args: argparse.Namespace) -> BenchmarkSummary:
         iterations=args.iters,
         warmup=args.warmup,
         seed=args.seed,
-        generated_at_utc=datetime.now(timezone.utc).isoformat(),
+        generated_at_utc=datetime.now(UTC).isoformat(),
         python=os.sys.version.split()[0],
         samples=[asdict(sample) for sample in samples],
         median_seconds=statistics.median(seconds_list),

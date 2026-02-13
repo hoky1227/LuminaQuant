@@ -1,7 +1,5 @@
 class RiskManager:
-    """
-    Enforces risk limits before orders are sent to the exchange.
-    """
+    """Enforces risk limits before orders are sent to the exchange."""
 
     def __init__(self, config):
         self.config = config
@@ -11,9 +9,7 @@ class RiskManager:
         self.max_total_margin_pct = getattr(config, "MAX_TOTAL_MARGIN_PCT", 0.5)
 
     def check_order(self, order_event, current_price, portfolio=None):
-        """
-        Returns True if order is safe, False otherwise.
-        """
+        """Returns True if order is safe, False otherwise."""
         if current_price <= 0:
             return False, "Invalid market price."
 
@@ -69,8 +65,6 @@ class RiskManager:
         return True, "Passed"
 
     def check_portfolio_risk(self, portfolio):
-        """
-        Check if daily loss limit is hit.
-        """
+        """Check if daily loss limit is hit."""
         # Already handled in Portfolio circuit breaker, but can add redundancy here.
         return True, "Passed"

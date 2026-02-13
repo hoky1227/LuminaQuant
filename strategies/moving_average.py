@@ -1,8 +1,14 @@
-import talib
-import numpy as np
+import logging
 
-from lumina_quant.strategy import Strategy
+import numpy as np
+import talib
+from lumina_quant.compute.indicators import compute_sma
+from lumina_quant.config import BaseConfig
+
 from lumina_quant.events import SignalEvent
+from lumina_quant.strategy import Strategy
+
+LOGGER = logging.getLogger(__name__)
 
 
 class MovingAverageCrossStrategy(Strategy):
@@ -17,6 +23,15 @@ class MovingAverageCrossStrategy(Strategy):
         self.long_window = long_window
         self.symbol_list = self.bars.symbol_list
         self.bought = {s: "OUT" for s in self.symbol_list}
+        self.compute_backend = getattr(BaseConfig, "COMPUTE_BACKEND", "cpu")
+        if str(self.compute_backend).lower() == "torch":
+            self._short_ma_fn = lambda values: compute_sma(
+                values, self.short_window, backend="torch"
+            )
+            self._long_ma_fn = lambda values: compute_sma(values, self.long_window, backend="torch")
+        else:
+            self._short_ma_fn = lambda values: talib.SMA(values, timeperiod=self.short_window)
+            self._long_ma_fn = lambda values: talib.SMA(values, timeperiod=self.long_window)
 
     def get_state(self):
         return {"bought": dict(self.bought)}
@@ -33,20 +48,23 @@ class MovingAverageCrossStrategy(Strategy):
                 )  # Get enough data
 
                 if len(bars) > self.long_window:
-                    closes = np.array(bars)
-
-                    # TA-LIB usage
-                    ma_short = talib.SMA(closes, timeperiod=self.short_window)
-                    ma_long = talib.SMA(closes, timeperiod=self.long_window)
+                    closes = np.asarray(bars, dtype=np.float64)
+                    ma_short = self._short_ma_fn(closes)
+                    ma_long = self._long_ma_fn(closes)
 
                     symbol = s
                     curr_short = ma_short[-1]
                     curr_long = ma_long[-1]
+                    if np.isnan(curr_short) or np.isnan(curr_long):
+                        continue
 
                     # Trading logic
                     if curr_short > curr_long and self.bought[s] == "OUT":
-                        print(
-                            f"LONG Signal: {s} | Short: {curr_short} > Long: {curr_long}"
+                        LOGGER.info(
+                            "LONG signal %s | short %.5f > long %.5f",
+                            s,
+                            curr_short,
+                            curr_long,
                         )
                         sig_dir = "LONG"
                         signal = SignalEvent(1, symbol, event.time, sig_dir, 1.0)
@@ -54,8 +72,11 @@ class MovingAverageCrossStrategy(Strategy):
                         self.bought[s] = "LONG"
 
                     elif curr_short < curr_long and self.bought[s] == "LONG":
-                        print(
-                            f"EXIT Signal: {s} | Short: {curr_short} < Long: {curr_long}"
+                        LOGGER.info(
+                            "EXIT signal %s | short %.5f < long %.5f",
+                            s,
+                            curr_short,
+                            curr_long,
                         )
                         sig_dir = "EXIT"
                         signal = SignalEvent(1, symbol, event.time, sig_dir, 1.0)

@@ -1,13 +1,17 @@
-import talib
-import numpy as np
+import logging
 
-from lumina_quant.strategy import Strategy
+import numpy as np
+import talib
+from lumina_quant.compute.indicators import compute_rsi
+from lumina_quant.config import BaseConfig
 from lumina_quant.events import SignalEvent
+from lumina_quant.strategy import Strategy
+
+LOGGER = logging.getLogger(__name__)
 
 
 class RsiStrategy(Strategy):
-    """
-    RSI Strategy:
+    """RSI Strategy:
     - Long when RSI < 30 (Oversold)
     - Exit when RSI > 70 (Overbought) or > 50 (Mean Reversion)
     """
@@ -19,7 +23,12 @@ class RsiStrategy(Strategy):
         self.oversold = oversold
         self.overbought = overbought
         self.symbol_list = self.bars.symbol_list
-        self.bought = {s: "OUT" for s in self.symbol_list}
+        self.bought = dict.fromkeys(self.symbol_list, "OUT")
+        self.compute_backend = getattr(BaseConfig, "COMPUTE_BACKEND", "cpu")
+        if str(self.compute_backend).lower() == "torch":
+            self._rsi_fn = lambda values: compute_rsi(values, self.rsi_period, backend="torch")
+        else:
+            self._rsi_fn = lambda values: talib.RSI(values, timeperiod=self.rsi_period)
 
     def get_state(self):
         return {"bought": dict(self.bought)}
@@ -32,29 +41,33 @@ class RsiStrategy(Strategy):
         if event.type == "MARKET":
             for s in self.symbol_list:
                 # RSI needs at least period + 1 data points
-                bars = self.bars.get_latest_bars_values(
-                    s, "close", N=self.rsi_period + 5
-                )
+                bars = self.bars.get_latest_bars_values(s, "close", N=self.rsi_period + 5)
 
                 if len(bars) > self.rsi_period:
-                    closes = np.array(bars)
-
-                    # Calculate RSI
-                    rsi_values = talib.RSI(closes, timeperiod=self.rsi_period)
+                    closes = np.asarray(bars, dtype=np.float64)
+                    rsi_values = self._rsi_fn(closes)
                     current_rsi = rsi_values[-1]
+                    if np.isnan(current_rsi):
+                        continue
 
                     # Trading Logic
                     if current_rsi < self.oversold and self.bought[s] == "OUT":
-                        print(
-                            f"LONG Signal: {s} | RSI: {current_rsi:.2f} < {self.oversold}"
+                        LOGGER.info(
+                            "LONG signal %s | RSI %.2f < %s",
+                            s,
+                            current_rsi,
+                            self.oversold,
                         )
                         signal = SignalEvent(1, s, event.time, "LONG", 1.0)
                         self.events.put(signal)
                         self.bought[s] = "LONG"
 
                     elif current_rsi > self.overbought and self.bought[s] == "LONG":
-                        print(
-                            f"EXIT Signal: {s} | RSI: {current_rsi:.2f} > {self.overbought}"
+                        LOGGER.info(
+                            "EXIT signal %s | RSI %.2f > %s",
+                            s,
+                            current_rsi,
+                            self.overbought,
                         )
                         signal = SignalEvent(1, s, event.time, "EXIT", 1.0)
                         self.events.put(signal)

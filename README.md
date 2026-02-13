@@ -41,7 +41,7 @@ graph TD
 ## ⚙️ Setup & Configuration
 
 ### Prerequisites
-- Python 3.9+
+- Python 3.11 to 3.13
 - [Polars](https://pola.rs/) (for high-performance data)
 - [Talib](https://github.com/TA-Lib/ta-lib-python) (for technical indicators)
 
@@ -70,6 +70,8 @@ cd lumina-quant
 
 # Install dependencies
 uv sync  # or pip install ".[live,optimize,dashboard]"
+# Optional GPU backend:
+# pip install ".[compute]"
 
 # Verify install and tests
 python scripts/verify_install.py
@@ -109,6 +111,13 @@ python run_backtest.py
 python optimize.py
 ```
 
+**Architecture/Lint Gate:**
+```bash
+python scripts/check_architecture.py
+ruff format . --check
+ruff check .
+```
+
 **Visualize Results:**
 ```bash
 streamlit run dashboard.py
@@ -124,6 +133,11 @@ python run_live.py
 **Generate 14-day Soak Report (Promotion Gate):**
 ```bash
 python scripts/generate_soak_report.py --db logs/lumina_quant.db --days 14
+```
+
+**Backtest Benchmark Baseline/Regression:**
+```bash
+python scripts/benchmark_backtest.py --output reports/benchmarks/baseline_snapshot.json
 ```
 
 ---

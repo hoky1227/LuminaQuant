@@ -1,19 +1,22 @@
+import argparse
 import itertools
-import multiprocessing
-import sys
-import os
 import json
+import multiprocessing
+import os
+import sys
 import uuid
-import sqlite3
+from datetime import datetime
+
 import polars as pl
-from datetime import datetime, timezone
 
 # Engine Imports
-from lumina_quant.backtest import Backtest
-from lumina_quant.data import HistoricCSVDataHandler
-from lumina_quant.execution import SimulatedExecutionHandler
-from lumina_quant.portfolio import Portfolio
-from lumina_quant.config import BacktestConfig, OptimizationConfig, BaseConfig
+from lumina_quant.backtesting.backtest import Backtest
+from lumina_quant.backtesting.data import HistoricCSVDataHandler
+from lumina_quant.backtesting.execution_sim import SimulatedExecutionHandler
+from lumina_quant.backtesting.portfolio_backtest import Portfolio
+from lumina_quant.config import BacktestConfig, BaseConfig, OptimizationConfig
+from lumina_quant.optimization.storage import save_optimization_rows
+from lumina_quant.optimization.walkers import build_walk_forward_splits
 
 # Strategy Imports
 from strategies.moving_average import MovingAverageCrossStrategy
@@ -63,106 +66,6 @@ except Exception as e:
 
 # Global Data Cache for Multiprocessing (Copy-on-Write)
 DATA_DICT = {}
-
-
-def add_months(dt, months):
-    year = dt.year + (dt.month - 1 + months) // 12
-    month = (dt.month - 1 + months) % 12 + 1
-    day = min(
-        dt.day,
-        [31, 29 if year % 4 == 0 and (year % 100 != 0 or year % 400 == 0) else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1],
-    )
-    return datetime(year, month, day)
-
-
-def build_walk_forward_splits(
-    base_start,
-    folds,
-    train_months=12,
-    val_months=6,
-    test_months=6,
-    step_months=6,
-):
-    splits = []
-    cursor = base_start
-    for i in range(folds):
-        train_start = cursor
-        train_end = add_months(train_start, train_months)
-        val_start = train_end
-        val_end = add_months(val_start, val_months)
-        test_start = val_end
-        test_end = add_months(test_start, test_months)
-        splits.append(
-            {
-                "fold": i + 1,
-                "train_start": train_start,
-                "train_end": train_end,
-                "val_start": val_start,
-                "val_end": val_end,
-                "test_start": test_start,
-                "test_end": test_end,
-            }
-        )
-        cursor = add_months(cursor, step_months)
-    return splits
-
-
-def save_optimization_rows(db_path, run_id, stage, rows):
-    """
-    Persist optimization artifacts into SQLite.
-    """
-    if not rows:
-        return
-    db_dir = os.path.dirname(db_path)
-    if db_dir:
-        os.makedirs(db_dir, exist_ok=True)
-    conn = sqlite3.connect(db_path)
-    cur = conn.cursor()
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS optimization_results (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            run_id TEXT NOT NULL,
-            stage TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            params_json TEXT NOT NULL,
-            sharpe REAL,
-            cagr TEXT,
-            mdd TEXT,
-            train_sharpe REAL,
-            robustness_score REAL,
-            extra_json TEXT
-        )
-        """
-    )
-
-    now = datetime.now(timezone.utc).isoformat()
-    for row in rows:
-        cur.execute(
-            """
-            INSERT INTO optimization_results(
-                run_id, stage, created_at, params_json, sharpe, cagr, mdd, train_sharpe, robustness_score, extra_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                run_id,
-                stage,
-                now,
-                json.dumps(row.get("params", {})),
-                float(row.get("sharpe", 0.0)) if row.get("sharpe") is not None else None,
-                str(row.get("cagr")) if row.get("cagr") is not None else None,
-                str(row.get("mdd")) if row.get("mdd") is not None else None,
-                float(row.get("train_sharpe", 0.0))
-                if row.get("train_sharpe") is not None
-                else None,
-                float(row.get("robustness_score", 0.0))
-                if row.get("robustness_score") is not None
-                else None,
-                json.dumps({k: v for k, v in row.items() if k not in {"params", "sharpe", "cagr", "mdd", "train_sharpe", "robustness_score"}}),
-            ),
-        )
-    conn.commit()
-    conn.close()
 
 
 def load_all_data(csv_dir, symbol_list):
@@ -289,9 +192,7 @@ def pool_initializer(shared_data):
 
 
 class GridSearchOptimizer:
-    def __init__(
-        self, strategy_cls, param_grid, csv_dir, symbol_list, start_date, end_date
-    ):
+    def __init__(self, strategy_cls, param_grid, csv_dir, symbol_list, start_date, end_date):
         self.strategy_cls = strategy_cls
         self.param_grid = param_grid
         self.csv_dir = csv_dir
@@ -307,9 +208,7 @@ class GridSearchOptimizer:
 
     def run(self, max_workers=4):
         combinations = self.generate_param_combinations()
-        print(
-            f"Starting Grid Search (Train Phase) with {len(combinations)} combinations..."
-        )
+        print(f"Starting Grid Search (Train Phase) with {len(combinations)} combinations...")
 
         pool_args = [
             (
@@ -335,9 +234,7 @@ class GridSearchOptimizer:
 
 
 class OptunaOptimizer:
-    def __init__(
-        self, strategy_cls, optuna_config, csv_dir, symbol_list, start_date, end_date
-    ):
+    def __init__(self, strategy_cls, optuna_config, csv_dir, symbol_list, start_date, end_date):
         self.strategy_cls = strategy_cls
         self.optuna_config = optuna_config
         self.csv_dir = csv_dir
@@ -353,9 +250,7 @@ class OptunaOptimizer:
                 params[key] = trial.suggest_int(key, conf["low"], conf["high"])
             elif p_type == "float":
                 step = conf.get("step", None)
-                params[key] = trial.suggest_float(
-                    key, conf["low"], conf["high"], step=step
-                )
+                params[key] = trial.suggest_float(key, conf["low"], conf["high"], step=step)
             elif p_type == "categorical":
                 params[key] = trial.suggest_categorical(key, conf["choices"])
 
@@ -382,17 +277,13 @@ class OptunaOptimizer:
         study = optuna.create_study(direction="maximize")
         study.optimize(self.objective, n_trials=n_trials)
 
-        best_trials = sorted(
-            study.trials, key=lambda t: t.value if t.value else -999, reverse=True
-        )
+        best_trials = sorted(study.trials, key=lambda t: t.value if t.value else -999, reverse=True)
 
         params_list = []
         for t in best_trials[:10]:
             if t.state != optuna.trial.TrialState.COMPLETE:
                 continue
-            params_list.append(
-                {"params": t.params, "sharpe": t.value, "cagr": "N/A", "mdd": "N/A"}
-            )
+            params_list.append({"params": t.params, "sharpe": t.value, "cagr": "N/A", "mdd": "N/A"})
         return params_list
 
 
@@ -420,9 +311,7 @@ def run_walk_forward_fold(split):
     test_start = split["test_start"]
     test_end = split["test_end"]
 
-    print(
-        f"\n=== FOLD {fold} TRAIN [{train_start.date()} ~ {train_end.date()}] ==="
-    )
+    print(f"\n=== FOLD {fold} TRAIN [{train_start.date()} ~ {train_end.date()}] ===")
     if OPTIMIZATION_METHOD == "GRID":
         optimizer = GridSearchOptimizer(
             STRATEGY_CLASS, GRID_PARAMS, CSV_DIR, SYMBOL_LIST, train_start, train_end
@@ -444,9 +333,7 @@ def run_walk_forward_fold(split):
         f"[Fold {fold} Train] Top Candidate: Params={best_candidate['params']} | Sharpe={best_candidate['sharpe']:.4f}"
     )
 
-    print(
-        f"=== FOLD {fold} VALIDATION [{val_start.date()} ~ {val_end.date()}] ==="
-    )
+    print(f"=== FOLD {fold} VALIDATION [{val_start.date()} ~ {val_end.date()}] ===")
     val_candidates = []
     limit = min(3, len(train_results))
     for cand in train_results[:limit]:
@@ -500,14 +387,30 @@ def run_walk_forward_fold(split):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Run LuminaQuant walk-forward optimization.")
+    parser.add_argument(
+        "--folds",
+        type=int,
+        default=OptimizationConfig.WALK_FORWARD_FOLDS,
+        help="Number of walk-forward folds.",
+    )
+    parser.add_argument(
+        "--n-trials",
+        type=int,
+        default=OPTUNA_TRIALS,
+        help="Optuna trial count per fold when OPTUNA is selected.",
+    )
+    args = parser.parse_args()
+
     run_id = str(uuid.uuid4())
     db_path = getattr(BaseConfig, "STORAGE_SQLITE_PATH", "logs/lumina_quant.db")
+    OPTUNA_TRIALS = args.n_trials
 
     # Load Data Once
     DATA_DICT = load_all_data(CSV_DIR, SYMBOL_LIST)
     splits = build_walk_forward_splits(
         BASE_START,
-        OptimizationConfig.WALK_FORWARD_FOLDS,
+        args.folds,
     )
     if not splits:
         print("No walk-forward splits generated.")

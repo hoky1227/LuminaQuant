@@ -2,8 +2,7 @@ from abc import ABC
 
 
 class TradingEngine(ABC):
-    """
-    Abstract base class for trading engines (Backtest and LiveTrader).
+    """Abstract base class for trading engines (Backtest and LiveTrader).
     Encapsulates common event processing logic (The "Kernel").
     """
 
@@ -20,9 +19,7 @@ class TradingEngine(ABC):
         self.fills = 0
 
     def process_event(self, event):
-        """
-        Routing logic for events.
-        """
+        """Routing logic for events."""
         if event is not None:
             if event.type == "MARKET":
                 self.handle_market_event(event)
@@ -55,8 +52,7 @@ class TradingEngine(ABC):
         self.on_fill(event)
 
     def on_fill(self, event):
-        """
-        Hook for post-fill actions (e.g. logging, saving state).
+        """Hook for post-fill actions (e.g. logging, saving state).
         Override in subclasses.
         """
         pass

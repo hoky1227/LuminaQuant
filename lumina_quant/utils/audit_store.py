@@ -1,16 +1,13 @@
 import json
+import os
 import sqlite3
 import threading
 import uuid
-import os
-from datetime import datetime
-from datetime import timezone
+from datetime import UTC, datetime
 
 
 class AuditStore:
-    """
-    Lightweight SQLite audit store for runs, orders, fills and risk events.
-    """
+    """Lightweight SQLite audit store for runs, orders, fills and risk events."""
 
     def __init__(self, db_path="lumina_quant.db"):
         self.db_path = db_path
@@ -23,7 +20,7 @@ class AuditStore:
         self._ensure_schema()
 
     def _utcnow(self):
-        return datetime.now(timezone.utc).isoformat()
+        return datetime.now(UTC).isoformat()
 
     def _ensure_schema(self):
         with self._lock:

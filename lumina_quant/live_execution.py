@@ -1,9 +1,20 @@
+import logging
 import time
 import uuid
-import logging
+
 from lumina_quant.events import FillEvent
 from lumina_quant.execution import ExecutionHandler
 from lumina_quant.interfaces import ExchangeInterface
+
+STATE_NEW = "NEW"
+STATE_OPEN = "OPEN"
+STATE_PARTIAL = "PARTIAL"
+STATE_FILLED = "FILLED"
+STATE_CANCELED = "CANCELED"
+STATE_REJECTED = "REJECTED"
+STATE_TIMEOUT = "TIMEOUT"
+
+TERMINAL_STATES = {STATE_FILLED, STATE_CANCELED, STATE_REJECTED, STATE_TIMEOUT}
 
 
 def _is_retryable_exception(exc: Exception) -> bool:
@@ -25,9 +36,7 @@ def _is_retryable_exception(exc: Exception) -> bool:
 
 
 class LiveExecutionHandler(ExecutionHandler):
-    """
-    Handles order execution via an ExchangeInterface.
-    """
+    """Handles order execution via an ExchangeInterface."""
 
     def __init__(self, events, bars, config, exchange: ExchangeInterface):
         self.events = events
@@ -62,6 +71,22 @@ class LiveExecutionHandler(ExecutionHandler):
         if status is None:
             return "unknown"
         return str(status).strip().lower()
+
+    def _to_state(self, status: str, filled_qty: float, amount: float) -> str:
+        status = self._normalize_status(status)
+        if status in {"closed", "filled"}:
+            return STATE_FILLED
+        if status in {"canceled", "cancelled", "expired"}:
+            return STATE_CANCELED
+        if status in {"rejected"}:
+            return STATE_REJECTED
+        if status in {"open", "new", "partially_filled", "partial"}:
+            if filled_qty > 0 and amount > 0 and filled_qty < amount:
+                return STATE_PARTIAL
+            if status == "new":
+                return STATE_NEW
+            return STATE_OPEN
+        return STATE_OPEN
 
     def _make_client_order_id(self):
         return f"LQ-{uuid.uuid4().hex[:24]}"
@@ -125,21 +150,15 @@ class LiveExecutionHandler(ExecutionHandler):
         )
 
     def get_balance(self):
-        """
-        Returns the free USDT balance.
-        """
+        """Returns the free USDT balance."""
         return self._call_with_retry(self.exchange.get_balance, "USDT", retries=3, delay=2)
 
     def get_all_positions(self):
-        """
-        Returns a dict of {symbol: quantity} for open positions.
-        """
+        """Returns a dict of {symbol: quantity} for open positions."""
         return self._call_with_retry(self.exchange.get_all_positions, retries=3, delay=1)
 
     def execute_order(self, event):
-        """
-        Executes an OrderEvent on the Exchange.
-        """
+        """Executes an OrderEvent on the Exchange."""
         if event.type != "ORDER":
             return
 
@@ -180,6 +199,7 @@ class LiveExecutionHandler(ExecutionHandler):
         status = self._normalize_status(order.get("status"))
         filled_qty = float(order.get("filled") or 0.0)
         total_amount = float(order.get("amount") or event.quantity)
+        state = self._to_state(status, filled_qty, total_amount)
 
         if order_id:
             self.client_id_to_order[event.client_order_id] = order_id
@@ -187,30 +207,30 @@ class LiveExecutionHandler(ExecutionHandler):
                 "event": event,
                 "symbol": event.symbol,
                 "last_filled": filled_qty,
-                "status": status,
+                "state": state,
+                "updated_at": time.time(),
             }
+        else:
+            self.logger.error(
+                "Exchange order id is missing for client_id=%s", event.client_order_id
+            )
+            return
 
-        if status in {"closed", "filled"}:
+        if state == STATE_FILLED:
             if filled_qty <= 0:
                 filled_qty = total_amount
             self._emit_fill_event(event, order, filled_qty, status="filled")
-            if order_id:
-                self.tracked_orders.pop(order_id, None)
-        elif status in {"open", "partially_filled", "partial", "new"}:
-            self.logger.info(
-                "Order accepted and tracked order_id=%s status=%s", order_id, status
-            )
-        elif status in {"canceled", "cancelled", "rejected", "expired"}:
-            self.logger.warning("Order terminal without fill id=%s status=%s", order_id, status)
-            if order_id:
-                self.tracked_orders.pop(order_id, None)
+            self.tracked_orders.pop(order_id, None)
+        elif state in {STATE_OPEN, STATE_NEW, STATE_PARTIAL}:
+            self.logger.info("Order tracked order_id=%s state=%s", order_id, state)
+        elif state in {STATE_CANCELED, STATE_REJECTED}:
+            self.logger.warning("Order terminal without fill id=%s state=%s", order_id, state)
+            self.tracked_orders.pop(order_id, None)
         else:
-            self.logger.info("Order status unknown id=%s status=%s", order_id, status)
+            self.logger.info("Order tracked id=%s state=%s", order_id, state)
 
     def check_open_orders(self, event=None):
-        """
-        Poll tracked exchange orders and emit delta fills for partial/full executions.
-        """
+        """Poll tracked exchange orders and emit delta fills for partial/full executions."""
         _ = event
         for order_id, entry in list(self.tracked_orders.items()):
             order_event = entry["event"]
@@ -226,11 +246,13 @@ class LiveExecutionHandler(ExecutionHandler):
 
             status = self._normalize_status(latest.get("status"))
             filled_now = float(latest.get("filled") or 0.0)
+            total_amount = float(latest.get("amount") or order_event.quantity)
             delta = filled_now - float(entry.get("last_filled", 0.0))
             if delta > 0:
                 self._emit_fill_event(order_event, latest, delta, status=status)
                 entry["last_filled"] = filled_now
 
-            entry["status"] = status
-            if status in {"closed", "filled", "canceled", "cancelled", "rejected", "expired"}:
+            entry["state"] = self._to_state(status, filled_now, total_amount)
+            entry["updated_at"] = time.time()
+            if entry["state"] in TERMINAL_STATES:
                 self.tracked_orders.pop(order_id, None)

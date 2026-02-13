@@ -1,25 +1,20 @@
+import atexit
 import queue
 import time
-import atexit
+
 from lumina_quant.config import LiveConfig
-from lumina_quant.utils.logging_utils import setup_logging
-from lumina_quant.utils.persistence import StateManager
-from lumina_quant.utils.audit_store import AuditStore
 from lumina_quant.engine import TradingEngine
 from lumina_quant.exchanges import get_exchange
 from lumina_quant.interfaces import ExchangeInterface
-
-
-from lumina_quant.utils.notification import NotificationManager
-
-
 from lumina_quant.risk_manager import RiskManager
+from lumina_quant.utils.audit_store import AuditStore
+from lumina_quant.utils.logging_utils import setup_logging
+from lumina_quant.utils.notification import NotificationManager
+from lumina_quant.utils.persistence import StateManager
 
 
 class LiveTrader(TradingEngine):
-    """
-    The LiveTrader engine.
-    """
+    """The LiveTrader engine."""
 
     def __init__(
         self,
@@ -35,7 +30,9 @@ class LiveTrader(TradingEngine):
         self.config = LiveConfig
         self.state_manager = StateManager()
         self.risk_manager = RiskManager(self.config)  # NEW
-        self.audit_store = AuditStore(getattr(self.config, "STORAGE_SQLITE_PATH", "lumina_quant.db"))
+        self.audit_store = AuditStore(
+            getattr(self.config, "STORAGE_SQLITE_PATH", "lumina_quant.db")
+        )
         self.run_id = self.audit_store.start_run(
             mode="live",
             metadata={
@@ -55,9 +52,7 @@ class LiveTrader(TradingEngine):
         self.notifier = NotificationManager(
             self.config.TELEGRAM_BOT_TOKEN, self.config.TELEGRAM_CHAT_ID
         )
-        self.notifier.send_message(
-            f"🚀 **LuminaQuant Started**\nSymbols: {symbol_list}"
-        )
+        self.notifier.send_message(f"🚀 **LuminaQuant Started**\nSymbols: {symbol_list}")
 
         # Initialize Exchange
         self.logger.info("Initializing Exchange...")
@@ -71,9 +66,7 @@ class LiveTrader(TradingEngine):
             self.events, self.data_handler, self.config, self.exchange
         )
 
-        self.portfolio = portfolio_cls(
-            self.data_handler, self.events, time.time(), self.config
-        )
+        self.portfolio = portfolio_cls(self.data_handler, self.events, time.time(), self.config)
         self.strategy = strategy_cls(self.data_handler, self.events)
 
         # Initialize Base Engine
@@ -126,9 +119,7 @@ class LiveTrader(TradingEngine):
         self._audit_closed = True
 
     def on_fill(self, event):
-        """
-        Hook from TradingEngine to save state on fill.
-        """
+        """Hook from TradingEngine to save state on fill."""
         msg = f"✅ **FILL**: {event.direction} {event.quantity} {event.symbol} @ {event.fill_cost}"
         self.logger.info(msg)
         self.notifier.send_message(msg)
@@ -144,9 +135,7 @@ class LiveTrader(TradingEngine):
         self.audit_store.log_heartbeat(self.run_id, status="ALIVE", details=details)
 
     def _sync_portfolio(self):
-        """
-        Syncs the internal portfolio state with the exchange state.
-        """
+        """Syncs the internal portfolio state with the exchange state."""
         if isinstance(self.exchange, ExchangeInterface):
             self.logger.info("Syncing Portfolio with Exchange...")
 
@@ -157,10 +146,7 @@ class LiveTrader(TradingEngine):
                     self.logger.info(f"Exchange USDT Balance: {balance}")
                     self.portfolio.current_holdings["cash"] = balance
                     # If total is 0 (first run), init with balance.
-                    if (
-                        self.portfolio.current_holdings["total"]
-                        == self.portfolio.initial_capital
-                    ):
+                    if self.portfolio.current_holdings["total"] == self.portfolio.initial_capital:
                         self.portfolio.initial_capital = balance
 
                 # 2. Sync Positions
@@ -207,9 +193,7 @@ class LiveTrader(TradingEngine):
                             msg = f"⚠️ **State Mismatch**: {s} Strategy=OUT, Portfolio={position_qty}. Syncing Strategy."
                             self.logger.warning(msg)
                             self.notifier.send_message(msg)
-                            self.strategy.bought[s] = (
-                                "LONG" if position_qty > 0 else "SHORT"
-                            )
+                            self.strategy.bought[s] = "LONG" if position_qty > 0 else "SHORT"
                             self.audit_store.log_risk_event(
                                 self.run_id,
                                 reason="STATE_MISMATCH",
@@ -220,9 +204,7 @@ class LiveTrader(TradingEngine):
                                 },
                             )
 
-                self.logger.info(
-                    f"Portfolio Sync Completed. Total Equity: {total_equity}"
-                )
+                self.logger.info(f"Portfolio Sync Completed. Total Equity: {total_equity}")
             except Exception as e:
                 self.logger.error(f"Portfolio Sync Failed: {e}")
                 self.audit_store.log_risk_event(
@@ -232,9 +214,7 @@ class LiveTrader(TradingEngine):
                 )
 
     def handle_market_event(self, event):
-        """
-        Override to save equity curve on every bar.
-        """
+        """Override to save equity curve on every bar."""
         super().handle_market_event(event)
 
         # Save Live Equity
@@ -250,9 +230,7 @@ class LiveTrader(TradingEngine):
         )
 
     def handle_fill_event(self, event):
-        """
-        Override to save trades on every fill.
-        """
+        """Override to save trades on every fill."""
         super().handle_fill_event(event)  # This calls self.on_fill(event) too
 
         # Save Live Trades
@@ -260,9 +238,7 @@ class LiveTrader(TradingEngine):
             self.portfolio.output_trade_log("live_trades.csv")
 
     def run(self):
-        """
-        Main Live Trading Loop.
-        """
+        """Main Live Trading Loop."""
         self.logger.info(f"Starting Live Trading on {self.symbol_list}...")
         self._sync_portfolio()
 

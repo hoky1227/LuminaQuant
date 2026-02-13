@@ -1,10 +1,10 @@
 import json
 import os
 import sqlite3
-import streamlit as st
+
 import pandas as pd
 import plotly.graph_objects as go
-
+import streamlit as st
 
 st.set_page_config(layout="wide", page_title="LuminaQuant Dashboard")
 st.title("LuminaQuant: Trading Performance")
@@ -66,9 +66,12 @@ def load_fills_sqlite(db_path, run_id):
         )
         if not df.empty:
             df["datetime"] = pd.to_datetime(df["datetime"], errors="coerce")
-            df["direction"] = df["direction"].str.upper().map(
-                {"BUY": "BUY", "SELL": "SELL", "BUY_LONG": "BUY", "SELL_SHORT": "SELL"}
-            ).fillna(df["direction"])
+            df["direction"] = (
+                df["direction"]
+                .str.upper()
+                .map({"BUY": "BUY", "SELL": "SELL", "BUY_LONG": "BUY", "SELL_SHORT": "SELL"})
+                .fillna(df["direction"])
+            )
         return df
     finally:
         conn.close()
@@ -96,7 +99,7 @@ def load_trades_csv():
 def load_params(strategy):
     path = os.path.join("best_optimized_parameters", strategy, "best_params.json")
     if os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             return json.load(f)
     return {}
 
@@ -116,10 +119,7 @@ df = None
 df_trades = None
 active_run_id = None
 
-use_sqlite = (
-    data_source == "SQLite"
-    or (data_source == "Auto" and os.path.exists(db_path))
-)
+use_sqlite = data_source == "SQLite" or (data_source == "Auto" and os.path.exists(db_path))
 
 if use_sqlite and os.path.exists(db_path):
     runs_df = load_runs(db_path)
@@ -216,9 +216,7 @@ if df is not None and not df.empty:
     )
 
     if "benchmark_price" in df.columns and df["benchmark_price"].notna().any():
-        norm_benchmark = (
-            df["benchmark_price"] / df["benchmark_price"].iloc[0]
-        ) * initial_equity
+        norm_benchmark = (df["benchmark_price"] / df["benchmark_price"].iloc[0]) * initial_equity
         fig.add_trace(
             go.Scatter(
                 x=df["datetime"],

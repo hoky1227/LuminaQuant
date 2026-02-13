@@ -1,17 +1,16 @@
-import os
 import json
+import os
 from datetime import datetime
-from lumina_quant.backtest import Backtest
-from lumina_quant.data import HistoricCSVDataHandler
-from lumina_quant.execution import SimulatedExecutionHandler
-from lumina_quant.portfolio import Portfolio
-from lumina_quant.config import BacktestConfig, BaseConfig, OptimizationConfig
 
+from lumina_quant.backtesting.backtest import Backtest
+from lumina_quant.backtesting.data import HistoricCSVDataHandler
+from lumina_quant.backtesting.execution_sim import SimulatedExecutionHandler
+from lumina_quant.backtesting.portfolio_backtest import Portfolio
+from lumina_quant.config import BacktestConfig, BaseConfig, OptimizationConfig
 
 # ==========================================
 # CONFIGURATION FROM YAML
 # ==========================================
-
 # 1. Strategy Selection
 from strategies.moving_average import MovingAverageCrossStrategy
 from strategies.rsi_strategy import RsiStrategy
@@ -35,13 +34,11 @@ elif strategy_name == "MovingAverageCrossStrategy":
 
 
 # Try loading optimized
-param_path = os.path.join(
-    "best_optimized_parameters", strategy_name, "best_params.json"
-)
+param_path = os.path.join("best_optimized_parameters", strategy_name, "best_params.json")
 
 if os.path.exists(param_path):
     try:
-        with open(param_path, "r") as f:
+        with open(param_path) as f:
             loaded_params = json.load(f)
         print(f"[OK] Loaded Optimized Params from {param_path}")
         STRATEGY_PARAMS = loaded_params

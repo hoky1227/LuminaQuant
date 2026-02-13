@@ -1,12 +1,9 @@
 import ccxt
-from typing import Dict, List, Optional
 from lumina_quant.interfaces import ExchangeInterface
 
 
 class CCXTExchange(ExchangeInterface):
-    """
-    Implementation of ExchangeInterface using CCXT (e.g. for Binance).
-    """
+    """Implementation of ExchangeInterface using CCXT (e.g. for Binance)."""
 
     def __init__(self, config):
         self.config = config
@@ -81,7 +78,7 @@ class CCXTExchange(ExchangeInterface):
             print(f"Error fetching balance: {e}")
             return 0.0
 
-    def get_all_positions(self) -> Dict[str, float]:
+    def get_all_positions(self) -> dict[str, float]:
         positions = {}
         try:
             if str(self.market_type).lower() == "future":
@@ -103,7 +100,7 @@ class CCXTExchange(ExchangeInterface):
             print(f"Error fetching positions: {e}")
             return {}
 
-    def fetch_ohlcv(self, symbol: str, timeframe: str, limit: int = 100) -> List[tuple]:
+    def fetch_ohlcv(self, symbol: str, timeframe: str, limit: int = 100) -> list[tuple]:
         try:
             ohlcv = self.exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
             # ccxt returns [timestamp, open, high, low, close, volume]
@@ -119,9 +116,9 @@ class CCXTExchange(ExchangeInterface):
         type: str,
         side: str,
         quantity: float,
-        price: Optional[float] = None,
-        params: Optional[Dict] = None,
-    ) -> Dict:
+        price: float | None = None,
+        params: dict | None = None,
+    ) -> dict:
         try:
             order_params = dict(params or {})
             # Type: market or limit
@@ -152,7 +149,7 @@ class CCXTExchange(ExchangeInterface):
             print(f"Error executing order: {e}")
             raise e
 
-    def fetch_open_orders(self, symbol: Optional[str] = None) -> List[Dict]:
+    def fetch_open_orders(self, symbol: str | None = None) -> list[dict]:
         try:
             orders = self.exchange.fetch_open_orders(symbol)
             result = []
@@ -175,7 +172,7 @@ class CCXTExchange(ExchangeInterface):
             print(f"Error fetching open orders: {e}")
             return []
 
-    def cancel_order(self, order_id: str, symbol: Optional[str] = None) -> bool:
+    def cancel_order(self, order_id: str, symbol: str | None = None) -> bool:
         try:
             self.exchange.cancel_order(order_id, symbol)
             return True
@@ -183,7 +180,7 @@ class CCXTExchange(ExchangeInterface):
             print(f"Error canceling order {order_id}: {e}")
             return False
 
-    def load_markets(self) -> Dict:
+    def load_markets(self) -> dict:
         self._markets = self.exchange.load_markets()
         return self._markets
 
@@ -205,7 +202,7 @@ class CCXTExchange(ExchangeInterface):
             print(f"Warning: failed to set margin mode for {symbol}: {e}")
             return False
 
-    def fetch_positions(self, symbol: Optional[str] = None) -> List[Dict]:
+    def fetch_positions(self, symbol: str | None = None) -> list[dict]:
         try:
             if hasattr(self.exchange, "fetch_positions"):
                 return self.exchange.fetch_positions([symbol] if symbol else None)
@@ -214,7 +211,7 @@ class CCXTExchange(ExchangeInterface):
             print(f"Error fetching positions: {e}")
             return []
 
-    def fetch_order(self, order_id: str, symbol: Optional[str] = None) -> Dict:
+    def fetch_order(self, order_id: str, symbol: str | None = None) -> dict:
         try:
             order = self.exchange.fetch_order(order_id, symbol)
             return {
@@ -236,7 +233,7 @@ class CCXTExchange(ExchangeInterface):
             print(f"Error fetching order {order_id}: {e}")
             return {}
 
-    def get_market_spec(self, symbol: str) -> Dict:
+    def get_market_spec(self, symbol: str) -> dict:
         if not self._markets:
             self.load_markets()
         market = self._markets.get(symbol, {})

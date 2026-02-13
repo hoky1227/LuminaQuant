@@ -1,39 +1,23 @@
+"""Backward-compatible config shim backed by typed runtime configuration."""
+
+from __future__ import annotations
+
 import os
-import yaml
-import warnings
 import re
-from pathlib import Path
-from dotenv import load_dotenv
+import warnings
+from dataclasses import asdict
+from typing import ClassVar
 
-# Load environment variables from .env file (for API keys)
-load_dotenv()
-
-
-def load_config(config_path="config.yaml"):
-    """
-    Load configuration from a YAML file.
-    """
-    # Find config file relative to the project root or this file
-    # Assuming config.py is in lumina_quant/ and config.yaml is in project root
-    project_root = Path(__file__).resolve().parent.parent
-    path = project_root / config_path
-
-    if not path.exists():
-        # Fallback to looking in current directory
-        path = Path(config_path)
-
-    if not path.exists():
-        raise FileNotFoundError(f"Configuration file not found: {path.absolute()}")
-
-    with open(path, "r", encoding="utf-8") as f:
-        try:
-            return yaml.safe_load(f) or {}
-        except yaml.YAMLError as e:
-            print(f"Error parsing config.yaml: {e}")
-            return {}
+from lumina_quant.configuration.loader import load_runtime_config, load_yaml_config
+from lumina_quant.configuration.validate import validate_runtime_config
 
 
-def _as_bool(value, default=False):
+def load_config(config_path: str = "config.yaml") -> dict:
+    """Load raw YAML config for backward compatibility."""
+    return load_yaml_config(config_path=config_path)
+
+
+def _as_bool(value, default: bool = False) -> bool:
     if value is None:
         return default
     if isinstance(value, bool):
@@ -45,125 +29,67 @@ def _as_bool(value, default=False):
     return default
 
 
-def _as_float(value, default):
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return float(default)
-
-
-def _as_int(value, default):
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return int(default)
-
-
-# Load the config once
-_CONFIG_DATA = load_config()
+_CONFIG_PATH = os.getenv("LQ_CONFIG_PATH", "config.yaml")
+_RUNTIME = load_runtime_config(config_path=_CONFIG_PATH)
+_CONFIG_DATA = load_config(_CONFIG_PATH)
 
 
 class BaseConfig:
-    """
-    Base configuration loading from YAML.
-    """
+    """Shared configuration fields used by backtest and live modules."""
 
-    _c = _CONFIG_DATA
+    LOG_LEVEL = _RUNTIME.system.log_level
+    SYMBOLS = list(_RUNTIME.trading.symbols)
+    TIMEFRAME = _RUNTIME.trading.timeframe
+    INITIAL_CAPITAL = float(_RUNTIME.trading.initial_capital)
+    TARGET_ALLOCATION = float(_RUNTIME.trading.target_allocation)
+    MIN_TRADE_QTY = float(_RUNTIME.trading.min_trade_qty)
 
-    # System
-    LOG_LEVEL = _c.get("system", {}).get("log_level", "INFO")
+    RISK_PER_TRADE = float(_RUNTIME.risk.risk_per_trade)
+    MAX_DAILY_LOSS_PCT = float(_RUNTIME.risk.max_daily_loss_pct)
+    MAX_TOTAL_MARGIN_PCT = float(_RUNTIME.risk.max_total_margin_pct)
+    MAX_SYMBOL_EXPOSURE_PCT = float(_RUNTIME.risk.max_symbol_exposure_pct)
+    MAX_ORDER_VALUE = float(_RUNTIME.risk.max_order_value)
+    DEFAULT_STOP_LOSS_PCT = float(_RUNTIME.risk.default_stop_loss_pct)
 
-    # Trading (Shared)
-    _t = _c.get("trading", {})
-    SYMBOLS = _t.get("symbols", ["BTC/USDT"])
-    TIMEFRAME = _t.get("timeframe", "1m")
-    INITIAL_CAPITAL = _as_float(_t.get("initial_capital", 10000.0), 10000.0)
-    TARGET_ALLOCATION = _as_float(_t.get("target_allocation", 0.1), 0.1)
-    MIN_TRADE_QTY = _as_float(_t.get("min_trade_qty", 0.001), 0.001)
+    MAKER_FEE_RATE = float(_RUNTIME.execution.maker_fee_rate)
+    TAKER_FEE_RATE = float(_RUNTIME.execution.taker_fee_rate)
+    SPREAD_RATE = float(_RUNTIME.execution.spread_rate)
+    SLIPPAGE_RATE = float(_RUNTIME.execution.slippage_rate)
+    FUNDING_RATE_PER_8H = float(_RUNTIME.execution.funding_rate_per_8h)
+    FUNDING_INTERVAL_HOURS = int(_RUNTIME.execution.funding_interval_hours)
+    MAINTENANCE_MARGIN_RATE = float(_RUNTIME.execution.maintenance_margin_rate)
+    LIQUIDATION_BUFFER_RATE = float(_RUNTIME.execution.liquidation_buffer_rate)
+    COMPUTE_BACKEND = str(_RUNTIME.execution.compute_backend).lower()
 
-    # New Risk / Execution / Storage blocks (with backward compatibility)
-    _risk = _c.get("risk", {})
-    RISK_PER_TRADE = _as_float(_risk.get("risk_per_trade", 0.005), 0.005)
-    MAX_DAILY_LOSS_PCT = _as_float(_risk.get("max_daily_loss_pct", 0.03), 0.03)
-    MAX_TOTAL_MARGIN_PCT = _as_float(
-        _risk.get("max_total_margin_pct", 0.50), 0.50
-    )
-    MAX_SYMBOL_EXPOSURE_PCT = _as_float(
-        _risk.get("max_symbol_exposure_pct", 0.25), 0.25
-    )
-    MAX_ORDER_VALUE = _as_float(_risk.get("max_order_value", 5000.0), 5000.0)
-    DEFAULT_STOP_LOSS_PCT = _as_float(_risk.get("default_stop_loss_pct", 0.01), 0.01)
-
-    _exec = _c.get("execution", {})
-    MAKER_FEE_RATE = _as_float(_exec.get("maker_fee_rate", 0.0002), 0.0002)
-    TAKER_FEE_RATE = _as_float(_exec.get("taker_fee_rate", 0.0004), 0.0004)
-    SPREAD_RATE = _as_float(_exec.get("spread_rate", 0.0002), 0.0002)
-    SLIPPAGE_RATE = _as_float(_exec.get("slippage_rate", 0.0005), 0.0005)
-    FUNDING_RATE_PER_8H = _as_float(_exec.get("funding_rate_per_8h", 0.0), 0.0)
-    FUNDING_INTERVAL_HOURS = _as_int(_exec.get("funding_interval_hours", 8), 8)
-    MAINTENANCE_MARGIN_RATE = _as_float(
-        _exec.get("maintenance_margin_rate", 0.005), 0.005
-    )
-    LIQUIDATION_BUFFER_RATE = _as_float(
-        _exec.get("liquidation_buffer_rate", 0.0005), 0.0005
-    )
-
-    _storage = _c.get("storage", {})
-    STORAGE_BACKEND = _storage.get("backend", "sqlite")
-    STORAGE_SQLITE_PATH = _storage.get("sqlite_path", "logs/lumina_quant.db")
-    STORAGE_EXPORT_CSV = _as_bool(_storage.get("export_csv", True), True)
+    STORAGE_BACKEND = _RUNTIME.storage.backend
+    STORAGE_SQLITE_PATH = _RUNTIME.storage.sqlite_path
+    STORAGE_EXPORT_CSV = bool(_RUNTIME.storage.export_csv)
 
 
 class BacktestConfig(BaseConfig):
-    """
-    Configuration for Backtesting.
-    """
+    """Backtest configuration shim."""
 
-    _b = _CONFIG_DATA.get("backtest", {})
-
-    START_DATE = _b.get("start_date", "2024-01-01")
-    # Handle None for end_date safely
-    END_DATE = _b.get("end_date")
-
-    COMMISSION_RATE = _as_float(_b.get("commission_rate", 0.001), 0.001)
-    SLIPPAGE_RATE = _as_float(_b.get("slippage_rate", BaseConfig.SLIPPAGE_RATE), 0.0005)
-    ANNUAL_PERIODS = _as_int(_b.get("annual_periods", 252), 252)
-    RISK_FREE_RATE = 0.0  # Optional, default to 0
-    RANDOM_SEED = _as_int(_b.get("random_seed", 42), 42)
-    PERSIST_OUTPUT = _as_bool(_b.get("persist_output", True), True)
-    LEVERAGE = _as_int(_b.get("leverage", 3), 3)
+    START_DATE = _RUNTIME.backtest.start_date
+    END_DATE = _RUNTIME.backtest.end_date
+    COMMISSION_RATE = float(_RUNTIME.backtest.commission_rate)
+    SLIPPAGE_RATE = float(_RUNTIME.backtest.slippage_rate)
+    ANNUAL_PERIODS = int(_RUNTIME.backtest.annual_periods)
+    RISK_FREE_RATE = float(_RUNTIME.backtest.risk_free_rate)
+    RANDOM_SEED = int(_RUNTIME.backtest.random_seed)
+    PERSIST_OUTPUT = bool(_RUNTIME.backtest.persist_output)
+    LEVERAGE = int(_RUNTIME.backtest.leverage)
 
 
 class LiveConfig(BaseConfig):
-    """
-    Configuration for Live Trading.
-    """
+    """Live configuration shim with runtime validation helpers."""
 
-    _l = _CONFIG_DATA.get("live", {})
-    _exchange = _l.get("exchange", {}) if isinstance(_l.get("exchange", {}), dict) else {}
+    BINANCE_API_KEY = _RUNTIME.live.api_key
+    BINANCE_SECRET_KEY = _RUNTIME.live.secret_key
+    TELEGRAM_BOT_TOKEN = _RUNTIME.live.telegram_bot_token
+    TELEGRAM_CHAT_ID = _RUNTIME.live.telegram_chat_id
 
-    # API Keys: Prioritize ENV, fall back to Config
-    BINANCE_API_KEY = (
-        os.getenv("BINANCE_API_KEY")
-        or os.getenv("EXCHANGE_API_KEY")
-        or _l.get("api_key", "")
-    )
-    BINANCE_SECRET_KEY = (
-        os.getenv("BINANCE_SECRET_KEY")
-        or os.getenv("EXCHANGE_SECRET_KEY")
-        or _l.get("secret_key", "")
-    )
-
-    # Telegram
-    TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-    TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-
-    # Backward-compatible mode mapping
-    _legacy_testnet = _l.get("testnet", None)
-    MODE = str(_l.get("mode", "") or "").strip().lower()
-    if not MODE:
-        MODE = "paper" if _as_bool(_legacy_testnet, True) else "real"
-    if _legacy_testnet is not None and "mode" not in _l:
+    MODE = str(_RUNTIME.live.mode).strip().lower()
+    if _RUNTIME.live.testnet is not None and "mode" not in (_CONFIG_DATA.get("live") or {}):
         warnings.warn(
             "live.testnet is deprecated; use live.mode: paper|real. "
             "Automatically mapped for backward compatibility.",
@@ -172,37 +98,50 @@ class LiveConfig(BaseConfig):
         )
 
     IS_TESTNET = MODE != "real"
-    REQUIRE_REAL_ENABLE_FLAG = _as_bool(
-        _l.get("require_real_enable_flag", True), True
-    )
+    REQUIRE_REAL_ENABLE_FLAG = bool(_RUNTIME.live.require_real_enable_flag)
+    POLL_INTERVAL = int(_RUNTIME.live.poll_interval)
+    ORDER_TIMEOUT = int(_RUNTIME.live.order_timeout)
+    HEARTBEAT_INTERVAL_SEC = int(_RUNTIME.live.heartbeat_interval_sec)
 
-    POLL_INTERVAL = _as_int(_l.get("poll_interval", 2), 2)
-    ORDER_TIMEOUT = _as_int(_l.get("order_timeout", 10), 10)
-    HEARTBEAT_INTERVAL_SEC = _as_int(_l.get("heartbeat_interval_sec", 30), 30)
-
-    EXCHANGE = {
-        "driver": str(_exchange.get("driver", "ccxt")).lower(),
-        "name": str(_exchange.get("name", "binance")).lower(),
-        "market_type": str(_exchange.get("market_type", "future")).lower(),
-        "position_mode": str(_exchange.get("position_mode", "hedge")).upper(),
-        "margin_mode": str(_exchange.get("margin_mode", "isolated")).lower(),
-        "leverage": _as_int(_exchange.get("leverage", 3), 3),
+    EXCHANGE: ClassVar[dict[str, str | int]] = {
+        "driver": str(_RUNTIME.live.exchange.driver).lower(),
+        "name": str(_RUNTIME.live.exchange.name).lower(),
+        "market_type": str(_RUNTIME.live.exchange.market_type).lower(),
+        "position_mode": str(_RUNTIME.live.exchange.position_mode).upper(),
+        "margin_mode": str(_RUNTIME.live.exchange.margin_mode).lower(),
+        "leverage": int(_RUNTIME.live.exchange.leverage),
     }
-    # Compatibility fields used by legacy code/tests
-    EXCHANGE_ID = EXCHANGE["name"]
-    MARKET_TYPE = EXCHANGE["market_type"]
-    POSITION_MODE = EXCHANGE["position_mode"]
-    MARGIN_MODE = EXCHANGE["margin_mode"]
-    LEVERAGE = EXCHANGE["leverage"]
+    EXCHANGE_ID = str(EXCHANGE["name"])
+    MARKET_TYPE = str(EXCHANGE["market_type"])
+    POSITION_MODE = str(EXCHANGE["position_mode"])
+    MARGIN_MODE = str(EXCHANGE["margin_mode"])
+    LEVERAGE = int(EXCHANGE["leverage"])
+    SYMBOL_LIMITS = dict(_RUNTIME.live.symbol_limits)
+    MT5_MAGIC = int(_RUNTIME.live.mt5_magic)
+    MT5_DEVIATION = int(_RUNTIME.live.mt5_deviation)
 
-    # Optional exchange constraints (fallbacks if market metadata unavailable)
-    _sym_limits = _l.get("symbol_limits", {}) if isinstance(_l.get("symbol_limits", {}), dict) else {}
-    SYMBOL_LIMITS = _sym_limits
+    @classmethod
+    def _as_runtime(cls):
+        runtime = load_runtime_config(config_path=os.getenv("LQ_CONFIG_PATH", "config.yaml"))
+        runtime.live.mode = cls.MODE
+        runtime.live.require_real_enable_flag = cls.REQUIRE_REAL_ENABLE_FLAG
+        runtime.live.api_key = cls.BINANCE_API_KEY
+        runtime.live.secret_key = cls.BINANCE_SECRET_KEY
+        runtime.live.exchange.driver = str(cls.EXCHANGE["driver"])
+        runtime.live.exchange.name = str(cls.EXCHANGE["name"])
+        runtime.live.exchange.market_type = str(cls.EXCHANGE["market_type"])
+        runtime.live.exchange.position_mode = str(cls.EXCHANGE["position_mode"])
+        runtime.live.exchange.margin_mode = str(cls.EXCHANGE["margin_mode"])
+        runtime.live.exchange.leverage = int(cls.EXCHANGE["leverage"])
+        runtime.trading.symbols = list(cls.SYMBOLS)
+        runtime.risk.max_daily_loss_pct = cls.MAX_DAILY_LOSS_PCT
+        return runtime
 
     @classmethod
     def validate(cls):
-        if not cls.SYMBOLS:
-            raise ValueError("No symbols configured in trading.symbols.")
+        """Validate live config and enforce real-trading safety flag."""
+        runtime = cls._as_runtime()
+        validate_runtime_config(runtime, for_live=True)
 
         symbol_re = re.compile(r"^[A-Z0-9]+/[A-Z0-9]+$")
         for symbol in cls.SYMBOLS:
@@ -211,50 +150,26 @@ class LiveConfig(BaseConfig):
                     f"Invalid symbol format '{symbol}'. Expected format like BTC/USDT."
                 )
 
-        if cls.MODE not in {"paper", "real"}:
-            raise ValueError("live.mode must be one of: paper, real.")
-
-        if cls.EXCHANGE["driver"] not in {"ccxt", "mt5"}:
-            raise ValueError("live.exchange.driver must be 'ccxt' or 'mt5'.")
-
-        if cls.EXCHANGE["market_type"] not in {"spot", "future"}:
-            raise ValueError("live.exchange.market_type must be 'spot' or 'future'.")
-
-        if cls.EXCHANGE["position_mode"] not in {"ONEWAY", "HEDGE"}:
-            raise ValueError("live.exchange.position_mode must be ONEWAY or HEDGE.")
-
-        if cls.EXCHANGE["margin_mode"] not in {"isolated", "cross"}:
-            raise ValueError("live.exchange.margin_mode must be isolated or cross.")
-
-        if cls.EXCHANGE["leverage"] < 1 or cls.EXCHANGE["leverage"] > 3:
-            raise ValueError(
-                "live.exchange.leverage must be in range [1, 3] for staged deployment."
-            )
-
-        if not cls.BINANCE_API_KEY or not cls.BINANCE_SECRET_KEY:
-            raise ValueError(
-                "API keys are missing. Set BINANCE_API_KEY and BINANCE_SECRET_KEY via .env/environment."
-            )
-
         if cls.MODE == "real" and cls.REQUIRE_REAL_ENABLE_FLAG:
             real_flag = os.getenv("LUMINA_ENABLE_LIVE_REAL", "")
             if not _as_bool(real_flag, False):
                 raise ValueError(
-                    "Real trading is blocked by default. Set LUMINA_ENABLE_LIVE_REAL=true to allow live real mode."
+                    "Real trading is blocked by default. "
+                    "Set LUMINA_ENABLE_LIVE_REAL=true to allow live real mode."
                 )
 
 
 class OptimizationConfig:
-    """
-    Configuration for Optimization.
-    """
+    """Optimization configuration shim."""
 
-    _o = _CONFIG_DATA.get("optimization", {})
+    METHOD = _RUNTIME.optimization.method
+    STRATEGY_NAME = _RUNTIME.optimization.strategy
+    OPTUNA_CONFIG = dict(_RUNTIME.optimization.optuna)
+    GRID_CONFIG = dict(_RUNTIME.optimization.grid)
+    WALK_FORWARD_FOLDS = int(_RUNTIME.optimization.walk_forward_folds)
+    OVERFIT_PENALTY = float(_RUNTIME.optimization.overfit_penalty)
 
-    METHOD = _o.get("method", "OPTUNA")
-    STRATEGY_NAME = _o.get("strategy", "RsiStrategy")
 
-    OPTUNA_CONFIG = _o.get("optuna", {})
-    GRID_CONFIG = _o.get("grid", {})
-    WALK_FORWARD_FOLDS = _as_int(_o.get("walk_forward_folds", 3), 3)
-    OVERFIT_PENALTY = _as_float(_o.get("overfit_penalty", 0.5), 0.5)
+def export_runtime_dict() -> dict:
+    """Export the loaded typed runtime as a plain dictionary."""
+    return asdict(_RUNTIME)

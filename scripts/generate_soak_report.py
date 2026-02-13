@@ -1,7 +1,7 @@
 import argparse
 import os
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 
 def parse_dt(value):
@@ -10,7 +10,7 @@ def parse_dt(value):
     try:
         dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=UTC)
         return dt
     except Exception:
         return None
@@ -43,7 +43,7 @@ def calculate_uptime_hours(run_rows, since, now):
         a = max(st, since)
         b = min(ed, now)
         if b > a:
-            total += (b - a)
+            total += b - a
     return total.total_seconds() / 3600.0
 
 
@@ -71,7 +71,7 @@ def build_report(
     max_heartbeat_gap_minutes=30,
     max_reconciliation_drift=0,
 ):
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     since = now - timedelta(days=days)
 
     conn = sqlite3.connect(db_path)
@@ -144,9 +144,7 @@ def build_report(
             "critical_errors": critical_errors == 0,
             "risk_events": risk_events == 0,
             "reconciliation_drift": reconciliation_drifts <= max_reconciliation_drift,
-            "heartbeat_gap": (
-                max_hb_gap is not None and max_hb_gap <= max_heartbeat_gap_minutes
-            )
+            "heartbeat_gap": (max_hb_gap is not None and max_hb_gap <= max_heartbeat_gap_minutes)
             if heartbeat_rows
             else False,
         }
@@ -232,7 +230,7 @@ def main():
     os.makedirs("reports", exist_ok=True)
     out_path = os.path.join(
         "reports",
-        f"soak_report_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.md",
+        f"soak_report_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}.md",
     )
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(markdown)

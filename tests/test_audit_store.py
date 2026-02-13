@@ -2,7 +2,7 @@ import os
 import tempfile
 import unittest
 
-from lumina_quant.events import OrderEvent, FillEvent
+from lumina_quant.events import FillEvent, OrderEvent
 from lumina_quant.utils.audit_store import AuditStore
 
 

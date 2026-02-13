@@ -1,10 +1,11 @@
 import argparse
 import os
-from lumina_quant.live_trader import LiveTrader
-from lumina_quant.live_data import LiveDataHandler
-from lumina_quant.live_execution import LiveExecutionHandler
-from lumina_quant.portfolio import Portfolio
+
+from lumina_quant.backtesting.portfolio_backtest import Portfolio
 from lumina_quant.config import LiveConfig
+from lumina_quant.live.data_poll import LiveDataHandler
+from lumina_quant.live.execution_live import LiveExecutionHandler
+from lumina_quant.live.trader import LiveTrader
 from strategies.moving_average import MovingAverageCrossStrategy
 
 
