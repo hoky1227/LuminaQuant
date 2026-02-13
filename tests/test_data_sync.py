@@ -1,0 +1,75 @@
+"""Tests for Binance OHLCV sync helpers."""
+
+from __future__ import annotations
+
+import tempfile
+import unittest
+from pathlib import Path
+
+from lumina_quant.data_sync import parse_timestamp_input, sync_symbol_ohlcv
+from lumina_quant.market_data import connect_market_data_db, ensure_market_ohlcv_schema
+
+
+class _FakeExchange:
+    """Deterministic fake exchange for pagination tests."""
+
+    rateLimit = 0
+
+    def __init__(self):
+        self.calls = []
+
+    def fetch_ohlcv(self, symbol, timeframe, since=None, limit=1000):
+        _ = (symbol, timeframe, limit)
+        self.calls.append(int(since or 0))
+        cursor = int(since or 0)
+        if cursor <= 0:
+            return [
+                [0, 100.0, 101.0, 99.0, 100.5, 10.0],
+                [60000, 100.5, 102.0, 100.0, 101.0, 9.0],
+            ]
+        if cursor <= 120000:
+            return [
+                [60000, 100.5, 102.0, 100.0, 101.0, 9.0],
+                [120000, 101.0, 103.0, 100.5, 102.5, 11.0],
+            ]
+        return []
+
+
+class TestDataSync(unittest.TestCase):
+    """Validate sync pagination and timestamp parsing."""
+
+    def test_parse_timestamp_input(self):
+        self.assertEqual(parse_timestamp_input(1700000000), 1700000000000)
+        self.assertEqual(parse_timestamp_input("1700000000000"), 1700000000000)
+        self.assertEqual(parse_timestamp_input("1970-01-01T00:00:01+00:00"), 1000)
+
+    def test_sync_symbol_ohlcv_dedupes_overlapping_batches(self):
+        fake = _FakeExchange()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = str(Path(tmp_dir) / "market_data.db")
+            conn = connect_market_data_db(db_path)
+            try:
+                ensure_market_ohlcv_schema(conn)
+            finally:
+                conn.close()
+
+            stats = sync_symbol_ohlcv(
+                exchange=fake,
+                db_path=db_path,
+                exchange_id="binance",
+                symbol="BTC/USDT",
+                timeframe="1m",
+                start_ms=0,
+                end_ms=180000,
+                limit=2,
+                max_batches=10,
+            )
+            self.assertEqual(stats.fetched_rows, 3)
+            self.assertEqual(stats.upserted_rows, 3)
+            self.assertEqual(stats.first_timestamp_ms, 0)
+            self.assertEqual(stats.last_timestamp_ms, 120000)
+            self.assertGreaterEqual(len(fake.calls), 2)
+
+
+if __name__ == "__main__":
+    unittest.main()
