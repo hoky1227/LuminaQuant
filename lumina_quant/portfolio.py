@@ -1,6 +1,7 @@
 import math
 from datetime import date, datetime
 
+import numpy as np
 import polars as pl
 from lumina_quant.events import FillEvent, OrderEvent
 
@@ -10,13 +11,14 @@ class Portfolio:
     Refactored to use Polars for equity curve storage.
     """
 
-    def __init__(self, bars, events, start_date, config, record_history=True):
+    def __init__(self, bars, events, start_date, config, record_history=True, track_metrics=True):
         self.bars = bars
         self.events = events
         self.config = config
         self.symbol_list = self.bars.symbol_list
         self._single_symbol = len(self.symbol_list) == 1
         self.record_history = bool(record_history)
+        self.track_metrics = bool(track_metrics)
         self.start_date = start_date
         self.initial_capital = self.config.INITIAL_CAPITAL
 
@@ -43,6 +45,8 @@ class Portfolio:
         self.entry_prices = dict.fromkeys(self.symbol_list)
         self.liquidation_events = []
         self._pending_liquidation = set()
+        self._metric_totals = [float(self.initial_capital)] if self.track_metrics else []
+        self._metric_benchmarks = [0.0] if self.track_metrics else []
 
         # Initialize first record
         self.update_initial_record()
@@ -128,6 +132,9 @@ class Portfolio:
             current_holdings[symbol] = market_value
             total = cash + market_value
             current_holdings["total"] = total
+            if self.track_metrics:
+                self._metric_totals.append(float(total))
+                self._metric_benchmarks.append(float(close_price))
 
             if self.record_history:
                 self.all_positions.append((latest_datetime, qty))
@@ -155,6 +162,10 @@ class Portfolio:
             current_holdings[symbol] = market_value
 
         current_holdings["total"] = total
+        bench_price = self.bars.get_latest_bar_value(primary_symbol, "close")
+        if self.track_metrics:
+            self._metric_totals.append(float(total))
+            self._metric_benchmarks.append(float(bench_price))
         if not self.record_history:
             return
 
@@ -167,7 +178,6 @@ class Portfolio:
         # Store Tuple
         # Schema: (datetime, cash, commission, total, s1_val, s2_val, ..., benchmark_price)
         # Benchmark: Close price of first symbol (Primary Asset)
-        bench_price = self.bars.get_latest_bar_value(primary_symbol, "close")
         self.all_holdings.append(
             (
                 latest_datetime,
@@ -768,6 +778,59 @@ class Portfolio:
         ]
 
         return stats
+
+    def output_summary_stats_fast(self):
+        """Return lightweight stats without constructing a DataFrame.
+
+        This is intended for optimization loops where only core objective
+        metrics are needed.
+        """
+        total_series = np.asarray(self._metric_totals, dtype=np.float64)
+        if total_series.size < 2:
+            return {
+                "status": "not_enough_data",
+                "sharpe": -999.0,
+                "cagr": 0.0,
+                "max_drawdown": 0.0,
+            }
+
+        prev_total = total_series[:-1]
+        next_total = total_series[1:]
+        returns = np.divide(
+            next_total - prev_total,
+            np.where(prev_total == 0.0, 1.0, prev_total),
+            dtype=np.float64,
+        )
+        if returns.size > 0 and not np.isfinite(returns[0]):
+            returns[0] = 0.0
+
+        from lumina_quant.utils.performance import (
+            create_cagr,
+            create_drawdowns,
+            create_sharpe_ratio,
+        )
+
+        periods = int(getattr(self.config, "ANNUAL_PERIODS", 252))
+        cagr = float(
+            create_cagr(total_series[-1], total_series[0], int(total_series.size), periods)
+        )
+        sharpe_ratio = float(create_sharpe_ratio(returns, periods=periods))
+        drawdown, _ = create_drawdowns(total_series)
+        max_dd = float(max(drawdown)) if drawdown else 0.0
+
+        if not np.isfinite(sharpe_ratio):
+            sharpe_ratio = -999.0
+        if not np.isfinite(cagr):
+            cagr = 0.0
+        if not np.isfinite(max_dd):
+            max_dd = 0.0
+
+        return {
+            "status": "ok",
+            "sharpe": sharpe_ratio,
+            "cagr": cagr,
+            "max_drawdown": max_dd,
+        }
 
     def output_trade_log(self, filename="trades.csv"):
         """Outputs the trade log to a CSV file."""

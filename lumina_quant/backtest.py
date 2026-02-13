@@ -51,6 +51,7 @@ class Backtest(TradingEngine):
         end_date=None,
         data_dict=None,
         record_history=True,
+        track_metrics=True,
     ):
         self.csv_dir = csv_dir
         self.symbol_list = symbol_list
@@ -60,6 +61,7 @@ class Backtest(TradingEngine):
         self.end_date = end_date  # Override config if specific
         self.data_dict = data_dict
         self.record_history = bool(record_history)
+        self.track_metrics = bool(track_metrics)
 
         self.data_handler_cls = data_handler_cls
         self.execution_handler_cls = execution_handler_cls
@@ -101,14 +103,24 @@ class Backtest(TradingEngine):
                 self.start_date,
                 self.config,
                 record_history=self.record_history,
+                track_metrics=self.track_metrics,
             )
         except TypeError:
-            self.portfolio = self.portfolio_cls(
-                self.bars,
-                self.events,
-                self.start_date,
-                self.config,
-            )
+            try:
+                self.portfolio = self.portfolio_cls(
+                    self.bars,
+                    self.events,
+                    self.start_date,
+                    self.config,
+                    record_history=self.record_history,
+                )
+            except TypeError:
+                self.portfolio = self.portfolio_cls(
+                    self.bars,
+                    self.events,
+                    self.start_date,
+                    self.config,
+                )
         # Pass config to execution handler for slippage/commission
         self.execution_handler = self.execution_handler_cls(self.events, self.bars, self.config)
 

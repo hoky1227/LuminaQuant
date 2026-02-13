@@ -1,6 +1,7 @@
 import argparse
 import itertools
 import json
+import math
 import multiprocessing
 import os
 import sys
@@ -127,26 +128,27 @@ def _execute_backtest(
             strategy_cls=strategy_cls,
             strategy_params=params,
             data_dict=current_data,
+            record_history=False,
+            track_metrics=True,
         )
         backtest.simulate_trading(output=False)
-        backtest.portfolio.create_equity_curve_dataframe()
+        stats = backtest.portfolio.output_summary_stats_fast()
+        no_data = stats.get("status") != "ok"
 
-        stats = backtest.portfolio.output_summary_stats()
-        stats_dict = {k: v for k, v in stats}
-        no_data = stats_dict.get("Status") == "Not enough data"
-
-        # We prioritize Sharpe Ratio for optimization
-        sharpe = float(stats_dict.get("Sharpe Ratio", 0.0))
-        if sharpe != sharpe:
-            sharpe = -999.0  # Handle NaN
+        sharpe = float(stats.get("sharpe", -999.0))
+        if not math.isfinite(sharpe):
+            sharpe = -999.0
         if no_data:
             sharpe = -999.0
+
+        cagr_pct = float(stats.get("cagr", 0.0)) * 100.0
+        mdd_pct = float(stats.get("max_drawdown", 0.0)) * 100.0
 
         return {
             "params": params,
             "sharpe": sharpe,
-            "cagr": stats_dict.get("CAGR", "0.0%").strip("%"),
-            "mdd": stats_dict.get("Max Drawdown", "0.0%").strip("%"),
+            "cagr": f"{cagr_pct:.4f}",
+            "mdd": f"{mdd_pct:.4f}",
             "num_trades": len(backtest.portfolio.trades),
             "no_data": no_data,
         }
@@ -223,11 +225,13 @@ class GridSearchOptimizer:
             for params in combinations
         ]
 
-        # Use initializer to share data efficiently on Windows/Spawn
-        with multiprocessing.Pool(
+        # Use explicit spawn context for cross-platform consistency.
+        ctx = multiprocessing.get_context("spawn")
+        chunksize = max(1, len(pool_args) // max(1, max_workers * 4))
+        with ctx.Pool(
             processes=max_workers, initializer=pool_initializer, initargs=(DATA_DICT,)
         ) as pool:
-            results = pool.map(run_single_backtest_train, pool_args)
+            results = pool.map(run_single_backtest_train, pool_args, chunksize)
 
         valid_results = [r for r in results if "error" not in r]
         sorted_results = sorted(valid_results, key=lambda x: x["sharpe"], reverse=True)

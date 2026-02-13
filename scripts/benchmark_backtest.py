@@ -142,6 +142,7 @@ def _run_once(
         strategy_cls=strategy_cls,
         strategy_params=params,
         record_history=record_history,
+        track_metrics=record_history,
     )
     backtest.simulate_trading(output=False)
     ended = time.perf_counter()
