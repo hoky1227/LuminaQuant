@@ -34,6 +34,9 @@ class SimulatedExecutionHandler(ExecutionHandler):
         self.config = config
         self.rng = random.Random(getattr(config, "RANDOM_SEED", 42))
         self._order_seq = 0
+        self.fill_model = FillModel(config)
+        self.latency_model = LatencyModel(config)
+        self.liquidity_model = LiquidityModel(config)
 
         # Store conditional orders: { order_id: { 'symbol':..., 'type':..., 'trigger_price':..., 'parent_id':...} }
         # For simplicity, just list of order dicts
@@ -47,44 +50,20 @@ class SimulatedExecutionHandler(ExecutionHandler):
         self, price: float, quantity: float, direction: str, symbol: str
     ) -> tuple[float, float]:
         """Helper to apply physics (Slippage/Fees/Spread) to a raw price."""
-        # 1. Variable Slippage Model
-        base_slippage = getattr(self.config, "SLIPPAGE_RATE", 0.0005)
-        slippage_bps = self.rng.uniform(base_slippage * 0.5, base_slippage * 1.5)
-
-        # Volatility scale
+        # Volatility scale for adaptive slippage
         high = self.bars.get_latest_bar_value(symbol, "high")
         low = self.bars.get_latest_bar_value(symbol, "low")
         open_p = self.bars.get_latest_bar_value(symbol, "open")
-
+        volatility = 0.0
         if open_p > 0:
             volatility = (high - low) / open_p
-            if volatility > 0.01:
-                slippage_bps *= 2.0
-
-        # 2. Spread Model (Bid/Ask)
-        # Default 2bps spread (0.02%)
-        spread = getattr(self.config, "SPREAD_RATE", 0.0002)
-        half_spread = spread / 2.0
-
-        total_penalty = slippage_bps + half_spread
-
-        if direction == "BUY":
-            # Buy at Ask (> Price)
-            fill_price = price * (1 + total_penalty)
-        else:
-            # Sell at Bid (< Price)
-            fill_price = price * (1 - total_penalty)
-
-        # 3. Commission
-        commission_rate = getattr(
-            self.config,
-            "TAKER_FEE_RATE",
-            getattr(self.config, "COMMISSION_RATE", 0.001),
+        return self.fill_model.apply(
+            raw_price=float(price),
+            quantity=float(quantity),
+            direction=str(direction),
+            volatility=float(volatility),
+            rng=self.rng,
         )
-        fill_cost = fill_price * quantity
-        commission = fill_cost * commission_rate
-
-        return fill_price, commission
 
     def _cancel_protective_orders(self, symbol: str, position_side: str | None = None) -> None:
         protected_types = {"STOP", "TAKE_PROFIT"}
@@ -279,11 +258,13 @@ class SimulatedExecutionHandler(ExecutionHandler):
 
             # MKT ORDER (Next Open)
             if order["type"] == "MKT" and order["status"] == "PENDING":
+                if not self.latency_model.should_release(order):
+                    next_active_orders.append(order)
+                    continue
                 exec_price = bar_open
                 triggered = True
 
-                # Liquidity Constraint (Partial Fill): cap at 10% of bar volume.
-                max_trade_vol = bar_volume * 0.1
+                max_trade_vol = self.liquidity_model.max_fill_quantity(float(bar_volume))
                 original_qty = order["quantity"]
 
                 if original_qty > max_trade_vol:
@@ -419,3 +400,62 @@ class SimulatedExecutionHandler(ExecutionHandler):
         if remainder_orders:
             next_active_orders.extend(remainder_orders)
         self.active_orders = next_active_orders
+
+
+class FillModel:
+    """Encapsulates slippage/spread/fee assumptions for simulated fills."""
+
+    def __init__(self, config: Any):
+        self.config = config
+
+    def apply(
+        self,
+        *,
+        raw_price: float,
+        quantity: float,
+        direction: str,
+        volatility: float,
+        rng: random.Random,
+    ) -> tuple[float, float]:
+        base_slippage = float(getattr(self.config, "SLIPPAGE_RATE", 0.0005))
+        spread = float(getattr(self.config, "SPREAD_RATE", 0.0002))
+        commission_rate = float(
+            getattr(
+                self.config,
+                "TAKER_FEE_RATE",
+                getattr(self.config, "COMMISSION_RATE", 0.001),
+            )
+        )
+
+        slip = rng.uniform(base_slippage * 0.5, base_slippage * 1.5)
+        if volatility > 0.01:
+            slip *= 2.0
+        penalty = slip + (spread / 2.0)
+        if direction == "BUY":
+            fill_price = raw_price * (1.0 + penalty)
+        else:
+            fill_price = raw_price * (1.0 - penalty)
+        fill_cost = fill_price * quantity
+        return fill_price, fill_cost * commission_rate
+
+
+class LatencyModel:
+    """Simple latency model releasing queued orders on next check cycle."""
+
+    def __init__(self, config: Any):
+        _ = config
+
+    def should_release(self, order: dict[str, Any]) -> bool:
+        _ = order
+        return True
+
+
+class LiquidityModel:
+    """Caps executable size as a function of bar volume."""
+
+    def __init__(self, config: Any):
+        self.config = config
+
+    def max_fill_quantity(self, bar_volume: float) -> float:
+        max_ratio = float(getattr(self.config, "SIM_MAX_BAR_VOLUME_RATIO", 0.1))
+        return max(0.0, bar_volume * max_ratio)

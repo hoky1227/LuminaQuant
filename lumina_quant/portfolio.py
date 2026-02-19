@@ -2,7 +2,7 @@ from datetime import date, datetime
 
 import polars as pl
 from lumina_quant.events import FillEvent, OrderEvent
-from lumina_quant.market_data import timeframe_to_milliseconds
+from lumina_quant.market_data import normalize_timeframe_token, timeframe_to_milliseconds
 from lumina_quant.services.portfolio import PortfolioPerformanceService, PortfolioSizingService
 
 
@@ -30,9 +30,12 @@ class Portfolio:
         self.record_history = bool(record_history)
         self.track_metrics = bool(track_metrics)
         self.record_trades = bool(record_trades)
-        self.sampling_timeframe = (
-            str(sampling_timeframe).strip().lower() if sampling_timeframe else None
-        )
+        self.sampling_timeframe = None
+        if sampling_timeframe:
+            try:
+                self.sampling_timeframe = normalize_timeframe_token(sampling_timeframe)
+            except Exception:
+                self.sampling_timeframe = None
         self._sampling_interval_ms = None
         if self.sampling_timeframe:
             try:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 
 import numpy as np
+from lumina_quant.optimization.native_backend import evaluate_metrics_backend
 
 
 class PortfolioSizingService:
@@ -179,27 +180,11 @@ class PortfolioPerformanceService:
                 "max_drawdown": 0.0,
             }
 
-        prev_total = total_series[:-1]
-        next_total = total_series[1:]
-        returns = np.divide(
-            next_total - prev_total,
-            np.where(prev_total == 0.0, 1.0, prev_total),
-            dtype=np.float64,
-        )
-        if returns.size > 0 and not np.isfinite(returns[0]):
-            returns[0] = 0.0
-
-        from lumina_quant.utils.performance import PerformanceMetrics
-
         periods = int(getattr(config, "ANNUAL_PERIODS", 252))
-        cagr = float(
-            PerformanceMetrics.cagr(
-                total_series[-1], total_series[0], int(total_series.size), periods
-            )
-        )
-        sharpe_ratio = float(PerformanceMetrics.sharpe_ratio(returns, periods=periods))
-        drawdown, _ = PerformanceMetrics.drawdowns(total_series)
-        max_dd = float(max(drawdown)) if drawdown else 0.0
+        sharpe_ratio, cagr, max_dd = evaluate_metrics_backend(total_series, periods)
+        sharpe_ratio = float(sharpe_ratio)
+        cagr = float(cagr)
+        max_dd = float(max_dd)
 
         if not np.isfinite(sharpe_ratio):
             sharpe_ratio = -999.0

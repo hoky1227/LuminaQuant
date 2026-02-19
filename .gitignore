@@ -5,6 +5,8 @@ logs/
 *.ps1
 *.sh
 *.bat
+!native/**/*.bat
+!scripts/**/*.bat
 uv.lock
 .python-version
 *.code-workspace
@@ -218,8 +220,6 @@ marimo/_lsp/
 __marimo__/
 daily_data/
 live_data/
-equity.csv
-trades.csv
 reports/
 test_output.txt
 

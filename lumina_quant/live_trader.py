@@ -8,6 +8,7 @@ from lumina_quant.engine import TradingEngine
 from lumina_quant.exchanges import get_exchange
 from lumina_quant.interfaces import ExchangeInterface
 from lumina_quant.risk_manager import RiskManager
+from lumina_quant.runtime_cache import RuntimeCache
 from lumina_quant.utils.audit_store import AuditStore
 from lumina_quant.utils.logging_utils import setup_logging
 from lumina_quant.utils.notification import NotificationManager
@@ -71,6 +72,8 @@ class LiveTrader(TradingEngine):
         )
         self._last_drift_signature = ()
         self._reconciliation_drift_events = 0
+        self.runtime_cache = RuntimeCache()
+        self.outbox_events: list[dict] = []
         atexit.register(self._close_audit_store)
 
         # Initialize Notification Manager
@@ -119,6 +122,10 @@ class LiveTrader(TradingEngine):
                     self.portfolio.set_state(state["portfolio"])
                 if "strategy" in state:
                     self.strategy.set_state(state["strategy"])
+                if isinstance(state.get("runtime_cache"), dict):
+                    self.runtime_cache.restore(state["runtime_cache"])
+                if isinstance(state.get("outbox_events"), list):
+                    self.outbox_events = list(state["outbox_events"])
                 self.logger.info("State restored.")
             except Exception as e:
                 self.logger.error(f"Failed to restore state: {e}")
@@ -128,6 +135,8 @@ class LiveTrader(TradingEngine):
             state = {
                 "portfolio": self.portfolio.get_state(),
                 "strategy": self.strategy.get_state(),
+                "runtime_cache": self.runtime_cache.snapshot(),
+                "outbox_events": self.outbox_events[-2000:],
             }
             self.state_manager.save_state(state)
         except Exception as e:
@@ -153,6 +162,8 @@ class LiveTrader(TradingEngine):
         self._audit_closed = True
 
     def _on_order_state(self, state_payload):
+        self.runtime_cache.update_order_state(state_payload.get("order_id"), state_payload)
+        self._append_outbox("order_state", state_payload)
         try:
             self.audit_store.log_order_state(self.run_id, state_payload)
         except Exception as exc:
@@ -180,11 +191,34 @@ class LiveTrader(TradingEngine):
 
     def on_fill(self, event):
         """Hook from TradingEngine to save state on fill."""
+        self._append_outbox(
+            "fill",
+            {
+                "symbol": event.symbol,
+                "direction": event.direction,
+                "quantity": event.quantity,
+                "fill_cost": event.fill_cost,
+                "status": event.status,
+                "order_id": event.order_id,
+                "timestamp_ns": getattr(event, "timestamp_ns", None),
+                "sequence": getattr(event, "sequence", None),
+            },
+        )
         msg = f"✅ **FILL**: {event.direction} {event.quantity} {event.symbol} @ {event.fill_cost}"
         self.logger.info(msg)
         self.notifier.send_message(msg)
         self.audit_store.log_fill(self.run_id, event)
         self._save_state()
+
+    def _append_outbox(self, event_type: str, payload: dict) -> None:
+        item = {
+            "event_type": str(event_type),
+            "event_time": time.time(),
+            "payload": dict(payload or {}),
+        }
+        self.outbox_events.append(item)
+        if len(self.outbox_events) > 5000:
+            self.outbox_events = self.outbox_events[-5000:]
 
     def _emit_heartbeat(self, force=False):
         now_mono = time.monotonic()
@@ -218,6 +252,7 @@ class LiveTrader(TradingEngine):
             return
 
         local = self.portfolio.current_positions
+        self.runtime_cache.update_positions(exchange_positions)
         drift = []
         for symbol in self.symbol_list:
             local_qty = float(local.get(symbol, 0.0))
@@ -271,6 +306,7 @@ class LiveTrader(TradingEngine):
                 if balance > 0:
                     self.logger.info(f"Exchange USDT Balance: {balance}")
                     self.portfolio.current_holdings["cash"] = balance
+                    self.runtime_cache.update_account({"cash": float(balance)})
                     # If total is 0 (first run), init with balance.
                     if self.portfolio.current_holdings["total"] == self.portfolio.initial_capital:
                         self.portfolio.initial_capital = balance
@@ -341,6 +377,16 @@ class LiveTrader(TradingEngine):
 
     def handle_market_event(self, event):
         """Override to save equity curve on every bar."""
+        self.runtime_cache.update_market(
+            event.symbol,
+            {
+                "time": event.time,
+                "timestamp_ns": getattr(event, "timestamp_ns", None),
+                "sequence": getattr(event, "sequence", None),
+                "close": float(event.close),
+                "volume": float(event.volume),
+            },
+        )
         super().handle_market_event(event)
 
         # Save Live Equity snapshot periodically to reduce per-bar overhead.

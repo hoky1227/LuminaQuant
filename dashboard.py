@@ -16,6 +16,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 from lumina_quant.config import BacktestConfig, BaseConfig, OptimizationConfig
+from lumina_quant.market_data import normalize_symbol, normalize_timeframe_token
 from lumina_quant.utils.performance import (
     create_alpha_beta,
     create_annualized_volatility,
@@ -27,17 +28,75 @@ from lumina_quant.utils.performance import (
     create_sortino_ratio,
 )
 from plotly.subplots import make_subplots
-from strategies import (
-    get_default_grid_config,
-    get_default_optuna_config,
-    get_default_strategy_params,
-    get_strategy_names,
-)
+
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+
+def _ensure_project_strategies_module(project_root):
+    strategies_dir = os.path.join(project_root, "strategies")
+    expected_init = os.path.abspath(os.path.join(strategies_dir, "__init__.py"))
+    loaded = sys.modules.get("strategies")
+    if loaded is None:
+        return
+
+    loaded_file = getattr(loaded, "__file__", None)
+    loaded_file = os.path.abspath(loaded_file) if loaded_file else ""
+    if loaded_file == expected_init:
+        return
+
+    sys.modules.pop("strategies", None)
+    sys.modules.pop("strategies.registry", None)
+
+
+_ensure_project_strategies_module(PROJECT_ROOT)
+
+strategy_registry = importlib.import_module("strategies.registry")
 
 st.set_page_config(layout="wide", page_title="LuminaQuant Dashboard")
 st.title("LuminaQuant: Full Trading Intelligence")
 
 DEFAULT_DB_PATH = "data/lumina_quant.db"
+
+
+def _count_market_rows(db_path):
+    if not os.path.exists(db_path):
+        return 0
+    conn = sqlite3.connect(db_path)
+    try:
+        row = conn.execute("SELECT COUNT(*) FROM market_ohlcv").fetchone()
+        if row is None or row[0] is None:
+            return 0
+        return int(row[0])
+    except Exception:
+        return 0
+    finally:
+        conn.close()
+
+
+def _resolve_default_market_db_path():
+    configured = str(getattr(BaseConfig, "MARKET_DATA_SQLITE_PATH", DEFAULT_DB_PATH))
+    candidate_list = []
+    seen = set()
+    for raw in [configured, "data/market_recent.db", DEFAULT_DB_PATH]:
+        token = os.path.normpath(str(raw))
+        if token in seen:
+            continue
+        seen.add(token)
+        candidate_list.append(token)
+
+    best_path = configured
+    best_rows = -1
+    for candidate in candidate_list:
+        rows = _count_market_rows(candidate)
+        if rows > best_rows:
+            best_rows = rows
+            best_path = candidate
+    return best_path
+
+
+DEFAULT_MARKET_DB_PATH = _resolve_default_market_db_path()
 DEFAULT_REFRESH_INTERVAL_SEC = 5
 DEFAULT_WINDOW_POINTS = 2500
 DEFAULT_DOWNSAMPLE_TARGET_POINTS = 5000
@@ -540,6 +599,16 @@ def load_runs(db_path, refresh_counter=0):
                 r.ended_at,
                 r.status,
                 r.metadata,
+                COALESCE(
+                    json_extract(r.metadata, '$.strategy'),
+                    (
+                        SELECT w.strategy
+                        FROM workflow_jobs w
+                        WHERE w.run_id = r.run_id
+                        ORDER BY w.started_at DESC
+                        LIMIT 1
+                    )
+                ) AS strategy,
                 COALESCE(eq.equity_rows, 0) AS equity_rows,
                 COALESCE(fl.fill_rows, 0) AS fill_rows,
                 COALESCE(od.order_rows, 0) AS order_rows,
@@ -838,6 +907,9 @@ def load_market_ohlcv_sqlite(
     _ = refresh_counter
     if not os.path.exists(db_path):
         return pd.DataFrame()
+    symbol_token = normalize_symbol(symbol)
+    timeframe_token = normalize_timeframe_token(timeframe)
+    exchange_token = str(exchange_id).strip().lower()
     conn = sqlite3.connect(db_path)
     try:
         df = pd.read_sql_query(
@@ -853,7 +925,7 @@ def load_market_ohlcv_sqlite(
             ORDER BY datetime ASC
             """,
             conn,
-            params=[str(exchange_id).lower(), symbol, timeframe, int(max(1, max_points))],
+            params=[exchange_token, symbol_token, timeframe_token, int(max(1, max_points))],
         )
         return _coerce_datetime(df, "datetime")
     finally:
@@ -894,15 +966,15 @@ def load_params(strategy_name):
 
 
 def _strategy_default_params(strategy_name):
-    return get_default_strategy_params(strategy_name)
+    return strategy_registry.get_default_strategy_params(strategy_name)
 
 
 def _strategy_default_optuna(strategy_name):
-    return get_default_optuna_config(strategy_name)
+    return strategy_registry.get_default_optuna_config(strategy_name)
 
 
 def _strategy_default_grid(strategy_name):
-    return get_default_grid_config(strategy_name)
+    return strategy_registry.get_default_grid_config(strategy_name)
 
 
 def _merged_strategy_params(strategy_name, loaded_params):
@@ -1221,6 +1293,21 @@ def _extract_run_symbols(runs_df, run_id):
     if isinstance(symbols, list) and symbols:
         return [str(s) for s in symbols]
     return list(BaseConfig.SYMBOLS)
+
+
+def _runs_for_strategy(runs_df, strategy_name):
+    if runs_df.empty or "run_id" not in runs_df.columns:
+        return []
+    if "strategy" not in runs_df.columns:
+        return []
+    selected = str(strategy_name or "").strip()
+    if not selected:
+        return []
+    strat_col = runs_df["strategy"].fillna("").astype(str).str.strip()
+    matched = runs_df.loc[strat_col == selected]
+    if matched.empty:
+        return []
+    return matched["run_id"].astype(str).tolist()
 
 
 def _compute_data_latency_seconds(df):
@@ -2673,13 +2760,14 @@ def save_report_snapshot(payload):
 st.sidebar.header("Configuration")
 data_source = st.sidebar.selectbox("Data Source", ["Auto", "SQLite", "CSV"])
 db_path = st.sidebar.text_input("SQLite Path", value=DEFAULT_DB_PATH)
+market_db_path = st.sidebar.text_input("Market Data SQLite Path", value=DEFAULT_MARKET_DB_PATH)
 market_exchange = st.sidebar.text_input(
     "Market Exchange", value=getattr(BaseConfig, "MARKET_DATA_EXCHANGE", "binance")
 )
 market_timeframe = st.sidebar.text_input(
     "Market Timeframe", value=getattr(BaseConfig, "TIMEFRAME", "1m")
 )
-strategy_options = get_strategy_names()
+strategy_options = strategy_registry.get_strategy_names()
 default_strategy_name = "RsiStrategy"
 default_strategy_index = (
     strategy_options.index(default_strategy_name)
@@ -2707,6 +2795,7 @@ downsample_target_points = st.sidebar.slider(
     disabled=not auto_downsample,
 )
 pin_to_running = st.sidebar.toggle("Pin to RUNNING live run", value=True)
+filter_runs_by_strategy = st.sidebar.toggle("Filter Run IDs By Strategy", value=True)
 run_stale_sec = st.sidebar.slider(
     "RUNNING Stale Threshold (sec)",
     min_value=30,
@@ -3056,15 +3145,34 @@ if use_sqlite and os.path.exists(db_path):
     df_optimize = load_optimization_results_sqlite(db_path, refresh_counter=refresh_counter)
     if not runs_df.empty:
         run_options = runs_df["run_id"].astype(str).tolist()
+        strategy_run_options = _runs_for_strategy(runs_df, strategy_name)
+        if filter_runs_by_strategy and strategy_run_options:
+            run_options = strategy_run_options
+        elif filter_runs_by_strategy and not strategy_run_options:
+            st.sidebar.info(
+                "No SQLite runs tagged with selected strategy yet. Showing all runs instead."
+            )
+
         default_run = _latest_running_run_id(runs_df) if pin_to_running else None
         if default_run and _equity_rows_for_run(runs_df, default_run) <= 0:
             default_run = None
+        if default_run and default_run not in run_options:
+            default_run = None
         if not default_run:
-            default_run = _latest_run_with_equity(runs_df)
+            if strategy_run_options:
+                strategy_runs_df = runs_df[runs_df["run_id"].astype(str).isin(run_options)]
+                default_run = _latest_run_with_equity(strategy_runs_df)
+            else:
+                default_run = _latest_run_with_equity(runs_df)
         if not default_run:
             default_run = run_options[0]
 
+        strategy_changed = st.session_state.get("dashboard_strategy_name") != strategy_name
+        st.session_state["dashboard_strategy_name"] = strategy_name
+
         if "dashboard_run_id" not in st.session_state:
+            st.session_state["dashboard_run_id"] = default_run
+        if strategy_changed:
             st.session_state["dashboard_run_id"] = default_run
         if pin_to_running:
             st.session_state["dashboard_run_id"] = default_run
@@ -3099,6 +3207,13 @@ if resolved_source is None or (df_equity.empty and data_source == "Auto"):
         df_trades = fallback_trades
         active_run_id = None
         resolved_source = "CSV"
+
+if resolved_source == "CSV" and data_source in {"Auto", "CSV"}:
+    st.warning(
+        "Dashboard is currently rendering CSV fallback data. In this mode, changing strategy updates "
+        "strategy indicators/config controls, but core PnL/equity history remains the same CSV sample until "
+        "a SQLite run with equity rows is available."
+    )
 
 if resolved_source is None:
     resolved_source = "None"
@@ -3136,9 +3251,9 @@ market_symbol = st.sidebar.selectbox(
     "Market Symbol", symbols if symbols else list(BaseConfig.SYMBOLS)
 )
 
-if os.path.exists(db_path):
+if os.path.exists(market_db_path):
     df_market = load_market_ohlcv_sqlite(
-        db_path,
+        market_db_path,
         market_symbol,
         market_timeframe,
         market_exchange,
@@ -3186,20 +3301,24 @@ else:
         st.info("No balance/equity timeline for mirror-style chart yet.")
 
 st.header("Overview")
-col1, col2, col3, col4, col5, col6 = st.columns(6)
-col1.metric("Source", resolved_source)
-col2.metric("Bars", f"{summary['bars']}")
-col3.metric("Fills", f"{summary['fills']}")
-col4.metric("Avg Fills/Day", f"{summary['fills_per_day']:.2f}")
-col5.metric("Closed PnL", _format_signed_dollar(summary.get("total_net_profit"), digits=2))
-col6.metric("Win Rate", f"{summary['win_rate']:.2%}")
+st.caption("Performance summary is grouped by Context, Equity, Risk, and Trade Quality.")
 
+ctx1, ctx2, ctx3, ctx4, ctx5, ctx6 = st.columns(6)
+ctx1.metric("Source", resolved_source)
+ctx2.metric("Bars", f"{summary['bars']}")
+ctx3.metric("Fills", f"{summary['fills']}")
+ctx4.metric("Avg Fills/Day", f"{summary['fills_per_day']:.2f}")
+ctx5.metric("Closed PnL", _format_signed_dollar(summary.get("total_net_profit"), digits=2))
+ctx6.metric("Win Rate", f"{summary['win_rate']:.2%}")
+
+st.markdown("**Equity Context**")
 eq1, eq2, eq3, eq4 = st.columns(4)
 eq1.metric("Initial Equity", f"{summary['initial_equity']:.2f}")
 eq2.metric("Final Equity", f"{summary['final_equity']:.2f}")
 eq3.metric("Configured Initial Equity", f"{runner_initial_capital:.2f}")
 eq4.metric("Configured Leverage", f"{int(runner_leverage)}x")
 
+st.markdown("**PnL / Drawdown**")
 mx1, mx2, mx3, mx4 = st.columns(4)
 mx1.metric("Open P/L", _format_signed_dollar(summary.get("open_pnl"), digits=2))
 mx2.metric("Total (C+O)", _format_signed_dollar(summary.get("total_c_plus_o"), digits=2))
@@ -3221,6 +3340,7 @@ if performance:
     p5.metric("Max Drawdown", f"{performance.get('Max Drawdown', 0.0):.2%}")
     p6.metric("Funding (Net)", f"{performance.get('Funding (Net)', 0.0):.4f}")
 
+st.markdown("**Trade Quality**")
 pf1, pf2, pf3, pf4, pf5, pf6 = st.columns(6)
 pf1.metric("Profit Factor", _format_metric_value("Profit Factor", summary.get("profit_factor")))
 pf2.metric("Recovery Factor", f"{_safe_float(summary.get('recovery_factor')):.3f}")
@@ -3295,7 +3415,7 @@ with tab_overview:
     st.caption(
         f"Data context: run={active_run_id if active_run_id else 'N/A'} | "
         f"source={resolved_source} | symbol={market_symbol} | timeframe={market_timeframe} | "
-        f"exchange={market_exchange}"
+        f"exchange={market_exchange} | market_db={market_db_path}"
     )
 
     if not plot_equity.empty:
@@ -4228,7 +4348,7 @@ with tab_report:
                 "--data-source",
                 runner_data_source,
                 "--market-db-path",
-                db_path,
+                market_db_path,
                 "--market-exchange",
                 market_exchange,
                 "--run-id",
@@ -4261,7 +4381,7 @@ with tab_report:
                 "--data-source",
                 runner_data_source,
                 "--market-db-path",
-                db_path,
+                market_db_path,
                 "--market-exchange",
                 market_exchange,
                 "--run-id",

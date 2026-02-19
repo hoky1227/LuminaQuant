@@ -97,7 +97,18 @@ class HistoricCSVDataHandler(DataHandler):
             try:
                 # Load from Memory or Disk
                 if s in combined_data:
-                    df = self._frame_loader.normalize(combined_data[s])
+                    preloaded = combined_data[s]
+                    if self._is_prefrozen_rows(preloaded):
+                        generator = iter(preloaded)
+                        self.data_generators[s] = generator
+                        first_bar = next(generator, None)
+                        if first_bar is None:
+                            self.finished_symbols.add(s)
+                            continue
+                        self.next_bar[s] = first_bar
+                        self._push_heap(s, first_bar)
+                        continue
+                    df = self._frame_loader.normalize(preloaded)
                 else:
                     # Load CSV with Polars
                     csv_path = self._resolve_symbol_csv_path(s)
@@ -133,6 +144,15 @@ class HistoricCSVDataHandler(DataHandler):
 
     def _resolve_symbol_csv_path(self, symbol):
         return resolve_symbol_csv_path(self.csv_dir, symbol)
+
+    @staticmethod
+    def _is_prefrozen_rows(value) -> bool:
+        if not isinstance(value, (list, tuple)):
+            return False
+        if len(value) == 0:
+            return True
+        first = value[0]
+        return isinstance(first, tuple) and len(first) >= 6
 
     def _push_heap(self, symbol, bar):
         heapq.heappush(self._bar_heap, (bar[0], self._heap_seq, symbol))

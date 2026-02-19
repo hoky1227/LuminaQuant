@@ -2,26 +2,30 @@ import collections
 import logging
 import queue
 from pprint import pprint
+from typing import Any
 
 from lumina_quant.config import BacktestConfig
 from lumina_quant.engine import TradingEngine
-from lumina_quant.market_data import timeframe_to_milliseconds
+from lumina_quant.market_data import normalize_timeframe_token, timeframe_to_milliseconds
 
 LOGGER = logging.getLogger(__name__)
 
 
-def _event_time_to_ms(value):
+def _event_time_to_ms(value: Any) -> int | None:
     if value is None:
         return None
     if isinstance(value, (int, float)):
-        numeric = int(value)
+        numeric = int(float(value))
         if abs(numeric) < 100_000_000_000:
             return numeric * 1000
         return numeric
     ts_fn = getattr(value, "timestamp", None)
     if callable(ts_fn):
         try:
-            return int(ts_fn() * 1000)
+            ts_value = ts_fn()
+            if isinstance(ts_value, (int, float)):
+                return int(float(ts_value) * 1000)
+            return None
         except Exception:
             return None
     return None
@@ -32,9 +36,9 @@ class TimeframeGatedStrategy:
 
     def __init__(self, strategy, timeframe):
         self._strategy = strategy
-        self._timeframe = str(timeframe).strip().lower()
+        self._timeframe = normalize_timeframe_token(timeframe)
         self._timeframe_ms = max(1, int(timeframe_to_milliseconds(self._timeframe)))
-        self._last_bucket_per_symbol = {}
+        self._last_bucket_per_symbol: dict[str, int] = {}
 
     def __getattr__(self, name):
         return getattr(self._strategy, name)
@@ -60,10 +64,12 @@ class TimeframeGatedStrategy:
         self._strategy.calculate_signals(event)
 
     def get_state(self):
-        state = {}
+        state: dict[Any, Any] = {}
         get_state_fn = getattr(self._strategy, "get_state", None)
         if callable(get_state_fn):
-            state = dict(get_state_fn() or {})
+            raw_state = get_state_fn()
+            if isinstance(raw_state, dict):
+                state.update(raw_state)
         state["_tf_gate_last_bucket"] = dict(self._last_bucket_per_symbol)
         return state
 
@@ -133,9 +139,11 @@ class Backtest(TradingEngine):
         self.record_history = bool(record_history)
         self.track_metrics = bool(track_metrics)
         self.record_trades = bool(record_trades)
-        self.strategy_timeframe = (
-            str(strategy_timeframe or getattr(self.config, "TIMEFRAME", "1m")).strip().lower()
-        )
+        raw_strategy_timeframe = str(strategy_timeframe or getattr(self.config, "TIMEFRAME", "1m"))
+        try:
+            self.strategy_timeframe = normalize_timeframe_token(raw_strategy_timeframe)
+        except Exception:
+            self.strategy_timeframe = "1m"
 
         self.data_handler_cls = data_handler_cls
         self.execution_handler_cls = execution_handler_cls
