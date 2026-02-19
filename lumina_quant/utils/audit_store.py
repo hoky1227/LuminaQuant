@@ -120,10 +120,26 @@ class AuditStore:
 
     def end_run(self, run_id, status="COMPLETED", metadata=None):
         now = self._utcnow()
+        incoming = dict(metadata or {})
         with self._lock:
+            row = self._conn.execute(
+                "SELECT metadata FROM runs WHERE run_id=?",
+                (run_id,),
+            ).fetchone()
+            merged_metadata = {}
+            if row is not None:
+                raw_existing = row["metadata"]
+                if raw_existing:
+                    try:
+                        parsed_existing = json.loads(raw_existing)
+                        if isinstance(parsed_existing, dict):
+                            merged_metadata.update(parsed_existing)
+                    except Exception:
+                        pass
+            merged_metadata.update(incoming)
             self._conn.execute(
                 "UPDATE runs SET ended_at=?, status=?, metadata=? WHERE run_id=?",
-                (now, status, json.dumps(metadata or {}), run_id),
+                (now, status, json.dumps(merged_metadata), run_id),
             )
             self._conn.commit()
 

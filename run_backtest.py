@@ -3,6 +3,7 @@ import json
 import os
 import uuid
 from datetime import datetime
+from types import SimpleNamespace
 
 from lumina_quant.backtesting.backtest import Backtest
 from lumina_quant.backtesting.data import HistoricCSVDataHandler
@@ -10,27 +11,25 @@ from lumina_quant.backtesting.execution_sim import SimulatedExecutionHandler
 from lumina_quant.backtesting.portfolio_backtest import Portfolio
 from lumina_quant.config import BacktestConfig, BaseConfig, LiveConfig, OptimizationConfig
 from lumina_quant.data_collector import auto_collect_market_data
-from lumina_quant.market_data import load_data_dict_from_db
+from lumina_quant.market_data import load_data_dict_from_db, normalize_timeframe_token
 from lumina_quant.utils.audit_store import AuditStore
-from strategies import (
-    DEFAULT_STRATEGY_NAME,
-    get_default_strategy_params,
-    get_strategy_map,
-    resolve_strategy_class,
-)
+from strategies import registry as strategy_registry
 
 # ==========================================
 # CONFIGURATION FROM YAML
 # ==========================================
 # 1. Strategy Selection
-STRATEGY_MAP = get_strategy_map()
+STRATEGY_MAP = strategy_registry.get_strategy_map()
 requested_strategy_name = str(OptimizationConfig.STRATEGY_NAME or "").strip()
-STRATEGY_CLASS = resolve_strategy_class(requested_strategy_name, default_name=DEFAULT_STRATEGY_NAME)
+STRATEGY_CLASS = strategy_registry.resolve_strategy_class(
+    requested_strategy_name,
+    default_name=strategy_registry.DEFAULT_STRATEGY_NAME,
+)
 strategy_name = STRATEGY_CLASS.__name__
 
 
 # 2. Strategy Parameters
-STRATEGY_PARAMS = get_default_strategy_params(strategy_name)
+STRATEGY_PARAMS = strategy_registry.get_default_strategy_params(strategy_name)
 
 
 # Try loading optimized
@@ -89,7 +88,19 @@ except Exception:
 
 MARKET_DB_PATH = BaseConfig.MARKET_DATA_SQLITE_PATH
 MARKET_DB_EXCHANGE = BaseConfig.MARKET_DATA_EXCHANGE
-BASE_TIMEFRAME = str(os.getenv("LQ_BASE_TIMEFRAME", "1s") or "1s").strip().lower()
+
+
+def _normalize_timeframe_or_default(value, default):
+    token = str(value or "").strip()
+    if not token:
+        return str(default)
+    try:
+        return normalize_timeframe_token(token)
+    except Exception:
+        return str(default)
+
+
+BASE_TIMEFRAME = _normalize_timeframe_or_default(os.getenv("LQ_BASE_TIMEFRAME", "1s"), "1s")
 AUTO_COLLECT_DB = str(os.getenv("LQ_AUTO_COLLECT_DB", "1")).strip().lower() not in {
     "0",
     "false",
@@ -175,6 +186,76 @@ def _load_data_dict(
     return None
 
 
+def _safe_float(value):
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except Exception:
+        return None
+
+
+def _persist_backtest_audit_rows(audit_store, run_id, backtest):
+    equity_rows = 0
+    fill_rows = 0
+
+    try:
+        equity_curve = getattr(backtest.portfolio, "equity_curve", None)
+        if equity_curve is None:
+            backtest.portfolio.create_equity_curve_dataframe()
+            equity_curve = getattr(backtest.portfolio, "equity_curve", None)
+        if equity_curve is not None:
+            for row in equity_curve.iter_rows(named=True):
+                total = _safe_float(row.get("total"))
+                if total is None:
+                    continue
+                cash = _safe_float(row.get("cash"))
+                metadata = {}
+                benchmark = _safe_float(row.get("benchmark_price"))
+                funding = _safe_float(row.get("funding"))
+                if benchmark is not None:
+                    metadata["benchmark_price"] = benchmark
+                if funding is not None:
+                    metadata["funding"] = funding
+                audit_store.log_equity(
+                    run_id,
+                    timeindex=row.get("datetime"),
+                    total=total,
+                    cash=cash,
+                    metadata=metadata,
+                )
+                equity_rows += 1
+    except Exception as exc:
+        print(f"[WARN] Failed to persist equity rows to audit DB: {exc}")
+
+    try:
+        trades = list(getattr(backtest.portfolio, "trades", []) or [])
+        for idx, trade in enumerate(trades):
+            symbol = str(trade.get("symbol") or "").strip()
+            side = str(trade.get("direction") or "").strip().upper()
+            quantity = _safe_float(trade.get("quantity"))
+            if not symbol or side not in {"BUY", "SELL"} or quantity is None or quantity <= 0.0:
+                continue
+            fill_event = SimpleNamespace(
+                timeindex=trade.get("datetime"),
+                symbol=symbol,
+                direction=side,
+                quantity=quantity,
+                fill_cost=_safe_float(trade.get("fill_cost")),
+                commission=_safe_float(trade.get("commission")) or 0.0,
+                client_order_id=f"bt-{run_id}-{idx:06d}",
+                order_id=None,
+                status="FILLED",
+                metadata={"source": "backtest_trade_log"},
+            )
+            audit_store.log_fill(run_id, fill_event)
+            fill_rows += 1
+    except Exception as exc:
+        print(f"[WARN] Failed to persist fill rows to audit DB: {exc}")
+
+    return {"equity_rows": equity_rows, "fill_rows": fill_rows}
+
+
 def run(
     data_source="auto",
     market_db_path=MARKET_DB_PATH,
@@ -190,6 +271,7 @@ def run(
     print("------------------------------------------------")
 
     backtest_run_id = str(run_id or "").strip() or str(uuid.uuid4())
+    timeframe_token = _normalize_timeframe_or_default(base_timeframe, "1s")
     audit_store = AuditStore(BaseConfig.STORAGE_SQLITE_PATH)
     audit_store.start_run(
         mode="backtest",
@@ -200,7 +282,7 @@ def run(
             "data_source": str(data_source),
             "market_db_path": str(market_db_path),
             "market_exchange": str(market_exchange),
-            "base_timeframe": str(base_timeframe),
+            "base_timeframe": str(timeframe_token),
             "strategy_timeframe": str(BaseConfig.TIMEFRAME),
             "auto_collect_db": bool(auto_collect_db),
         },
@@ -212,11 +294,10 @@ def run(
             data_source,
             market_db_path,
             market_exchange,
-            base_timeframe=str(base_timeframe),
+            base_timeframe=str(timeframe_token),
             auto_collect_db=bool(auto_collect_db),
         )
 
-        # Initialize Backtest
         backtest = Backtest(
             csv_dir=CSV_DIR,
             symbol_list=SYMBOL_LIST,
@@ -232,11 +313,13 @@ def run(
         )
 
         backtest.simulate_trading()
+        persisted_counts = _persist_backtest_audit_rows(audit_store, backtest_run_id, backtest)
         audit_store.end_run(
             backtest_run_id,
             status="COMPLETED",
             metadata={
                 "final_equity": float(backtest.portfolio.current_holdings.get("total", 0.0)),
+                **persisted_counts,
             },
         )
     except Exception as exc:
@@ -288,7 +371,7 @@ if __name__ == "__main__":
         data_source=args.data_source,
         market_db_path=args.market_db_path,
         market_exchange=args.market_exchange,
-        base_timeframe=args.base_timeframe,
+        base_timeframe=_normalize_timeframe_or_default(args.base_timeframe, "1s"),
         auto_collect_db=(not bool(args.no_auto_collect_db) and bool(AUTO_COLLECT_DB)),
         run_id=args.run_id,
     )

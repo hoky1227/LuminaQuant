@@ -13,6 +13,7 @@
 | **[Installation & Setup](#installation)** | Getting started with LuminaQuant. |
 | **[Deployment Guide](docs/DEPLOYMENT.md)** | **New**: Docker & VPS Setup for 24/7 Trading. |
 | **[Validation Report](docs/VALIDATION_REPORT.md)** | Verification + optimization report for core workflows. |
+| **[Workflow Guide](docs/WORKFLOW.md)** | Private/Public branch operation and publish checklist. |
 | **[Dashboard Realtime Report](docs/DASHBOARD_REALTIME_ANALYSIS_REPORT.md)** | Analysis + implementation report for live-refresh dashboard behavior. |
 | **[Exchange Guide](docs/EXCHANGES.md)** | Detailed setup for **Binance** (CCXT) and **MetaTrader 5**. |
 | **[Trading Manual](docs/TRADING_MANUAL.md)** | **How-To**: Buy/Sell, Leverage, TP/SL, Trailing Stops. |
@@ -109,12 +110,19 @@ trading:
   - `lumina_quant/indicators/`
   - `strategies/`
   - private strategy/indicator test files
+- This public repository also excludes DB construction/sync code:
+  - `lumina_quant/data_sync.py`
+  - `lumina_quant/data_collector.py`
+  - `scripts/sync_binance_ohlcv.py`
+  - `scripts/collect_market_data.py`
+  - `scripts/collect_universe_1s.py`
+  - `tests/test_data_sync.py`
 - Full strategy/indicator implementation and AGENTS guidance are maintained in the private repository.
 - Database/runtime artifacts are never published (`*.db`, `*.sqlite*`, `data/`, `logs/`, `.omx/`, `.sisyphus/`).
 
 ### 3. Running the System
 
-**Sync Full Binance OHLCV into SQLite (and CSV mirror):**
+**(Private repo only) Sync Binance OHLCV into SQLite (and CSV mirror):**
 ```bash
 uv run python scripts/sync_binance_ohlcv.py \
   --symbols BTC/USDT ETH/USDT \
@@ -122,6 +130,8 @@ uv run python scripts/sync_binance_ohlcv.py \
   --db-path data/lumina_quant.db \
   --force-full
 ```
+
+In the public repository, DB sync/build helpers are intentionally removed. Use prebuilt market DB files or CSV data.
 
 **Backtest a Strategy:**
 ```bash
@@ -157,6 +167,9 @@ Dashboard now includes no-code workflow controls for backtest, optimization, and
 - graceful stop via control-file signal and emergency force-kill fallback
 - optimization results panel from SQLite (`optimization_results`)
 - ghost cleanup controls (dry-run/apply) for stale `RUNNING` rows
+- strategy-scoped run filtering (`Filter Run IDs By Strategy`) and automatic run reselection on strategy change
+- separate `Market Data SQLite Path` so market OHLCV source can differ from audit DB path
+- explicit CSV fallback warning when equity is rendered from CSV samples instead of SQLite run rows
 
 **Ghost Cleanup CLI (stale RUNNING rows):**
 ```bash

@@ -1,5 +1,8 @@
 from abc import ABC
 
+from lumina_quant.event_clock import EventSequencer, assign_event_identity
+from lumina_quant.message_bus import MessageBus
+
 
 class TradingEngine(ABC):
     """Abstract base class for trading engines (Backtest and LiveTrader).
@@ -12,6 +15,8 @@ class TradingEngine(ABC):
         self.strategy = strategy
         self.portfolio = portfolio
         self.execution_handler = execution_handler
+        self._event_sequencer = EventSequencer()
+        self.message_bus = MessageBus()
 
         # Stats
         self.market_events = 0
@@ -22,6 +27,9 @@ class TradingEngine(ABC):
     def process_event(self, event):
         """Routing logic for events."""
         if event is not None:
+            assign_event_identity(event, self._event_sequencer)
+            event_type = str(getattr(event, "type", "UNKNOWN")).upper()
+            self.message_bus.publish(f"event.{event_type}", event)
             if event.type == "MARKET":
                 self.handle_market_event(event)
             elif event.type == "SIGNAL":

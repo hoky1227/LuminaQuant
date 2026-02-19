@@ -19,6 +19,7 @@ dependencies = [
 
 [project.optional-dependencies]
 optimize = [
+    "numba>=0.64.0",
     "optuna>=4.7.0",
 ]
 live = [

@@ -12,13 +12,15 @@ class Event:
 class MarketEvent(Event):
     """Handles the event of receiving a new market update (OHLCV or Tick)."""
 
-    time: any
+    time: Any
     symbol: str
     open: float
     high: float
     low: float
     close: float
     volume: float
+    timestamp_ns: int | None = None
+    sequence: int | None = None
     type: str = "MARKET"
 
 
@@ -30,7 +32,7 @@ class SignalEvent(Event):
 
     strategy_id: str
     symbol: str
-    datetime: any
+    datetime: Any
     signal_type: str  # 'LONG', 'SHORT', 'EXIT'
     strength: float = 1.0  # For potential position sizing
     price: float | None = None  # Price at which signal was generated (optional)
@@ -40,6 +42,8 @@ class SignalEvent(Event):
     client_order_id: str | None = None
     time_in_force: str | None = None
     metadata: dict[str, Any] | None = None
+    timestamp_ns: int | None = None
+    sequence: int | None = None
     type: str = "SIGNAL"
 
 
@@ -63,6 +67,8 @@ class OrderEvent(Event):
     take_profit: float | None = None
     time_in_force: str | None = None
     metadata: dict[str, Any] | None = None
+    timestamp_ns: int | None = None
+    sequence: int | None = None
     type: str = "ORDER"
 
 
@@ -74,7 +80,7 @@ class FillEvent(Event):
     the commission of the trade from the brokerage.
     """
 
-    timeindex: any
+    timeindex: Any
     symbol: str
     exchange: str
     quantity: float
@@ -86,4 +92,6 @@ class FillEvent(Event):
     position_side: str | None = None
     status: str | None = None
     metadata: dict[str, Any] | None = None
+    timestamp_ns: int | None = None
+    sequence: int | None = None
     type: str = "FILL"

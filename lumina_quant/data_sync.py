@@ -25,6 +25,7 @@ from lumina_quant.market_data import (
     get_last_ohlcv_1s_timestamp_ms,
     get_last_ohlcv_timestamp_ms,
     normalize_symbol,
+    normalize_timeframe_token,
     symbol_csv_filename,
     timeframe_to_milliseconds,
     upsert_ohlcv_rows,
@@ -515,7 +516,8 @@ def get_symbol_ohlcv_coverage(
     timeframe: str,
 ) -> tuple[int | None, int | None, int]:
     """Return (first_ts, last_ts, row_count) for one OHLCV stream key."""
-    if str(timeframe).strip().lower() == "1s":
+    timeframe_token = normalize_timeframe_token(timeframe)
+    if timeframe_token == "1s":
         conn = connect_market_data_1s_db(db_path)
         try:
             ensure_market_ohlcv_1s_schema(conn)
@@ -557,7 +559,7 @@ def get_symbol_ohlcv_coverage(
             (
                 str(exchange_id).strip().lower(),
                 normalize_symbol(symbol),
-                str(timeframe).strip().lower(),
+                timeframe_token,
             ),
         ).fetchone()
         if row is None:
@@ -692,7 +694,8 @@ def sync_symbol_ohlcv(
     conn = connect_market_data_db(db_path)
     try:
         ensure_market_ohlcv_schema(conn)
-        tf_ms = timeframe_to_milliseconds(timeframe)
+        timeframe_token = normalize_timeframe_token(timeframe)
+        tf_ms = timeframe_to_milliseconds(timeframe_token)
         stream_symbol = normalize_symbol(symbol)
         cursor = max(0, int(start_ms))
         until = max(cursor, int(end_ms))
@@ -705,7 +708,7 @@ def sync_symbol_ohlcv(
         use_trade_fallback = False
         empty_trade_advance_ms = 86_400_000
 
-        is_one_second = str(timeframe).strip().lower() == "1s"
+        is_one_second = timeframe_token == "1s"
         exchange_name = str(getattr(exchange, "id", "")).strip().lower()
         market_type = str(
             (getattr(exchange, "options", {}) or {}).get("defaultType", "spot")
@@ -772,7 +775,7 @@ def sync_symbol_ohlcv(
                         raw_rows = _fetch_ohlcv_with_retry(
                             exchange,
                             stream_symbol,
-                            timeframe,
+                            timeframe_token,
                             since_ms=cursor,
                             limit=max(1, int(limit)),
                             retries=retries,
@@ -808,7 +811,7 @@ def sync_symbol_ohlcv(
                 raw_rows = _fetch_ohlcv_with_retry(
                     exchange,
                     stream_symbol,
-                    timeframe,
+                    timeframe_token,
                     since_ms=cursor,
                     limit=max(1, int(limit)),
                     retries=retries,
@@ -843,7 +846,7 @@ def sync_symbol_ohlcv(
                     conn,
                     exchange=str(exchange_id).lower(),
                     symbol=stream_symbol,
-                    timeframe=timeframe,
+                    timeframe=timeframe_token,
                     rows=normalized,
                     source="binance_sync",
                 )
@@ -900,7 +903,8 @@ def sync_market_data(
 
         for symbol in symbol_list:
             stream_symbol = normalize_symbol(symbol)
-            if str(timeframe).strip().lower() == "1s":
+            timeframe_token = normalize_timeframe_token(timeframe)
+            if timeframe_token == "1s":
                 last_ts = get_last_ohlcv_1s_timestamp_ms(
                     db_path,
                     exchange=str(exchange_id).lower(),
@@ -911,7 +915,7 @@ def sync_market_data(
                     conn,
                     exchange=str(exchange_id).lower(),
                     symbol=stream_symbol,
-                    timeframe=timeframe,
+                    timeframe=timeframe_token,
                 )
             start_ms = default_since
             if last_ts is not None and not force_full:

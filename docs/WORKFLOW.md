@@ -1,13 +1,30 @@
 # Developer Workflow
 
-This repository uses a dual-branch strategy to maintain a **private codebase** (with strategies/data) and a **public API** (core engine only).
+This repository uses a dual-branch strategy to maintain a **private codebase** (full research + operations) and a **public API** (core engine only).
 
 ## 1. Branch Structure
 
 - **`private-main`**: The primary development branch. Contains ALL files including sensitive strategies, data, and logs.
-- **`main`**: The public branch. strict `.gitignore` filters out private files.
+- **`main`**: The public branch. Strict filtering removes private IP and DB build/sync helpers.
 
-## 2. Automation Scripts
+## 2. Public Removal Rules
+
+When publishing to `main`, remove (or keep removed) DB construction/sync code:
+
+- `lumina_quant/data_sync.py`
+- `lumina_quant/data_collector.py`
+- `scripts/sync_binance_ohlcv.py`
+- `scripts/collect_market_data.py`
+- `scripts/collect_universe_1s.py`
+- `tests/test_data_sync.py`
+
+Public branch policy:
+
+- Keep DB **read-only** workflows (consume existing SQLite/CSV).
+- Do not include exchange OHLCV bootstrap/sync pipelines.
+- Keep runtime DB/data artifacts out of git.
+
+## 3. Automation Scripts
 
 We provide automation scripts for both Windows (PowerShell) and Mac/Linux (Bash).
 
@@ -37,7 +54,7 @@ We provide automation scripts for both Windows (PowerShell) and Mac/Linux (Bash)
     ./publish_api.sh
     ```
 
-## 3. Manual Process (If scripts fail)
+## 4. Manual Process (If scripts fail)
 
 If you need to do this manually:
 
@@ -55,13 +72,14 @@ git push private private-main:main
 git checkout main
 git merge private-main --no-commit --no-ff
 git checkout HEAD -- .gitignore
+git rm -f lumina_quant/data_sync.py lumina_quant/data_collector.py scripts/sync_binance_ohlcv.py scripts/collect_market_data.py scripts/collect_universe_1s.py tests/test_data_sync.py
 git reset
 git add .
 git commit -m "chore: publish"
 git push origin main
 ```
 
-## 4. Authentication Setup (Multiple Accounts)
+## 5. Authentication Setup (Multiple Accounts)
 
 If you use different GitHub accounts for public (`HokyoungJung`) and private (`hoky1227`) repos, use **Personal Access Tokens (PAT)** in the remote URL to avoid conflicts.
 

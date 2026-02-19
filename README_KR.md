@@ -11,6 +11,7 @@
 | 섹션 | 설명 |
 | :--- | :--- |
 | **[설치 및 설정](#설치-installation)** | LuminaQuant 시작하기. |
+| **[운영 워크플로우](docs/kr/WORKFLOW.md)** | Private/Public 브랜치 운영 및 공개 배포 체크리스트. |
 | **[대시보드 실시간 분석 리포트](docs/DASHBOARD_REALTIME_ANALYSIS_REPORT.md)** | 실시간 갱신 동작 개선 분석 및 구현 결과. |
 | **[거래소 가이드](docs/kr/EXCHANGES.md)** | **바이낸스(Binance)** (CCXT) 및 **MetaTrader 5 (MT5)** 상세 설정법. |
 | **[거래 매뉴얼](docs/kr/TRADING_MANUAL.md)** | **실전 운용법**: 매수/매도, 레버리지, TP/SL, 트레일링 스탑. |
@@ -106,12 +107,19 @@ trading:
   - `lumina_quant/indicators/`
   - `strategies/`
   - 전략/지표 전용 테스트 파일
+- Public 저장소에서는 DB 구축/동기화 코드도 제외합니다.
+  - `lumina_quant/data_sync.py`
+  - `lumina_quant/data_collector.py`
+  - `scripts/sync_binance_ohlcv.py`
+  - `scripts/collect_market_data.py`
+  - `scripts/collect_universe_1s.py`
+  - `tests/test_data_sync.py`
 - 전략/지표 전체 구현 및 AGENTS 가이드는 Private 저장소에서 관리합니다.
 - DB/런타임 산출물은 게시하지 않습니다 (`*.db`, `*.sqlite*`, `data/`, `logs/`, `.omx/`, `.sisyphus/`).
 
 ### 3. 시스템 실행 (Running the System)
 
-**바이낸스 OHLCV 전체 수집 + SQLite 업데이트 (+CSV 미러):**
+**(Private 저장소 전용) 바이낸스 OHLCV 전체 수집 + SQLite 업데이트 (+CSV 미러):**
 ```bash
 uv run python scripts/sync_binance_ohlcv.py \
   --symbols BTC/USDT ETH/USDT \
@@ -119,6 +127,8 @@ uv run python scripts/sync_binance_ohlcv.py \
   --db-path data/lumina_quant.db \
   --force-full
 ```
+
+Public 저장소에는 DB 동기화/구축 헬퍼를 의도적으로 포함하지 않습니다. 사전 구축된 DB 파일 또는 CSV 데이터를 사용하세요.
 
 **전략 백테스트:**
 ```bash
@@ -156,6 +166,11 @@ uv run python scripts/benchmark_backtest.py \
 ```bash
 uv run streamlit run dashboard.py
 ```
+
+대시보드 개선 사항:
+- 전략별 Run 필터(`Filter Run IDs By Strategy`) 및 전략 변경 시 Run 자동 재선택
+- 감사 DB와 별도로 시장 OHLCV 소스를 지정하는 `Market Data SQLite Path`
+- SQLite run 데이터가 없을 때 CSV fallback 상태를 명시적으로 경고
 
 **대시보드 실시간 스모크 체크 (equity row 증가 확인):**
 ```bash

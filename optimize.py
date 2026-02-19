@@ -5,7 +5,10 @@ import math
 import multiprocessing
 import os
 import sys
+import time
 import uuid
+from bisect import bisect_left, bisect_right
+from collections import OrderedDict
 from datetime import datetime, timedelta
 
 # Engine Imports
@@ -21,10 +24,12 @@ from lumina_quant.market_data import (
     resolve_symbol_csv_path,
     timeframe_to_milliseconds,
 )
+from lumina_quant.optimization.frozen_dataset import build_frozen_dataset
 from lumina_quant.optimization.storage import save_optimization_rows
+from lumina_quant.optimization.threading_control import configure_numba_threads
 from lumina_quant.optimization.walkers import build_walk_forward_splits
 from lumina_quant.utils.audit_store import AuditStore
-from strategies import DEFAULT_STRATEGY_NAME, get_strategy_map, resolve_strategy_class
+from strategies import registry as strategy_registry
 
 # Optuna Import
 try:
@@ -46,9 +51,12 @@ except ImportError:
 OPTIMIZATION_METHOD = OptimizationConfig.METHOD
 
 # 2. Select Strategy
-STRATEGY_MAP = get_strategy_map()
+STRATEGY_MAP = strategy_registry.get_strategy_map()
 requested_strategy_name = str(OptimizationConfig.STRATEGY_NAME or "").strip()
-STRATEGY_CLASS = resolve_strategy_class(requested_strategy_name, default_name=DEFAULT_STRATEGY_NAME)
+STRATEGY_CLASS = strategy_registry.resolve_strategy_class(
+    requested_strategy_name,
+    default_name=strategy_registry.DEFAULT_STRATEGY_NAME,
+)
 
 # 3. Data Settings
 CSV_DIR = "data"
@@ -82,6 +90,163 @@ AUTO_COLLECT_DB = str(os.getenv("LQ_AUTO_COLLECT_DB", "1")).strip().lower() not 
 
 # Global Data Cache for Multiprocessing (Copy-on-Write)
 DATA_DICT = {}
+DATA_TIMESTAMPS = {}
+WINDOW_DATA_CACHE: OrderedDict[tuple[int, int], dict[str, tuple[tuple, ...]]] = OrderedDict()
+WINDOW_CACHE_MAX_SIZE = 256
+FROZEN_DATASET = None
+DATASET_BUILD_READY = False
+PROFILE_ENABLED = str(os.getenv("LQ_OPT_PROFILE", "0")).strip().lower() in {"1", "true", "yes"}
+PROFILE_TOTALS = {
+    "feature_seconds": 0.0,
+    "simulation_seconds": 0.0,
+    "orchestration_seconds": 0.0,
+    "calls": 0,
+}
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = str(os.getenv(name, str(default))).strip()
+    try:
+        return int(raw)
+    except Exception:
+        return int(default)
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = str(os.getenv(name, str(default))).strip()
+    try:
+        return float(raw)
+    except Exception:
+        return float(default)
+
+
+TWO_STAGE_ENABLED = str(os.getenv("LQ_TWO_STAGE_OPT", "1")).strip().lower() not in {
+    "0",
+    "false",
+    "no",
+    "off",
+}
+TWO_STAGE_TOPK_RATIO = min(1.0, max(0.05, _env_float("LQ_TWO_STAGE_TOPK_RATIO", 0.4)))
+TWO_STAGE_MIN_TOPK = max(1, _env_int("LQ_TWO_STAGE_MIN_TOPK", 5))
+TWO_STAGE_MAX_TOPK = max(TWO_STAGE_MIN_TOPK, _env_int("LQ_TWO_STAGE_MAX_TOPK", 80))
+TWO_STAGE_PREFILTER_FRACTION = min(
+    0.9,
+    max(0.1, _env_float("LQ_TWO_STAGE_PREFILTER_FRACTION", 0.4)),
+)
+WINDOW_CACHE_MAX_SIZE = max(16, _env_int("LQ_WINDOW_CACHE_SIZE", WINDOW_CACHE_MAX_SIZE))
+
+
+def _profile_add(key: str, elapsed: float) -> None:
+    if not PROFILE_ENABLED:
+        return
+    PROFILE_TOTALS[key] = float(PROFILE_TOTALS.get(key, 0.0)) + float(elapsed)
+
+
+def _resolve_topk(total_candidates: int) -> int:
+    total = max(0, int(total_candidates))
+    if total <= 0:
+        return 0
+    topk = math.ceil(float(total) * float(TWO_STAGE_TOPK_RATIO))
+    topk = max(TWO_STAGE_MIN_TOPK, topk)
+    topk = min(TWO_STAGE_MAX_TOPK, topk)
+    topk = min(topk, total)
+    return max(1, int(topk))
+
+
+def _resolve_prefilter_window(start_date, end_date):
+    if start_date is None or end_date is None:
+        return start_date, end_date
+    if end_date <= start_date:
+        return start_date, end_date
+    span = end_date - start_date
+    fast_end = start_date + (span * float(TWO_STAGE_PREFILTER_FRACTION))
+    if fast_end <= start_date:
+        fast_end = end_date
+    if fast_end > end_date:
+        fast_end = end_date
+    return start_date, fast_end
+
+
+def _params_signature(params: dict) -> tuple:
+    items = []
+    for key, value in dict(params or {}).items():
+        items.append((str(key), repr(value)))
+    items.sort(key=lambda x: x[0])
+    return tuple(items)
+
+
+def _to_epoch_ms(value) -> int:
+    if value is None:
+        return 0
+    if isinstance(value, (int, float)):
+        raw = int(value)
+        if abs(raw) < 100_000_000_000:
+            return raw
+        if abs(raw) < 100_000_000_000_000:
+            return raw // 1000
+        return raw // 1_000_000
+    ts_fn = getattr(value, "timestamp", None)
+    if callable(ts_fn):
+        try:
+            ts_raw = ts_fn()
+            if isinstance(ts_raw, (int, float)):
+                return int(float(ts_raw) * 1000.0)
+            return 0
+        except Exception:
+            return 0
+    return 0
+
+
+def _freeze_rows_dict(data_dict: dict) -> dict[str, tuple[tuple, ...]]:
+    out: dict[str, tuple[tuple, ...]] = {}
+    for symbol, frame in data_dict.items():
+        if frame is None:
+            continue
+        rows = tuple(frame.iter_rows(named=False))
+        if rows:
+            out[str(symbol)] = rows
+    return out
+
+
+def _ensure_timestamp_index() -> None:
+    global DATA_TIMESTAMPS
+    if DATA_TIMESTAMPS:
+        return
+    ts_index: dict[str, list[int]] = {}
+    for symbol, rows in DATA_DICT.items():
+        ts_index[str(symbol)] = [_to_epoch_ms(row[0]) for row in rows]
+    DATA_TIMESTAMPS = ts_index
+
+
+def _get_window_data_dict(start_date, end_date, data_dict: dict | None = None) -> dict:
+    global WINDOW_DATA_CACHE
+    current_data = data_dict if data_dict is not None else DATA_DICT
+    if not current_data:
+        return {}
+
+    start_ms = _to_epoch_ms(start_date)
+    end_ms = _to_epoch_ms(end_date)
+    cache_key = (int(start_ms), int(end_ms))
+    cached = WINDOW_DATA_CACHE.get(cache_key)
+    if cached is not None:
+        WINDOW_DATA_CACHE.move_to_end(cache_key)
+        return cached
+
+    _ensure_timestamp_index()
+    sliced: dict[str, tuple[tuple, ...]] = {}
+    for symbol, rows in current_data.items():
+        timestamps = DATA_TIMESTAMPS.get(str(symbol), [])
+        if not timestamps or not rows:
+            continue
+        lo = bisect_left(timestamps, start_ms)
+        hi = bisect_right(timestamps, end_ms)
+        if hi > lo:
+            sliced[str(symbol)] = rows[lo:hi]
+    WINDOW_DATA_CACHE[cache_key] = sliced
+    WINDOW_DATA_CACHE.move_to_end(cache_key)
+    while len(WINDOW_DATA_CACHE) > WINDOW_CACHE_MAX_SIZE:
+        WINDOW_DATA_CACHE.popitem(last=False)
+    return sliced
 
 
 def load_all_data(
@@ -193,7 +358,8 @@ def _resolve_in_sample_and_oos_window(data_start, data_end, oos_days, timeframe)
     oos_start = data_end - timedelta(days=requested_days)
     tf_ms = max(1, int(timeframe_to_milliseconds(str(timeframe))))
     in_sample_end = oos_start - timedelta(milliseconds=tf_ms)
-    min_train_span = timedelta(days=7)
+    min_train_days = max(1, _env_int("LQ_MIN_TRAIN_DAYS", 7))
+    min_train_span = timedelta(days=min_train_days)
     if in_sample_end <= data_start + min_train_span:
         return None, None, None
     return in_sample_end, oos_start, data_end
@@ -268,12 +434,21 @@ def _execute_backtest(
     Core execution logic shared by Grid and Optuna.
     Use provided data_dict if available, otherwise fallback (or use global DATA_DICT safely).
     """
+    orchestration_start = time.perf_counter()
     try:
-        # Use passed data_dict or fall back to global DATA_DICT
-        # In multiprocessing (fork), global might be accessible or passed explicitly.
-        # For simplicity, we prioritize passing it if possible, or assume it's available via COW.
-        current_data = data_dict if data_dict is not None else DATA_DICT
+        if not DATASET_BUILD_READY:
+            raise RuntimeError(
+                "Frozen dataset was not built before optimization trials. "
+                "Run dataset build stage first."
+            )
+        # Slice once per date window and reuse via cache.
+        current_data = _get_window_data_dict(start_date, end_date, data_dict=data_dict)
+        if any(hasattr(frame, "select") for frame in current_data.values()):
+            raise RuntimeError(
+                "Polars frame detected inside trial loop. Use pre-frozen tuple rows only."
+            )
 
+        sim_start = time.perf_counter()
         backtest = Backtest(
             csv_dir=csv_dir,
             symbol_list=symbol_list,
@@ -291,6 +466,7 @@ def _execute_backtest(
             strategy_timeframe=str(STRATEGY_TIMEFRAME),
         )
         backtest.simulate_trading(output=False)
+        _profile_add("simulation_seconds", time.perf_counter() - sim_start)
         stats = backtest.portfolio.output_summary_stats_fast()
         no_data = stats.get("status") != "ok"
 
@@ -314,6 +490,9 @@ def _execute_backtest(
     except Exception as e:
         # print(f"Backtest Error: {e}")
         return {"params": params, "error": str(e), "sharpe": -999.0}
+    finally:
+        _profile_add("orchestration_seconds", time.perf_counter() - orchestration_start)
+        PROFILE_TOTALS["calls"] = int(PROFILE_TOTALS.get("calls", 0)) + 1
 
 
 def run_single_backtest_train(args):
@@ -348,9 +527,40 @@ def run_single_backtest_train(args):
     )
 
 
+def _run_backtests_parallel(pool_args, worker_count):
+    workers = max(1, int(worker_count))
+    if workers == 1 or len(pool_args) <= 1:
+        return [run_single_backtest_train(args) for args in pool_args]
+
+    ctx = multiprocessing.get_context("spawn")
+    chunksize = max(1, len(pool_args) // max(1, workers * 4))
+    with ctx.Pool(
+        processes=workers,
+        initializer=pool_initializer,
+        initargs=(DATA_DICT,),
+    ) as pool:
+        return pool.map(run_single_backtest_train, pool_args, chunksize)
+
+
+def _build_pool_args(strategy_cls, params_list, csv_dir, symbol_list, start_date, end_date):
+    return [
+        (
+            strategy_cls,
+            params,
+            csv_dir,
+            symbol_list,
+            start_date,
+            end_date,
+        )
+        for params in list(params_list)
+    ]
+
+
 def pool_initializer(shared_data):
-    global DATA_DICT
+    global DATA_DICT, DATA_TIMESTAMPS, WINDOW_DATA_CACHE
     DATA_DICT = shared_data
+    DATA_TIMESTAMPS = {}
+    WINDOW_DATA_CACHE = OrderedDict()
 
 
 class GridSearchOptimizer:
@@ -371,36 +581,78 @@ class GridSearchOptimizer:
     def run(self, max_workers=4):
         combinations = self.generate_param_combinations()
         print(f"Starting Grid Search (Train Phase) with {len(combinations)} combinations...")
+        if not combinations:
+            return []
 
-        pool_args = [
-            (
+        worker_count = max(1, int(max_workers))
+        if not TWO_STAGE_ENABLED or len(combinations) <= TWO_STAGE_MIN_TOPK:
+            pool_args = _build_pool_args(
                 self.strategy_cls,
-                params,
+                combinations,
                 self.csv_dir,
                 self.symbol_list,
                 self.start_date,
                 self.end_date,
             )
-            for params in combinations
-        ]
+            results = _run_backtests_parallel(pool_args, worker_count)
+            valid_results = [r for r in results if "error" not in r]
+            return sorted(valid_results, key=lambda x: x["sharpe"], reverse=True)
 
-        worker_count = max(1, int(max_workers))
-        if worker_count == 1 or len(pool_args) <= 1:
-            results = [run_single_backtest_train(args) for args in pool_args]
-        else:
-            # Use explicit spawn context for cross-platform consistency.
-            ctx = multiprocessing.get_context("spawn")
-            chunksize = max(1, len(pool_args) // max(1, worker_count * 4))
-            with ctx.Pool(
-                processes=worker_count,
-                initializer=pool_initializer,
-                initargs=(DATA_DICT,),
-            ) as pool:
-                results = pool.map(run_single_backtest_train, pool_args, chunksize)
+        fast_start, fast_end = _resolve_prefilter_window(self.start_date, self.end_date)
+        print(
+            f"[Two-Stage] Prefilter window [{fast_start} ~ {fast_end}] "
+            f"for {len(combinations)} combinations"
+        )
+        pre_args = _build_pool_args(
+            self.strategy_cls,
+            combinations,
+            self.csv_dir,
+            self.symbol_list,
+            fast_start,
+            fast_end,
+        )
+        pre_results = _run_backtests_parallel(pre_args, worker_count)
+        valid_prefilter = sorted(
+            [r for r in pre_results if "error" not in r],
+            key=lambda x: x["sharpe"],
+            reverse=True,
+        )
+        if not valid_prefilter and worker_count > 1:
+            print("[Two-Stage] Prefilter retrying in single-worker mode due empty valid results")
+            pre_results = _run_backtests_parallel(pre_args, 1)
+            valid_prefilter = sorted(
+                [r for r in pre_results if "error" not in r],
+                key=lambda x: x["sharpe"],
+                reverse=True,
+            )
+        if not valid_prefilter:
+            return []
 
-        valid_results = [r for r in results if "error" not in r]
-        sorted_results = sorted(valid_results, key=lambda x: x["sharpe"], reverse=True)
-        return sorted_results
+        topk = _resolve_topk(len(valid_prefilter))
+        finalists = [row["params"] for row in valid_prefilter[:topk]]
+        print(f"[Two-Stage] Prefilter selected Top-{topk} finalists for full replay")
+
+        full_args = _build_pool_args(
+            self.strategy_cls,
+            finalists,
+            self.csv_dir,
+            self.symbol_list,
+            self.start_date,
+            self.end_date,
+        )
+        full_results = _run_backtests_parallel(full_args, worker_count)
+        valid_results = [r for r in full_results if "error" not in r]
+        if not valid_results and worker_count > 1:
+            print("[Two-Stage] Full replay retrying in single-worker mode due empty valid results")
+            full_results = _run_backtests_parallel(full_args, 1)
+            valid_results = [r for r in full_results if "error" not in r]
+        prefilter_map = {
+            _params_signature(row["params"]): float(row.get("sharpe", -999.0))
+            for row in valid_prefilter
+        }
+        for row in valid_results:
+            row["prefilter_sharpe"] = prefilter_map.get(_params_signature(row["params"]), -999.0)
+        return sorted(valid_results, key=lambda x: x["sharpe"], reverse=True)
 
 
 class OptunaOptimizer:
@@ -411,6 +663,7 @@ class OptunaOptimizer:
         self.symbol_list = symbol_list
         self.start_date = start_date
         self.end_date = end_date
+        self.prefilter_start, self.prefilter_end = _resolve_prefilter_window(start_date, end_date)
 
     def objective(self, trial):
         params = {}
@@ -424,20 +677,24 @@ class OptunaOptimizer:
             elif p_type == "categorical":
                 params[key] = trial.suggest_categorical(key, conf["choices"])
 
-        # Train on Train Set specific date range
-        # Here we are in the main process (usually), so DATA_DICT is available.
-        # Optuna usually runs sequentially or with its own parallel backend.
-        # If running simple sequential optuna:
+        eval_start = self.start_date
+        eval_end = self.end_date
+        if TWO_STAGE_ENABLED:
+            eval_start = self.prefilter_start
+            eval_end = self.prefilter_end
+
         result = _execute_backtest(
             self.strategy_cls,
             params,
             self.csv_dir,
             self.symbol_list,
-            self.start_date,
-            self.end_date,
+            eval_start,
+            eval_end,
             data_dict=DATA_DICT,
         )
-        return result["sharpe"]
+        score = float(result.get("sharpe", -999.0))
+        trial.set_user_attr("prefilter_sharpe", score)
+        return score
 
     def run(self, n_trials=20, n_jobs=1):
         if not OPTUNA_AVAILABLE or optuna is None or TrialState is None:
@@ -449,13 +706,65 @@ class OptunaOptimizer:
         study.optimize(self.objective, n_trials=n_trials, n_jobs=worker_count)
 
         best_trials = sorted(study.trials, key=lambda t: t.value if t.value else -999, reverse=True)
+        complete_trials = [t for t in best_trials if t.state == TrialState.COMPLETE]
+        if not complete_trials:
+            return []
 
-        params_list = []
-        for t in best_trials[:10]:
-            if t.state != TrialState.COMPLETE:
-                continue
-            params_list.append({"params": t.params, "sharpe": t.value, "cagr": "N/A", "mdd": "N/A"})
-        return params_list
+        if not TWO_STAGE_ENABLED:
+            params_list = []
+            for trial in complete_trials[:10]:
+                params_list.append(
+                    {
+                        "params": trial.params,
+                        "sharpe": float(trial.value if trial.value is not None else -999.0),
+                        "cagr": "N/A",
+                        "mdd": "N/A",
+                        "prefilter_sharpe": float(
+                            trial.user_attrs.get(
+                                "prefilter_sharpe",
+                                trial.value if trial.value is not None else -999.0,
+                            )
+                        ),
+                    }
+                )
+            return params_list
+
+        topk = _resolve_topk(len(complete_trials))
+        finalists = complete_trials[:topk]
+        print(
+            f"[Two-Stage] Optuna prefilter completed {len(complete_trials)} trials; "
+            f"replaying Top-{topk} on full train window"
+        )
+
+        finalists_params = [dict(trial.params) for trial in finalists]
+        full_args = _build_pool_args(
+            self.strategy_cls,
+            finalists_params,
+            self.csv_dir,
+            self.symbol_list,
+            self.start_date,
+            self.end_date,
+        )
+        full_results = _run_backtests_parallel(full_args, worker_count)
+        valid_results = [row for row in full_results if "error" not in row]
+        if not valid_results and worker_count > 1:
+            print("[Two-Stage] Optuna full replay retrying in single-worker mode")
+            full_results = _run_backtests_parallel(full_args, 1)
+            valid_results = [row for row in full_results if "error" not in row]
+        prefilter_map = {
+            _params_signature(dict(trial.params)): float(
+                trial.user_attrs.get(
+                    "prefilter_sharpe",
+                    trial.value if trial.value is not None else -999.0,
+                )
+            )
+            for trial in finalists
+        }
+        for row in valid_results:
+            row["prefilter_sharpe"] = prefilter_map.get(_params_signature(row["params"]), -999.0)
+
+        sorted_results = sorted(valid_results, key=lambda x: x["sharpe"], reverse=True)
+        return sorted_results[:10]
 
 
 def _apply_fold_metadata(rows, split):
@@ -642,6 +951,9 @@ if __name__ == "__main__":
             "strategy_timeframe": str(STRATEGY_TIMEFRAME),
             "auto_collect_db": bool(not bool(args.no_auto_collect_db) and bool(AUTO_COLLECT_DB)),
             "oos_days": int(max(0, int(args.oos_days))),
+            "two_stage_enabled": bool(TWO_STAGE_ENABLED),
+            "two_stage_topk_ratio": float(TWO_STAGE_TOPK_RATIO),
+            "two_stage_prefilter_fraction": float(TWO_STAGE_PREFILTER_FRACTION),
         },
         run_id=run_id,
     )
@@ -651,6 +963,7 @@ if __name__ == "__main__":
 
     OPTUNA_TRIALS = args.n_trials
     MAX_WORKERS = max(1, int(args.max_workers))
+    configured_numba_threads = configure_numba_threads(MAX_WORKERS)
     persist_best_params = bool(args.save_best_params or OptimizationConfig.PERSIST_BEST_PARAMS)
 
     try:
@@ -666,7 +979,8 @@ if __name__ == "__main__":
         )
 
         # Load Data Once
-        DATA_DICT = load_all_data(
+        feature_start = time.perf_counter()
+        RAW_DATA_DICT = load_all_data(
             CSV_DIR,
             SYMBOL_LIST,
             data_source=args.data_source,
@@ -674,11 +988,30 @@ if __name__ == "__main__":
             market_exchange=args.market_exchange,
             timeframe=str(args.base_timeframe),
         )
+        _profile_add("feature_seconds", time.perf_counter() - feature_start)
+        FROZEN_DATASET = build_frozen_dataset(RAW_DATA_DICT)
+        DATA_DICT = _freeze_rows_dict(RAW_DATA_DICT)
+        DATA_TIMESTAMPS = {}
+        WINDOW_DATA_CACHE = OrderedDict()
+        DATASET_BUILD_READY = True
+        if FROZEN_DATASET.close.size == 0:
+            raise RuntimeError("Frozen dataset build produced empty arrays")
+        if configured_numba_threads is not None:
+            print(f"[INFO] Numba threads configured: {configured_numba_threads}")
+        if TWO_STAGE_ENABLED:
+            print(
+                "[INFO] Two-stage optimization enabled: "
+                f"prefilter_fraction={TWO_STAGE_PREFILTER_FRACTION:.2f}, "
+                f"topk_ratio={TWO_STAGE_TOPK_RATIO:.2f}, "
+                f"topk_min={TWO_STAGE_MIN_TOPK}, topk_max={TWO_STAGE_MAX_TOPK}"
+            )
+
         splits = build_walk_forward_splits(
             BASE_START,
             args.folds,
         )
-        data_start, data_end = _data_datetime_range(DATA_DICT)
+        data_start, data_end = _data_datetime_range(RAW_DATA_DICT)
+        RAW_DATA_DICT.clear()
         if data_start is None or data_end is None:
             print("No usable datetime range found in loaded data.")
             sys.exit(1)
@@ -854,5 +1187,12 @@ if __name__ == "__main__":
         final_metadata = {"error": str(exc)}
         raise
     finally:
+        if PROFILE_ENABLED:
+            calls = max(1, int(PROFILE_TOTALS.get("calls", 1)))
+            print("[PROFILE] optimization runtime breakdown")
+            print(f"  feature/indicator: {PROFILE_TOTALS['feature_seconds']:.4f}s")
+            print(f"  simulation core:   {PROFILE_TOTALS['simulation_seconds']:.4f}s")
+            print(f"  orchestration:     {PROFILE_TOTALS['orchestration_seconds']:.4f}s")
+            print(f"  avg simulation/call: {(PROFILE_TOTALS['simulation_seconds'] / calls):.6f}s")
         audit_store.end_run(run_id, status=final_status, metadata=final_metadata)
         audit_store.close()

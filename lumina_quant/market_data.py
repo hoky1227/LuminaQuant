@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -19,6 +20,7 @@ TIMEFRAME_UNIT_MS = {
     "h": 3_600_000,
     "d": 86_400_000,
     "w": 604_800_000,
+    "M": 2_592_000_000,
 }
 EMPTY_OHLCV_SCHEMA = {
     "datetime": pl.Datetime(time_unit="ms"),
@@ -86,7 +88,7 @@ def resolve_symbol_csv_path(csv_dir: str, symbol: str) -> str:
 
 def timeframe_to_milliseconds(timeframe: str) -> int:
     """Convert timeframe token like 1m/1h/1d into milliseconds."""
-    token = str(timeframe).strip().lower()
+    token = normalize_timeframe_token(timeframe)
     if len(token) < 2:
         raise ValueError(f"Invalid timeframe: {timeframe}")
     unit = token[-1]
@@ -97,6 +99,38 @@ def timeframe_to_milliseconds(timeframe: str) -> int:
     if unit_ms is None:
         raise ValueError(f"Unsupported timeframe unit in: {timeframe}")
     return value * unit_ms
+
+
+_TIMEFRAME_PATTERN = re.compile(r"^([1-9][0-9]*)([smhdwM])$")
+
+
+def normalize_timeframe_token(timeframe: str) -> str:
+    """Normalize timeframe token while preserving month/minute semantics.
+
+    Rules:
+    - `1m` means 1 minute.
+    - `1M` means 1 month.
+    - Other units are normalized to lowercase (`s`, `h`, `d`, `w`).
+    """
+    raw = str(timeframe or "").strip()
+    if not raw:
+        raise ValueError("Timeframe cannot be empty")
+    if len(raw) < 2:
+        raise ValueError(f"Invalid timeframe: {timeframe}")
+
+    value = raw[:-1].strip()
+    unit_raw = raw[-1]
+    if not value.isdigit() or int(value) <= 0:
+        raise ValueError(f"Invalid timeframe value: {timeframe}")
+
+    if unit_raw == "M":
+        unit = "M"
+    else:
+        unit = unit_raw.lower()
+    token = f"{int(value)}{unit}"
+    if _TIMEFRAME_PATTERN.fullmatch(token) is None:
+        raise ValueError(f"Unsupported timeframe unit in: {timeframe}")
+    return token
 
 
 def connect_market_data_db(db_path: str) -> sqlite3.Connection:
@@ -230,7 +264,7 @@ def get_last_ohlcv_timestamp_ms(
         (
             str(exchange).strip().lower(),
             normalize_symbol(symbol),
-            str(timeframe).strip().lower(),
+            normalize_timeframe_token(timeframe),
         ),
     ).fetchone()
     if row is None:
@@ -279,7 +313,7 @@ class MarketDataRepository:
             conn.close()
 
     def market_data_exists(self, *, exchange: str, symbol: str, timeframe: str) -> bool:
-        if str(timeframe).strip().lower() == "1s":
+        if normalize_timeframe_token(timeframe) == "1s":
             conn = connect_market_data_1s_db(self.db_path)
             try:
                 ensure_market_ohlcv_1s_schema(conn)
@@ -312,7 +346,7 @@ class MarketDataRepository:
                 (
                     str(exchange).strip().lower(),
                     normalize_symbol(symbol),
-                    str(timeframe).strip().lower(),
+                    normalize_timeframe_token(timeframe),
                 ),
             ).fetchone()
             return row is not None
@@ -328,7 +362,7 @@ class MarketDataRepository:
         start_date: Any = None,
         end_date: Any = None,
     ) -> pl.DataFrame:
-        if str(timeframe).strip().lower() == "1s":
+        if normalize_timeframe_token(timeframe) == "1s":
             return self.load_ohlcv_1s(
                 exchange=exchange,
                 symbol=symbol,
@@ -350,7 +384,7 @@ class MarketDataRepository:
             params: list[Any] = [
                 str(exchange).strip().lower(),
                 normalize_symbol(symbol),
-                str(timeframe).strip().lower(),
+                normalize_timeframe_token(timeframe),
             ]
             if start_ms is not None:
                 query += " AND timestamp_ms >= ?"
@@ -484,7 +518,7 @@ def upsert_ohlcv_rows(
     payload: list[tuple[Any, ...]] = []
     stream_exchange = str(exchange).strip().lower()
     stream_symbol = normalize_symbol(symbol)
-    stream_timeframe = str(timeframe).strip().lower()
+    stream_timeframe = normalize_timeframe_token(timeframe)
     stream_source = str(source).strip().lower()
 
     for row in rows:
