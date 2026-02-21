@@ -70,7 +70,7 @@ foreach ($p in $protectedPaths) {
 
 Write-Host "Validating sensitive paths are absent from staged tree..." -ForegroundColor Cyan
 $sensitiveRegex = '^strategies/|^lumina_quant/indicators/|^data/|^logs/|^reports/|^best_optimized_parameters/|^\.omx/|^\.sisyphus/|^AGENTS\.md$|^\.env$|^lumina_quant/data_sync\.py$|^lumina_quant/data_collector\.py$|^scripts/sync_binance_ohlcv\.py$|^scripts/collect_market_data\.py$|^scripts/collect_universe_1s\.py$|^tests/test_data_sync\.py$|(^|/)live_?equity\.csv$|(^|/)live_?trades\.csv$|(^|/)equity\.csv$|(^|/)trades\.csv$'
-$staged = git diff --cached --name-only
+$staged = git diff --cached --name-only --diff-filter=ACMRT
 $hasSensitive = $false
 if ($staged) {
     foreach ($line in ($staged -split "`n")) {
