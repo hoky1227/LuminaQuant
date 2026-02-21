@@ -1,5 +1,11 @@
 $ErrorActionPreference = "Stop"
 
+function Restore-MainAfterFailedPublish {
+    git reset --hard HEAD *> $null
+    git clean -fd *> $null
+    git checkout private-main *> $null
+}
+
 $protectedPaths = @(
     "AGENTS.md",
     ".env",
@@ -77,16 +83,14 @@ if ($staged) {
 }
 if ($hasSensitive) {
     Write-Host "Sensitive files are still staged. Aborting publish." -ForegroundColor Red
-    git merge --abort
-    git checkout private-main
+    Restore-MainAfterFailedPublish
     exit 1
 }
 
 $stagedNames = git diff --name-only --cached
 if (-not $stagedNames) {
     Write-Host "No public changes to publish." -ForegroundColor Yellow
-    git merge --abort
-    git checkout private-main
+    Restore-MainAfterFailedPublish
     exit 0
 }
 

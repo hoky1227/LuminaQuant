@@ -2,6 +2,12 @@
 
 set -euo pipefail
 
+cleanup_main_branch() {
+  git reset --hard HEAD >/dev/null 2>&1 || true
+  git clean -fd >/dev/null 2>&1 || true
+  git checkout private-main >/dev/null 2>&1 || true
+}
+
 PROTECTED_PATHS=(
   "AGENTS.md"
   ".env"
@@ -66,15 +72,13 @@ done
 echo -e "\033[0;36mValidating sensitive paths are absent from staged tree...\033[0m"
 if git diff --cached --name-only | rg "^strategies/|^lumina_quant/indicators/|^data/|^logs/|^reports/|^best_optimized_parameters/|^\.omx/|^\.sisyphus/|^AGENTS\.md$|^\.env$|^lumina_quant/data_sync\.py$|^lumina_quant/data_collector\.py$|^scripts/sync_binance_ohlcv\.py$|^scripts/collect_market_data\.py$|^scripts/collect_universe_1s\.py$|^tests/test_data_sync\.py$|(^|/)live_?equity\.csv$|(^|/)live_?trades\.csv$|(^|/)equity\.csv$|(^|/)trades\.csv$" >/dev/null 2>&1; then
   echo -e "\033[0;31mSensitive files are still staged. Aborting publish.\033[0m"
-  git merge --abort
-  git checkout private-main
+  cleanup_main_branch
   exit 1
 fi
 
 if git diff --cached --quiet; then
   echo -e "\033[0;33mNo public changes to publish.\033[0m"
-  git merge --abort
-  git checkout private-main
+  cleanup_main_branch
   exit 0
 fi
 
