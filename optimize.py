@@ -27,8 +27,35 @@ from lumina_quant.optimization.frozen_dataset import build_frozen_dataset
 from lumina_quant.optimization.storage import save_optimization_rows
 from lumina_quant.optimization.threading_control import configure_numba_threads
 from lumina_quant.optimization.walkers import build_walk_forward_splits
+from lumina_quant.strategy import Strategy
 from lumina_quant.utils.audit_store import AuditStore
-from strategies import registry as strategy_registry
+
+try:
+    from strategies import registry as strategy_registry
+except Exception:
+    class _PublicStubStrategy(Strategy):
+        def __init__(self, *args, **kwargs):
+            raise RuntimeError(
+                "Strategy modules are unavailable in this distribution."
+            )
+
+        def calculate_signals(self, event):
+            _ = event
+            return None
+
+    class _PublicStrategyRegistry:
+        DEFAULT_STRATEGY_NAME = "PublicStubStrategy"
+
+        @staticmethod
+        def get_strategy_map():
+            return {"PublicStubStrategy": _PublicStubStrategy}
+
+        @staticmethod
+        def resolve_strategy_class(name: str, default_name: str | None = None):
+            _ = name, default_name
+            return _PublicStubStrategy
+
+    strategy_registry = _PublicStrategyRegistry()
 
 try:
     from lumina_quant.data_collector import auto_collect_market_data
