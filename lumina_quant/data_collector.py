@@ -36,6 +36,8 @@ def auto_collect_market_data(
     max_batches: int = 100_000,
     retries: int = 3,
     base_wait_sec: float = 0.5,
+    force_full: bool = False,
+    backend: str | None = None,
 ) -> list[dict[str, int | str | None]]:
     """Ensure requested OHLCV coverage exists in SQLite and return sync summary."""
     exchange = create_binance_exchange(
@@ -53,10 +55,12 @@ def auto_collect_market_data(
             timeframe=timeframe,
             since_ms=_datetime_to_ms(since_dt),
             until_ms=_datetime_to_ms(until_dt),
+            force_full=bool(force_full),
             limit=max(1, int(limit)),
             max_batches=max(1, int(max_batches)),
             retries=max(0, int(retries)),
             base_wait_sec=float(base_wait_sec),
+            backend=backend,
         )
     finally:
         close_fn = getattr(exchange, "close", None)
@@ -86,6 +90,12 @@ def collect_strategy_support_data(
     open_interest_period: str = "5m",
     retries: int = 3,
     execute: bool = False,
+    backend: str | None = None,
+    influx_url: str | None = None,
+    influx_org: str | None = None,
+    influx_bucket: str | None = None,
+    influx_token: str | None = None,
+    influx_token_env: str = "INFLUXDB_TOKEN",
 ) -> dict[str, object]:
     """Prepare or execute strategy-support data collection.
 
@@ -107,6 +117,7 @@ def collect_strategy_support_data(
         "until_ms": int(effective_until),
         "mark_index_interval": str(mark_index_interval),
         "open_interest_period": str(open_interest_period),
+        "backend": str(backend or ""),
         "execute": bool(execute),
         "features": [
             "funding_rate",
@@ -135,6 +146,12 @@ def collect_strategy_support_data(
         mark_index_interval=str(mark_index_interval),
         open_interest_period=str(open_interest_period),
         retries=max(0, int(retries)),
+        backend=backend,
+        influx_url=influx_url,
+        influx_org=influx_org,
+        influx_bucket=influx_bucket,
+        influx_token=influx_token,
+        influx_token_env=influx_token_env,
     )
     upserted_rows = sum(int(item.upserted_rows) for item in stats)
     plan["status"] = "executed"

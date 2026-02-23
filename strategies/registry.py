@@ -30,6 +30,12 @@ MovingAverageCrossStrategy = _optional_strategy_class(
 )
 RollingBreakoutStrategy = _optional_strategy_class("rolling_breakout", "RollingBreakoutStrategy")
 RsiStrategy = _optional_strategy_class("rsi_strategy", "RsiStrategy")
+RegimeBreakoutCandidateStrategy = _optional_strategy_class(
+    "candidate_regime_breakout", "RegimeBreakoutCandidateStrategy"
+)
+VolatilityCompressionReversionStrategy = _optional_strategy_class(
+    "candidate_vol_compression_reversion", "VolatilityCompressionReversionStrategy"
+)
 
 StrategyClass = type[Strategy]
 
@@ -42,8 +48,10 @@ _RAW_STRATEGY_MAP: dict[str, StrategyClass | None] = {
     "RsiStrategy": RsiStrategy,
     "MovingAverageCrossStrategy": MovingAverageCrossStrategy,
     "PairTradingZScoreStrategy": PairTradingZScoreStrategy,
+    "RegimeBreakoutCandidateStrategy": RegimeBreakoutCandidateStrategy,
     "RollingBreakoutStrategy": RollingBreakoutStrategy,
     "TopCapTimeSeriesMomentumStrategy": TopCapTimeSeriesMomentumStrategy,
+    "VolatilityCompressionReversionStrategy": VolatilityCompressionReversionStrategy,
     "VwapReversionStrategy": VwapReversionStrategy,
 }
 _STRATEGY_MAP: dict[str, StrategyClass] = {
@@ -111,6 +119,18 @@ _DEFAULT_STRATEGY_PARAMS: dict[str, dict[str, Any]] = {
         "stop_loss_pct": 0.03,
         "allow_short": False,
     },
+    "RegimeBreakoutCandidateStrategy": {
+        "lookback_window": 48,
+        "slope_window": 21,
+        "volatility_fast_window": 20,
+        "volatility_slow_window": 96,
+        "range_entry_threshold": 0.70,
+        "slope_entry_threshold": 0.0,
+        "momentum_floor": 0.0,
+        "max_volatility_ratio": 1.80,
+        "stop_loss_pct": 0.03,
+        "allow_short": True,
+    },
     "TopCapTimeSeriesMomentumStrategy": {
         "lookback_bars": 16,
         "rebalance_bars": 16,
@@ -127,6 +147,16 @@ _DEFAULT_STRATEGY_PARAMS: dict[str, dict[str, Any]] = {
         "entry_dev": 0.02,
         "exit_dev": 0.005,
         "stop_loss_pct": 0.03,
+        "allow_short": True,
+    },
+    "VolatilityCompressionReversionStrategy": {
+        "z_window": 48,
+        "fast_vol_window": 12,
+        "slow_vol_window": 72,
+        "compression_threshold": 0.75,
+        "entry_z": 1.6,
+        "exit_z": 0.35,
+        "stop_loss_pct": 0.025,
         "allow_short": True,
     },
 }
@@ -221,12 +251,40 @@ _DEFAULT_OPTUNA_CONFIG: dict[str, dict[str, Any]] = {
             "allow_short": {"type": "categorical", "choices": [True, False]},
         },
     },
+    "RegimeBreakoutCandidateStrategy": {
+        "n_trials": 24,
+        "params": {
+            "lookback_window": {"type": "int", "low": 16, "high": 128},
+            "slope_window": {"type": "int", "low": 8, "high": 64},
+            "volatility_fast_window": {"type": "int", "low": 6, "high": 48},
+            "volatility_slow_window": {"type": "int", "low": 24, "high": 240},
+            "range_entry_threshold": {"type": "float", "low": 0.55, "high": 0.90, "step": 0.01},
+            "slope_entry_threshold": {"type": "float", "low": -0.001, "high": 0.003, "step": 0.0005},
+            "momentum_floor": {"type": "float", "low": -0.02, "high": 0.05, "step": 0.002},
+            "max_volatility_ratio": {"type": "float", "low": 0.5, "high": 3.0, "step": 0.05},
+            "stop_loss_pct": {"type": "float", "low": 0.005, "high": 0.10, "step": 0.005},
+            "allow_short": {"type": "categorical", "choices": [True, False]},
+        },
+    },
     "VwapReversionStrategy": {
         "n_trials": 24,
         "params": {
             "window": {"type": "int", "low": 16, "high": 256},
             "entry_dev": {"type": "float", "low": 0.002, "high": 0.08, "step": 0.001},
             "exit_dev": {"type": "float", "low": 0.0, "high": 0.03, "step": 0.001},
+            "stop_loss_pct": {"type": "float", "low": 0.005, "high": 0.12, "step": 0.005},
+            "allow_short": {"type": "categorical", "choices": [True, False]},
+        },
+    },
+    "VolatilityCompressionReversionStrategy": {
+        "n_trials": 24,
+        "params": {
+            "z_window": {"type": "int", "low": 12, "high": 192},
+            "fast_vol_window": {"type": "int", "low": 6, "high": 48},
+            "slow_vol_window": {"type": "int", "low": 24, "high": 320},
+            "compression_threshold": {"type": "float", "low": 0.20, "high": 1.20, "step": 0.02},
+            "entry_z": {"type": "float", "low": 0.6, "high": 3.0, "step": 0.05},
+            "exit_z": {"type": "float", "low": 0.05, "high": 1.2, "step": 0.05},
             "stop_loss_pct": {"type": "float", "low": 0.005, "high": 0.12, "step": 0.005},
             "allow_short": {"type": "categorical", "choices": [True, False]},
         },
@@ -297,11 +355,37 @@ _DEFAULT_GRID_CONFIG: dict[str, dict[str, Any]] = {
             "allow_short": [True, False],
         }
     },
+    "RegimeBreakoutCandidateStrategy": {
+        "params": {
+            "lookback_window": [24, 48, 72, 96],
+            "slope_window": [13, 21, 34],
+            "volatility_fast_window": [12, 20, 30],
+            "volatility_slow_window": [48, 96, 144],
+            "range_entry_threshold": [0.6, 0.7, 0.8],
+            "slope_entry_threshold": [0.0, 0.001, 0.002],
+            "momentum_floor": [0.0, 0.01, 0.02],
+            "max_volatility_ratio": [1.2, 1.8, 2.4],
+            "stop_loss_pct": [0.01, 0.02, 0.03, 0.05],
+            "allow_short": [True, False],
+        }
+    },
     "VwapReversionStrategy": {
         "params": {
             "window": [24, 48, 64, 96, 128],
             "entry_dev": [0.006, 0.01, 0.015, 0.02, 0.03],
             "exit_dev": [0.0, 0.002, 0.004, 0.006],
+            "stop_loss_pct": [0.01, 0.02, 0.03, 0.05],
+            "allow_short": [True, False],
+        }
+    },
+    "VolatilityCompressionReversionStrategy": {
+        "params": {
+            "z_window": [24, 36, 48, 64, 96],
+            "fast_vol_window": [8, 12, 20],
+            "slow_vol_window": [48, 72, 120],
+            "compression_threshold": [0.55, 0.7, 0.85],
+            "entry_z": [1.2, 1.6, 2.0, 2.4],
+            "exit_z": [0.2, 0.35, 0.5, 0.75],
             "stop_loss_pct": [0.01, 0.02, 0.03, 0.05],
             "allow_short": [True, False],
         }

@@ -16,12 +16,13 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import ccxt
+from lumina_quant.influx_market_data import InfluxMarketDataRepository
 from lumina_quant.market_data import (
     MARKET_OHLCV_1S_TABLE,
     MARKET_OHLCV_TABLE,
+    _build_market_data_repository,
     connect_market_data_1s_db,
     connect_market_data_db,
-    ensure_futures_feature_points_schema,
     ensure_market_ohlcv_1s_schema,
     ensure_market_ohlcv_schema,
     export_ohlcv_to_csv,
@@ -31,7 +32,7 @@ from lumina_quant.market_data import (
     normalize_timeframe_token,
     symbol_csv_filename,
     timeframe_to_milliseconds,
-    upsert_futures_feature_points,
+    upsert_futures_feature_points_rows,
     upsert_ohlcv_rows,
     upsert_ohlcv_rows_1s,
 )
@@ -39,6 +40,11 @@ from lumina_quant.market_data import (
 
 def _now_ms() -> int:
     return int(datetime.now(UTC).timestamp() * 1000)
+
+
+def _is_influx_backend(db_path: str, *, backend: str | None = None) -> bool:
+    repo = _build_market_data_repository(str(db_path), backend=backend)
+    return isinstance(repo, InfluxMarketDataRepository)
 
 
 def parse_timestamp_input(value: str | int | float | None) -> int | None:
@@ -452,8 +458,18 @@ def _http_get_json(
             attempt += 1
             if attempt > max(0, int(retries)):
                 raise RuntimeError(f"HTTP {getattr(exc, 'code', '')} for {target}") from exc
-            time.sleep(wait)
-            wait = min(wait * 2.0, 10.0)
+            retry_after_raw = exc.headers.get("Retry-After") if getattr(exc, "headers", None) else None
+            retry_after = 0.0
+            if retry_after_raw is not None:
+                try:
+                    retry_after = max(0.0, float(str(retry_after_raw).strip()))
+                except Exception:
+                    retry_after = 0.0
+            code = int(getattr(exc, "code", 0) or 0)
+            ceiling = 60.0 if code == 429 else 10.0
+            sleep_for = max(wait, retry_after)
+            time.sleep(sleep_for)
+            wait = min(wait * 2.0, ceiling)
         except Exception:
             attempt += 1
             if attempt > max(0, int(retries)):
@@ -486,18 +502,24 @@ def _fetch_funding_history(
     out: list[dict[str, Any]] = []
     cursor = max(0, int(since_ms))
     end_ms = int(until_ms)
+    throttle_sec = max(0.0, float(base_wait_sec) * 0.25)
     while cursor <= end_ms:
-        data = _http_get_json(
-            url,
-            params={
-                "symbol": _compact_symbol(symbol),
-                "startTime": cursor,
-                "endTime": end_ms,
-                "limit": 1000,
-            },
-            retries=retries,
-            base_wait_sec=base_wait_sec,
-        )
+        try:
+            data = _http_get_json(
+                url,
+                params={
+                    "symbol": _compact_symbol(symbol),
+                    "startTime": cursor,
+                    "endTime": end_ms,
+                    "limit": 1000,
+                },
+                retries=retries,
+                base_wait_sec=base_wait_sec,
+            )
+        except RuntimeError as exc:
+            if "HTTP 400" in str(exc):
+                break
+            raise
         rows = list(data) if isinstance(data, list) else []
         if not rows:
             break
@@ -508,6 +530,8 @@ def _fetch_funding_history(
         cursor = last + 1
         if len(rows) < 1000:
             break
+        if throttle_sec > 0.0:
+            time.sleep(throttle_sec)
     return out
 
 
@@ -526,19 +550,25 @@ def _fetch_price_klines(
     out: list[list[Any]] = []
     cursor = max(0, int(since_ms))
     end_ms = int(until_ms)
+    throttle_sec = max(0.0, float(base_wait_sec) * 0.25)
     while cursor <= end_ms:
-        data = _http_get_json(
-            url,
-            params={
-                "symbol": _compact_symbol(symbol),
-                "interval": str(interval),
-                "startTime": cursor,
-                "endTime": end_ms,
-                "limit": 1500,
-            },
-            retries=retries,
-            base_wait_sec=base_wait_sec,
-        )
+        try:
+            data = _http_get_json(
+                url,
+                params={
+                    "symbol": _compact_symbol(symbol),
+                    "interval": str(interval),
+                    "startTime": cursor,
+                    "endTime": end_ms,
+                    "limit": 1500,
+                },
+                retries=retries,
+                base_wait_sec=base_wait_sec,
+            )
+        except RuntimeError as exc:
+            if "HTTP 400" in str(exc):
+                break
+            raise
         rows = list(data) if isinstance(data, list) else []
         if not rows:
             break
@@ -549,6 +579,8 @@ def _fetch_price_klines(
         cursor = last_open_ms + 1
         if len(rows) < 1500:
             break
+        if throttle_sec > 0.0:
+            time.sleep(throttle_sec)
     return out
 
 
@@ -565,19 +597,25 @@ def _fetch_open_interest_history(
     out: list[dict[str, Any]] = []
     cursor = max(0, int(since_ms))
     end_ms = int(until_ms)
+    throttle_sec = max(0.0, float(base_wait_sec) * 0.25)
     while cursor <= end_ms:
-        data = _http_get_json(
-            url,
-            params={
-                "symbol": _compact_symbol(symbol),
-                "period": str(period),
-                "startTime": cursor,
-                "endTime": end_ms,
-                "limit": 500,
-            },
-            retries=retries,
-            base_wait_sec=base_wait_sec,
-        )
+        try:
+            data = _http_get_json(
+                url,
+                params={
+                    "symbol": _compact_symbol(symbol),
+                    "period": str(period),
+                    "startTime": cursor,
+                    "endTime": end_ms,
+                    "limit": 500,
+                },
+                retries=retries,
+                base_wait_sec=base_wait_sec,
+            )
+        except RuntimeError as exc:
+            if "HTTP 400" in str(exc):
+                break
+            raise
         rows = list(data) if isinstance(data, list) else []
         if not rows:
             break
@@ -588,6 +626,8 @@ def _fetch_open_interest_history(
         cursor = last_ts + 1
         if len(rows) < 500:
             break
+        if throttle_sec > 0.0:
+            time.sleep(throttle_sec)
     return out
 
 
@@ -603,18 +643,24 @@ def _fetch_liquidation_orders(
     out: list[dict[str, Any]] = []
     cursor = max(0, int(since_ms))
     end_ms = int(until_ms)
+    throttle_sec = max(0.0, float(base_wait_sec) * 0.25)
     while cursor <= end_ms:
-        data = _http_get_json(
-            url,
-            params={
-                "symbol": _compact_symbol(symbol),
-                "startTime": cursor,
-                "endTime": end_ms,
-                "limit": 1000,
-            },
-            retries=retries,
-            base_wait_sec=base_wait_sec,
-        )
+        try:
+            data = _http_get_json(
+                url,
+                params={
+                    "symbol": _compact_symbol(symbol),
+                    "startTime": cursor,
+                    "endTime": end_ms,
+                    "limit": 1000,
+                },
+                retries=retries,
+                base_wait_sec=base_wait_sec,
+            )
+        except RuntimeError as exc:
+            if "HTTP 400" in str(exc):
+                break
+            raise
         rows = list(data) if isinstance(data, list) else []
         if not rows:
             break
@@ -625,6 +671,8 @@ def _fetch_liquidation_orders(
         cursor = last_ts + 1
         if len(rows) < 1000:
             break
+        if throttle_sec > 0.0:
+            time.sleep(throttle_sec)
     return out
 
 
@@ -639,147 +687,158 @@ def sync_futures_feature_points(
     open_interest_period: str = "5m",
     retries: int = 3,
     base_wait_sec: float = 0.5,
+    backend: str | None = None,
+    influx_url: str | None = None,
+    influx_org: str | None = None,
+    influx_bucket: str | None = None,
+    influx_token: str | None = None,
+    influx_token_env: str = "INFLUXDB_TOKEN",
 ) -> list[FuturesFeatureSyncStats]:
     """Collect and store futures feature data points for strategy research."""
-    conn = connect_market_data_db(db_path)
-    try:
-        ensure_futures_feature_points_schema(conn)
-        summaries: list[FuturesFeatureSyncStats] = []
-        stream_exchange = str(exchange_id).strip().lower()
+    summaries: list[FuturesFeatureSyncStats] = []
+    stream_exchange = str(exchange_id).strip().lower()
 
-        for symbol in symbol_list:
-            stream_symbol = normalize_symbol(symbol)
-            points: dict[int, dict[str, Any]] = {}
+    for symbol in symbol_list:
+        stream_symbol = normalize_symbol(symbol)
+        points: dict[int, dict[str, Any]] = {}
 
-            funding_rows = _fetch_funding_history(
+        funding_rows = _fetch_funding_history(
+            symbol=stream_symbol,
+            since_ms=since_ms,
+            until_ms=until_ms,
+            retries=retries,
+            base_wait_sec=base_wait_sec,
+        )
+        for row in funding_rows:
+            ts = int(row.get("fundingTime", 0) or 0)
+            if ts <= 0:
+                continue
+            _merge_feature_point(
+                points,
+                ts,
+                {
+                    "funding_rate": float(row.get("fundingRate"))
+                    if row.get("fundingRate") is not None
+                    else None,
+                    "funding_mark_price": float(row.get("markPrice"))
+                    if row.get("markPrice") is not None
+                    else None,
+                },
+            )
+
+        mark_rows = _fetch_price_klines(
+            symbol=stream_symbol,
+            price_type="mark",
+            interval=mark_index_interval,
+            since_ms=since_ms,
+            until_ms=until_ms,
+            retries=retries,
+            base_wait_sec=base_wait_sec,
+        )
+        for row in mark_rows:
+            ts = int(row[0])
+            _merge_feature_point(points, ts, {"mark_price": float(row[4])})
+
+        index_rows = _fetch_price_klines(
+            symbol=stream_symbol,
+            price_type="index",
+            interval=mark_index_interval,
+            since_ms=since_ms,
+            until_ms=until_ms,
+            retries=retries,
+            base_wait_sec=base_wait_sec,
+        )
+        for row in index_rows:
+            ts = int(row[0])
+            _merge_feature_point(points, ts, {"index_price": float(row[4])})
+
+        oi_rows = _fetch_open_interest_history(
+            symbol=stream_symbol,
+            period=open_interest_period,
+            since_ms=since_ms,
+            until_ms=until_ms,
+            retries=retries,
+            base_wait_sec=base_wait_sec,
+        )
+        for row in oi_rows:
+            ts = int(row.get("timestamp", 0) or 0)
+            if ts <= 0:
+                continue
+            oi_val = row.get("sumOpenInterestValue")
+            if oi_val is None:
+                oi_val = row.get("sumOpenInterest")
+            _merge_feature_point(
+                points,
+                ts,
+                {"open_interest": float(oi_val) if oi_val is not None else None},
+            )
+
+        liq_rows = _fetch_liquidation_orders(
+            symbol=stream_symbol,
+            since_ms=since_ms,
+            until_ms=until_ms,
+            retries=retries,
+            base_wait_sec=base_wait_sec,
+        )
+        for row in liq_rows:
+            ts = int(row.get("time", 0) or 0)
+            if ts <= 0:
+                continue
+            side = str(row.get("side", "")).upper()
+            qty = float(row.get("origQty", 0.0) or 0.0)
+            price = float(row.get("price", 0.0) or 0.0)
+            notional = qty * price
+            fields: dict[str, Any]
+            if side == "SELL":
+                fields = {
+                    "liquidation_long_qty": qty,
+                    "liquidation_long_notional": notional,
+                }
+            else:
+                fields = {
+                    "liquidation_short_qty": qty,
+                    "liquidation_short_notional": notional,
+                }
+            _merge_feature_point(points, ts, fields)
+
+        sorted_rows = [points[key] for key in sorted(points.keys())]
+        upserted = upsert_futures_feature_points_rows(
+            db_path,
+            exchange=stream_exchange,
+            symbol=stream_symbol,
+            rows=sorted_rows,
+            source="binance_futures_api",
+            backend=backend,
+            influx_url=influx_url,
+            influx_org=influx_org,
+            influx_bucket=influx_bucket,
+            influx_token=influx_token,
+            influx_token_env=influx_token_env,
+        )
+        first_ts = int(sorted_rows[0]["timestamp_ms"]) if sorted_rows else None
+        last_ts = int(sorted_rows[-1]["timestamp_ms"]) if sorted_rows else None
+        summaries.append(
+            FuturesFeatureSyncStats(
                 symbol=stream_symbol,
-                since_ms=since_ms,
-                until_ms=until_ms,
-                retries=retries,
-                base_wait_sec=base_wait_sec,
+                upserted_rows=int(upserted),
+                first_timestamp_ms=first_ts,
+                last_timestamp_ms=last_ts,
             )
-            for row in funding_rows:
-                ts = int(row.get("fundingTime", 0) or 0)
-                if ts <= 0:
-                    continue
-                _merge_feature_point(
-                    points,
-                    ts,
-                    {
-                        "funding_rate": float(row.get("fundingRate"))
-                        if row.get("fundingRate") is not None
-                        else None,
-                        "funding_mark_price": float(row.get("markPrice"))
-                        if row.get("markPrice") is not None
-                        else None,
-                    },
-                )
+        )
 
-            mark_rows = _fetch_price_klines(
-                symbol=stream_symbol,
-                price_type="mark",
-                interval=mark_index_interval,
-                since_ms=since_ms,
-                until_ms=until_ms,
-                retries=retries,
-                base_wait_sec=base_wait_sec,
-            )
-            for row in mark_rows:
-                ts = int(row[0])
-                _merge_feature_point(points, ts, {"mark_price": float(row[4])})
-
-            index_rows = _fetch_price_klines(
-                symbol=stream_symbol,
-                price_type="index",
-                interval=mark_index_interval,
-                since_ms=since_ms,
-                until_ms=until_ms,
-                retries=retries,
-                base_wait_sec=base_wait_sec,
-            )
-            for row in index_rows:
-                ts = int(row[0])
-                _merge_feature_point(points, ts, {"index_price": float(row[4])})
-
-            oi_rows = _fetch_open_interest_history(
-                symbol=stream_symbol,
-                period=open_interest_period,
-                since_ms=since_ms,
-                until_ms=until_ms,
-                retries=retries,
-                base_wait_sec=base_wait_sec,
-            )
-            for row in oi_rows:
-                ts = int(row.get("timestamp", 0) or 0)
-                if ts <= 0:
-                    continue
-                oi_val = row.get("sumOpenInterestValue")
-                if oi_val is None:
-                    oi_val = row.get("sumOpenInterest")
-                _merge_feature_point(
-                    points,
-                    ts,
-                    {"open_interest": float(oi_val) if oi_val is not None else None},
-                )
-
-            liq_rows = _fetch_liquidation_orders(
-                symbol=stream_symbol,
-                since_ms=since_ms,
-                until_ms=until_ms,
-                retries=retries,
-                base_wait_sec=base_wait_sec,
-            )
-            for row in liq_rows:
-                ts = int(row.get("time", 0) or 0)
-                if ts <= 0:
-                    continue
-                side = str(row.get("side", "")).upper()
-                qty = float(row.get("origQty", 0.0) or 0.0)
-                price = float(row.get("price", 0.0) or 0.0)
-                notional = qty * price
-                fields: dict[str, Any]
-                if side == "SELL":
-                    fields = {
-                        "liquidation_long_qty": qty,
-                        "liquidation_long_notional": notional,
-                    }
-                else:
-                    fields = {
-                        "liquidation_short_qty": qty,
-                        "liquidation_short_notional": notional,
-                    }
-                _merge_feature_point(points, ts, fields)
-
-            sorted_rows = [points[key] for key in sorted(points.keys())]
-            upserted = upsert_futures_feature_points(
-                conn,
-                exchange=stream_exchange,
-                symbol=stream_symbol,
-                rows=sorted_rows,
-            )
-            first_ts = int(sorted_rows[0]["timestamp_ms"]) if sorted_rows else None
-            last_ts = int(sorted_rows[-1]["timestamp_ms"]) if sorted_rows else None
-            summaries.append(
-                FuturesFeatureSyncStats(
-                    symbol=stream_symbol,
-                    upserted_rows=int(upserted),
-                    first_timestamp_ms=first_ts,
-                    last_timestamp_ms=last_ts,
-                )
-            )
-
-        return summaries
-    finally:
-        conn.close()
+    return summaries
 
 
 class MarketDataSyncService:
     """OOP facade for market data synchronization workflows."""
 
-    def __init__(self, *, exchange: Any, db_path: str, exchange_id: str):
+    def __init__(
+        self, *, exchange: Any, db_path: str, exchange_id: str, backend: str | None = None
+    ):
         self.exchange = exchange
         self.db_path = str(db_path)
         self.exchange_id = str(exchange_id)
+        self.backend = str(backend or "").strip() or None
 
     def get_symbol_coverage(
         self, *, symbol: str, timeframe: str
@@ -789,6 +848,7 @@ class MarketDataSyncService:
             exchange_id=self.exchange_id,
             symbol=symbol,
             timeframe=timeframe,
+            backend=self.backend,
         )
 
     def sync_symbol(self, request: SyncRequest) -> SyncStats:
@@ -804,6 +864,7 @@ class MarketDataSyncService:
             max_batches=request.max_batches,
             retries=request.retries,
             base_wait_sec=request.base_wait_sec,
+            backend=self.backend,
         )
 
     def ensure_coverage(
@@ -833,6 +894,7 @@ class MarketDataSyncService:
             max_batches=max_batches,
             retries=retries,
             base_wait_sec=base_wait_sec,
+            backend=self.backend,
             export_csv_dir=export_csv_dir,
         )
 
@@ -863,6 +925,7 @@ class MarketDataSyncService:
             max_batches=max_batches,
             retries=retries,
             base_wait_sec=base_wait_sec,
+            backend=self.backend,
             export_csv_dir=export_csv_dir,
         )
 
@@ -873,9 +936,20 @@ def get_symbol_ohlcv_coverage(
     exchange_id: str,
     symbol: str,
     timeframe: str,
+    backend: str | None = None,
 ) -> tuple[int | None, int | None, int]:
     """Return (first_ts, last_ts, row_count) for one OHLCV stream key."""
     timeframe_token = normalize_timeframe_token(timeframe)
+    if _is_influx_backend(db_path, backend=backend):
+        repo = _build_market_data_repository(str(db_path), backend=backend)
+        if isinstance(repo, InfluxMarketDataRepository):
+            return repo.get_ohlcv_coverage(
+                exchange=str(exchange_id).strip().lower(),
+                symbol=normalize_symbol(symbol),
+                timeframe=timeframe_token,
+            )
+        return None, None, 0
+
     if timeframe_token == "1s":
         conn = connect_market_data_1s_db(db_path)
         try:
@@ -945,6 +1019,7 @@ def ensure_market_data_coverage(
     max_batches: int = 100_000,
     retries: int = 3,
     base_wait_sec: float = 0.5,
+    backend: str | None = None,
     export_csv_dir: str | None = None,
 ) -> list[SyncStats]:
     """Ensure DB has OHLCV coverage for [since_ms, until_ms] across symbols.
@@ -971,6 +1046,7 @@ def ensure_market_data_coverage(
             exchange_id=exchange_id,
             symbol=stream_symbol,
             timeframe=timeframe,
+            backend=backend,
         )
 
         windows: list[tuple[int, int]] = []
@@ -1002,6 +1078,7 @@ def ensure_market_data_coverage(
                 max_batches=max_batches,
                 retries=retries,
                 base_wait_sec=base_wait_sec,
+                backend=backend,
             )
             fetched_rows += int(part.fetched_rows)
             upserted_rows += int(part.upserted_rows)
@@ -1011,6 +1088,7 @@ def ensure_market_data_coverage(
             exchange_id=exchange_id,
             symbol=stream_symbol,
             timeframe=timeframe,
+            backend=backend,
         )
         summaries.append(
             SyncStats(
@@ -1048,11 +1126,14 @@ def sync_symbol_ohlcv(
     max_batches: int = 100_000,
     retries: int = 3,
     base_wait_sec: float = 0.5,
+    backend: str | None = None,
 ) -> SyncStats:
-    """Synchronize one symbol OHLCV range into SQLite with idempotent upserts."""
-    conn = connect_market_data_db(db_path)
+    """Synchronize one symbol OHLCV range into configured storage backend."""
+    use_influx_backend = _is_influx_backend(db_path, backend=backend)
+    conn = None if use_influx_backend else connect_market_data_db(db_path)
     try:
-        ensure_market_ohlcv_schema(conn)
+        if conn is not None:
+            ensure_market_ohlcv_schema(conn)
         timeframe_token = normalize_timeframe_token(timeframe)
         tf_ms = timeframe_to_milliseconds(timeframe_token)
         stream_symbol = normalize_symbol(symbol)
@@ -1113,6 +1194,7 @@ def sync_symbol_ohlcv(
                         exchange=str(exchange_id).lower(),
                         symbol=stream_symbol,
                         rows=archive_rows,
+                        backend=backend,
                     )
 
                     next_cursor = last_ts + 1000
@@ -1199,6 +1281,7 @@ def sync_symbol_ohlcv(
                     exchange=str(exchange_id).lower(),
                     symbol=stream_symbol,
                     rows=normalized,
+                    backend=backend,
                 )
             else:
                 upserted_rows += upsert_ohlcv_rows(
@@ -1208,6 +1291,8 @@ def sync_symbol_ohlcv(
                     timeframe=timeframe_token,
                     rows=normalized,
                     source="binance_sync",
+                    db_path=db_path,
+                    backend=backend,
                 )
 
             next_cursor = last_ts + tf_ms
@@ -1228,7 +1313,8 @@ def sync_symbol_ohlcv(
             last_timestamp_ms=last_ts,
         )
     finally:
-        conn.close()
+        if conn is not None:
+            conn.close()
 
 
 def sync_market_data(
@@ -1245,6 +1331,7 @@ def sync_market_data(
     max_batches: int = 100_000,
     retries: int = 3,
     base_wait_sec: float = 0.5,
+    backend: str | None = None,
     export_csv_dir: str | None = None,
 ) -> list[SyncStats]:
     """Synchronize OHLCV for multiple symbols and optionally export CSV copies."""
@@ -1255,9 +1342,11 @@ def sync_market_data(
         else int(datetime(2017, 1, 1, tzinfo=UTC).timestamp() * 1000)
     )
 
-    conn = connect_market_data_db(db_path)
+    use_influx_backend = _is_influx_backend(db_path, backend=backend)
+    conn = None if use_influx_backend else connect_market_data_db(db_path)
     try:
-        ensure_market_ohlcv_schema(conn)
+        if conn is not None:
+            ensure_market_ohlcv_schema(conn)
         stats: list[SyncStats] = []
 
         for symbol in symbol_list:
@@ -1268,14 +1357,18 @@ def sync_market_data(
                     db_path,
                     exchange=str(exchange_id).lower(),
                     symbol=stream_symbol,
+                    backend=backend,
                 )
             else:
-                last_ts = get_last_ohlcv_timestamp_ms(
-                    conn,
-                    exchange=str(exchange_id).lower(),
-                    symbol=stream_symbol,
-                    timeframe=timeframe_token,
-                )
+                if conn is not None:
+                    last_ts = get_last_ohlcv_timestamp_ms(
+                        conn,
+                        exchange=str(exchange_id).lower(),
+                        symbol=stream_symbol,
+                        timeframe=timeframe_token,
+                    )
+                else:
+                    last_ts = None
             start_ms = default_since
             if last_ts is not None and not force_full:
                 start_ms = last_ts + timeframe_to_milliseconds(timeframe)
@@ -1292,6 +1385,7 @@ def sync_market_data(
                 max_batches=max_batches,
                 retries=retries,
                 base_wait_sec=base_wait_sec,
+                backend=backend,
             )
             stats.append(stat)
 
@@ -1306,4 +1400,5 @@ def sync_market_data(
                 )
         return stats
     finally:
-        conn.close()
+        if conn is not None:
+            conn.close()

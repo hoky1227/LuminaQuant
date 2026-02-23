@@ -66,6 +66,13 @@ from .formulaic_operators import ts_product as ts_product
 from .formulaic_operators import ts_rank as ts_rank
 from .formulaic_operators import ts_stddev as ts_stddev
 from .formulaic_operators import ts_sum as ts_sum
+from .futures_fast import NUMBA_AVAILABLE as FUTURES_NUMBA_AVAILABLE
+from .futures_fast import normalized_true_range_latest as normalized_true_range_latest
+from .futures_fast import (
+    rolling_log_return_volatility_latest as rolling_log_return_volatility_latest,
+)
+from .futures_fast import trend_efficiency_latest as trend_efficiency_latest
+from .futures_fast import volume_shock_zscore_latest as volume_shock_zscore_latest
 from .momentum import chande_momentum_oscillator as chande_momentum_oscillator
 from .momentum import cumulative_return as cumulative_return
 from .momentum import detrended_price_oscillator as detrended_price_oscillator
@@ -139,6 +146,7 @@ from .vwap import vwap_deviation as vwap_deviation
 from .vwap import vwap_from_sums as vwap_from_sums
 
 __all__ = [
+    "FUTURES_NUMBA_AVAILABLE",
     "NUMBA_AVAILABLE",
     "POLARS_AVAILABLE",
     "TALIB_AVAILABLE",
@@ -216,6 +224,7 @@ __all__ = [
     "money_flow_index",
     "moving_average_convergence_divergence",
     "negative_volume_index",
+    "normalized_true_range_latest",
     "on_balance_volume",
     "parkinson_volatility",
     "percentage_price_oscillator",
@@ -231,6 +240,7 @@ __all__ = [
     "rolling_corr",
     "rolling_corr_latest_numpy",
     "rolling_feature_frame_polars",
+    "rolling_log_return_volatility_latest",
     "rolling_mean_latest_numpy",
     "rolling_sharpe_ratio",
     "rolling_sortino_ratio",
@@ -246,6 +256,7 @@ __all__ = [
     "supertrend",
     "talib_feature_pack",
     "time_key",
+    "trend_efficiency_latest",
     "triple_exponential_average_rate_of_change",
     "triple_exponential_moving_average",
     "true_range",
@@ -265,6 +276,7 @@ __all__ = [
     "value_at_risk",
     "volume_oscillator",
     "volume_price_trend",
+    "volume_shock_zscore_latest",
     "volume_weighted_moving_average",
     "vortex_indicator",
     "vwap_deviation",

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
 import urllib.request
 from datetime import UTC, datetime
@@ -103,10 +104,43 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=1000)
     parser.add_argument("--max-batches", type=int, default=100000)
     parser.add_argument("--retries", type=int, default=3)
+    parser.add_argument(
+        "--force-full",
+        action="store_true",
+        help="Ignore existing per-symbol coverage and resync from --since.",
+    )
+    parser.add_argument("--backend", default="influxdb", help="Storage backend override (sqlite|influxdb).")
+    parser.add_argument("--influx-url", default="")
+    parser.add_argument("--influx-org", default="")
+    parser.add_argument("--influx-bucket", default="")
+    parser.add_argument("--influx-token", default="")
+    parser.add_argument("--influx-token-env", default="INFLUXDB_TOKEN")
     parser.add_argument("--include-xau-xag", action="store_true")
     parser.add_argument("--symbols", nargs="+", default=[])
     parser.add_argument("--out", default="")
     args = parser.parse_args()
+
+    backend_arg = str(args.backend or "").strip()
+    influx_url_arg = str(args.influx_url or "").strip()
+    influx_org_arg = str(args.influx_org or "").strip()
+    influx_bucket_arg = str(args.influx_bucket or "").strip()
+    influx_token_arg = str(args.influx_token or "").strip()
+    influx_token_env_arg = str(args.influx_token_env or "INFLUXDB_TOKEN").strip() or "INFLUXDB_TOKEN"
+    if backend_arg:
+        os.environ["LQ__STORAGE__BACKEND"] = "influxdb" if backend_arg.lower() in {
+            "influx",
+            "influxdb",
+        } else "sqlite"
+    if influx_url_arg:
+        os.environ["LQ__STORAGE__INFLUX_URL"] = influx_url_arg
+    if influx_org_arg:
+        os.environ["LQ__STORAGE__INFLUX_ORG"] = influx_org_arg
+    if influx_bucket_arg:
+        os.environ["LQ__STORAGE__INFLUX_BUCKET"] = influx_bucket_arg
+    if influx_token_env_arg:
+        os.environ["LQ__STORAGE__INFLUX_TOKEN_ENV"] = influx_token_env_arg
+    if influx_token_arg:
+        os.environ[influx_token_env_arg] = influx_token_arg
 
     symbols = list(args.symbols)
     if not symbols:
@@ -114,7 +148,7 @@ def main() -> None:
             desired_count=10, candidate_count=200, market_type=str(args.market_type)
         )
     if args.include_xau_xag:
-        for item in ["XAU/USDT", "XAG/USDT"]:
+        for item in ["XAU/USDT:USDT", "XAG/USDT:USDT"]:
             if item not in symbols:
                 symbols.append(item)
 
@@ -152,6 +186,8 @@ def main() -> None:
                 limit=max(1, int(args.limit)),
                 max_batches=max(1, int(args.max_batches)),
                 retries=max(0, int(args.retries)),
+                force_full=bool(args.force_full),
+                backend=backend_arg,
             )
             elapsed = time.time() - t0
             entry_raw = rows[0] if rows else {"symbol": symbol}
