@@ -45,12 +45,33 @@ uv run python scripts/run_strategy_factory_pipeline.py \
   --seeds 20260221
 ```
 
+### 2-1) Apply shortlist weighting + single-strategy performance filters
+
+```bash
+uv run python scripts/run_strategy_factory_pipeline.py \
+  --db-path data/market_parquet \
+  --mode standard \
+  --timeframes 1m 5m 15m \
+  --seeds 20260221 \
+  --single-min-score 0.0 \
+  --single-min-return 0.0 \
+  --single-min-sharpe 0.0 \
+  --drop-single-without-metrics \
+  --set-max-per-asset 2 \
+  --set-max-sets 16
+```
+
 Output defaults to:
 
 - `reports/strategy_factory_candidates_*.json`
 - `reports/strategy_factory_report_*.json`
 - `reports/strategy_factory_shortlist_*.json`
 - `reports/strategy_factory_shortlist_*.md`
+
+Shortlist JSON now includes:
+- per-row `portfolio_weight` (unless `--disable-weights`)
+- `portfolio_sets` built from successful single-asset rows
+- policy metadata (`single_min_*`, `allow_multi_asset`, `portfolio_set_count`, etc.)
 
 ### 3) Dry-run only (no heavy search)
 
@@ -69,3 +90,4 @@ uv run python scripts/run_mass_strategy_research.py --dry-run
 - For wide sweeps, increase `--max-runs` and provide multiple `--seeds`.
 - Candidate manifest is deterministic for fixed symbols/timeframes.
 - Shortlist is diversification-aware (family/timeframe caps).
+- Direct multi-asset mixes are excluded by default (enable with `--allow-multi-asset`).

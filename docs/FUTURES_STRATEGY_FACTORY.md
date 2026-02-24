@@ -15,7 +15,10 @@ produces a diversified shortlist from existing research reports.
    - `PairTradingZScoreStrategy`
    - `LagConvergenceStrategy`
 2. **Shortlist JSON + CSV** with family/timeframe/symbol diversification.
+   - weak single-strategy rows can be filtered by score/return/sharpe floors
+   - direct multi-asset rows can be excluded (default in pipeline mode)
 3. **Markdown report** with summary mix + reusable commands.
+4. **Portfolio sets**: combinations of successful single-asset strategies with normalized `portfolio_weight`.
 
 ## Fast indicator inputs used for ranking bias
 
@@ -45,6 +48,20 @@ python scripts/futures_strategy_factory.py \
 ```bash
 python scripts/futures_strategy_factory.py --dry-run
 ```
+
+### Build weighted shortlist from research reports
+
+```bash
+uv run python scripts/select_strategy_factory_shortlist.py \
+  --report-glob "reports/oos_guarded_multistrategy_oos_*.json" \
+  --mode oos \
+  --single-min-score 0.0 \
+  --min-trades 5 \
+  --max-selected 32
+```
+
+By default this keeps a single-asset-first portfolio construction path and emits `portfolio_sets`.
+Use `--allow-multi-asset` only if you explicitly want direct multi-asset rows in shortlist.
 
 ### Custom symbol/timeframe set
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from lumina_quant.strategy_factory import (
     build_binance_futures_candidates,
+    build_single_asset_portfolio_sets,
     candidate_identity,
     select_diversified_shortlist,
 )
@@ -54,3 +55,87 @@ def test_registry_exposes_new_candidate_strategies():
     names = get_strategy_names()
     assert "RegimeBreakoutCandidateStrategy" in names
     assert "VolatilityCompressionReversionStrategy" in names
+
+
+def test_shortlist_filters_weak_single_and_assigns_weights():
+    candidates = [
+        {
+            "name": "rsi_1m_candidate",
+            "strategy_timeframe": "1m",
+            "symbols": ["BTC/USDT"],
+            "hurdle_fields": {"oos": {"pass": True, "score": -5.0}},
+            "oos": {"return": -0.03, "sharpe": -0.2, "mdd": 0.08, "trades": 20},
+            "params": {"rsi_period": 14},
+        },
+        {
+            "name": "pair_z_1m_candidate",
+            "strategy_timeframe": "1m",
+            "symbols": ["BTC/USDT", "ETH/USDT"],
+            "hurdle_fields": {"oos": {"pass": True, "score": 5.5}},
+            "oos": {"return": 0.11, "sharpe": 1.4, "mdd": 0.05, "trades": 30},
+            "params": {"entry_z": 2.0},
+        },
+        {
+            "name": "topcap_tsmom_1h_candidate",
+            "strategy_timeframe": "1h",
+            "symbols": ["BTC/USDT", "ETH/USDT", "BNB/USDT"],
+            "hurdle_fields": {"oos": {"pass": True, "score": 4.2}},
+            "oos": {"return": 0.09, "sharpe": 1.1, "mdd": 0.06, "trades": 24},
+            "params": {"lookback_bars": 16},
+        },
+    ]
+
+    shortlist = select_diversified_shortlist(
+        candidates,
+        mode="oos",
+        max_total=5,
+        max_per_family=5,
+        max_per_timeframe=5,
+        single_min_score=0.0,
+        drop_single_without_metrics=True,
+        include_weights=True,
+    )
+
+    # Weak single strategy is filtered out; mixed strategies remain and get normalized weights.
+    assert len(shortlist) == 2
+    assert all(float(row.get("portfolio_weight", 0.0)) > 0.0 for row in shortlist)
+    total_weight = sum(float(row.get("portfolio_weight", 0.0)) for row in shortlist)
+    assert abs(total_weight - 1.0) < 1e-9
+
+
+def test_build_single_asset_portfolio_sets_from_shortlist():
+    shortlist = [
+        {
+            "name": "rsi_btc",
+            "strategy_timeframe": "1m",
+            "symbols": ["BTC/USDT"],
+            "shortlist_score": 5.0,
+            "oos": {"return": 0.1, "sharpe": 1.2},
+        },
+        {
+            "name": "ma_btc_alt",
+            "strategy_timeframe": "1m",
+            "symbols": ["BTC/USDT"],
+            "shortlist_score": 4.5,
+            "oos": {"return": 0.08, "sharpe": 1.0},
+        },
+        {
+            "name": "rsi_eth",
+            "strategy_timeframe": "1m",
+            "symbols": ["ETH/USDT"],
+            "shortlist_score": 4.8,
+            "oos": {"return": 0.09, "sharpe": 1.1},
+        },
+        {
+            "name": "pair_btc_eth",
+            "strategy_timeframe": "1m",
+            "symbols": ["BTC/USDT", "ETH/USDT"],
+            "shortlist_score": 6.0,
+            "oos": {"return": 0.12, "sharpe": 1.5},
+        },
+    ]
+    sets = build_single_asset_portfolio_sets(shortlist, mode="oos", max_per_asset=2, max_sets=4)
+    assert len(sets) >= 1
+    top = sets[0]
+    assert top["member_count"] == 2
+    assert abs(sum(float(row.get("portfolio_weight", 0.0)) for row in top["members"]) - 1.0) < 1e-9
