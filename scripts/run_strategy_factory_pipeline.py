@@ -23,6 +23,16 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--mode", default="standard")
     parser.add_argument("--timeframes", nargs="+", default=["1m", "5m", "15m"])
     parser.add_argument("--seeds", nargs="+", default=["20260221"])
+    parser.add_argument("--single-min-score", type=float, default=0.0)
+    parser.add_argument("--single-min-return", type=float, default=0.0)
+    parser.add_argument("--single-min-sharpe", type=float, default=0.0)
+    parser.add_argument("--allow-multi-asset", action="store_true")
+    parser.add_argument("--drop-single-without-metrics", action="store_true")
+    parser.add_argument("--disable-weights", action="store_true")
+    parser.add_argument("--weight-temperature", type=float, default=0.35)
+    parser.add_argument("--max-weight", type=float, default=0.35)
+    parser.add_argument("--set-max-per-asset", type=int, default=2)
+    parser.add_argument("--set-max-sets", type=int, default=16)
     parser.add_argument("--output-dir", default="reports")
     return parser
 
@@ -58,6 +68,16 @@ def main() -> int:
         shortlist_max_total=10,
         shortlist_max_per_family=3,
         shortlist_max_per_timeframe=4,
+        single_min_score=float(args.single_min_score),
+        single_min_return=float(args.single_min_return),
+        single_min_sharpe=float(args.single_min_sharpe),
+        allow_multi_asset=bool(args.allow_multi_asset),
+        drop_single_without_metrics=bool(args.drop_single_without_metrics),
+        include_weights=not bool(args.disable_weights),
+        weight_temperature=float(args.weight_temperature),
+        max_weight=float(args.max_weight),
+        set_max_per_asset=max(1, int(args.set_max_per_asset)),
+        set_max_sets=max(1, int(args.set_max_sets)),
         manifest_path=manifest_path,
         research_report_path=report_path,
     )

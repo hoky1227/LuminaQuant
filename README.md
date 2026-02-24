@@ -15,6 +15,7 @@
 | **[Migration Guide](docs/MIGRATION_GUIDE_POSTGRES_PARQUET.md)** | Local-only migration to Parquet + PostgreSQL. |
 | **[GPU Auto Notes](docs/DESIGN_NOTES_GPU_AUTO.md)** | Polars GPU/CPU auto-selection and fallback design. |
 | **[Validation Report](docs/VALIDATION_REPORT.md)** | Verification + optimization report for core workflows. |
+| **[Futures Strategy Factory](docs/FUTURES_STRATEGY_FACTORY.md)** | Candidate generation, weighted shortlist, and portfolio-set policy. |
 | **[Workflow Guide](docs/WORKFLOW.md)** | Private/Public branch operation and publish checklist. |
 | **[Dashboard Realtime Report](docs/DASHBOARD_REALTIME_ANALYSIS_REPORT.md)** | Analysis + implementation report for live-refresh dashboard behavior. |
 | **[Exchange Guide](docs/EXCHANGES.md)** | Detailed setup for **Binance** (CCXT) and **MetaTrader 5**. |
@@ -240,8 +241,17 @@ uv run python scripts/run_strategy_factory_pipeline.py \
   --db-path data/market_parquet \
   --mode standard \
   --timeframes 1m 5m 15m \
-  --seeds 20260221
+  --seeds 20260221 \
+  --single-min-score 0.0 \
+  --single-min-return 0.0 \
+  --single-min-sharpe 0.0 \
+  --drop-single-without-metrics
 ```
+
+Portfolio shortlist policy (default):
+- **single strategy** must pass score/return/sharpe floors to stay in shortlist
+- **direct multi-asset strategy rows are excluded** from portfolio shortlist unless `--allow-multi-asset` is set
+- portfolio-level candidates are emitted as **`portfolio_sets`** by combining successful single-asset strategies, each with normalized weights (`portfolio_weight`)
 
 **Futures Support Feature Collection (funding / mark/index / OI):**
 ```bash

@@ -14,6 +14,7 @@
 | **[운영 워크플로우](docs/kr/WORKFLOW.md)** | Private/Public 브랜치 운영 및 공개 배포 체크리스트. |
 | **[마이그레이션 가이드](docs/MIGRATION_GUIDE_POSTGRES_PARQUET.md)** | 레거시 저장소 제거 후 Parquet + PostgreSQL 전환 가이드. |
 | **[GPU 자동 실행 설계](docs/DESIGN_NOTES_GPU_AUTO.md)** | Polars GPU/CPU 자동 선택 및 fallback 전략 설명. |
+| **[선물 전략 팩토리](docs/kr/FUTURES_STRATEGY_FACTORY.md)** | 후보 생성, 가중치 기반 숏리스트, 단일-자산 조합 정책. |
 | **[대시보드 실시간 분석 리포트](docs/DASHBOARD_REALTIME_ANALYSIS_REPORT.md)** | 실시간 갱신 동작 개선 분석 및 구현 결과. |
 | **[거래소 가이드](docs/kr/EXCHANGES.md)** | **바이낸스(Binance)** (CCXT) 및 **MetaTrader 5 (MT5)** 상세 설정법. |
 | **[거래 매뉴얼](docs/kr/TRADING_MANUAL.md)** | **실전 운용법**: 매수/매도, 레버리지, TP/SL, 트레일링 스탑. |
@@ -155,6 +156,28 @@ uv run python optimize.py
 uv run python optimize.py --data-source auto --market-db-path data/market_parquet
 ```
 
+**전략 팩토리 파이프라인 (후보 + 숏리스트):**
+```bash
+# dry-run
+uv run python scripts/run_strategy_factory_pipeline.py --dry-run
+
+# 후보/숏리스트 생성
+uv run python scripts/run_strategy_factory_pipeline.py \
+  --db-path data/market_parquet \
+  --mode standard \
+  --timeframes 1m 5m 15m \
+  --seeds 20260221 \
+  --single-min-score 0.0 \
+  --single-min-return 0.0 \
+  --single-min-sharpe 0.0 \
+  --drop-single-without-metrics
+```
+
+포트폴리오 숏리스트 기본 정책:
+- **단일 전략**은 score/return/sharpe 기준을 통과하지 못하면 제외
+- `--allow-multi-asset`을 명시하지 않으면 **직접 multi-asset 전략은 포트폴리오 숏리스트에서 제외**
+- 최종 포트폴리오 후보는 성과가 검증된 단일 전략을 자산별로 묶은 **`portfolio_sets`**(가중치 `portfolio_weight`)로 생성
+
 **아키텍처/린트 검증:**
 ```bash
 uv run python scripts/check_architecture.py
@@ -175,6 +198,28 @@ uv run python scripts/benchmark_backtest.py \
   --output reports/benchmarks/current_snapshot.json \
   --compare-to reports/benchmarks/baseline_snapshot.json
 ```
+
+**전략 팩토리 파이프라인 (manifest + shortlist):**
+```bash
+# Dry run
+uv run python scripts/run_strategy_factory_pipeline.py --dry-run
+
+# 단일 전략 성과 필터 + 가중치 + portfolio_sets 생성
+uv run python scripts/run_strategy_factory_pipeline.py \
+  --db-path data/market_parquet \
+  --mode standard \
+  --timeframes 1m 5m 15m \
+  --seeds 20260221 \
+  --single-min-score 0.0 \
+  --single-min-return 0.0 \
+  --single-min-sharpe 0.0 \
+  --drop-single-without-metrics
+```
+
+기본 shortlist 정책:
+- 단일 전략은 score/return/sharpe 기준을 통과해야 포함
+- direct multi-asset 행은 기본 제외 (`--allow-multi-asset`으로 허용)
+- 성공한 단일-자산 전략 조합으로 `portfolio_sets`가 생성되고 각 멤버에 `portfolio_weight`가 부여됨
 
 **결과 시각화 (대시보드):**
 ```bash

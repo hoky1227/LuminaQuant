@@ -18,7 +18,11 @@ from strategies.factory_candidate_set import (
     DEFAULT_TOP10_PLUS_METALS as DEFAULT_BINANCE_TOP10_PLUS_METALS,
 )
 
-from .selection import select_diversified_shortlist, summarize_shortlist
+from .selection import (
+    build_single_asset_portfolio_sets,
+    select_diversified_shortlist,
+    summarize_shortlist,
+)
 
 
 def extract_saved_report_path(output: str) -> Path | None:
@@ -127,6 +131,16 @@ def build_shortlist_payload(
     shortlist_max_total: int,
     shortlist_max_per_family: int,
     shortlist_max_per_timeframe: int,
+    single_min_score: float | None = 0.0,
+    drop_single_without_metrics: bool = True,
+    single_min_return: float | None = 0.0,
+    single_min_sharpe: float | None = 0.0,
+    allow_multi_asset: bool = False,
+    include_weights: bool = True,
+    weight_temperature: float = 0.35,
+    max_weight: float = 0.35,
+    set_max_per_asset: int = 2,
+    set_max_sets: int = 16,
     manifest_path: Path,
     research_report_path: Path,
 ) -> dict[str, Any]:
@@ -137,17 +151,43 @@ def build_shortlist_payload(
         max_total=shortlist_max_total,
         max_per_family=shortlist_max_per_family,
         max_per_timeframe=shortlist_max_per_timeframe,
+        single_min_score=single_min_score,
+        drop_single_without_metrics=drop_single_without_metrics,
+        single_min_return=single_min_return,
+        single_min_sharpe=single_min_sharpe,
+        allow_multi_asset=allow_multi_asset,
+        include_weights=include_weights,
+        weight_temperature=weight_temperature,
+        max_weight=max_weight,
+    )
+    portfolio_sets = build_single_asset_portfolio_sets(
+        shortlist,
+        mode=mode,
+        max_per_asset=set_max_per_asset,
+        max_sets=set_max_sets,
     )
 
     return {
         "generated_at": datetime.now(UTC).isoformat(),
         "mode": str(mode),
+        "single_min_score": None if single_min_score is None else float(single_min_score),
+        "drop_single_without_metrics": bool(drop_single_without_metrics),
+        "single_min_return": None if single_min_return is None else float(single_min_return),
+        "single_min_sharpe": None if single_min_sharpe is None else float(single_min_sharpe),
+        "allow_multi_asset": bool(allow_multi_asset),
+        "weights_enabled": bool(include_weights),
+        "weight_temperature": float(weight_temperature),
+        "max_weight": float(max_weight),
+        "set_max_per_asset": int(set_max_per_asset),
+        "set_max_sets": int(set_max_sets),
         "manifest_path": str(manifest_path),
         "research_report_path": str(research_report_path),
         "selected_team_input_count": len(selected_team),
         "shortlist_count": len(shortlist),
+        "portfolio_set_count": len(portfolio_sets),
         "summary": summarize_shortlist(shortlist),
         "shortlist": shortlist,
+        "portfolio_sets": portfolio_sets,
     }
 
 
