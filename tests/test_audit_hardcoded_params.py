@@ -218,3 +218,19 @@ ALPHA_FORMULAS = {
         ]
     )
     assert rc == 0
+
+
+def test_strategy_path_move_signatures_map_to_legacy_baseline():
+    violation = MODULE.Violation(
+        kind="literal",
+        path="lumina_quant/strategies/sample.py",
+        line=10,
+        col=4,
+        value=3.0,
+        literal="3",
+        suggestion="sample_param_3",
+        context="module",
+    )
+
+    baseline = {"literal:strategies/sample.py:10:4:3"}
+    assert MODULE._is_baselined(violation, baseline)

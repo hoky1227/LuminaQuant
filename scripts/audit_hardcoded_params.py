@@ -506,6 +506,29 @@ def _load_baseline_signatures(path: Path) -> set[str]:
     return {str(item) for item in raw}
 
 
+def _path_aliases(path: str) -> set[str]:
+    aliases = {path}
+
+    if path.startswith("lumina_quant/strategies/"):
+        aliases.add(path.removeprefix("lumina_quant/"))
+    elif path.startswith("strategies/"):
+        aliases.add(f"lumina_quant/{path}")
+
+    return aliases
+
+
+def _signature_aliases(signature: str) -> set[str]:
+    parts = signature.split(":", 2)
+    if len(parts) < 3:
+        return {signature}
+
+    kind, path, remainder = parts
+    variants: set[str] = {signature}
+    for alias in _path_aliases(path):
+        variants.add(f"{kind}:{alias}:{remainder}")
+    return variants
+
+
 def _write_baseline(path: Path, signatures: Iterable[str], *, literal_paths: Sequence[str], formula_paths: Sequence[str]) -> None:
     payload = {
         "generated_at_utc": datetime.now(UTC).isoformat(),
@@ -518,10 +541,13 @@ def _write_baseline(path: Path, signatures: Iterable[str], *, literal_paths: Seq
 
 
 def _is_baselined(violation: Violation, baseline_signatures: set[str]) -> bool:
-    return (
-        violation.signature() in baseline_signatures
-        or violation.legacy_signature() in baseline_signatures
-    )
+    for signature in _signature_aliases(violation.signature()):
+        if signature in baseline_signatures:
+            return True
+    for legacy_signature in _signature_aliases(violation.legacy_signature()):
+        if legacy_signature in baseline_signatures:
+            return True
+    return False
 
 
 def _write_json_report(
