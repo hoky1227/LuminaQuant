@@ -55,11 +55,11 @@ export PATH="$PATH:/c/Users/<user>/.cargo/bin"
   - `LQ_NATIVE_BENCH_LOOPS` (기본 `256`): 마이크로 벤치 루프 수
   - `LQ_NATIVE_METRICS_DLL`: 명시 DLL 강제 지정
 
-## 크로스 플랫폼 검증
+## CI 검증
 
-- GitHub Actions 워크플로: `.github/workflows/cross-platform-ci.yml`
-- 매트릭스 대상: Windows, Ubuntu, macOS
-- 검증 단계: `uv sync`, native 백엔드 빌드, 린트, 회귀 테스트
+- GitHub Actions 워크플로: `.github/workflows/ci.yml`
+- 대상: Ubuntu (Python 3.13)
+- 검증 단계: `uv sync`, 린트, 아키텍처/하드코딩 감사, docs/readme 검증, 회귀 테스트
 
 ## 네이티브 빌드 명령
 

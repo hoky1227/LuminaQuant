@@ -55,11 +55,11 @@ Default backend behavior:
   - `LQ_NATIVE_BENCH_LOOPS` (`256` default): micro-benchmark loop count.
   - `LQ_NATIVE_METRICS_DLL`: explicit DLL override.
 
-## Cross-platform validation
+## CI validation
 
-- GitHub Actions workflow: `.github/workflows/cross-platform-ci.yml`
-- Matrix targets: Windows, Ubuntu, macOS
-- Validation steps: `uv sync`, native backend build, lint, regression tests
+- GitHub Actions workflow: `.github/workflows/ci.yml`
+- Targets: Ubuntu (Python 3.13)
+- Validation steps: `uv sync`, lint, architecture audit, docs/readme verification, regression tests
 
 ## Native build commands
 
