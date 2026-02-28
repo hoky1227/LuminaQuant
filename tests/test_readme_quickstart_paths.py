@@ -9,15 +9,17 @@ def _read(path: str) -> str:
 
 def test_readme_quickstart_paths_are_repo_consistent():
     text = _read("README.md")
+    assert "git clone https://github.com/hoky1227/Quants-agent.git" in text
+    assert "cd Quants-agent" in text
     assert "git clone https://github.com/HokyoungJung/LuminaQuant.git" in text
     assert "cd LuminaQuant" in text
-    assert "# cd Quants-agent" in text
     assert "cd lumina-quant" not in text
 
 
 def test_readme_kr_quickstart_paths_are_repo_consistent():
     text = _read("README_KR.md")
+    assert "git clone https://github.com/hoky1227/Quants-agent.git" in text
+    assert "cd Quants-agent" in text
     assert "git clone https://github.com/HokyoungJung/LuminaQuant.git" in text
     assert "cd LuminaQuant" in text
-    assert "# cd Quants-agent" in text
     assert "cd lumina-quant" not in text

@@ -4,6 +4,12 @@
 
 **LuminaQuant** is an advanced, event-driven quantitative trading system designed for professional-grade backtesting and live trading. It features a modular architecture that supports multiple exchanges, robust state management, and sophisticated strategy optimization.
 
+## Repository Role (Source of Truth)
+
+- **Private source-of-truth repo** (maintainers/internal): `https://github.com/hoky1227/Quants-agent.git`
+- **Public distribution repo** (external/read-only subset): `https://github.com/HokyoungJung/LuminaQuant.git`
+- Python package/import namespace: `lumina_quant` (distribution name: `lumina-quant`)
+
 ---
 
 ## 📚 Documentation Index
@@ -22,6 +28,8 @@
 | **[Trading Manual](docs/TRADING_MANUAL.md)** | **How-To**: Buy/Sell, Leverage, TP/SL, Trailing Stops. |
 | **[Performance Metrics](docs/METRICS.md)** | Explanation of Sharpe, Sortino, Alpha, Beta, etc. |
 | **[Developer API](docs/API.md)** | How to write Strategies and extend the system. |
+| **[Contributing](CONTRIBUTING.md)** | Local checks, CI parity commands, and PR expectations. |
+| **[Security](SECURITY.md)** | Vulnerability reporting and credential handling policy. |
 | **[Configuration](#configuration)** | Quick reference for `config.yaml`. |
 
 ## 🏗 Architecture
@@ -79,15 +87,13 @@ LOG_LEVEL=INFO
 ### 1. Installation
 
 ```bash
-# Clone one repository (choose ONE)
+# Clone the private source-of-truth repo (recommended for maintainers)
+git clone https://github.com/hoky1227/Quants-agent.git
+cd Quants-agent
 
-# Public repository (open)
-git clone https://github.com/HokyoungJung/LuminaQuant.git
-cd LuminaQuant
-
-# Private repository (full internal workflow; access required)
-# git clone https://github.com/hoky1227/Quants-agent.git
-# cd Quants-agent
+# Public mirror alternative (external users/read-only workflow)
+# git clone https://github.com/HokyoungJung/LuminaQuant.git
+# cd LuminaQuant
 
 # Ensure compatible Python (project requires < 3.14)
 uv python pin 3.13
@@ -101,6 +107,14 @@ uv run python scripts/verify_install.py
 # (Optional) For MT5 Support
 uv sync --extra mt5
 ```
+
+### 1-Minute Minimum Viable Run (No DB, No API Keys)
+
+```bash
+uv run python scripts/minimum_viable_run.py
+```
+
+This command generates tiny synthetic CSV data (if missing), forces a local CSV-only backtest profile, and runs a smoke backtest without requiring PostgreSQL or exchange credentials.
 
 ### 2. Configuration
 

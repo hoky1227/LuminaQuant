@@ -4,6 +4,12 @@
 
 [English Version](README.md)
 
+## 저장소 역할 (Source of Truth)
+
+- **Private 원본 저장소** (유지보수/내부): `https://github.com/hoky1227/Quants-agent.git`
+- **Public 배포 저장소** (외부/읽기 중심): `https://github.com/HokyoungJung/LuminaQuant.git`
+- Python 패키지/임포트 네임스페이스: `lumina_quant` (배포명: `lumina-quant`)
+
 ---
 
 ## 📚 문서 목차 (Documentation Index)
@@ -20,6 +26,8 @@
 | **[거래 매뉴얼](docs/kr/TRADING_MANUAL.md)** | **실전 운용법**: 매수/매도, 레버리지, TP/SL, 트레일링 스탑. |
 | **[성과 지표](docs/kr/METRICS.md)** | Sharpe, Sortino, Alpha, Beta 등 지표에 대한 설명. |
 | **[개발자 API](docs/kr/API.md)** | 전략 작성법 및 시스템 확장 가이드. |
+| **[기여 가이드](CONTRIBUTING.md)** | 로컬 체크/CI parity 명령/PR 기준. |
+| **[보안 정책](SECURITY.md)** | 취약점 제보 및 자격증명 관리 정책. |
 | **[구성 (Configuration)](#구성-configuration)** | `config.yaml` 빠른 참조. |
 
 ---
@@ -79,15 +87,13 @@ LOG_LEVEL=INFO
 ### 1. 설치 (Installation)
 
 ```bash
-# 저장소 1개 선택해서 복제
+# Private 원본 저장소 복제 (유지보수 권장)
+git clone https://github.com/hoky1227/Quants-agent.git
+cd Quants-agent
 
-# 공개 저장소 (누구나 접근 가능)
-git clone https://github.com/HokyoungJung/LuminaQuant.git
-cd LuminaQuant
-
-# 비공개 저장소 (전체 내부 워크플로우, 권한 필요)
-# git clone https://github.com/hoky1227/Quants-agent.git
-# cd Quants-agent
+# Public 미러 대안 (외부/읽기 중심)
+# git clone https://github.com/HokyoungJung/LuminaQuant.git
+# cd LuminaQuant
 
 # 프로젝트 Python 버전 고정 (< 3.14)
 uv python pin 3.13
@@ -98,6 +104,14 @@ uv sync --all-extras
 # (선택 사항) MT5 지원을 위한 설치
 uv sync --extra mt5
 ```
+
+### 1분 최소 실행 (DB/API 키 불필요)
+
+```bash
+uv run python scripts/minimum_viable_run.py
+```
+
+이 명령은 (필요 시) 작은 synthetic CSV 데이터를 생성하고, 로컬 CSV 전용 백테스트 프로필로 스모크 백테스트를 실행합니다. PostgreSQL/거래소 키가 필요 없습니다.
 
 ### 2. 구성 (Configuration)
 

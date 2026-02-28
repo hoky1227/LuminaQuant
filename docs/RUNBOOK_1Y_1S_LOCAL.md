@@ -10,10 +10,14 @@ This runbook is for **local-only uv runtime** and the current LuminaQuant stack:
 ## 0) One-time setup
 
 ```bash
-cd /home/hoky/Quants-agent/LuminaQuant
+cd /path/to/<REPO_DIR>
 uv sync --all-extras
 uv run python scripts/init_postgres_schema.py --dsn "$LQ_POSTGRES_DSN"
 ```
+
+`<REPO_DIR>` examples:
+- `Quants-agent` (private source-of-truth)
+- `LuminaQuant` (public mirror)
 
 Use the default 12-symbol universe via env override:
 
