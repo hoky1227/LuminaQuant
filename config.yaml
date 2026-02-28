@@ -71,6 +71,7 @@ storage:
   market_data_parquet_path: "data/market_parquet"
   market_data_exchange: "binance"
   wal_max_bytes: 268435456
+  wal_compact_on_threshold: true
   wal_compaction_interval_seconds: 3600
   export_csv: true
 

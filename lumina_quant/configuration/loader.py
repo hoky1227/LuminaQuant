@@ -219,6 +219,10 @@ def build_runtime_config(data: dict[str, Any], env: Mapping[str, str]) -> Runtim
         runtime.storage.market_data_parquet_path
     )
     runtime.storage.wal_max_bytes = max(0, _as_int(runtime.storage.wal_max_bytes, 268435456))
+    runtime.storage.wal_compact_on_threshold = _as_bool(
+        runtime.storage.wal_compact_on_threshold,
+        True,
+    )
     runtime.storage.wal_compaction_interval_seconds = max(
         0,
         _as_int(runtime.storage.wal_compaction_interval_seconds, 3600),

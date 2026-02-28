@@ -24,6 +24,8 @@ def validate_runtime_config(runtime: RuntimeConfig, *, for_live: bool = False) -
         raise ValueError("storage.backend must be one of: parquet-postgres, parquet, local.")
     if int(getattr(runtime.storage, "wal_max_bytes", 0)) < 0:
         raise ValueError("storage.wal_max_bytes must be >= 0.")
+    if not isinstance(getattr(runtime.storage, "wal_compact_on_threshold", True), bool):
+        raise ValueError("storage.wal_compact_on_threshold must be boolean.")
     if int(getattr(runtime.storage, "wal_compaction_interval_seconds", 0)) < 0:
         raise ValueError("storage.wal_compaction_interval_seconds must be >= 0.")
 

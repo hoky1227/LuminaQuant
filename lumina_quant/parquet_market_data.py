@@ -280,10 +280,26 @@ class ParquetMarketDataRepository:
                 continue
         return int(default)
 
-    def _resolve_wal_controls(self) -> tuple[int, int]:
+    @staticmethod
+    def _env_bool(*, names: list[str], default: bool) -> bool:
+        for name in names:
+            raw = os.getenv(str(name), "").strip().lower()
+            if not raw:
+                continue
+            if raw in {"1", "true", "yes", "on"}:
+                return True
+            if raw in {"0", "false", "no", "off"}:
+                return False
+        return bool(default)
+
+    def _resolve_wal_controls(self) -> tuple[int, bool, int]:
         wal_max_bytes = self._env_int(
             names=["LQ_WAL_MAX_BYTES", "LQ__STORAGE__WAL_MAX_BYTES"],
             default=268435456,
+        )
+        compact_on_threshold = self._env_bool(
+            names=["LQ_WAL_COMPACT_ON_THRESHOLD", "LQ__STORAGE__WAL_COMPACT_ON_THRESHOLD"],
+            default=True,
         )
         compaction_interval = self._env_int(
             names=[
@@ -294,7 +310,7 @@ class ParquetMarketDataRepository:
             ],
             default=3600,
         )
-        return max(0, int(wal_max_bytes)), max(0, int(compaction_interval))
+        return max(0, int(wal_max_bytes)), bool(compact_on_threshold), max(0, int(compaction_interval))
 
     @staticmethod
     def _parse_iso_utc(value: Any) -> datetime | None:
@@ -310,7 +326,7 @@ class ParquetMarketDataRepository:
         return parsed.astimezone(UTC)
 
     def _enforce_wal_growth_controls(self, *, exchange: str, symbol: str) -> None:
-        wal_max_bytes, compaction_interval_seconds = self._resolve_wal_controls()
+        wal_max_bytes, compact_on_threshold, compaction_interval_seconds = self._resolve_wal_controls()
         if wal_max_bytes <= 0:
             return
 
@@ -323,8 +339,23 @@ class ParquetMarketDataRepository:
 
         now = datetime.now(tz=UTC)
         meta = self._read_meta(exchange=exchange, symbol=symbol)
+        meta["wal_compaction_required"] = True
+        meta["last_wal_over_limit_detected_at"] = now.isoformat()
         last_attempt = self._parse_iso_utc(meta.get("last_compaction_attempt_at"))
         elapsed = None if last_attempt is None else max(0.0, (now - last_attempt).total_seconds())
+        if not bool(compact_on_threshold):
+            last_warning = self._parse_iso_utc(meta.get("last_wal_over_limit_warning_at"))
+            warn_elapsed = None if last_warning is None else (now - last_warning).total_seconds()
+            if warn_elapsed is None or warn_elapsed >= 60.0:
+                print(
+                    f"[WARN] WAL size {wal_size} bytes exceeds limit {wal_max_bytes} for {exchange}:{symbol}. "
+                    "wal_compact_on_threshold=false, manual compaction required "
+                    "(scripts/compact_wal_to_monthly_parquet.py)."
+                )
+                meta["last_wal_over_limit_warning_at"] = now.isoformat()
+            self._write_meta(exchange=exchange, symbol=symbol, payload=meta)
+            return
+
         can_compact = (
             compaction_interval_seconds <= 0
             or elapsed is None
@@ -341,11 +372,16 @@ class ParquetMarketDataRepository:
                     symbol=symbol,
                     remove_sources=True,
                 )
+                meta = self._read_meta(exchange=exchange, symbol=symbol)
+                meta["wal_compaction_required"] = False
+                meta["last_wal_compaction_resolved_at"] = now.isoformat()
+                self._write_meta(exchange=exchange, symbol=symbol, payload=meta)
             except Exception as exc:
                 print(
                     f"[WARN] WAL compaction trigger failed for {exchange}:{symbol}: {exc}. "
                     "Continuing without blocking writes."
                 )
+                self._write_meta(exchange=exchange, symbol=symbol, payload=meta)
             return
 
         last_warning = self._parse_iso_utc(meta.get("last_wal_over_limit_warning_at"))
@@ -357,7 +393,7 @@ class ParquetMarketDataRepository:
                 f"but compaction interval not reached; retry in ~{wait_seconds}s."
             )
             meta["last_wal_over_limit_warning_at"] = now.isoformat()
-            self._write_meta(exchange=exchange, symbol=symbol, payload=meta)
+        self._write_meta(exchange=exchange, symbol=symbol, payload=meta)
 
     def _read_meta(self, *, exchange: str, symbol: str) -> dict[str, Any]:
         path = self._meta_path(exchange=exchange, symbol=symbol)

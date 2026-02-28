@@ -159,6 +159,24 @@ uv run python optimize.py
 uv run python optimize.py --data-source auto --market-db-path data/market_parquet
 ```
 
+### Windowed model parity + memory safety defaults
+
+- `optimize.py` in parquet mode uses the same **windowed MarketWindow model** as live:
+  - `HistoricParquetWindowedDataHandler`
+  - `backtest_mode=windowed`
+  - `backtest_poll_seconds` / `backtest_window_seconds` from config/env
+- Parquet optimization enforces `MAX_WORKERS=1` for RAM safety.
+- `run_backtest.py` auto-enables low-memory profile for ranges **>= 30 days** (or `LQ_BACKTEST_LOW_MEMORY=1`):
+  - `record_history=False`
+  - `record_trades=False`
+  - `persist_output=False`
+  - `track_metrics=True`
+- WAL growth guard is enabled:
+  - `storage.wal_max_bytes`
+  - `storage.wal_compact_on_threshold`
+  - `storage.wal_compaction_interval_seconds`
+  - canonical compaction script: `scripts/compact_wal_to_monthly_parquet.py`
+
 **Architecture/Lint Gate:**
 ```bash
 uv run python scripts/check_architecture.py

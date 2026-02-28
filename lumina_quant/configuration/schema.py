@@ -82,6 +82,7 @@ class StorageConfig:
     market_data_parquet_path: str = "data/market_parquet"
     market_data_exchange: str = "binance"
     wal_max_bytes: int = 268435456
+    wal_compact_on_threshold: bool = True
     wal_compaction_interval_seconds: int = 3600
     export_csv: bool = True
 

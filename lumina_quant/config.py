@@ -40,6 +40,10 @@ os.environ.setdefault(
     str(int(getattr(_RUNTIME.storage, "wal_max_bytes", 268435456))),
 )
 os.environ.setdefault(
+    "LQ__STORAGE__WAL_COMPACT_ON_THRESHOLD",
+    "1" if bool(getattr(_RUNTIME.storage, "wal_compact_on_threshold", True)) else "0",
+)
+os.environ.setdefault(
     "LQ__STORAGE__WAL_COMPACTION_INTERVAL_SECONDS",
     str(int(getattr(_RUNTIME.storage, "wal_compaction_interval_seconds", 3600))),
 )
@@ -138,6 +142,7 @@ class BaseConfig:
     POSTGRES_DSN = str(getattr(_RUNTIME.storage, "postgres_dsn", "") or "")
     STORAGE_EXPORT_CSV = bool(_RUNTIME.storage.export_csv)
     WAL_MAX_BYTES = int(getattr(_RUNTIME.storage, "wal_max_bytes", 268435456))
+    WAL_COMPACT_ON_THRESHOLD = bool(getattr(_RUNTIME.storage, "wal_compact_on_threshold", True))
     WAL_COMPACTION_INTERVAL_SECONDS = int(
         getattr(_RUNTIME.storage, "wal_compaction_interval_seconds", 3600)
     )

@@ -421,7 +421,7 @@ def _is_year_scale_window(start_date, end_date, *, threshold_days=30) -> bool:
         end = datetime.now(tz=UTC).replace(tzinfo=None)
     if end < start:
         return False
-    return (end - start).days > int(threshold_days)
+    return (end - start).days >= int(threshold_days)
 
 
 def _resolve_execution_profile(*, low_memory=None, persist_output=None, start_date=None, end_date=None):
