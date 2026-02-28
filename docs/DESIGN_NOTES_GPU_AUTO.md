@@ -7,7 +7,7 @@ Keep runtime behavior deterministic while allowing opportunistic GPU acceleratio
 ## Compute Resolution Contract
 
 `compute_engine.resolve_compute_engine(mode, device, verbose)` resolves execution mode from
-explicit arguments or environment (`LQ_GPU_MODE`, `LQ_GPU_DEVICE`, `LQ_GPU_VERBOSE`).
+explicit arguments or environment (`LQ_GPU_MODE`, `LQ_GPU_DEVICE`, `LQ_GPU_VRAM_GB`, `LQ_GPU_VERBOSE`).
 
 Resolution policy:
 
@@ -45,4 +45,6 @@ and `ON CONFLICT DO UPDATE` to prevent duplicate semantic rows during retries/re
 
 - default to `LQ_GPU_MODE=auto` for production-like local runs
 - use `LQ_GPU_MODE=forced-gpu` only when GPU availability is guaranteed
+- install GPU runtime extras before enabling GPU mode:
+  - `uv sync --extra gpu` (includes `cudf-polars-cu12` and `nvidia-nvjitlink-cu12`)
 - run determinism tests after any pipeline/grouping change

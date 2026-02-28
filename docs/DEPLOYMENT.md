@@ -9,7 +9,9 @@ Docker deployment is intentionally out of scope for this runtime profile.
 ```bash
 apt update && apt install -y curl
 curl -LsSf https://astral.sh/uv/install.sh | sh
-uv sync --all-extras
+uv sync --extra optimize --extra live
+# Optional for NVIDIA GPU nodes (Linux x86_64 + CUDA 12):
+# uv sync --extra gpu
 ```
 
 ### 2. Create Service File

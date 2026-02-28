@@ -12,6 +12,7 @@ def main():
     run(["uv", "sync", "--extra", "optimize", "--extra", "dev", "--extra", "live"])
     run(["uv", "run", "ruff", "check", "."])
     run(["uv", "run", "python", "scripts/check_architecture.py"])
+    run(["uv", "run", "python", "scripts/verify_docs.py"])
     run(
         [
             "uv",
@@ -25,6 +26,25 @@ def main():
             "--output",
             "reports/benchmarks/verify_install.json",
         ]
+    )
+    run(
+        [
+            "uv",
+            "run",
+            "python",
+            "scripts/verify_8gb_baseline.py",
+            "--benchmark",
+            "reports/benchmarks/verify_install.json",
+            "--allow-missing-rss-source",
+            "--skip-dmesg",
+            "--allow-missing-oom-sources",
+            "--output",
+            "reports/benchmarks/verify_install_8gb_gate.json",
+        ]
+    )
+    print(
+        "[verify_install] 8GB gate ran in fallback mode "
+        "(RSS/OOM strict checks require --time-log and explicit OOM logs)."
     )
     run(
         [
