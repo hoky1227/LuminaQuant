@@ -18,6 +18,7 @@
 | :--- | :--- |
 | **[설치 및 설정](#설치-installation)** | LuminaQuant 시작하기. |
 | **[운영 워크플로우](docs/kr/WORKFLOW.md)** | Private/Public 브랜치 운영 및 공개 배포 체크리스트. |
+| **[8GB 기준 Quickstart](docs/kr/QUICKSTART_8GB_BASELINE.md)** | 설치/스모크/섀도우라이브/대시보드/안전종료/정리 최소 절차. |
 | **[마이그레이션 가이드](docs/MIGRATION_GUIDE_POSTGRES_PARQUET.md)** | 레거시 저장소 제거 후 Parquet + PostgreSQL 전환 가이드. |
 | **[GPU 자동 실행 설계](docs/DESIGN_NOTES_GPU_AUTO.md)** | Polars GPU/CPU 자동 선택 및 fallback 전략 설명. |
 | **[선물 전략 팩토리](docs/kr/FUTURES_STRATEGY_FACTORY.md)** | 후보 생성, 가중치 기반 숏리스트, 단일-자산 조합 정책. |
@@ -212,6 +213,22 @@ uv run python scripts/run_strategy_factory_pipeline.py \
 uv run python scripts/check_architecture.py
 uv run ruff check .
 ```
+
+**8GB 기준 게이트 (RSS/OOM/디스크/벤치마크):**
+```bash
+mkdir -p logs reports/benchmarks
+/usr/bin/time -v \
+  uv run python scripts/benchmark_backtest.py --iters 1 --warmup 0 --output reports/benchmarks/ci_smoke.json \
+  2>&1 | tee logs/ci_smoke.time.log
+uv run python scripts/verify_8gb_baseline.py \
+  --benchmark reports/benchmarks/ci_smoke.json \
+  --time-log logs/ci_smoke.time.log \
+  --oom-log logs/ci_smoke.time.log \
+  --skip-dmesg \
+  --output reports/benchmarks/ci_8gb_gate.json
+```
+
+전체 8GB 절차: [docs/kr/QUICKSTART_8GB_BASELINE.md](docs/kr/QUICKSTART_8GB_BASELINE.md)
 
 **PostgreSQL 스키마 초기화:**
 ```bash
