@@ -23,6 +23,7 @@
 | **[Validation Report](docs/VALIDATION_REPORT.md)** | Verification + optimization report for core workflows. |
 | **[Futures Strategy Factory](docs/FUTURES_STRATEGY_FACTORY.md)** | Candidate generation, weighted shortlist, and portfolio-set policy. |
 | **[Workflow Guide](docs/WORKFLOW.md)** | Private/Public branch operation and publish checklist. |
+| **[8GB Baseline Quickstart](docs/QUICKSTART_8GB_BASELINE.md)** | Minimal install/smoke/replay/shadow-live/dashboard/safe-stop/cleanup flow. |
 | **[Dashboard Realtime Report](docs/DASHBOARD_REALTIME_ANALYSIS_REPORT.md)** | Analysis + implementation report for live-refresh dashboard behavior. |
 | **[Exchange Guide](docs/EXCHANGES.md)** | Detailed setup for **Binance** (CCXT) and **MetaTrader 5**. |
 | **[Trading Manual](docs/TRADING_MANUAL.md)** | **How-To**: Buy/Sell, Leverage, TP/SL, Trailing Stops. |
@@ -208,6 +209,22 @@ uv run python scripts/check_architecture.py
 uv run ruff format . --check
 uv run ruff check .
 ```
+
+**8GB Baseline Gate (RSS/OOM/Disk/Benchmark):**
+```bash
+mkdir -p logs reports/benchmarks
+/usr/bin/time -v \
+  uv run python scripts/benchmark_backtest.py --iters 1 --warmup 0 --output reports/benchmarks/ci_smoke.json \
+  2>&1 | tee logs/ci_smoke.time.log
+uv run python scripts/verify_8gb_baseline.py \
+  --benchmark reports/benchmarks/ci_smoke.json \
+  --time-log logs/ci_smoke.time.log \
+  --oom-log logs/ci_smoke.time.log \
+  --skip-dmesg \
+  --output reports/benchmarks/ci_8gb_gate.json
+```
+
+Full 8GB workflow: [docs/QUICKSTART_8GB_BASELINE.md](docs/QUICKSTART_8GB_BASELINE.md)
 
 **Visualize Results:**
 ```bash
