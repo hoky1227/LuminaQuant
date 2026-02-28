@@ -2,7 +2,7 @@ import argparse
 import json
 import os
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from lumina_quant.backtesting.backtest import Backtest
@@ -175,6 +175,13 @@ BACKTEST_DECISION_CADENCE_SECONDS = max(
         int(getattr(BacktestConfig, "DECISION_CADENCE_SECONDS", 20)),
     ),
 )
+BACKTEST_AUDIT_SNAPSHOT_SECONDS = max(
+    1,
+    _env_int(
+        "LQ__BACKTEST__AUDIT_SNAPSHOT_SECONDS",
+        int(os.getenv("LQ_BACKTEST_AUDIT_SNAPSHOT_SECONDS", "60") or "60"),
+    ),
+)
 
 
 def _normalize_backtest_mode(value: str | None, default: str = "windowed") -> str:
@@ -317,36 +324,63 @@ def _safe_float_or(value, default):
     return float(parsed)
 
 
-def _persist_backtest_audit_rows(audit_store, run_id, backtest):
+def _persist_backtest_audit_rows(audit_store, run_id, backtest, *, low_memory=False):
     equity_rows = 0
     fill_rows = 0
 
     try:
-        equity_curve = getattr(backtest.portfolio, "equity_curve", None)
-        if equity_curve is None:
-            backtest.portfolio.create_equity_curve_dataframe()
-            equity_curve = getattr(backtest.portfolio, "equity_curve", None)
-        if equity_curve is not None:
-            for row in equity_curve.iter_rows(named=True):
-                total = _safe_float(row.get("total"))
+        if bool(low_memory):
+            points = list(getattr(backtest.portfolio, "_equity_points", []) or [])
+            snapshot_interval = max(1.0, float(BACKTEST_AUDIT_SNAPSHOT_SECONDS))
+            last_snapshot_ts = None
+            for ts_seconds, total_value in points:
+                total = _safe_float(total_value)
                 if total is None:
                     continue
-                cash = _safe_float(row.get("cash"))
-                metadata = {}
-                benchmark = _safe_float(row.get("benchmark_price"))
-                funding = _safe_float(row.get("funding"))
-                if benchmark is not None:
-                    metadata["benchmark_price"] = benchmark
-                if funding is not None:
-                    metadata["funding"] = funding
+                if last_snapshot_ts is not None and (float(ts_seconds) - float(last_snapshot_ts)) < snapshot_interval:
+                    continue
+                last_snapshot_ts = float(ts_seconds)
+                try:
+                    timeindex = datetime.fromtimestamp(float(ts_seconds), tz=UTC)
+                except Exception:
+                    timeindex = None
                 audit_store.log_equity(
                     run_id,
-                    timeindex=row.get("datetime"),
+                    timeindex=timeindex,
                     total=total,
-                    cash=cash,
-                    metadata=metadata,
+                    cash=None,
+                    metadata={
+                        "source": "low_memory_equity_point",
+                        "snapshot_interval_seconds": int(BACKTEST_AUDIT_SNAPSHOT_SECONDS),
+                    },
                 )
                 equity_rows += 1
+        else:
+            equity_curve = getattr(backtest.portfolio, "equity_curve", None)
+            if equity_curve is None:
+                backtest.portfolio.create_equity_curve_dataframe()
+                equity_curve = getattr(backtest.portfolio, "equity_curve", None)
+            if equity_curve is not None:
+                for row in equity_curve.iter_rows(named=True):
+                    total = _safe_float(row.get("total"))
+                    if total is None:
+                        continue
+                    cash = _safe_float(row.get("cash"))
+                    metadata = {}
+                    benchmark = _safe_float(row.get("benchmark_price"))
+                    funding = _safe_float(row.get("funding"))
+                    if benchmark is not None:
+                        metadata["benchmark_price"] = benchmark
+                    if funding is not None:
+                        metadata["funding"] = funding
+                    audit_store.log_equity(
+                        run_id,
+                        timeindex=row.get("datetime"),
+                        total=total,
+                        cash=cash,
+                        metadata=metadata,
+                    )
+                    equity_rows += 1
     except Exception as exc:
         print(f"[WARN] Failed to persist equity rows to audit DB: {exc}")
 
@@ -378,10 +412,26 @@ def _persist_backtest_audit_rows(audit_store, run_id, backtest):
     return {"equity_rows": equity_rows, "fill_rows": fill_rows}
 
 
-def _resolve_execution_profile(*, low_memory=None, persist_output=None):
-    resolved_low_memory = (
-        _env_bool("LQ_BACKTEST_LOW_MEMORY", False) if low_memory is None else bool(low_memory)
-    )
+def _is_year_scale_window(start_date, end_date, *, threshold_days=30) -> bool:
+    start = start_date if isinstance(start_date, datetime) else None
+    end = end_date if isinstance(end_date, datetime) else None
+    if start is None:
+        return False
+    if end is None:
+        end = datetime.now(tz=UTC).replace(tzinfo=None)
+    if end < start:
+        return False
+    return (end - start).days > int(threshold_days)
+
+
+def _resolve_execution_profile(*, low_memory=None, persist_output=None, start_date=None, end_date=None):
+    env_low_memory = _env_optional_bool("LQ_BACKTEST_LOW_MEMORY")
+    if low_memory is not None:
+        resolved_low_memory = bool(low_memory)
+    elif env_low_memory is not None:
+        resolved_low_memory = bool(env_low_memory)
+    else:
+        resolved_low_memory = _is_year_scale_window(start_date, end_date, threshold_days=30)
     resolved_persist_output = persist_output
     if resolved_persist_output is None:
         resolved_persist_output = _env_optional_bool("LQ_BACKTEST_PERSIST_OUTPUT")
@@ -452,6 +502,8 @@ def run(
     execution_profile = _resolve_execution_profile(
         low_memory=low_memory,
         persist_output=persist_output,
+        start_date=START_DATE,
+        end_date=END_DATE,
     )
     resolved_backtest_mode = _normalize_backtest_mode(str(backtest_mode), "windowed")
     selected_data_handler_cls = (
@@ -580,13 +632,27 @@ def run(
                     persist_output=bool(execution_profile["persist_output"]),
                 )
 
-        persisted_counts = _persist_backtest_audit_rows(audit_store, backtest_run_id, backtest)
+        persisted_counts = _persist_backtest_audit_rows(
+            audit_store,
+            backtest_run_id,
+            backtest,
+            low_memory=bool(execution_profile["low_memory"]),
+        )
+        summary_metadata = {}
+        if bool(execution_profile["low_memory"]):
+            try:
+                summary_metadata["summary_stats_fast"] = dict(
+                    backtest.portfolio.output_summary_stats_fast() or {}
+                )
+            except Exception:
+                summary_metadata["summary_stats_fast"] = {}
         audit_store.end_run(
             backtest_run_id,
             status="COMPLETED",
             metadata={
                 "final_equity": float(backtest.portfolio.current_holdings.get("total", 0.0)),
                 **persisted_counts,
+                **summary_metadata,
             },
         )
     except Exception as exc:

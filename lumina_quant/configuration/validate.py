@@ -22,6 +22,10 @@ def validate_runtime_config(runtime: RuntimeConfig, *, for_live: bool = False) -
     storage_backend = str(runtime.storage.backend or "").strip().lower()
     if storage_backend not in {"parquet-postgres", "parquet", "local"}:
         raise ValueError("storage.backend must be one of: parquet-postgres, parquet, local.")
+    if int(getattr(runtime.storage, "wal_max_bytes", 0)) < 0:
+        raise ValueError("storage.wal_max_bytes must be >= 0.")
+    if int(getattr(runtime.storage, "wal_compaction_interval_seconds", 0)) < 0:
+        raise ValueError("storage.wal_compaction_interval_seconds must be >= 0.")
 
     if not runtime.trading.symbols:
         raise ValueError("No symbols configured in trading.symbols.")
@@ -93,6 +97,12 @@ def validate_runtime_config(runtime: RuntimeConfig, *, for_live: bool = False) -
         raise ValueError("backtest.chunk_days must be >= 1.")
     if int(getattr(runtime.backtest, "chunk_warmup_bars", 0)) < 0:
         raise ValueError("backtest.chunk_warmup_bars must be >= 0.")
+    if str(getattr(runtime.backtest, "mode", "windowed")).strip().lower() not in {
+        "windowed",
+        "legacy_batch",
+        "legacy_1s",
+    }:
+        raise ValueError("backtest.mode must be one of: windowed, legacy_batch, legacy_1s.")
     if int(getattr(runtime.live, "poll_seconds", runtime.live.poll_interval)) < 1:
         raise ValueError("live.poll_seconds must be >= 1.")
     if int(getattr(runtime.live, "window_seconds", 20)) < 1:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
+from datetime import datetime
 
 _RUN_BACKTEST_PATH = Path(__file__).resolve().parents[1] / "run_backtest.py"
 _RUN_BACKTEST_SPEC = importlib.util.spec_from_file_location("run_backtest_module", _RUN_BACKTEST_PATH)
@@ -74,3 +75,50 @@ def test_run_low_memory_uses_lightweight_backtest_flow(monkeypatch):
     assert captured["record_trades"] is False
     assert captured["simulate_output"] is False
     assert captured["simulate_persist_output"] is None
+
+
+def test_year_scale_low_memory_profile_default(monkeypatch):
+    monkeypatch.delenv("LQ_BACKTEST_LOW_MEMORY", raising=False)
+    monkeypatch.delenv("LQ_BACKTEST_PERSIST_OUTPUT", raising=False)
+
+    profile = run_backtest._resolve_execution_profile(
+        low_memory=None,
+        persist_output=None,
+        start_date=datetime(2025, 1, 1),
+        end_date=datetime(2025, 2, 15),
+    )
+
+    assert profile["low_memory"] is True
+    assert profile["record_history"] is False
+    assert profile["record_trades"] is False
+
+
+def test_streaming_equity_logging_no_equity_curve_materialization():
+    logged: list[dict[str, object]] = []
+
+    class _Audit:
+        def log_equity(self, run_id, **kwargs):
+            logged.append({"run_id": run_id, **kwargs})
+
+        def log_fill(self, *_args, **_kwargs):
+            return None
+
+    class _Portfolio:
+        def __init__(self):
+            self._equity_points = [(1735689600.0, 1000.0), (1735689660.0, 1005.0)]
+            self.trades = []
+
+        def create_equity_curve_dataframe(self):
+            raise AssertionError("equity curve materialization should not be called")
+
+    backtest = SimpleNamespace(portfolio=_Portfolio())
+    counts = run_backtest._persist_backtest_audit_rows(
+        _Audit(),
+        "run-low-memory",
+        backtest,
+        low_memory=True,
+    )
+
+    assert counts["equity_rows"] == 2
+    assert counts["fill_rows"] == 0
+    assert len(logged) == 2

@@ -10,6 +10,7 @@ from lumina_quant.core.protocols import ExchangeInterface
 from lumina_quant.exchanges import get_exchange
 from lumina_quant.risk_manager import RiskManager
 from lumina_quant.runtime_cache import RuntimeCache
+from lumina_quant.symbol_universe import resolve_available_symbols
 from lumina_quant.utils.audit_store import AuditStore
 from lumina_quant.utils.logging_utils import setup_logging
 from lumina_quant.utils.notification import NotificationManager
@@ -95,6 +96,10 @@ class LiveTrader(TradingEngine):
         # Initialize Exchange
         self.logger.info("Initializing Exchange...")
         self.exchange = get_exchange(self.config)
+        self.symbol_list = self._filter_unavailable_symbols(self.symbol_list)
+        if not self.symbol_list:
+            raise RuntimeError("No tradable symbols are available on exchange after market sync.")
+        self.config.SYMBOLS = list(self.symbol_list)
 
         # Initialize Handlers with Exchange
         self.data_handler = data_handler_cls(
@@ -129,6 +134,36 @@ class LiveTrader(TradingEngine):
 
         # Load State
         self._load_state()
+
+    def _filter_unavailable_symbols(self, symbols):
+        requested = [str(symbol) for symbol in list(symbols or [])]
+        exchange_driver = str(getattr(self.config, "EXCHANGE", {}).get("driver", "")).lower()
+        if exchange_driver != "ccxt":
+            return requested
+
+        load_markets = getattr(self.exchange, "load_markets", None)
+        if not callable(load_markets):
+            return requested
+
+        try:
+            markets = load_markets() or {}
+        except Exception as exc:
+            self.logger.warning("Failed to load exchange markets for symbol availability check: %s", exc)
+            return requested
+
+        available = set(markets.keys()) if isinstance(markets, dict) else set()
+        if not available:
+            return requested
+
+        resolved, dropped = resolve_available_symbols(requested, dict(markets))
+        if dropped:
+            warning = (
+                "Dropping unavailable symbols after exchange market sync: "
+                + ", ".join(sorted(dropped))
+            )
+            self.logger.warning(warning)
+            self.notifier.send_message(f"⚠️ {warning}")
+        return resolved
 
     def _load_state(self):
         state = self.state_manager.load_state()

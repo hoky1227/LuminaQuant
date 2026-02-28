@@ -35,6 +35,14 @@ os.environ.setdefault(
     "LQ__STORAGE__MARKET_DATA_PARQUET_PATH",
     str(_RUNTIME.storage.market_data_parquet_path or "data/market_parquet"),
 )
+os.environ.setdefault(
+    "LQ__STORAGE__WAL_MAX_BYTES",
+    str(int(getattr(_RUNTIME.storage, "wal_max_bytes", 268435456))),
+)
+os.environ.setdefault(
+    "LQ__STORAGE__WAL_COMPACTION_INTERVAL_SECONDS",
+    str(int(getattr(_RUNTIME.storage, "wal_compaction_interval_seconds", 3600))),
+)
 if str(_RUNTIME.storage.postgres_dsn or "").strip():
     os.environ.setdefault(
         str(_RUNTIME.storage.postgres_dsn_env or "LQ_POSTGRES_DSN"),
@@ -129,6 +137,10 @@ class BaseConfig:
     POSTGRES_DSN_ENV = str(getattr(_RUNTIME.storage, "postgres_dsn_env", "LQ_POSTGRES_DSN"))
     POSTGRES_DSN = str(getattr(_RUNTIME.storage, "postgres_dsn", "") or "")
     STORAGE_EXPORT_CSV = bool(_RUNTIME.storage.export_csv)
+    WAL_MAX_BYTES = int(getattr(_RUNTIME.storage, "wal_max_bytes", 268435456))
+    WAL_COMPACTION_INTERVAL_SECONDS = int(
+        getattr(_RUNTIME.storage, "wal_compaction_interval_seconds", 3600)
+    )
 
 
 class BacktestConfig(BaseConfig):
@@ -136,6 +148,7 @@ class BacktestConfig(BaseConfig):
 
     START_DATE = _RUNTIME.backtest.start_date
     END_DATE = _RUNTIME.backtest.end_date
+    MODE = str(getattr(_RUNTIME.backtest, "mode", "windowed") or "windowed")
     COMMISSION_RATE = float(_RUNTIME.backtest.commission_rate)
     SLIPPAGE_RATE = float(_RUNTIME.backtest.slippage_rate)
     ANNUAL_PERIODS = int(_RUNTIME.backtest.annual_periods)

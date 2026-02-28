@@ -14,7 +14,17 @@ system:
 trading:
   symbols:
     - "BTC/USDT"
-    #- "ETH/USDT"
+    - "ETH/USDT"
+    - "XRP/USDT"
+    - "BNB/USDT"
+    - "SOL/USDT"
+    - "TRX/USDT"
+    - "DOGE/USDT"
+    - "ADA/USDT"
+    - "TON/USDT"
+    - "AVAX/USDT"
+    - "XAU/USDT"
+    - "XAG/USDT"
   timeframe: "1m"
   initial_capital: 10000.0
   target_allocation: 0.1  # 10% of capital per trade
@@ -60,6 +70,8 @@ storage:
   postgres_dsn_env: "LQ_POSTGRES_DSN"
   market_data_parquet_path: "data/market_parquet"
   market_data_exchange: "binance"
+  wal_max_bytes: 268435456
+  wal_compaction_interval_seconds: 3600
   export_csv: true
 
 # ------------------------------------------
@@ -68,6 +80,7 @@ storage:
 backtest:
   start_date: "2024-01-01"
   end_date: null  # null means "up to now" or end of data
+  mode: "windowed"
   commission_rate: 0.001  # 0.1%
   slippage_rate: 0.0005   # 0.05%
   annual_periods: 252     # Daily: 252, 1h: 252*24, 1m: 252*24*60

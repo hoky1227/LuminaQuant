@@ -17,7 +17,22 @@ class SystemConfig:
 class TradingConfig:
     """Shared trading settings."""
 
-    symbols: list[str] = field(default_factory=lambda: ["BTC/USDT"])
+    symbols: list[str] = field(
+        default_factory=lambda: [
+            "BTC/USDT",
+            "ETH/USDT",
+            "XRP/USDT",
+            "BNB/USDT",
+            "SOL/USDT",
+            "TRX/USDT",
+            "DOGE/USDT",
+            "ADA/USDT",
+            "TON/USDT",
+            "AVAX/USDT",
+            "XAU/USDT",
+            "XAG/USDT",
+        ]
+    )
     timeframe: str = "1m"
     initial_capital: float = 10000.0
     target_allocation: float = 0.1
@@ -66,6 +81,8 @@ class StorageConfig:
     postgres_dsn_env: str = "LQ_POSTGRES_DSN"
     market_data_parquet_path: str = "data/market_parquet"
     market_data_exchange: str = "binance"
+    wal_max_bytes: int = 268435456
+    wal_compaction_interval_seconds: int = 3600
     export_csv: bool = True
 
 
@@ -75,6 +92,7 @@ class BacktestRuntimeConfig:
 
     start_date: str = "2024-01-01"
     end_date: str | None = None
+    mode: str = "windowed"
     commission_rate: float = 0.001
     slippage_rate: float = 0.0005
     annual_periods: int = 252

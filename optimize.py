@@ -16,6 +16,7 @@ import polars as pl
 from lumina_quant.backtesting.backtest import Backtest
 from lumina_quant.backtesting.chunked_runner import run_backtest_chunked
 from lumina_quant.backtesting.data import HistoricCSVDataHandler
+from lumina_quant.backtesting.data_windowed_parquet import HistoricParquetWindowedDataHandler
 from lumina_quant.backtesting.execution_sim import SimulatedExecutionHandler
 from lumina_quant.backtesting.portfolio_backtest import Portfolio
 from lumina_quant.compute.ohlcv_loader import OHLCVFrameLoader
@@ -232,6 +233,44 @@ BT_CHUNK_WARMUP_BARS = max(
         "LQ__BACKTEST__CHUNK_WARMUP_BARS",
         int(getattr(BacktestConfig, "CHUNK_WARMUP_BARS", 0)),
     ),
+)
+BACKTEST_POLL_SECONDS = max(
+    1,
+    _env_int(
+        "LQ__BACKTEST__POLL_SECONDS",
+        int(getattr(BacktestConfig, "POLL_SECONDS", 20)),
+    ),
+)
+BACKTEST_WINDOW_SECONDS = max(
+    1,
+    _env_int(
+        "LQ__BACKTEST__WINDOW_SECONDS",
+        int(getattr(BacktestConfig, "WINDOW_SECONDS", 20)),
+    ),
+)
+BACKTEST_DECISION_CADENCE_SECONDS = max(
+    1,
+    _env_int(
+        "LQ__BACKTEST__DECISION_CADENCE_SECONDS",
+        int(getattr(BacktestConfig, "DECISION_CADENCE_SECONDS", 20)),
+    ),
+)
+
+
+def _normalize_backtest_mode(value: str | None, default: str = "windowed") -> str:
+    token = str(value or default).strip().lower()
+    if token in {"windowed", "legacy_batch", "legacy_1s"}:
+        return token
+    return str(default)
+
+
+BACKTEST_MODE = _normalize_backtest_mode(
+    os.getenv("LQ_BACKTEST_MODE", str(getattr(BacktestConfig, "MODE", "windowed"))),
+    default="windowed",
+)
+os.environ.setdefault(
+    "LQ__BACKTEST__DECISION_CADENCE_SECONDS",
+    str(int(BACKTEST_DECISION_CADENCE_SECONDS)),
 )
 
 
@@ -540,6 +579,7 @@ def _execute_backtest(
         if PARQUET_MODE:
             if end_date is None:
                 raise RuntimeError("Chunked optimization requires explicit end_date.")
+            resolved_backtest_mode = "windowed"
 
             def _chunk_loader(chunk_start, chunk_end):
                 return load_data_dict_from_parquet(
@@ -563,9 +603,14 @@ def _execute_backtest(
                 data_loader=_chunk_loader,
                 chunk_days=max(1, int(BT_CHUNK_DAYS)),
                 strategy_timeframe=str(STRATEGY_TIMEFRAME),
-                data_handler_cls=HistoricCSVDataHandler,
+                data_handler_cls=HistoricParquetWindowedDataHandler,
                 execution_handler_cls=SimulatedExecutionHandler,
                 portfolio_cls=Portfolio,
+                backtest_mode=str(resolved_backtest_mode),
+                data_handler_kwargs={
+                    "backtest_poll_seconds": int(BACKTEST_POLL_SECONDS),
+                    "backtest_window_seconds": int(BACKTEST_WINDOW_SECONDS),
+                },
                 record_history=False,
                 track_metrics=True,
                 record_trades=False,
@@ -635,6 +680,8 @@ def run_single_backtest_train(args):
 
 def _run_backtests_parallel(pool_args, worker_count):
     workers = min(2, max(1, int(worker_count)))
+    if PARQUET_MODE:
+        workers = 1
     if workers == 1 or len(pool_args) <= 1:
         return [run_single_backtest_train(args) for args in pool_args]
 
@@ -1108,6 +1155,9 @@ if __name__ == "__main__":
             str(args.market_db_path),
             backend=str(MARKET_DB_BACKEND),
         )
+        if PARQUET_MODE and MAX_WORKERS != 1:
+            print("[INFO] Parquet optimization enforces single worker (MAX_WORKERS=1).")
+            MAX_WORKERS = 1
 
         feature_start = time.perf_counter()
         if PARQUET_MODE:

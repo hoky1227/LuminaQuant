@@ -15,10 +15,10 @@ uv sync --all-extras
 uv run python scripts/init_postgres_schema.py --dsn "$LQ_POSTGRES_DSN"
 ```
 
-Use symbols (top10 + XAU/XAG) via env override:
+Use the default 12-symbol universe via env override:
 
 ```bash
-export LQ__TRADING__SYMBOLS='["BTC/USDT","ETH/USDT","BNB/USDT","SOL/USDT","XRP/USDT","ADA/USDT","DOGE/USDT","TRX/USDT","LTC/USDT","LINK/USDT","XAU/USDT","XAG/USDT"]'
+export LQ__TRADING__SYMBOLS='["BTC/USDT","ETH/USDT","XRP/USDT","BNB/USDT","SOL/USDT","TRX/USDT","DOGE/USDT","ADA/USDT","TON/USDT","AVAX/USDT","XAU/USDT","XAG/USDT"]'
 ```
 
 ---
@@ -27,7 +27,7 @@ export LQ__TRADING__SYMBOLS='["BTC/USDT","ETH/USDT","BNB/USDT","SOL/USDT","XRP/U
 
 ```bash
 uv run python scripts/sync_binance_ohlcv.py \
-  --symbols BTC/USDT ETH/USDT BNB/USDT SOL/USDT XRP/USDT ADA/USDT DOGE/USDT TRX/USDT LTC/USDT LINK/USDT XAU/USDT XAG/USDT \
+  --symbols BTC/USDT ETH/USDT XRP/USDT BNB/USDT SOL/USDT TRX/USDT DOGE/USDT ADA/USDT TON/USDT AVAX/USDT XAU/USDT XAG/USDT \
   --timeframe 1s \
   --db-path data/market_parquet \
   --exchange-id binance \
@@ -63,12 +63,16 @@ export LQ__BACKTEST__CHUNK_WARMUP_BARS=0
 
 export LQ_BACKTEST_LOW_MEMORY=1
 export LQ_BACKTEST_PERSIST_OUTPUT=0
+export LQ__STORAGE__WAL_MAX_BYTES=268435456
+export LQ__STORAGE__WAL_COMPACTION_INTERVAL_SECONDS=3600
 export LQ_AUTO_COLLECT_DB=0
 ```
 
 ---
 
 ## 3) 1Y 1s backtest (memory-profiled)
+
+`--low-memory` is auto-enabled for windows longer than 30 days (use `--no-low-memory` to override).
 
 ```bash
 /usr/bin/time -v \
@@ -77,7 +81,6 @@ uv run python run_backtest.py \
   --market-db-path data/market_parquet \
   --market-exchange binance \
   --base-timeframe 1s \
-  --low-memory \
   --no-persist-output \
   --no-auto-collect-db \
   --run-id bt-1y-1s-$(date +%Y%m%d-%H%M%S) \

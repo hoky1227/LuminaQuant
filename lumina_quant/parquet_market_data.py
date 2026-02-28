@@ -268,6 +268,97 @@ class ParquetMarketDataRepository:
         finally:
             os.close(fd)
 
+    @staticmethod
+    def _env_int(*, names: list[str], default: int) -> int:
+        for name in names:
+            raw = os.getenv(str(name), "").strip()
+            if not raw:
+                continue
+            try:
+                return int(raw)
+            except Exception:
+                continue
+        return int(default)
+
+    def _resolve_wal_controls(self) -> tuple[int, int]:
+        wal_max_bytes = self._env_int(
+            names=["LQ_WAL_MAX_BYTES", "LQ__STORAGE__WAL_MAX_BYTES"],
+            default=268435456,
+        )
+        compaction_interval = self._env_int(
+            names=[
+                "LQ_WAL_COMPACTION_INTERVAL_SEC",
+                "LQ_WAL_COMPACTION_INTERVAL_SECONDS",
+                "LQ__STORAGE__WAL_COMPACTION_INTERVAL_SEC",
+                "LQ__STORAGE__WAL_COMPACTION_INTERVAL_SECONDS",
+            ],
+            default=3600,
+        )
+        return max(0, int(wal_max_bytes)), max(0, int(compaction_interval))
+
+    @staticmethod
+    def _parse_iso_utc(value: Any) -> datetime | None:
+        text = str(value or "").strip()
+        if not text:
+            return None
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except Exception:
+            return None
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC)
+
+    def _enforce_wal_growth_controls(self, *, exchange: str, symbol: str) -> None:
+        wal_max_bytes, compaction_interval_seconds = self._resolve_wal_controls()
+        if wal_max_bytes <= 0:
+            return
+
+        wal_path = self._wal_path(exchange=exchange, symbol=symbol)
+        if not wal_path.exists():
+            return
+        wal_size = int(wal_path.stat().st_size)
+        if wal_size <= int(wal_max_bytes):
+            return
+
+        now = datetime.now(tz=UTC)
+        meta = self._read_meta(exchange=exchange, symbol=symbol)
+        last_attempt = self._parse_iso_utc(meta.get("last_compaction_attempt_at"))
+        elapsed = None if last_attempt is None else max(0.0, (now - last_attempt).total_seconds())
+        can_compact = (
+            compaction_interval_seconds <= 0
+            or elapsed is None
+            or float(elapsed) >= float(compaction_interval_seconds)
+        )
+        if can_compact:
+            print(
+                f"[WARN] WAL size {wal_size} bytes exceeds limit {wal_max_bytes} "
+                f"for {exchange}:{symbol}. Triggering compaction."
+            )
+            try:
+                self.compact_wal_to_monthly_parquet(
+                    exchange=exchange,
+                    symbol=symbol,
+                    remove_sources=True,
+                )
+            except Exception as exc:
+                print(
+                    f"[WARN] WAL compaction trigger failed for {exchange}:{symbol}: {exc}. "
+                    "Continuing without blocking writes."
+                )
+            return
+
+        last_warning = self._parse_iso_utc(meta.get("last_wal_over_limit_warning_at"))
+        warn_elapsed = None if last_warning is None else (now - last_warning).total_seconds()
+        if warn_elapsed is None or warn_elapsed >= 60.0:
+            wait_seconds = max(0, int(compaction_interval_seconds - int(elapsed or 0)))
+            print(
+                f"[WARN] WAL size {wal_size} bytes exceeds limit {wal_max_bytes} for {exchange}:{symbol} "
+                f"but compaction interval not reached; retry in ~{wait_seconds}s."
+            )
+            meta["last_wal_over_limit_warning_at"] = now.isoformat()
+            self._write_meta(exchange=exchange, symbol=symbol, payload=meta)
+
     def _read_meta(self, *, exchange: str, symbol: str) -> dict[str, Any]:
         path = self._meta_path(exchange=exchange, symbol=symbol)
         if not path.exists():
@@ -443,7 +534,9 @@ class ParquetMarketDataRepository:
             )
             for item in frame.iter_rows(named=False)
         ]
-        return int(wal.append(records))
+        appended = int(wal.append(records))
+        self._enforce_wal_growth_controls(exchange=exchange, symbol=symbol)
+        return appended
 
     def _load_ohlcv_1s_merged(
         self,
@@ -667,8 +760,10 @@ class ParquetMarketDataRepository:
             exchange=exchange,
             symbol=symbol,
             payload={
+                **meta,
                 "wal_offset": int(next_offset),
                 "updated_at": datetime.now(tz=UTC).isoformat(),
+                "last_compaction_attempt_at": datetime.now(tz=UTC).isoformat(),
                 "compacted_rows": len(records),
                 "remove_sources": bool(remove_sources),
             },

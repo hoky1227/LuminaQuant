@@ -218,6 +218,11 @@ def build_runtime_config(data: dict[str, Any], env: Mapping[str, str]) -> Runtim
     runtime.storage.market_data_parquet_path = _resolve_storage_path(
         runtime.storage.market_data_parquet_path
     )
+    runtime.storage.wal_max_bytes = max(0, _as_int(runtime.storage.wal_max_bytes, 268435456))
+    runtime.storage.wal_compaction_interval_seconds = max(
+        0,
+        _as_int(runtime.storage.wal_compaction_interval_seconds, 3600),
+    )
 
     # Safe type coercion for critical numeric fields.
     runtime.trading.initial_capital = _as_float(runtime.trading.initial_capital, 10000.0)
@@ -338,6 +343,10 @@ def build_runtime_config(data: dict[str, Any], env: Mapping[str, str]) -> Runtim
         1,
         _as_int(backtest_decision_raw, runtime.live.decision_cadence_seconds),
     )
+    backtest_mode = str(getattr(runtime.backtest, "mode", "windowed") or "windowed").strip().lower()
+    if backtest_mode not in {"windowed", "legacy_batch", "legacy_1s"}:
+        backtest_mode = "windowed"
+    runtime.backtest.mode = backtest_mode
     runtime.backtest.backtest_decision_seconds = int(runtime.backtest.decision_cadence_seconds)
     runtime.backtest.chunk_days = max(1, _as_int(runtime.backtest.chunk_days, 2))
     runtime.backtest.chunk_warmup_bars = max(
