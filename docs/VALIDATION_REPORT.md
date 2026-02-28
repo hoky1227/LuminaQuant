@@ -65,7 +65,7 @@ This report summarizes the recent verification and hardening work across backtes
 Executed from project root:
 
 ```bash
-uv sync --all-extras
+uv sync --extra optimize --extra dev --extra live
 uv run ruff check .
 uv run pytest -q
 uv run python run_backtest.py

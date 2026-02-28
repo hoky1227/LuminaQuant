@@ -62,7 +62,7 @@ graph TD
 ### 필수 요구사항 (Prerequisites)
 - Python 3.11 이상 3.14 미만
 - [uv](https://docs.astral.sh/uv/) (의존성/실행 환경 관리)
-- [Polars](https://pola.rs/) (고성능 데이터 처리를 위해 사용)
+- [Polars](https://pola.rs/) `polars>=1.35.2,<1.36` 고정 (GPU 어댑터 안정성 기준)
 - [Talib](https://github.com/TA-Lib/ta-lib-python) (기술적 지표 계산을 위해 사용)
 
 ### 환경 변수 (Environment Variables)
@@ -98,8 +98,11 @@ cd Quants-agent
 # 프로젝트 Python 버전 고정 (< 3.14)
 uv python pin 3.13
 
-# 의존성 설치 (uv 전용 런타임)
-uv sync --all-extras
+# 기본/런타임 의존성 설치
+uv sync --extra optimize --extra dev --extra live
+
+# (선택 사항) Linux x86_64 + CUDA 12 GPU 런타임
+uv sync --extra gpu
 
 # 설치/테스트 기본 검증
 uv run python scripts/verify_install.py

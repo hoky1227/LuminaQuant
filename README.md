@@ -62,7 +62,7 @@ Current local-first stack defaults:
 ### Prerequisites
 - Python 3.11 to 3.13
 - [uv](https://docs.astral.sh/uv/) for dependency/runtime management
-- [Polars](https://pola.rs/) (for high-performance data)
+- [Polars](https://pola.rs/) pinned to `polars>=1.35.2,<1.36` (for stable GPU adapter behavior)
 - [Talib](https://github.com/TA-Lib/ta-lib-python) (for technical indicators)
 
 ### Environment Variables
@@ -98,8 +98,11 @@ cd Quants-agent
 # Ensure compatible Python (project requires < 3.14)
 uv python pin 3.13
 
-# Install dependencies (uv-only runtime)
-uv sync --all-extras
+# Install base/runtime dependencies
+uv sync --extra optimize --extra dev --extra live
+
+# (Optional) GPU runtime on Linux x86_64 + CUDA 12
+uv sync --extra gpu
 
 # Verify install and tests
 uv run python scripts/verify_install.py

@@ -11,7 +11,8 @@ uv sync --extra optimize --extra dev --extra live
 Optional extras:
 
 ```bash
-uv sync --all-extras
+uv sync --extra gpu  # Linux x86_64 + CUDA 12
+uv sync --extra mt5  # Windows MT5 bridge
 ```
 
 ## 2) Required Local Checks (CI parity)
@@ -22,7 +23,8 @@ Run these before opening a PR:
 uv run ruff check .
 uv run python scripts/check_architecture.py
 uv run python scripts/audit_hardcoded_params.py
-uv run pytest tests/test_audit_hardcoded_params.py tests/test_native_backend.py tests/test_optimize_two_stage.py tests/test_message_bus.py tests/test_runtime_cache.py tests/test_system_assembly.py tests/test_ohlcv_loader.py tests/test_execution_protective_orders.py tests/test_live_execution_state_machine.py tests/test_lookahead.py tests/test_publish_public_pr.py
+uv run python scripts/verify_docs.py
+uv run pytest tests/test_audit_hardcoded_params.py tests/test_compute_engine.py tests/test_timeframe_panel_and_liquidity.py tests/test_native_backend.py tests/test_optimize_two_stage.py tests/test_message_bus.py tests/test_runtime_cache.py tests/test_system_assembly.py tests/test_ohlcv_loader.py tests/test_execution_protective_orders.py tests/test_live_execution_state_machine.py tests/test_lookahead.py tests/test_publish_public_pr.py
 uv run python scripts/benchmark_backtest.py --iters 1 --warmup 0 --output reports/benchmarks/ci_smoke_local.json
 ```
 

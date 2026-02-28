@@ -12,6 +12,7 @@ def main():
     run(["uv", "sync", "--extra", "optimize", "--extra", "dev", "--extra", "live"])
     run(["uv", "run", "ruff", "check", "."])
     run(["uv", "run", "python", "scripts/check_architecture.py"])
+    run(["uv", "run", "python", "scripts/verify_docs.py"])
     run(
         [
             "uv",
