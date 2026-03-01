@@ -13,6 +13,7 @@ from lumina_quant.indicators.common import safe_float
 from lumina_quant.indicators.rolling_stats import rolling_beta, rolling_corr, sample_std
 from lumina_quant.indicators.vwap import rolling_vwap
 from lumina_quant.strategy import Strategy
+from lumina_quant.symbols import canonical_symbol
 from lumina_quant.tuning import HyperParam, resolve_params_from_schema
 
 LOGGER = logging.getLogger(__name__)
@@ -249,7 +250,8 @@ class PairTradingZScoreStrategy(Strategy):
     ):
         self.bars = bars
         self.events = events
-        self.symbol_list = list(self.bars.symbol_list)
+        self.symbol_list = [canonical_symbol(symbol) for symbol in list(self.bars.symbol_list)]
+        self.symbol_list = [symbol for symbol in self.symbol_list if symbol]
         if len(self.symbol_list) < 2:
             raise ValueError("PairTradingZScoreStrategy requires at least two symbols.")
 
@@ -291,8 +293,10 @@ class PairTradingZScoreStrategy(Strategy):
 
         symbol_x = resolved["symbol_x"]
         symbol_y = resolved["symbol_y"]
-        self.symbol_x = str(symbol_x) if symbol_x else str(self.symbol_list[0])
-        self.symbol_y = str(symbol_y) if symbol_y else str(self.symbol_list[1])
+        self.symbol_x = canonical_symbol(str(symbol_x)) if symbol_x else str(self.symbol_list[0])
+        self.symbol_y = canonical_symbol(str(symbol_y)) if symbol_y else str(self.symbol_list[1])
+        if not self.symbol_x or not self.symbol_y:
+            raise ValueError("PairTradingZScoreStrategy requires canonical non-empty symbols.")
         if self.symbol_x == self.symbol_y:
             raise ValueError("symbol_x and symbol_y must be different.")
 
@@ -706,7 +710,8 @@ class PairTradingZScoreStrategy(Strategy):
     def calculate_signals(self, event):
         if getattr(event, "type", None) != "MARKET":
             return
-        if getattr(event, "symbol", None) not in {self.symbol_x, self.symbol_y}:
+        event_symbol = canonical_symbol(str(getattr(event, "symbol", "")))
+        if event_symbol not in {self.symbol_x, self.symbol_y}:
             return
 
         pair_time = self._aligned_pair_timestamp()

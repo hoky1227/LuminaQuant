@@ -108,6 +108,11 @@ from .rare_event import rare_event_scores_latest as rare_event_scores_latest
 from .rare_event import rare_return_score_latest as rare_return_score_latest
 from .rare_event import rare_streak_score_latest as rare_streak_score_latest
 from .rare_event import trend_break_score_latest as trend_break_score_latest
+from .advanced_alpha import cross_leadlag_spillover as cross_leadlag_spillover
+from .research_factors import leadlag_spillover as leadlag_spillover
+from .research_factors import perp_crowding_score as perp_crowding_score
+from .research_factors import pv_trend_score as pv_trend_score
+from .research_factors import volcomp_vwap_pressure as volcomp_vwap_pressure
 from .rolling_stats import RollingZScoreWindow as RollingZScoreWindow
 from .rolling_stats import rolling_beta as rolling_beta
 from .rolling_stats import rolling_corr as rolling_corr
@@ -205,6 +210,7 @@ __all__ = [
     "close_to_close_volatility",
     "commodity_channel_index",
     "compute_fast_alpha_bundle",
+    "cross_leadlag_spillover",
     "conditional_value_at_risk",
     "cumulative_return",
     "decay_linear",
@@ -240,8 +246,10 @@ __all__ = [
     "parkinson_volatility",
     "percentage_price_oscillator",
     "percentile_rank",
+    "perp_crowding_score",
     "positive_volume_index",
     "price_volume_correlation",
+    "pv_trend_score",
     "rank_pct",
     "rare_event_scores_from_frame",
     "rare_event_scores_latest",
@@ -290,6 +298,7 @@ __all__ = [
     "ulcer_index",
     "ultimate_oscillator",
     "value_at_risk",
+    "volcomp_vwap_pressure",
     "volume_oscillator",
     "volume_price_trend",
     "volume_shock_zscore_latest",
@@ -301,4 +310,5 @@ __all__ = [
     "williams_r",
     "yang_zhang_volatility",
     "zscore",
+    "leadlag_spillover",
 ]

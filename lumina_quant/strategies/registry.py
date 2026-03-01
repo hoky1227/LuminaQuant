@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import os
+from pathlib import Path
 from typing import Any, cast
 
 from lumina_quant.strategy import Strategy
@@ -26,6 +27,15 @@ def _optional_strategy_class(module_name: str, class_name: str):
     return getattr(module, class_name, None)
 
 
+def _has_perp_support_data() -> bool:
+    explicit = str(os.getenv("LQ_PERP_SUPPORT_DATA_PATH", "")).strip()
+    if explicit:
+        return Path(explicit).exists()
+
+    fallback = Path("data") / "market_parquet" / "feature_points"
+    return fallback.exists()
+
+
 MovingAverageCrossStrategy = _optional_strategy_class(
     "moving_average", "MovingAverageCrossStrategy"
 )
@@ -37,6 +47,23 @@ RegimeBreakoutCandidateStrategy = _optional_strategy_class(
 )
 VolatilityCompressionReversionStrategy = _optional_strategy_class(
     "candidate_vol_compression_reversion", "VolatilityCompressionReversionStrategy"
+)
+CompositeTrendStrategy = _optional_strategy_class("composite_trend", "CompositeTrendStrategy")
+VolCompressionVWAPReversionStrategy = _optional_strategy_class(
+    "vol_compression_vwap_reversion", "VolCompressionVWAPReversionStrategy"
+)
+VolCompressionVwapReversionStrategy = _optional_strategy_class(
+    "vol_compression_vwap_reversion", "VolCompressionVwapReversionStrategy"
+)
+LeadLagSpilloverStrategy = _optional_strategy_class(
+    "leadlag_spillover", "LeadLagSpilloverStrategy"
+)
+PairSpreadZScoreStrategy = _optional_strategy_class("pair_spread_zscore", "PairSpreadZScoreStrategy")
+MicroRangeExpansion1sStrategy = _optional_strategy_class(
+    "micro_range_expansion_1s", "MicroRangeExpansion1sStrategy"
+)
+PerpCrowdingCarryStrategy = _optional_strategy_class(
+    "perp_crowding_carry", "PerpCrowdingCarryStrategy"
 )
 
 StrategyClass = type[Strategy]
@@ -50,15 +77,54 @@ _RAW_STRATEGY_MAP: dict[str, StrategyClass | None] = {
     "RsiStrategy": RsiStrategy,
     "MovingAverageCrossStrategy": MovingAverageCrossStrategy,
     "PairTradingZScoreStrategy": PairTradingZScoreStrategy,
+    "PairSpreadZScoreStrategy": PairSpreadZScoreStrategy,
     "RareEventScoreStrategy": RareEventScoreStrategy,
     "RegimeBreakoutCandidateStrategy": RegimeBreakoutCandidateStrategy,
     "RollingBreakoutStrategy": RollingBreakoutStrategy,
     "TopCapTimeSeriesMomentumStrategy": TopCapTimeSeriesMomentumStrategy,
     "VolatilityCompressionReversionStrategy": VolatilityCompressionReversionStrategy,
     "VwapReversionStrategy": VwapReversionStrategy,
+    "CompositeTrendStrategy": CompositeTrendStrategy,
+    "VolCompressionVWAPReversionStrategy": VolCompressionVWAPReversionStrategy,
+    "VolCompressionVwapReversionStrategy": VolCompressionVwapReversionStrategy,
+    "LeadLagSpilloverStrategy": LeadLagSpilloverStrategy,
+    "MicroRangeExpansion1sStrategy": MicroRangeExpansion1sStrategy,
 }
+if _has_perp_support_data():
+    _RAW_STRATEGY_MAP["PerpCrowdingCarryStrategy"] = PerpCrowdingCarryStrategy
+
 _STRATEGY_MAP: dict[str, StrategyClass] = {
     name: cast(StrategyClass, cls) for name, cls in _RAW_STRATEGY_MAP.items() if cls is not None
+}
+
+_STRATEGY_TIER_HINTS: dict[str, str] = {
+    "BitcoinBuyHoldStrategy": "live_default",
+    "LagConvergenceStrategy": "live_default",
+    "MeanReversionStdStrategy": "live_default",
+    "RsiStrategy": "live_default",
+    "MovingAverageCrossStrategy": "live_default",
+    "PairTradingZScoreStrategy": "live_default",
+    "RollingBreakoutStrategy": "live_default",
+    "TopCapTimeSeriesMomentumStrategy": "live_default",
+    "VwapReversionStrategy": "live_default",
+    "RareEventScoreStrategy": "live_opt_in",
+    "PairSpreadZScoreStrategy": "live_opt_in",
+    "CompositeTrendStrategy": "live_opt_in",
+    "VolCompressionVWAPReversionStrategy": "live_opt_in",
+    "VolCompressionVwapReversionStrategy": "live_opt_in",
+    "LeadLagSpilloverStrategy": "live_opt_in",
+    "PerpCrowdingCarryStrategy": "live_opt_in",
+    "RegimeBreakoutCandidateStrategy": "research_only",
+    "VolatilityCompressionReversionStrategy": "research_only",
+    "MicroRangeExpansion1sStrategy": "research_only",
+}
+
+_STRATEGY_METADATA: dict[str, dict[str, Any]] = {
+    name: {
+        "name": name,
+        "tier": str(_STRATEGY_TIER_HINTS.get(name, "live_default")),
+    }
+    for name in _STRATEGY_MAP
 }
 
 _OPTUNA_TRIAL_OVERRIDES: dict[str, str] = {
@@ -67,11 +133,18 @@ _OPTUNA_TRIAL_OVERRIDES: dict[str, str] = {
     "RsiStrategy": "20",
     "MovingAverageCrossStrategy": "20",
     "PairTradingZScoreStrategy": "32",
+    "PairSpreadZScoreStrategy": "24",
     "RareEventScoreStrategy": "28",
     "RollingBreakoutStrategy": "24",
     "RegimeBreakoutCandidateStrategy": "24",
     "VwapReversionStrategy": "24",
     "VolatilityCompressionReversionStrategy": "24",
+    "CompositeTrendStrategy": "24",
+    "VolCompressionVWAPReversionStrategy": "24",
+    "VolCompressionVwapReversionStrategy": "24",
+    "LeadLagSpilloverStrategy": "24",
+    "PerpCrowdingCarryStrategy": "16",
+    "MicroRangeExpansion1sStrategy": "16",
 }
 
 
@@ -107,12 +180,40 @@ for _strategy_name, _strategy_cls in _STRATEGY_MAP.items():
     )
 
 
+def get_strategy_metadata(strategy_name: str) -> dict[str, Any]:
+    """Return strategy metadata (tier and name)."""
+
+    token = str(strategy_name)
+    return dict(_STRATEGY_METADATA.get(token, {"name": token, "tier": "live_default"}))
+
+
+def get_strategy_tier(strategy_name: str) -> str:
+    return str(get_strategy_metadata(strategy_name).get("tier", "live_default"))
+
+
 def get_strategy_map() -> dict[str, StrategyClass]:
     return dict(_STRATEGY_MAP)
 
 
-def get_strategy_names() -> list[str]:
-    return sorted(_STRATEGY_MAP.keys())
+def get_live_strategy_map(*, include_opt_in: bool = True) -> dict[str, StrategyClass]:
+    allowed = {"live_default", "live_opt_in"} if include_opt_in else {"live_default"}
+    return {
+        name: cls
+        for name, cls in _STRATEGY_MAP.items()
+        if get_strategy_tier(name) in allowed
+    }
+
+
+def get_strategy_names(*, include_research_only: bool = True) -> list[str]:
+    if include_research_only:
+        return sorted(_STRATEGY_MAP.keys())
+    return sorted(
+        name for name in _STRATEGY_MAP if get_strategy_tier(name) != "research_only"
+    )
+
+
+def get_live_strategy_names(*, include_opt_in: bool = True) -> list[str]:
+    return sorted(get_live_strategy_map(include_opt_in=include_opt_in).keys())
 
 
 def resolve_strategy_class(

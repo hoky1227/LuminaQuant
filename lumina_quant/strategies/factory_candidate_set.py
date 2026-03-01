@@ -15,6 +15,12 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from lumina_quant.symbols import (
+    CANONICAL_STRATEGY_TIMEFRAMES,
+    canonicalize_symbol_list,
+    normalize_strategy_timeframes,
+)
+
 DEFAULT_TOP10_PLUS_METALS: tuple[str, ...] = (
     "BTC/USDT",
     "ETH/USDT",
@@ -25,12 +31,12 @@ DEFAULT_TOP10_PLUS_METALS: tuple[str, ...] = (
     "DOGE/USDT",
     "TRX/USDT",
     "AVAX/USDT",
-    "LINK/USDT",
-    "XAU/USDT:USDT",
-    "XAG/USDT:USDT",
+    "TON/USDT",
+    "XAU/USDT",
+    "XAG/USDT",
 )
 
-DEFAULT_TIMEFRAMES: tuple[str, ...] = ("1s", "1m", "5m", "15m", "30m", "1h", "4h", "1d")
+DEFAULT_TIMEFRAMES: tuple[str, ...] = CANONICAL_STRATEGY_TIMEFRAMES
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,7 +104,7 @@ def _build_symbol_pairs(symbols: Sequence[str]) -> list[tuple[str, str]]:
         ("BNB/USDT", "SOL/USDT"),
         ("ADA/USDT", "XRP/USDT"),
         ("DOGE/USDT", "TRX/USDT"),
-        ("AVAX/USDT", "LINK/USDT"),
+        ("AVAX/USDT", "TON/USDT"),
         ("XAU/USDT", "XAG/USDT"),
     ]
     for left, right in preferred:
@@ -191,11 +197,12 @@ def build_candidate_set(
     max_param_rows_per_strategy: int = 24,
 ) -> list[dict[str, object]]:
     """Build a deterministic strategy candidate set."""
-    symbol_list = [str(symbol).strip().upper() for symbol in symbols or DEFAULT_TOP10_PLUS_METALS]
-    symbol_list = [symbol.replace("-", "/").replace("_", "/") for symbol in symbol_list if symbol]
-
-    timeframe_list = [str(timeframe).strip().lower() for timeframe in timeframes or DEFAULT_TIMEFRAMES]
-    timeframe_list = [token for token in timeframe_list if token]
+    symbol_list = canonicalize_symbol_list(symbols or DEFAULT_TOP10_PLUS_METALS)
+    timeframe_list = normalize_strategy_timeframes(
+        timeframes or DEFAULT_TIMEFRAMES,
+        required=CANONICAL_STRATEGY_TIMEFRAMES,
+        strict_subset=True,
+    )
 
     templates = _strategy_templates()
     out: list[dict[str, object]] = []
