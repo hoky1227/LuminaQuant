@@ -22,6 +22,7 @@
 | **[GPU Auto Notes](docs/DESIGN_NOTES_GPU_AUTO.md)** | Polars GPU/CPU auto-selection and fallback design. |
 | **[Validation Report](docs/VALIDATION_REPORT.md)** | Verification + optimization report for core workflows. |
 | **[Futures Strategy Factory](docs/FUTURES_STRATEGY_FACTORY.md)** | Candidate generation, weighted shortlist, and portfolio-set policy. |
+| **[Scoring Config Guide](docs/SCORING_CONFIG_GUIDE.md)** | Shared score-config template usage across research/shortlist/optimization scripts. |
 | **[Workflow Guide](docs/WORKFLOW.md)** | Private/Public branch operation and publish checklist. |
 | **[8GB Baseline Quickstart](docs/QUICKSTART_8GB_BASELINE.md)** | Minimal install/smoke/replay/shadow-live/dashboard/safe-stop/cleanup flow. |
 | **[Dashboard Realtime Report](docs/DASHBOARD_REALTIME_ANALYSIS_REPORT.md)** | Analysis + implementation report for live-refresh dashboard behavior. |
@@ -322,6 +323,14 @@ Portfolio shortlist policy (default):
 - **single strategy** must pass score/return/sharpe/trades floors to stay in shortlist
 - **direct multi-asset strategy rows are excluded** from portfolio shortlist unless `--allow-multi-asset` is set
 - portfolio-level candidates are emitted as **`portfolio_sets`** by combining successful single-asset strategies, each with normalized weights (`portfolio_weight`)
+
+Score config template:
+- Use `configs/score_config.example.json`
+- Shared sections:
+  - `candidate_research` → `scripts/run_candidate_research.py --score-config ...`
+  - `portfolio_optimization` → `scripts/run_portfolio_optimization.py --score-config ...`
+  - `strategy_shortlist` → `scripts/select_strategy_factory_shortlist.py --score-config ...`
+  - `futures_strategy_factory` → `scripts/futures_strategy_factory.py --score-config ...`
 
 **Futures Support Feature Collection (funding / mark/index / OI):**
 ```bash

@@ -39,6 +39,7 @@ All are implemented in `lumina_quant/indicators/futures_fast.py` with optional N
 uv run python scripts/futures_strategy_factory.py \
   --mode oos \
   --report-glob "reports/strategy_team_research_oos_*.json" \
+  --score-config configs/score_config.example.json \
   --max-report-files 20 \
   --max-shortlist 64
 ```
@@ -55,6 +56,7 @@ uv run python scripts/futures_strategy_factory.py --dry-run
 uv run python scripts/select_strategy_factory_shortlist.py \
   --report-glob "reports/oos_guarded_multistrategy_oos_*.json" \
   --mode oos \
+  --score-config configs/score_config.example.json \
   --single-min-score 0.0 \
   --single-min-return 0.0 \
   --single-min-sharpe 0.7 \
@@ -65,6 +67,16 @@ uv run python scripts/select_strategy_factory_shortlist.py \
 
 By default this keeps a single-asset-first portfolio construction path and emits `portfolio_sets`.
 Use `--allow-multi-asset` only if you explicitly want direct multi-asset rows in shortlist.
+
+## Scoring config template
+
+Use `configs/score_config.example.json` as a base template.
+
+- `strategy_shortlist` section → `scripts/select_strategy_factory_shortlist.py`
+- `futures_strategy_factory` section → `scripts/futures_strategy_factory.py`
+- The same file can also be reused for:
+  - `candidate_research` (`scripts/run_candidate_research.py`)
+  - `portfolio_optimization` (`scripts/run_portfolio_optimization.py`)
 
 ### Custom symbol/timeframe set
 
