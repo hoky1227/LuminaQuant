@@ -10,6 +10,7 @@ import argparse
 import csv
 import hashlib
 import json
+from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -61,12 +62,91 @@ TIMEFRAME_SECONDS: dict[str, int] = {
     "1d": 86400,
 }
 
+DEFAULT_FACTORY_SCORING_CONFIG: dict[str, dict] = {
+    "hurdle": {
+        "missing_score_fallback": -1_000_000.0,
+        "missing_excess_fallback": -1_000_000.0,
+        "failed_candidate_base_penalty": -1_000_000.0,
+    },
+    "selection": {
+        "missing_adjusted_score_fallback": -1_000_000.0,
+    },
+    "regime_bias": {
+        "trend_overlay": {
+            "eff_min": 0.33,
+            "eff_bonus": 0.30,
+            "ntr_min": 0.010,
+            "ntr_bonus": 0.20,
+            "vshock_min": 1.0,
+            "vshock_bonus": 0.10,
+        },
+        "alpha_market_neutral": {
+            "eff_max": 0.25,
+            "eff_bonus": 0.25,
+            "ntr_max": 0.009,
+            "ntr_bonus": 0.15,
+            "vshock_abs_min": 1.5,
+            "vshock_bonus": 0.05,
+        },
+        "momentum_mean_reversion": {
+            "eff_min": 0.20,
+            "eff_max": 0.55,
+            "eff_bonus": 0.20,
+            "vshock_min": 0.5,
+            "vshock_bonus": 0.05,
+        },
+    },
+}
+
 
 def _safe_float(value, default: float = 0.0) -> float:
     try:
         return float(value)
     except Exception:
         return float(default)
+
+
+def _load_score_config(path: Path) -> dict:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise ValueError(f"score config file not found: {path}") from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"invalid score config JSON ({path}): {exc}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"score config must be a JSON object: {path}")
+    return dict(payload)
+
+
+def _resolve_factory_score_config(overrides: dict | None) -> dict[str, dict]:
+    resolved = deepcopy(DEFAULT_FACTORY_SCORING_CONFIG)
+    if not isinstance(overrides, dict):
+        return resolved
+
+    source = overrides
+    nested = source.get("futures_strategy_factory")
+    if isinstance(nested, dict):
+        source = nested
+
+    for section in ("hurdle", "selection"):
+        section_overrides = source.get(section)
+        if not isinstance(section_overrides, dict):
+            continue
+        defaults = resolved[section]
+        for key in defaults:
+            if key in section_overrides:
+                defaults[key] = _safe_float(section_overrides[key], defaults[key])
+
+    regime_overrides = source.get("regime_bias")
+    if isinstance(regime_overrides, dict):
+        for family, family_defaults in resolved["regime_bias"].items():
+            family_override = regime_overrides.get(family)
+            if not isinstance(family_override, dict):
+                continue
+            for key in family_defaults:
+                if key in family_override:
+                    family_defaults[key] = _safe_float(family_override[key], family_defaults[key])
+    return resolved
 
 
 def _parse_float(value) -> float | None:
@@ -326,11 +406,21 @@ def _build_candidate_universe(symbols: list[str], timeframes: list[str]) -> list
     return out
 
 
-def _hurdle_score_from_row(row: dict, mode: str) -> tuple[float, float, bool]:
+def _hurdle_score_from_row(
+    row: dict,
+    mode: str,
+    *,
+    score_config: dict[str, dict] | None = None,
+) -> tuple[float, float, bool]:
+    cfg = score_config or DEFAULT_FACTORY_SCORING_CONFIG
+    hurdle_cfg = dict(cfg["hurdle"])
+    missing_score_fallback = float(hurdle_cfg["missing_score_fallback"])
+    missing_excess_fallback = float(hurdle_cfg["missing_excess_fallback"])
+
     hurdle_key = "val" if str(mode).strip().lower() == "live" else "oos"
     fields = ((row.get("hurdle_fields") or {}).get(hurdle_key)) or {}
-    score = _safe_float(fields.get("score"), -1_000_000.0)
-    excess = _safe_float(fields.get("excess_return"), -1_000_000.0)
+    score = _safe_float(fields.get("score"), missing_score_fallback)
+    excess = _safe_float(fields.get("excess_return"), missing_excess_fallback)
     passed = bool(fields.get("pass", False))
     return score, excess, passed
 
@@ -349,6 +439,7 @@ def _normalize_strategy_row(
     source_report: Path,
     mode: str,
     source: str,
+    score_config: dict[str, dict] | None = None,
 ) -> dict | None:
     name = str(row.get("name", "")).strip()
     if not name:
@@ -356,8 +447,11 @@ def _normalize_strategy_row(
 
     symbols = [_normalize_symbol(symbol) for symbol in list(row.get("symbols") or []) if symbol]
     params = dict(row.get("params") or {})
-    score, excess, passed = _hurdle_score_from_row(row, mode)
-    base_score = score if passed else (-1_000_000.0 + excess)
+    cfg = score_config or DEFAULT_FACTORY_SCORING_CONFIG
+    hurdle_cfg = dict(cfg["hurdle"])
+    failed_candidate_base_penalty = float(hurdle_cfg["failed_candidate_base_penalty"])
+    score, excess, passed = _hurdle_score_from_row(row, mode, score_config=score_config)
+    base_score = score if passed else (failed_candidate_base_penalty + excess)
     payload = {
         "name": name,
         "family": _family_from_name(name),
@@ -378,7 +472,12 @@ def _normalize_strategy_row(
     return payload
 
 
-def _load_candidates_from_team_report(path: Path, *, mode: str) -> list[dict]:
+def _load_candidates_from_team_report(
+    path: Path,
+    *,
+    mode: str,
+    score_config: dict[str, dict] | None = None,
+) -> list[dict]:
     with path.open(encoding="utf-8") as file:
         doc = json.load(file)
 
@@ -398,6 +497,7 @@ def _load_candidates_from_team_report(path: Path, *, mode: str) -> list[dict]:
                 source_report=path,
                 mode=mode,
                 source="candidate_report",
+                score_config=score_config,
             )
             if normalized is None:
                 continue
@@ -417,6 +517,7 @@ def _load_candidates_from_team_report(path: Path, *, mode: str) -> list[dict]:
             source_report=path,
             mode=mode,
             source="selected_team",
+            score_config=score_config,
         )
         if normalized is None:
             continue
@@ -454,6 +555,7 @@ def _load_candidates_from_team_report(path: Path, *, mode: str) -> list[dict]:
                 source_report=ref_path,
                 mode=mode,
                 source="run_report",
+                score_config=score_config,
             )
             if normalized is None:
                 continue
@@ -544,7 +646,18 @@ def _mean_metric(rows: list[dict], key: str) -> float | None:
     return float(sum(values) / len(values))
 
 
-def _regime_bias(row: dict, symbol_snapshot: dict[str, dict]) -> float:
+def _regime_bias(
+    row: dict,
+    symbol_snapshot: dict[str, dict],
+    *,
+    score_config: dict[str, dict] | None = None,
+) -> float:
+    cfg = score_config or DEFAULT_FACTORY_SCORING_CONFIG
+    regime_cfg = dict(cfg["regime_bias"])
+    trend_cfg = dict(regime_cfg["trend_overlay"])
+    neutral_cfg = dict(regime_cfg["alpha_market_neutral"])
+    momentum_cfg = dict(regime_cfg["momentum_mean_reversion"])
+
     symbols = [_normalize_symbol(symbol) for symbol in list(row.get("symbols") or [])]
     selected = [symbol_snapshot[symbol] for symbol in symbols if symbol in symbol_snapshot]
     if not selected:
@@ -557,33 +670,42 @@ def _regime_bias(row: dict, symbol_snapshot: dict[str, dict]) -> float:
     family = str(row.get("family", "other"))
     bias = 0.0
     if family == "trend_overlay":
-        if mean_eff is not None and mean_eff >= 0.33:
-            bias += 0.30
-        if mean_ntr is not None and mean_ntr >= 0.010:
-            bias += 0.20
-        if mean_vshock is not None and mean_vshock >= 1.0:
-            bias += 0.10
+        if mean_eff is not None and mean_eff >= float(trend_cfg["eff_min"]):
+            bias += float(trend_cfg["eff_bonus"])
+        if mean_ntr is not None and mean_ntr >= float(trend_cfg["ntr_min"]):
+            bias += float(trend_cfg["ntr_bonus"])
+        if mean_vshock is not None and mean_vshock >= float(trend_cfg["vshock_min"]):
+            bias += float(trend_cfg["vshock_bonus"])
     elif family == "alpha_market_neutral":
-        if mean_eff is not None and mean_eff <= 0.25:
-            bias += 0.25
-        if mean_ntr is not None and mean_ntr <= 0.009:
-            bias += 0.15
-        if mean_vshock is not None and abs(mean_vshock) >= 1.5:
-            bias += 0.05
+        if mean_eff is not None and mean_eff <= float(neutral_cfg["eff_max"]):
+            bias += float(neutral_cfg["eff_bonus"])
+        if mean_ntr is not None and mean_ntr <= float(neutral_cfg["ntr_max"]):
+            bias += float(neutral_cfg["ntr_bonus"])
+        if mean_vshock is not None and abs(mean_vshock) >= float(neutral_cfg["vshock_abs_min"]):
+            bias += float(neutral_cfg["vshock_bonus"])
     elif family == "momentum_mean_reversion":
-        if mean_eff is not None and 0.20 <= mean_eff <= 0.55:
-            bias += 0.20
-        if mean_vshock is not None and mean_vshock >= 0.5:
-            bias += 0.05
+        if mean_eff is not None and float(momentum_cfg["eff_min"]) <= mean_eff <= float(momentum_cfg["eff_max"]):
+            bias += float(momentum_cfg["eff_bonus"])
+        if mean_vshock is not None and mean_vshock >= float(momentum_cfg["vshock_min"]):
+            bias += float(momentum_cfg["vshock_bonus"])
     return bias
 
 
-def _apply_bias(rows: list[dict], symbol_snapshot: dict[str, dict]) -> list[dict]:
+def _apply_bias(
+    rows: list[dict],
+    symbol_snapshot: dict[str, dict],
+    *,
+    score_config: dict[str, dict] | None = None,
+) -> list[dict]:
+    cfg = score_config or DEFAULT_FACTORY_SCORING_CONFIG
+    selection_cfg = dict(cfg["selection"])
+    missing_adjusted_score_fallback = float(selection_cfg["missing_adjusted_score_fallback"])
+
     out: list[dict] = []
     for row in rows:
         enriched = dict(row)
-        base = _safe_float(enriched.get("base_score"), -1_000_000.0)
-        bias = _regime_bias(enriched, symbol_snapshot)
+        base = _safe_float(enriched.get("base_score"), missing_adjusted_score_fallback)
+        bias = _regime_bias(enriched, symbol_snapshot, score_config=score_config)
         enriched["regime_bias"] = float(bias)
         enriched["adjusted_score"] = float(base + bias)
         out.append(enriched)
@@ -598,8 +720,17 @@ def _select_shortlist(
     max_per_timeframe: int,
     max_per_symbol: int,
     min_score: float,
+    score_config: dict[str, dict] | None = None,
 ) -> list[dict]:
-    ranked = sorted(rows, key=lambda row: _safe_float(row.get("adjusted_score"), -1_000_000.0), reverse=True)
+    cfg = score_config or DEFAULT_FACTORY_SCORING_CONFIG
+    selection_cfg = dict(cfg["selection"])
+    missing_adjusted_score_fallback = float(selection_cfg["missing_adjusted_score_fallback"])
+
+    ranked = sorted(
+        rows,
+        key=lambda row: _safe_float(row.get("adjusted_score"), missing_adjusted_score_fallback),
+        reverse=True,
+    )
     selected: list[dict] = []
     family_counts: dict[str, int] = {}
     timeframe_counts: dict[str, int] = {}
@@ -609,7 +740,7 @@ def _select_shortlist(
     for row in ranked:
         if len(selected) >= int(max_total):
             break
-        score = _safe_float(row.get("adjusted_score"), -1_000_000.0)
+        score = _safe_float(row.get("adjusted_score"), missing_adjusted_score_fallback)
         if score < float(min_score):
             continue
         ident = str(row.get("identity", "")).strip()
@@ -751,6 +882,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeframes", nargs="+", default=list(DEFAULT_TIMEFRAMES))
     parser.add_argument("--mode", choices=["oos", "live"], default="oos")
     parser.add_argument("--report-glob", default="reports/candidate_research_*.json")
+    parser.add_argument("--score-config", default="", help="Optional factory scoring config JSON path.")
     parser.add_argument("--max-report-files", type=int, default=20)
     parser.add_argument("--data-dir", default="data")
     parser.add_argument("--regime-window", type=int, default=128)
@@ -767,6 +899,15 @@ def _build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
+    score_config_payload: dict | None = None
+    score_config_path: Path | None = None
+    if str(args.score_config).strip():
+        score_config_path = Path(str(args.score_config)).resolve()
+        try:
+            score_config_payload = _load_score_config(score_config_path)
+        except ValueError as exc:
+            raise SystemExit(f"[FACTORY] {exc}")
+    resolved_score_config = _resolve_factory_score_config(score_config_payload)
 
     symbols = [_normalize_symbol(symbol) for symbol in list(args.symbols)]
     timeframes = [_normalize_timeframe(token) for token in list(args.timeframes)]
@@ -781,7 +922,13 @@ def main() -> None:
     report_paths = _resolve_report_paths(str(args.report_glob), int(args.max_report_files))
     sourced_rows: list[dict] = []
     for path in report_paths:
-        sourced_rows.extend(_load_candidates_from_team_report(path, mode=str(args.mode)))
+        sourced_rows.extend(
+            _load_candidates_from_team_report(
+                path,
+                mode=str(args.mode),
+                score_config=resolved_score_config,
+            )
+        )
 
     if not sourced_rows:
         for row in candidate_universe:
@@ -807,7 +954,11 @@ def main() -> None:
         symbols,
         window=max(16, int(args.regime_window)),
     )
-    biased_rows = _apply_bias(sourced_rows, symbol_snapshot)
+    biased_rows = _apply_bias(
+        sourced_rows,
+        symbol_snapshot,
+        score_config=resolved_score_config,
+    )
     shortlisted = _select_shortlist(
         biased_rows,
         max_total=max(1, int(args.max_shortlist)),
@@ -815,6 +966,7 @@ def main() -> None:
         max_per_timeframe=max(1, int(args.max_per_timeframe)),
         max_per_symbol=max(1, int(args.max_per_symbol)),
         min_score=float(args.min_score),
+        score_config=resolved_score_config,
     )
 
     shortlist_json_path = output_dir / f"futures_shortlist_{stamp}.json"
@@ -844,6 +996,10 @@ def main() -> None:
                     "source_candidate_count": len(sourced_rows),
                     "symbol_snapshot": symbol_snapshot,
                     "shortlist_count": len(shortlisted),
+                    "scoring": {
+                        **resolved_score_config,
+                        "source": str(score_config_path) if score_config_path is not None else "",
+                    },
                     "shortlist": shortlisted,
                 },
                 file,
