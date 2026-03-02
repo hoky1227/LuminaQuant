@@ -47,6 +47,41 @@ Entrypoint choice:
 - `run_live.py`: polling-based live runner (default/simple ops)
 - `run_live_ws.py`: WebSocket-based live runner (lower latency path)
 
+Raw-first live data lifecycle (recommended):
+1. `scripts/collect_binance_aggtrades_raw.py` (raw collector, checkpoint resume, periodic loop)
+2. `scripts/materialize_market_windows.py` (raw -> committed 1s+timeframe bundle, periodic loop)
+3. `run_live.py` / `run_live_ws.py` (committed-window reader only, fail-fast on missing committed data)
+
+Example periodic startup:
+```bash
+uv run python scripts/collect_binance_aggtrades_raw.py --symbols BTC/USDT,ETH/USDT --periodic --poll-seconds 2
+uv run python scripts/materialize_market_windows.py --symbols BTC/USDT,ETH/USDT --timeframes 1s,1m,5m,15m,30m,1h,4h,1d --periodic --poll-seconds 5
+uv run python run_live.py
+```
+
+Fail-fast contract:
+- background reader fatal (missing committed/parity decode error) is propagated to main
+- live entrypoints exit with code `2`
+- recovery requires restoring committed data then restarting collector -> materializer -> live
+
+Verify committed data before live start:
+```bash
+uv run python - <<'PY'
+from lumina_quant.parquet_market_data import ParquetMarketDataRepository
+
+repo = ParquetMarketDataRepository("data/market_parquet")
+for symbol in ("BTC/USDT", "ETH/USDT"):
+    frame = repo.load_committed_ohlcv_chunked(exchange="binance", symbol=symbol, timeframe="1s")
+    print(symbol, "rows=", frame.height, "latest=", frame["datetime"].max())
+PY
+```
+
+Before deploy, run the live decoupling architecture gate:
+```bash
+bash scripts/ci/architecture_gate_live_data.sh
+bash scripts/ci/architecture_gate_market_window_contract.sh
+```
+
 Real mode safety:
 - keep `live.require_real_enable_flag: true` in `config.yaml`
 - arm real mode explicitly with `LUMINA_ENABLE_LIVE_REAL=true` and `--enable-live-real`

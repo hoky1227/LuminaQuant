@@ -1,10 +1,12 @@
 import argparse
 import os
 
+from lumina_quant.backtesting.cli_contract import RawFirstDataMissingError
 from lumina_quant.backtesting.portfolio_backtest import Portfolio
 from lumina_quant.config import LiveConfig
+from lumina_quant.core.market_window_contract import MarketWindowContractError
 from lumina_quant.live.execution_live import LiveExecutionHandler
-from lumina_quant.live.trader import LiveTrader
+from lumina_quant.live.trader import LiveDataFatalError, LiveTrader
 from lumina_quant.live_selection import (
     extract_selection_config,
     infer_strategy_class_name,
@@ -20,7 +22,19 @@ from lumina_quant.strategies import (
 STRATEGY_MAP = get_live_strategy_map(include_opt_in=True)
 DEFAULT_WS_STRATEGY_NAME = "RsiStrategy"
 
-if __name__ == "__main__":
+
+def _shutdown_on_fatal(trader: LiveTrader, exc: Exception) -> None:
+    print(f"\nCritical live-data contract breach: {exc}")
+    ordered_shutdown = getattr(trader, "_ordered_shutdown", None)
+    if callable(ordered_shutdown):
+        ordered_shutdown()
+    close_audit = getattr(trader, "_close_audit_store", None)
+    if callable(close_audit):
+        close_audit(status="FAILED")
+    raise SystemExit(2) from exc
+
+
+def main() -> None:
     parser = argparse.ArgumentParser(description="Run LuminaQuant live trader (WebSocket).")
     parser.add_argument(
         "--enable-live-real",
@@ -119,18 +133,42 @@ if __name__ == "__main__":
             print(f"Selection Candidate: {selection_cfg.get('candidate_name')}")
     print(f"Trading Symbols: {symbol_list}")
     print(f"Strategy Timeframe: {LiveConfig.TIMEFRAME}")
+    print(
+        "Materialized Staleness Gate: "
+        f"threshold={LiveConfig.MATERIALIZED_STALENESS_THRESHOLD_SECONDS}s, "
+        f"alert_cooldown={LiveConfig.MATERIALIZED_STALENESS_ALERT_COOLDOWN_SECONDS}s"
+    )
     print(f"Strategy Params: {strategy_params}")
 
-    trader = LiveTrader(
-        symbol_list=symbol_list,
-        data_handler_cls=BinanceWebSocketDataHandler,  # Using WS Handler
-        execution_handler_cls=LiveExecutionHandler,
-        portfolio_cls=Portfolio,
-        strategy_cls=strategy_cls,
-        strategy_params=strategy_params,
-        strategy_name=strategy_name,
-        stop_file=args.stop_file,
-        external_run_id=args.run_id,
-    )
+    trader = None
+    try:
+        trader = LiveTrader(
+            symbol_list=symbol_list,
+            data_handler_cls=BinanceWebSocketDataHandler,
+            execution_handler_cls=LiveExecutionHandler,
+            portfolio_cls=Portfolio,
+            strategy_cls=strategy_cls,
+            strategy_params=strategy_params,
+            strategy_name=strategy_name,
+            stop_file=args.stop_file,
+            external_run_id=args.run_id,
+        )
 
-    trader.run()
+        print("Starting engine... Press Ctrl+C to stop.")
+        trader.run()
+        consume = getattr(trader.data_handler, "consume_fatal_error", None)
+        if callable(consume):
+            fatal_exc = consume()
+            if fatal_exc is not None:
+                _shutdown_on_fatal(trader, fatal_exc)
+
+    except KeyboardInterrupt:
+        print("\nStopping trader...")
+    except (RawFirstDataMissingError, MarketWindowContractError, LiveDataFatalError) as exc:
+        if trader is not None:
+            _shutdown_on_fatal(trader, exc)
+        raise SystemExit(2) from exc
+
+
+if __name__ == "__main__":
+    main()

@@ -7,17 +7,26 @@ from types import SimpleNamespace
 
 from lumina_quant.backtesting.backtest import Backtest
 from lumina_quant.backtesting.chunked_runner import run_backtest_chunked
+from lumina_quant.backtesting.cli_contract import (
+    RawFirstDataMissingError,
+    RawFirstManifestInvalidError,
+    RawFirstStaleWindowError,
+    normalize_data_mode,
+    raw_first_exit_code,
+    resolve_data_contract,
+)
 from lumina_quant.backtesting.data import HistoricCSVDataHandler
 from lumina_quant.backtesting.data_windowed_parquet import HistoricParquetWindowedDataHandler
 from lumina_quant.backtesting.execution_sim import SimulatedExecutionHandler
 from lumina_quant.backtesting.portfolio_backtest import Portfolio
 from lumina_quant.config import BacktestConfig, BaseConfig, LiveConfig, OptimizationConfig
 from lumina_quant.data_collector import auto_collect_market_data
-from lumina_quant.market_data import load_data_dict_from_db, normalize_timeframe_token
-from lumina_quant.parquet_market_data import (
-    is_parquet_market_data_store,
+from lumina_quant.market_data import (
+    load_data_dict_from_db,
     load_data_dict_from_parquet,
+    normalize_timeframe_token,
 )
+from lumina_quant.parquet_market_data import is_parquet_market_data_store
 from lumina_quant.strategies import registry as strategy_registry
 from lumina_quant.utils.audit_store import AuditStore
 
@@ -191,9 +200,20 @@ def _normalize_backtest_mode(value: str | None, default: str = "windowed") -> st
     return str(default)
 
 
+def _normalize_data_mode(value: str | None, default: str = "raw-first") -> str:
+    try:
+        return normalize_data_mode(value, default=default)
+    except RawFirstDataMissingError:
+        return str(default)
+
+
 BACKTEST_MODE = _normalize_backtest_mode(
     os.getenv("LQ_BACKTEST_MODE", str(getattr(BacktestConfig, "MODE", "windowed"))),
     default="windowed",
+)
+DATA_MODE = _normalize_data_mode(
+    os.getenv("LQ_DATA_MODE", "raw-first"),
+    default="raw-first",
 )
 os.environ.setdefault(
     "LQ__BACKTEST__DECISION_CADENCE_SECONDS",
@@ -235,9 +255,18 @@ def _load_data_dict(
     market_exchange,
     *,
     base_timeframe,
+    data_mode="legacy",
+    backtest_mode="windowed",
     auto_collect_db=True,
 ):
-    source = str(data_source).strip().lower()
+    contract = resolve_data_contract(
+        data_mode=str(data_mode),
+        backtest_mode=str(backtest_mode),
+        data_source=str(data_source),
+        default_backtest_mode="windowed",
+        default_data_source="auto",
+    )
+    source = str(contract.data_source).strip().lower()
     if source == "csv":
         return None
 
@@ -245,6 +274,10 @@ def _load_data_dict(
         str(market_db_path),
         backend=str(MARKET_DB_BACKEND),
     )
+    if contract.data_mode == "raw-first" and not use_parquet:
+        raise RawFirstDataMissingError(
+            "Raw-first requires parquet manifest store. Configure --market-db-path to parquet root."
+        )
 
     if source in {"auto", "db"} and auto_collect_db and not use_parquet:
         try:
@@ -294,6 +327,7 @@ def _load_data_dict(
             end_date=END_DATE,
             chunk_days=BT_CHUNK_DAYS,
             warmup_bars=BT_CHUNK_WARMUP_BARS,
+            data_mode=str(contract.data_mode),
         )
     else:
         data_dict = load_data_dict_from_db(
@@ -312,8 +346,17 @@ def _load_data_dict(
             f"{market_db_path} (exchange={market_exchange}, timeframe={base_timeframe})."
         )
         if missing:
+            if contract.data_mode == "raw-first":
+                raise RawFirstDataMissingError(
+                    "Raw-first committed data missing for symbols: " + ", ".join(missing)
+                )
             print(f"[WARN] Symbols still missing in DB after load: {missing}")
         return data_dict
+    if contract.data_mode == "raw-first":
+        raise RawFirstDataMissingError(
+            "No committed manifest data found for raw-first mode. "
+            "Run materializer and verify manifest commits."
+        )
     if source == "db":
         raise RuntimeError(
             "No market data found in DB for requested symbols/timeframe. "
@@ -495,6 +538,7 @@ def _persist_low_memory_outputs(backtest, persist_output):
 
 def run(
     data_source="auto",
+    data_mode=DATA_MODE,
     market_db_path=MARKET_DB_PATH,
     market_exchange=MARKET_DB_EXCHANGE,
     base_timeframe=BASE_TIMEFRAME,
@@ -519,7 +563,16 @@ def run(
         start_date=START_DATE,
         end_date=END_DATE,
     )
-    resolved_backtest_mode = _normalize_backtest_mode(str(backtest_mode), "windowed")
+    contract = resolve_data_contract(
+        data_mode=str(data_mode),
+        backtest_mode=str(backtest_mode),
+        data_source=str(data_source),
+        default_backtest_mode="windowed",
+        default_data_source="auto",
+    )
+    resolved_backtest_mode = str(contract.backtest_mode)
+    resolved_data_source = str(contract.data_source)
+    resolved_data_mode = str(contract.data_mode)
     selected_data_handler_cls = (
         HistoricParquetWindowedDataHandler
         if resolved_backtest_mode == "windowed"
@@ -540,7 +593,8 @@ def run(
                 "symbols": list(SYMBOL_LIST),
                 "strategy": STRATEGY_CLASS.__name__,
                 "params": STRATEGY_PARAMS,
-                "data_source": str(data_source),
+                "data_source": str(resolved_data_source),
+                "data_mode": str(resolved_data_mode),
                 "market_db_path": str(market_db_path),
                 "market_exchange": str(market_exchange),
                 "base_timeframe": str(timeframe_token),
@@ -564,16 +618,18 @@ def run(
             str(market_db_path),
             backend=str(MARKET_DB_BACKEND),
         )
-        source_token = str(data_source).strip().lower()
+        source_token = str(resolved_data_source).strip().lower()
         use_chunked_runner = bool(use_parquet and source_token in {"auto", "db"})
         data_dict = None
 
         if not use_chunked_runner:
             data_dict = _load_data_dict(
-                data_source,
+                resolved_data_source,
                 market_db_path,
                 market_exchange,
                 base_timeframe=str(timeframe_token),
+                data_mode=resolved_data_mode,
+                backtest_mode=resolved_backtest_mode,
                 auto_collect_db=bool(auto_collect_db),
             )
 
@@ -593,6 +649,7 @@ def run(
                     end_date=chunk_end,
                     chunk_days=max(1, int(BT_CHUNK_DAYS)),
                     warmup_bars=max(0, int(BT_CHUNK_WARMUP_BARS)),
+                    data_mode=resolved_data_mode,
                 )
 
             backtest = run_backtest_chunked(
@@ -691,6 +748,12 @@ def run(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run LuminaQuant backtest.")
     parser.add_argument(
+        "--data-mode",
+        choices=["raw-first", "legacy"],
+        default=DATA_MODE,
+        help="Data contract mode. raw-first requires committed manifest parquet windows.",
+    )
+    parser.add_argument(
         "--data-source",
         choices=["auto", "csv", "db"],
         default="auto",
@@ -759,14 +822,21 @@ if __name__ == "__main__":
     )
     parser.set_defaults(persist_output=None)
     args = parser.parse_args()
-    run(
-        data_source=args.data_source,
-        market_db_path=args.market_db_path,
-        market_exchange=args.market_exchange,
-        base_timeframe=_normalize_timeframe_or_default(args.base_timeframe, "1s"),
-        auto_collect_db=(not bool(args.no_auto_collect_db) and bool(AUTO_COLLECT_DB)),
-        run_id=args.run_id,
-        low_memory=args.low_memory,
-        persist_output=args.persist_output,
-        backtest_mode=args.backtest_mode,
-    )
+    try:
+        run(
+            data_source=args.data_source,
+            data_mode=args.data_mode,
+            market_db_path=args.market_db_path,
+            market_exchange=args.market_exchange,
+            base_timeframe=_normalize_timeframe_or_default(args.base_timeframe, "1s"),
+            auto_collect_db=(not bool(args.no_auto_collect_db) and bool(AUTO_COLLECT_DB)),
+            run_id=args.run_id,
+            low_memory=args.low_memory,
+            persist_output=args.persist_output,
+            backtest_mode=args.backtest_mode,
+        )
+    except (RawFirstDataMissingError, RawFirstManifestInvalidError, RawFirstStaleWindowError) as exc:
+        code = raw_first_exit_code(exc)
+        if code is None:
+            raise
+        raise SystemExit(code) from exc

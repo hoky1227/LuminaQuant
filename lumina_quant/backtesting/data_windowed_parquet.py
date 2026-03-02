@@ -7,7 +7,8 @@ from collections import deque
 from typing import Any
 
 from lumina_quant.backtesting.data import HistoricCSVDataHandler
-from lumina_quant.core.events import MarketWindowEvent
+from lumina_quant.config import BaseConfig
+from lumina_quant.core.market_window_contract import build_market_window_event
 
 
 class HistoricParquetWindowedDataHandler(HistoricCSVDataHandler):
@@ -28,6 +29,7 @@ class HistoricParquetWindowedDataHandler(HistoricCSVDataHandler):
         *,
         backtest_poll_seconds: int = 20,
         backtest_window_seconds: int = 20,
+        market_window_parity_v2_enabled: bool | None = None,
     ) -> None:
         super().__init__(
             events,
@@ -48,6 +50,12 @@ class HistoricParquetWindowedDataHandler(HistoricCSVDataHandler):
         }
         self._next_emit_ts_ms: int | None = None
         self._last_window_event_ms: int | None = None
+        self._parity_v2_enabled = (
+            bool(BaseConfig.MARKET_WINDOW_PARITY_V2_ENABLED)
+            if market_window_parity_v2_enabled is None
+            else bool(market_window_parity_v2_enabled)
+        )
+        self._metrics_log_path = str(BaseConfig.MARKET_WINDOW_METRICS_LOG_PATH)
 
     def _align_emit_timestamp(self, ts_ms: int) -> int:
         step = max(1, int(self.backtest_poll_ms))
@@ -119,10 +127,17 @@ class HistoricParquetWindowedDataHandler(HistoricCSVDataHandler):
 
     def _emit_window_event(self, event_time: Any) -> None:
         self.events.put(
-            MarketWindowEvent(
+            build_market_window_event(
                 time=event_time,
                 window_seconds=int(self.backtest_window_seconds),
                 bars_1s=self._window_snapshot(),
+                event_time_watermark_ms=self.last_emitted_timestamp_ms,
+                commit_id=None,
+                lag_ms=0,
+                is_stale=False,
+                parity_v2_enabled=self._parity_v2_enabled,
+                metrics_log_path=self._metrics_log_path,
+                emit_metrics=False,
             )
         )
         if self.last_emitted_timestamp_ms is not None:

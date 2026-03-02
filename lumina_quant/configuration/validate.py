@@ -27,6 +27,46 @@ def _validate_timeframes(timeframes: Iterable[str]) -> None:
             )
 
 
+def _validate_materializer_required_timeframes(runtime: RuntimeConfig) -> None:
+    required = getattr(runtime.storage, "materializer_required_timeframes", None)
+    if not isinstance(required, list) or not required:
+        raise ValueError("storage.materializer_required_timeframes must be a non-empty list.")
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for token in required:
+        raw_token = str(token or "").strip().lower()
+        if TIMEFRAME_RE.fullmatch(raw_token) is None:
+            raise ValueError(
+                "storage.materializer_required_timeframes contains invalid timeframe "
+                f"'{token}'. Expected format like 1s, 5m, 1h, 1d."
+            )
+        if raw_token in seen:
+            continue
+        normalized.append(raw_token)
+        seen.add(raw_token)
+
+    if "1s" not in normalized:
+        raise ValueError("storage.materializer_required_timeframes must include '1s'.")
+
+    trading_timeframes = {
+        str(token).strip().lower() for token in getattr(runtime.trading, "timeframes", [])
+    }
+    for token in normalized:
+        if token == "1s":
+            continue
+        if token not in trading_timeframes:
+            raise ValueError(
+                "storage.materializer_required_timeframes contains timeframe "
+                f"'{token}' not present in trading.timeframes."
+            )
+
+    runtime.storage.materializer_required_timeframes = [
+        "1s",
+        *[token for token in normalized if token != "1s"],
+    ]
+
+
 def validate_runtime_config(runtime: RuntimeConfig, *, for_live: bool = False) -> None:
     """Validate runtime configuration invariants."""
     storage_backend = str(runtime.storage.backend or "").strip().lower()
@@ -38,6 +78,13 @@ def validate_runtime_config(runtime: RuntimeConfig, *, for_live: bool = False) -
         raise ValueError("storage.wal_compact_on_threshold must be boolean.")
     if int(getattr(runtime.storage, "wal_compaction_interval_seconds", 0)) < 0:
         raise ValueError("storage.wal_compaction_interval_seconds must be >= 0.")
+    if int(getattr(runtime.storage, "collector_poll_seconds", 0)) < 1:
+        raise ValueError("storage.collector_poll_seconds must be >= 1.")
+    if int(getattr(runtime.storage, "materializer_poll_seconds", 0)) < 1:
+        raise ValueError("storage.materializer_poll_seconds must be >= 1.")
+    if str(getattr(runtime.storage, "materializer_base_timeframe", "")).strip().lower() != "1s":
+        raise ValueError("storage.materializer_base_timeframe must be '1s'.")
+    _validate_materializer_required_timeframes(runtime)
 
     if not runtime.trading.symbols:
         raise ValueError("No symbols configured in trading.symbols.")
@@ -137,6 +184,10 @@ def validate_runtime_config(runtime: RuntimeConfig, *, for_live: bool = False) -
         raise ValueError("live.ingest_window_seconds must be >= 1.")
     if int(getattr(runtime.live, "decision_cadence_seconds", 20)) < 1:
         raise ValueError("live.decision_cadence_seconds must be >= 1.")
+    if int(getattr(runtime.live, "materialized_staleness_threshold_seconds", 45)) < 1:
+        raise ValueError("live.materialized_staleness_threshold_seconds must be >= 1.")
+    if int(getattr(runtime.live, "materialized_staleness_alert_cooldown_seconds", 60)) < 1:
+        raise ValueError("live.materialized_staleness_alert_cooldown_seconds must be >= 1.")
     if runtime.live.order_timeout < 1:
         raise ValueError("live.order_timeout must be >= 1.")
     if runtime.live.reconciliation_interval_sec < 1:
@@ -158,6 +209,22 @@ def validate_runtime_config(runtime: RuntimeConfig, *, for_live: bool = False) -
         raise ValueError("promotion_gate.max_reconciliation_alerts must be >= 0.")
     if runtime.promotion_gate.max_critical_errors < 0:
         raise ValueError("promotion_gate.max_critical_errors must be >= 0.")
+
+    deprecated_live_parity = getattr(runtime.live, "market_window_parity_v2_enabled", None)
+    deprecated_backtest_parity = getattr(
+        runtime.backtest,
+        "market_window_parity_v2_enabled",
+        None,
+    )
+    if (
+        deprecated_live_parity is not None
+        and deprecated_backtest_parity is not None
+        and bool(deprecated_live_parity) != bool(deprecated_backtest_parity)
+    ):
+        raise ValueError(
+            "live.market_window_parity_v2_enabled and backtest.market_window_parity_v2_enabled "
+            "must match; use market_window.parity_v2_enabled."
+        )
 
     allowed_profile_keys = {
         "days",

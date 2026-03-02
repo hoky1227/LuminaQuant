@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import polars as pl
+from lumina_quant.backtesting.cli_contract import RawFirstDataMissingError, normalize_data_mode
 from lumina_quant.symbols import canonical_symbol
 
 MARKET_OHLCV_TABLE = "market_ohlcv"
@@ -161,6 +162,65 @@ def _build_market_data_repository(
     _ = _resolve_storage_backend(backend)
     _ = legacy
     return MarketDataRepository(db_path)
+
+
+def _normalize_data_mode(value: str | None, *, default: str = "legacy") -> str:
+    return normalize_data_mode(value, default=default)
+
+
+def load_data_dict_from_parquet(
+    root_path: str,
+    *,
+    exchange: str,
+    symbol_list: list[str],
+    timeframe: str,
+    start_date: Any = None,
+    end_date: Any = None,
+    chunk_days: int = 7,
+    warmup_bars: int = 0,
+    data_mode: str = "legacy",
+    staleness_threshold_seconds: int | None = None,
+) -> dict[str, pl.DataFrame]:
+    """Owner entrypoint for parquet data loading contract."""
+    from lumina_quant.parquet_market_data import ParquetMarketDataRepository
+
+    repo = ParquetMarketDataRepository(root_path)
+    resolved_mode = _normalize_data_mode(data_mode, default="legacy")
+    out: dict[str, pl.DataFrame] = {}
+    missing_symbols: list[str] = []
+    for symbol in list(symbol_list or []):
+        if resolved_mode == "raw-first":
+            frame = repo.load_committed_ohlcv_chunked(
+                exchange=exchange,
+                symbol=symbol,
+                timeframe=timeframe,
+                start_date=start_date,
+                end_date=end_date,
+                chunk_days=chunk_days,
+                warmup_bars=warmup_bars,
+                staleness_threshold_seconds=staleness_threshold_seconds,
+            )
+        else:
+            frame = repo.load_ohlcv_chunked(
+                exchange=exchange,
+                symbol=symbol,
+                timeframe=timeframe,
+                start_date=start_date,
+                end_date=end_date,
+                chunk_days=chunk_days,
+                warmup_bars=warmup_bars,
+            )
+
+        if frame is None or frame.is_empty():
+            missing_symbols.append(str(symbol))
+            continue
+        out[str(symbol)] = frame
+
+    if resolved_mode == "raw-first" and missing_symbols:
+        raise RawFirstDataMissingError(
+            "Raw-first committed data missing for symbols: " + ", ".join(missing_symbols)
+        )
+    return out
 
 
 def normalize_symbol(symbol: str) -> str:

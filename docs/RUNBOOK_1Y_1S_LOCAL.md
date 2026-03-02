@@ -54,6 +54,66 @@ uv run python scripts/compact_wal_to_monthly_parquet.py \
   --exchange binance
 ```
 
+Raw-first pipeline (collector -> materializer -> trader):
+
+```bash
+uv run python scripts/collect_binance_aggtrades_raw.py \
+  --symbols BTC/USDT,ETH/USDT \
+  --db-path data/market_parquet \
+  --periodic --poll-seconds 2 --cycles 2
+
+uv run python scripts/materialize_market_windows.py \
+  --symbols BTC/USDT,ETH/USDT \
+  --timeframes 1s,1m,5m,15m,30m,1h,4h,1d \
+  --db-path data/market_parquet \
+  --periodic --poll-seconds 5 --cycles 2
+
+uv run python run_live.py
+```
+
+Live fail-fast contract:
+- committed data missing/parity fatal -> process exits with code `2`
+- no empty MARKET_WINDOW fallback is allowed
+- recovery: restore committed manifests, restart collector/materializer/live in order
+
+Pre-live committed-data verification (copy/paste):
+
+```bash
+uv run python - <<'PY'
+from lumina_quant.parquet_market_data import ParquetMarketDataRepository
+
+repo = ParquetMarketDataRepository("data/market_parquet")
+for symbol in ("BTC/USDT", "ETH/USDT"):
+    frame = repo.load_committed_ohlcv_chunked(
+        exchange="binance",
+        symbol=symbol,
+        timeframe="1s",
+    )
+    print(symbol, "rows=", frame.height, "latest=", frame["datetime"].max())
+PY
+```
+
+Rollout gate commands:
+
+```bash
+uv run python scripts/ci/export_market_window_gate_metrics.py \
+  --input logs/live/market_window_metrics.ndjson \
+  --output reports/live_rollout/baseline_gate_metrics.json \
+  --window-hours 24 --require-flag false
+
+uv run python scripts/ci/export_market_window_gate_metrics.py \
+  --input logs/live/market_window_metrics.ndjson \
+  --output reports/live_rollout/canary_gate_metrics.json \
+  --window-hours 24 --require-flag true
+
+uv run python scripts/ci/check_market_window_rollout_gates.py \
+  --baseline reports/live_rollout/baseline_gate_metrics.json \
+  --canary reports/live_rollout/canary_gate_metrics.json \
+  --max-p95-payload-bytes 131072 \
+  --max-queue-lag-increase-pct 5 \
+  --max-fail-fast-incidents 0
+```
+
 ---
 
 ## 2) Runtime knobs for 8GB-safe runs
@@ -128,6 +188,8 @@ uv run python optimize.py \
 - No OOM-kill (`dmesg -T | grep -i -E "killed process|out of memory"` should be empty for run window)
 - Peak RSS stays below practical limit (recommend target: **< 7.2 GiB** on 8GB host)
 - No fallback contract regressions:
+  - `bash scripts/ci/architecture_gate_live_data.sh` passes
+  - `bash scripts/ci/architecture_gate_market_window_contract.sh` passes
   - `uv run python scripts/audit_hardcoded_params.py` → `new=0`
   - `uv run python scripts/check_architecture.py` passes
 

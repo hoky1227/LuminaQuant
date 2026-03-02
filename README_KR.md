@@ -22,6 +22,7 @@
 | **[마이그레이션 가이드](docs/MIGRATION_GUIDE_POSTGRES_PARQUET.md)** | 레거시 저장소 제거 후 Parquet + PostgreSQL 전환 가이드. |
 | **[GPU 자동 실행 설계](docs/DESIGN_NOTES_GPU_AUTO.md)** | Polars GPU/CPU 자동 선택 및 fallback 전략 설명. |
 | **[선물 전략 팩토리](docs/kr/FUTURES_STRATEGY_FACTORY.md)** | 후보 생성, 가중치 기반 숏리스트, 단일-자산 조합 정책. |
+| **[스코어 설정 가이드](docs/kr/SCORING_CONFIG_GUIDE.md)** | 리서치/숏리스트/최적화 스크립트 공용 score-config 템플릿 사용법. |
 | **[대시보드 실시간 분석 리포트](docs/DASHBOARD_REALTIME_ANALYSIS_REPORT.md)** | 실시간 갱신 동작 개선 분석 및 구현 결과. |
 | **[거래소 가이드](docs/kr/EXCHANGES.md)** | **바이낸스(Binance)** (CCXT) 및 **MetaTrader 5 (MT5)** 상세 설정법. |
 | **[거래 매뉴얼](docs/kr/TRADING_MANUAL.md)** | **실전 운용법**: 매수/매도, 레버리지, TP/SL, 트레일링 스탑. |
@@ -167,22 +168,79 @@ uv run python scripts/sync_binance_ohlcv.py \
 
 Public 저장소에는 DB 동기화/구축 헬퍼를 의도적으로 포함하지 않습니다. 사전 구축된 DB 파일 또는 CSV 데이터를 사용하세요.
 
+**Raw aggTrades → 커밋된 materialized 파이프라인 (Private 저장소):**
+```bash
+# 1) Raw 수집기 (체크포인트 재개 + 주기 루프)
+uv run python scripts/collect_binance_aggtrades_raw.py \
+  --symbols BTC/USDT,ETH/USDT \
+  --db-path data/market_parquet \
+  --periodic --poll-seconds 2 --cycles 2
+
+# 2) Materializer (raw -> 커밋된 1s + trading.timeframes 번들)
+uv run python scripts/materialize_market_windows.py \
+  --symbols BTC/USDT,ETH/USDT \
+  --timeframes 1s,1m,5m,15m,30m,1h,4h,1d \
+  --db-path data/market_parquet \
+  --periodic --poll-seconds 5 --cycles 2
+
+# 3) Live는 커밋된 윈도우만 읽음 (커밋 누락 시 fail-fast, 종료코드 2)
+uv run python run_live.py
+```
+
+라이브 시작 전 커밋 데이터 확인:
+```bash
+uv run python - <<'PY'
+from lumina_quant.parquet_market_data import ParquetMarketDataRepository
+repo = ParquetMarketDataRepository("data/market_parquet")
+for symbol in ("BTC/USDT", "ETH/USDT"):
+    frame = repo.load_committed_ohlcv_chunked(exchange="binance", symbol=symbol, timeframe="1s")
+    print(symbol, frame.height, frame["datetime"].max())
+PY
+```
+
+롤아웃 게이트 메트릭(베이스라인/카나리):
+```bash
+uv run python scripts/ci/export_market_window_gate_metrics.py \
+  --input logs/live/market_window_metrics.ndjson \
+  --output reports/live_rollout/baseline_gate_metrics.json \
+  --window-hours 24 --require-flag false
+
+uv run python scripts/ci/export_market_window_gate_metrics.py \
+  --input logs/live/market_window_metrics.ndjson \
+  --output reports/live_rollout/canary_gate_metrics.json \
+  --window-hours 24 --require-flag true
+
+uv run python scripts/ci/check_market_window_rollout_gates.py \
+  --baseline reports/live_rollout/baseline_gate_metrics.json \
+  --canary reports/live_rollout/canary_gate_metrics.json \
+  --max-p95-payload-bytes 131072 \
+  --max-queue-lag-increase-pct 5 \
+  --max-fail-fast-incidents 0
+```
+
 **전략 백테스트:**
 ```bash
-uv run python run_backtest.py
+uv run python run_backtest.py --data-mode raw-first
 
 # DB 데이터만 사용
-uv run python run_backtest.py --data-source db --market-db-path data/market_parquet
+uv run python run_backtest.py \
+  --data-mode raw-first \
+  --data-source db \
+  --backtest-mode windowed \
+  --market-db-path data/market_parquet
 ```
 
 `LQ_POSTGRES_DSN`이 없으면 백테스트는 계속 실행되지만 PostgreSQL 감사(audit) 저장은 건너뜁니다.
 
 **워크포워드 최적화:**
 ```bash
-uv run python optimize.py
+uv run python optimize.py --data-mode raw-first
 
 # DB 우선, 부족하면 CSV fallback
-uv run python optimize.py --data-source auto --market-db-path data/market_parquet
+uv run python optimize.py \
+  --data-mode raw-first \
+  --data-source auto \
+  --market-db-path data/market_parquet
 ```
 
 **전략 팩토리 파이프라인 (후보 + 숏리스트):**
@@ -210,6 +268,8 @@ uv run python scripts/run_strategy_factory_pipeline.py \
 
 **아키텍처/린트 검증:**
 ```bash
+bash scripts/ci/architecture_gate_live_data.sh
+bash scripts/ci/architecture_gate_market_window_contract.sh
 uv run python scripts/check_architecture.py
 uv run ruff check .
 ```
@@ -267,6 +327,14 @@ uv run python scripts/run_strategy_factory_pipeline.py \
 - 단일 전략은 score/return/sharpe/trades 기준을 통과해야 포함
 - direct multi-asset 행은 기본 제외 (`--allow-multi-asset`으로 허용)
 - 성공한 단일-자산 전략 조합으로 `portfolio_sets`가 생성되고 각 멤버에 `portfolio_weight`가 부여됨
+
+스코어 설정 템플릿:
+- `configs/score_config.example.json` 사용
+- 공용 섹션:
+  - `candidate_research` → `scripts/run_candidate_research.py --score-config ...`
+  - `portfolio_optimization` → `scripts/run_portfolio_optimization.py --score-config ...`
+  - `strategy_shortlist` → `scripts/select_strategy_factory_shortlist.py --score-config ...`
+  - `futures_strategy_factory` → `scripts/futures_strategy_factory.py --score-config ...`
 
 **결과 시각화 (대시보드):**
 ```bash

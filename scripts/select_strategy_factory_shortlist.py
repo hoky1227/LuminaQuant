@@ -7,8 +7,31 @@ import glob
 import hashlib
 import json
 import math
+from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
+
+DEFAULT_SHORTLIST_SCORING_CONFIG: dict[str, dict[str, float]] = {
+    "candidate_score": {
+        "fallback_missing_score": -1_000_000_000.0,
+        "sharpe_weight": 0.35,
+        "return_weight": 45.0,
+        "drawdown_penalty": 20.0,
+        "trade_bonus_cap": 0.4,
+        "trade_bonus_per_trade": 0.03,
+        "require_pass_penalty": 100.0,
+    },
+    "portfolio_weights": {
+        "missing_selection_score": -1_000_000_000.0,
+        "weight_exp_clamp_floor": -60.0,
+        "mdd_risk_penalty_coeff": 2.5,
+        "weight_cap_floor": 0.05,
+    },
+    "single_asset_sets": {
+        "missing_selection_score": -1_000_000_000.0,
+        "weight_exp_clamp_floor": -60.0,
+    },
+}
 
 
 def _safe_float(value, default: float = 0.0) -> float:
@@ -16,6 +39,38 @@ def _safe_float(value, default: float = 0.0) -> float:
         return float(value)
     except Exception:
         return float(default)
+
+
+def _load_score_config(path: Path) -> dict:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise ValueError(f"score config file not found: {path}") from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"invalid score config JSON ({path}): {exc}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"score config must be a JSON object: {path}")
+    return dict(payload)
+
+
+def _resolve_shortlist_score_config(overrides: dict | None) -> dict[str, dict[str, float]]:
+    resolved = deepcopy(DEFAULT_SHORTLIST_SCORING_CONFIG)
+    if not isinstance(overrides, dict):
+        return resolved
+
+    source = overrides
+    nested = source.get("strategy_shortlist")
+    if isinstance(nested, dict):
+        source = nested
+
+    for section, defaults in resolved.items():
+        section_overrides = source.get(section)
+        if not isinstance(section_overrides, dict):
+            continue
+        for key in defaults:
+            if key in section_overrides:
+                defaults[key] = _safe_float(section_overrides[key], defaults[key])
+    return resolved
 
 
 def _candidate_identity(row: dict) -> str:
@@ -29,10 +84,22 @@ def _candidate_identity(row: dict) -> str:
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
-def _candidate_score(row: dict, *, mode: str, require_pass: bool) -> float:
+def _candidate_score(
+    row: dict,
+    *,
+    mode: str,
+    require_pass: bool,
+    score_config: dict[str, dict[str, float]] | None = None,
+) -> float:
+    cfg = score_config or DEFAULT_SHORTLIST_SCORING_CONFIG
+    candidate_score_cfg = dict(cfg["candidate_score"])
+    fallback_missing_score = float(candidate_score_cfg["fallback_missing_score"])
     hurdle = (row.get("hurdle_fields") or {}).get(mode) or {}
     pass_flag = bool(hurdle.get("pass", False))
-    base_score = _safe_float(hurdle.get("score"), _safe_float(row.get("selection_score"), -1e9))
+    base_score = _safe_float(
+        hurdle.get("score"),
+        _safe_float(row.get("selection_score"), fallback_missing_score),
+    )
 
     metrics = row.get(mode) if isinstance(row.get(mode), dict) else {}
     ret = _safe_float(metrics.get("return"), 0.0)
@@ -40,12 +107,20 @@ def _candidate_score(row: dict, *, mode: str, require_pass: bool) -> float:
     drawdown = _safe_float(metrics.get("mdd"), 0.0)
     trades = _safe_float(metrics.get("trades"), 0.0)
 
-    composite = base_score + (0.35 * sharpe) + (45.0 * ret) - (20.0 * drawdown)
+    composite = (
+        base_score
+        + (float(candidate_score_cfg["sharpe_weight"]) * sharpe)
+        + (float(candidate_score_cfg["return_weight"]) * ret)
+        - (float(candidate_score_cfg["drawdown_penalty"]) * drawdown)
+    )
     if trades > 0.0:
-        composite += min(0.4, 0.03 * trades)
+        composite += min(
+            float(candidate_score_cfg["trade_bonus_cap"]),
+            float(candidate_score_cfg["trade_bonus_per_trade"]) * trades,
+        )
 
     if require_pass and not pass_flag:
-        composite -= 100.0
+        composite -= float(candidate_score_cfg["require_pass_penalty"])
     return composite
 
 
@@ -86,10 +161,16 @@ def _select_diversified(
     single_min_trades: int | None = 20,
     drop_single_without_metrics: bool = False,
     allow_multi_asset: bool = False,
+    score_config: dict[str, dict[str, float]] | None = None,
 ) -> list[dict]:
     ranked = sorted(
         rows,
-        key=lambda row: _candidate_score(row, mode=mode, require_pass=require_pass),
+        key=lambda row: _candidate_score(
+            row,
+            mode=mode,
+            require_pass=require_pass,
+            score_config=score_config,
+        ),
         reverse=True,
     )
 
@@ -120,7 +201,12 @@ def _select_diversified(
         if trades < int(min_trades):
             continue
 
-        selection_score = _candidate_score(row, mode=mode, require_pass=require_pass)
+        selection_score = _candidate_score(
+            row,
+            mode=mode,
+            require_pass=require_pass,
+            score_config=score_config,
+        )
         if is_single:
             if bool(drop_single_without_metrics) and not metrics:
                 continue
@@ -156,20 +242,33 @@ def _select_diversified(
     return selected
 
 
-def _apply_portfolio_weights(rows: list[dict], *, max_weight: float = 0.35, temperature: float = 0.35) -> list[dict]:
+def _apply_portfolio_weights(
+    rows: list[dict],
+    *,
+    max_weight: float = 0.35,
+    temperature: float = 0.35,
+    score_config: dict[str, dict[str, float]] | None = None,
+) -> list[dict]:
     if not rows:
         return rows
 
-    cap = min(1.0, max(0.05, float(max_weight)))
+    cfg = score_config or DEFAULT_SHORTLIST_SCORING_CONFIG
+    weight_cfg = dict(cfg["portfolio_weights"])
+    missing_selection_score = float(weight_cfg["missing_selection_score"])
+    weight_exp_clamp_floor = float(weight_cfg["weight_exp_clamp_floor"])
+    mdd_risk_penalty_coeff = float(weight_cfg["mdd_risk_penalty_coeff"])
+    weight_cap_floor = float(weight_cfg["weight_cap_floor"])
+
+    cap = min(1.0, max(weight_cap_floor, float(max_weight)))
     temp = max(0.05, float(temperature))
-    best = max(_safe_float(row.get("selection_score"), -1e9) for row in rows)
+    best = max(_safe_float(row.get("selection_score"), missing_selection_score) for row in rows)
     raw: list[float] = []
     for row in rows:
-        score = _safe_float(row.get("selection_score"), -1e9)
+        score = _safe_float(row.get("selection_score"), missing_selection_score)
         scaled = (score - best) / temp
-        base = math.exp(max(-60.0, min(0.0, scaled)))
+        base = math.exp(max(weight_exp_clamp_floor, min(0.0, scaled)))
         mdd = abs(_safe_float(((row.get("oos") or {}) if isinstance(row.get("oos"), dict) else {}).get("mdd"), 0.0))
-        risk_penalty = 1.0 / (1.0 + 2.5 * mdd)
+        risk_penalty = 1.0 / (1.0 + (mdd_risk_penalty_coeff * mdd))
         raw.append(base * risk_penalty)
 
     total = float(sum(raw))
@@ -195,7 +294,18 @@ def _apply_portfolio_weights(rows: list[dict], *, max_weight: float = 0.35, temp
     return rows
 
 
-def _build_single_asset_sets(rows: list[dict], *, max_per_asset: int = 2, max_sets: int = 16) -> list[dict]:
+def _build_single_asset_sets(
+    rows: list[dict],
+    *,
+    max_per_asset: int = 2,
+    max_sets: int = 16,
+    score_config: dict[str, dict[str, float]] | None = None,
+) -> list[dict]:
+    cfg = score_config or DEFAULT_SHORTLIST_SCORING_CONFIG
+    set_weight_cfg = dict(cfg["single_asset_sets"])
+    missing_selection_score = float(set_weight_cfg["missing_selection_score"])
+    weight_exp_clamp_floor = float(set_weight_cfg["weight_exp_clamp_floor"])
+
     by_symbol: dict[str, list[dict]] = {}
     for row in rows:
         symbols = [str(symbol).strip().upper() for symbol in list(row.get("symbols") or [])]
@@ -207,7 +317,10 @@ def _build_single_asset_sets(rows: list[dict], *, max_per_asset: int = 2, max_se
         return []
 
     for symbol in by_symbol:
-        by_symbol[symbol].sort(key=lambda item: _safe_float(item.get("selection_score"), -1e9), reverse=True)
+        by_symbol[symbol].sort(
+            key=lambda item: _safe_float(item.get("selection_score"), missing_selection_score),
+            reverse=True,
+        )
         by_symbol[symbol] = by_symbol[symbol][: max(1, int(max_per_asset))]
 
     symbols_sorted = sorted(by_symbol)
@@ -216,9 +329,9 @@ def _build_single_asset_sets(rows: list[dict], *, max_per_asset: int = 2, max_se
         return []
 
     def _weight(items: list[dict]) -> list[dict]:
-        scores = [_safe_float(item.get("selection_score"), -1e9) for item in items]
+        scores = [_safe_float(item.get("selection_score"), missing_selection_score) for item in items]
         best = max(scores)
-        raw = [math.exp(max(-60.0, min(0.0, score - best))) for score in scores]
+        raw = [math.exp(max(weight_exp_clamp_floor, min(0.0, score - best))) for score in scores]
         total = float(sum(raw))
         if total <= 0.0:
             eq = 1.0 / float(len(items))
@@ -287,6 +400,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default="reports/oos_guarded_multistrategy_oos_*.json",
         help="Glob pattern for input report files.",
     )
+    parser.add_argument("--score-config", default="", help="Optional shortlist scoring config JSON path.")
     parser.add_argument("--mode", choices=["train", "val", "oos"], default="oos")
     parser.add_argument("--max-selected", type=int, default=32)
     parser.add_argument("--max-per-strategy", type=int, default=8)
@@ -312,6 +426,14 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = _build_parser().parse_args()
+    score_config_payload: dict | None = None
+    if str(args.score_config).strip():
+        try:
+            score_config_payload = _load_score_config(Path(str(args.score_config)).resolve())
+        except ValueError as exc:
+            raise SystemExit(f"[SHORTLIST] {exc}")
+    resolved_score_config = _resolve_shortlist_score_config(score_config_payload)
+
     paths = sorted(glob.glob(str(args.report_glob)))
     if not paths:
         raise RuntimeError(f"No report files matched: {args.report_glob}")
@@ -332,17 +454,20 @@ def main() -> None:
         single_min_trades=int(args.single_min_trades),
         drop_single_without_metrics=bool(args.drop_single_without_metrics),
         allow_multi_asset=bool(args.allow_multi_asset),
+        score_config=resolved_score_config,
     )
     if not bool(args.disable_weights):
         selected = _apply_portfolio_weights(
             selected,
             max_weight=float(args.max_weight),
             temperature=float(args.weight_temperature),
+            score_config=resolved_score_config,
         )
     portfolio_sets = _build_single_asset_sets(
         selected,
         max_per_asset=max(1, int(args.set_max_per_asset)),
         max_sets=max(1, int(args.set_max_sets)),
+        score_config=resolved_score_config,
     )
 
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
@@ -370,6 +495,10 @@ def main() -> None:
         "max_weight": float(args.max_weight),
         "portfolio_set_count": len(portfolio_sets),
         "portfolio_sets": portfolio_sets,
+        "scoring": {
+            **resolved_score_config,
+            "source": str(Path(str(args.score_config)).resolve()) if str(args.score_config).strip() else "",
+        },
         "selected_summary": _summarize(selected),
         "selected": selected,
     }

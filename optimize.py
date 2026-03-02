@@ -15,6 +15,13 @@ import polars as pl
 # Engine Imports
 from lumina_quant.backtesting.backtest import Backtest
 from lumina_quant.backtesting.chunked_runner import run_backtest_chunked
+from lumina_quant.backtesting.cli_contract import (
+    RawFirstDataMissingError,
+    RawFirstManifestInvalidError,
+    RawFirstStaleWindowError,
+    raw_first_exit_code,
+    resolve_data_contract,
+)
 from lumina_quant.backtesting.data import HistoricCSVDataHandler
 from lumina_quant.backtesting.data_windowed_parquet import HistoricParquetWindowedDataHandler
 from lumina_quant.backtesting.execution_sim import SimulatedExecutionHandler
@@ -23,6 +30,7 @@ from lumina_quant.compute.ohlcv_loader import OHLCVFrameLoader
 from lumina_quant.config import BacktestConfig, BaseConfig, LiveConfig, OptimizationConfig
 from lumina_quant.market_data import (
     load_data_dict_from_db,
+    load_data_dict_from_parquet,
     resolve_symbol_csv_path,
     timeframe_to_milliseconds,
 )
@@ -32,7 +40,6 @@ from lumina_quant.optimization.walkers import build_walk_forward_splits
 from lumina_quant.parquet_market_data import (
     ParquetMarketDataRepository,
     is_parquet_market_data_store,
-    load_data_dict_from_parquet,
 )
 from lumina_quant.strategy import Strategy
 from lumina_quant.utils.audit_store import AuditStore
@@ -144,6 +151,9 @@ MARKET_DB_EXCHANGE = BaseConfig.MARKET_DATA_EXCHANGE
 MARKET_DB_BACKEND = BaseConfig.STORAGE_BACKEND
 BASE_TIMEFRAME = str(os.getenv("LQ_BASE_TIMEFRAME", "1s") or "1s").strip().lower()
 STRATEGY_TIMEFRAME = str(BaseConfig.TIMEFRAME)
+DATA_MODE = str(os.getenv("LQ_DATA_MODE", "raw-first") or "raw-first").strip().lower()
+if DATA_MODE not in {"raw-first", "legacy"}:
+    DATA_MODE = "raw-first"
 
 # 4. Optimization Settings
 _RESOLVED_OPTUNA_CONFIG = strategy_registry.resolve_optuna_config(
@@ -194,6 +204,7 @@ def _enforce_1s_base_timeframe(value: str) -> str:
 DATA_DICT = {}
 PARQUET_MODE = False
 ACTIVE_DATA_SOURCE = "auto"
+ACTIVE_DATA_MODE = "raw-first"
 ACTIVE_MARKET_DB_PATH = str(MARKET_DB_PATH)
 ACTIVE_MARKET_EXCHANGE = str(MARKET_DB_EXCHANGE)
 ACTIVE_BASE_TIMEFRAME = str(BASE_TIMEFRAME)
@@ -349,6 +360,8 @@ def load_all_data(
     csv_dir,
     symbol_list,
     *,
+    data_mode="raw-first",
+    backtest_mode="windowed",
     data_source="auto",
     market_db_path=None,
     market_exchange="binance",
@@ -360,13 +373,24 @@ def load_all_data(
     Load all data into memory once.
     Priority: DB (when selected/available) then CSV fallback.
     """
-    source = str(data_source).strip().lower()
+    contract = resolve_data_contract(
+        data_mode=str(data_mode),
+        backtest_mode=str(backtest_mode),
+        data_source=str(data_source),
+        default_backtest_mode="windowed",
+        default_data_source="auto",
+    )
+    source = str(contract.data_source).strip().lower()
     data = {}
     csv_loader = OHLCVFrameLoader()
     use_parquet = bool(market_db_path) and is_parquet_market_data_store(
         str(market_db_path),
         backend=str(MARKET_DB_BACKEND),
     )
+    if contract.data_mode == "raw-first" and not use_parquet:
+        raise RawFirstDataMissingError(
+            "Raw-first optimization requires parquet manifest store path."
+        )
 
     if source in {"db", "auto"} and market_db_path:
         if use_parquet:
@@ -379,6 +403,7 @@ def load_all_data(
                 end_date=end_date,
                 chunk_days=BT_CHUNK_DAYS,
                 warmup_bars=BT_CHUNK_WARMUP_BARS,
+                data_mode=str(contract.data_mode),
             )
         else:
             db_data = load_data_dict_from_db(
@@ -399,14 +424,28 @@ def load_all_data(
                 f"Loaded {len(data)}/{len(symbol_list)} symbols from DB "
                 f"{market_db_path} (exchange={market_exchange}, timeframe={timeframe})."
             )
+            if contract.data_mode == "raw-first":
+                missing = [symbol for symbol in symbol_list if symbol not in data]
+                if missing:
+                    raise RawFirstDataMissingError(
+                        "Raw-first committed data missing for symbols: " + ", ".join(missing)
+                    )
         elif source == "db":
-            print(
+            message = (
                 f"Warning: no OHLCV rows found in DB {market_db_path} for "
                 f"exchange={market_exchange}, timeframe={timeframe}."
             )
+            if contract.data_mode == "raw-first":
+                raise RawFirstDataMissingError(message)
+            print(message)
 
     if source == "db":
         return data
+
+    if contract.data_mode == "raw-first":
+        raise RawFirstDataMissingError(
+            "Raw-first optimization forbids CSV fallback. Use committed parquet manifest data."
+        )
 
     print(f"Loading CSV fallback for missing symbols from {csv_dir}...")
     for s in symbol_list:
@@ -444,11 +483,37 @@ def _data_datetime_range(data_dict):
     return max(starts), min(ends)
 
 
-def _data_datetime_range_from_repo(repo: ParquetMarketDataRepository, exchange: str, symbol_list):
+def _data_datetime_range_from_repo(
+    repo: ParquetMarketDataRepository,
+    exchange: str,
+    symbol_list,
+    *,
+    data_mode: str = "legacy",
+    timeframe: str = "1s",
+):
     starts = []
     ends = []
+    mode = str(data_mode or "legacy").strip().lower()
     for symbol in symbol_list:
-        start_dt, end_dt = repo.get_symbol_time_range(exchange=exchange, symbol=symbol)
+        if mode == "raw-first":
+            try:
+                frame = repo.load_committed_ohlcv_chunked(
+                    exchange=exchange,
+                    symbol=symbol,
+                    timeframe=str(timeframe),
+                    start_date=None,
+                    end_date=None,
+                    chunk_days=max(1, int(BT_CHUNK_DAYS)),
+                    warmup_bars=0,
+                )
+            except Exception:
+                frame = None
+            if frame is None or frame.is_empty():
+                continue
+            start_dt = frame["datetime"].min()
+            end_dt = frame["datetime"].max()
+        else:
+            start_dt, end_dt = repo.get_symbol_time_range(exchange=exchange, symbol=symbol)
         if start_dt is None or end_dt is None:
             continue
         starts.append(start_dt)
@@ -627,6 +692,7 @@ def _execute_backtest(
                     end_date=chunk_end,
                     chunk_days=max(1, int(BT_CHUNK_DAYS)),
                     warmup_bars=max(0, int(BT_CHUNK_WARMUP_BARS)),
+                    data_mode=str(ACTIVE_DATA_MODE),
                 )
 
             backtest = run_backtest_chunked(
@@ -692,6 +758,8 @@ def _execute_backtest(
             "num_trades": int(getattr(backtest.portfolio, "trade_count", 0)),
             "no_data": no_data,
         }
+    except (RawFirstDataMissingError, RawFirstManifestInvalidError, RawFirstStaleWindowError):
+        raise
     except Exception as e:
         # print(f"Backtest Error: {e}")
         return {"params": resolved_params, "error": str(e), "sharpe": -999.0}
@@ -727,6 +795,7 @@ def _run_backtests_parallel(pool_args, worker_count):
         "data_dict": DATA_DICT,
         "parquet_mode": bool(PARQUET_MODE),
         "data_source": str(ACTIVE_DATA_SOURCE),
+        "data_mode": str(ACTIVE_DATA_MODE),
         "market_db_path": str(ACTIVE_MARKET_DB_PATH),
         "market_exchange": str(ACTIVE_MARKET_EXCHANGE),
         "base_timeframe": str(ACTIVE_BASE_TIMEFRAME),
@@ -754,11 +823,12 @@ def _build_pool_args(strategy_cls, params_list, csv_dir, symbol_list, start_date
 
 
 def pool_initializer(context):
-    global DATA_DICT, PARQUET_MODE, ACTIVE_DATA_SOURCE, ACTIVE_MARKET_DB_PATH
+    global DATA_DICT, PARQUET_MODE, ACTIVE_DATA_SOURCE, ACTIVE_DATA_MODE, ACTIVE_MARKET_DB_PATH
     global ACTIVE_MARKET_EXCHANGE, ACTIVE_BASE_TIMEFRAME, PARQUET_REPO
     DATA_DICT = dict(context.get("data_dict", {}))
     PARQUET_MODE = bool(context.get("parquet_mode", False))
     ACTIVE_DATA_SOURCE = str(context.get("data_source", ACTIVE_DATA_SOURCE))
+    ACTIVE_DATA_MODE = str(context.get("data_mode", ACTIVE_DATA_MODE))
     ACTIVE_MARKET_DB_PATH = str(context.get("market_db_path", ACTIVE_MARKET_DB_PATH))
     ACTIVE_MARKET_EXCHANGE = str(context.get("market_exchange", ACTIVE_MARKET_EXCHANGE))
     ACTIVE_BASE_TIMEFRAME = str(context.get("base_timeframe", ACTIVE_BASE_TIMEFRAME))
@@ -1099,6 +1169,12 @@ if __name__ == "__main__":
         help="Write winning params into best_optimized_parameters/<strategy>/best_params.json.",
     )
     parser.add_argument(
+        "--data-mode",
+        choices=["raw-first", "legacy"],
+        default=DATA_MODE,
+        help="Data contract mode. raw-first enforces committed manifest parquet input.",
+    )
+    parser.add_argument(
         "--data-source",
         choices=["auto", "csv", "db"],
         default="auto",
@@ -1146,6 +1222,16 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     args.base_timeframe = _enforce_1s_base_timeframe(str(args.base_timeframe))
+    try:
+        contract = resolve_data_contract(
+            data_mode=str(args.data_mode),
+            backtest_mode="windowed",
+            data_source=str(args.data_source),
+            default_backtest_mode="windowed",
+            default_data_source="auto",
+        )
+    except (RawFirstDataMissingError, RawFirstManifestInvalidError, RawFirstStaleWindowError) as exc:
+        raise SystemExit(raw_first_exit_code(exc)) from exc
 
     run_id = str(args.run_id or "").strip() or str(uuid.uuid4())
     db_path = BaseConfig.POSTGRES_DSN
@@ -1158,7 +1244,8 @@ if __name__ == "__main__":
             "folds": int(args.folds),
             "n_trials": int(args.n_trials),
             "max_workers": int(args.max_workers),
-            "data_source": str(args.data_source),
+            "data_source": str(contract.data_source),
+            "data_mode": str(contract.data_mode),
             "market_db_path": str(args.market_db_path),
             "market_exchange": str(args.market_exchange),
             "base_timeframe": str(args.base_timeframe),
@@ -1188,14 +1275,15 @@ if __name__ == "__main__":
             raise ValueError("--validation-days must be >= 0.")
 
         _auto_collect_db_if_enabled(
-            data_source=args.data_source,
+            data_source=contract.data_source,
             market_db_path=args.market_db_path,
             market_exchange=args.market_exchange,
             base_timeframe=str(args.base_timeframe),
             auto_collect_db=(not bool(args.no_auto_collect_db) and bool(AUTO_COLLECT_DB)),
         )
 
-        ACTIVE_DATA_SOURCE = str(args.data_source)
+        ACTIVE_DATA_SOURCE = str(contract.data_source)
+        ACTIVE_DATA_MODE = str(contract.data_mode)
         ACTIVE_MARKET_DB_PATH = str(args.market_db_path)
         ACTIVE_MARKET_EXCHANGE = str(args.market_exchange)
         ACTIVE_BASE_TIMEFRAME = str(args.base_timeframe)
@@ -1215,13 +1303,17 @@ if __name__ == "__main__":
                 PARQUET_REPO,
                 str(args.market_exchange),
                 SYMBOL_LIST,
+                data_mode=str(contract.data_mode),
+                timeframe=str(args.base_timeframe),
             )
         else:
             PARQUET_REPO = None
             DATA_DICT = load_all_data(
                 CSV_DIR,
                 SYMBOL_LIST,
-                data_source=args.data_source,
+                data_mode=str(contract.data_mode),
+                backtest_mode="windowed",
+                data_source=contract.data_source,
                 market_db_path=args.market_db_path,
                 market_exchange=args.market_exchange,
                 timeframe=str(args.base_timeframe),
@@ -1439,6 +1531,11 @@ if __name__ == "__main__":
         final_status = "COMPLETED" if code == 0 else "FAILED"
         final_metadata = {"exit_code": code}
         raise
+    except (RawFirstDataMissingError, RawFirstManifestInvalidError, RawFirstStaleWindowError) as exc:
+        code = int(raw_first_exit_code(exc) or 1)
+        final_status = "FAILED"
+        final_metadata = {"error": str(exc), "exit_code": int(code)}
+        raise SystemExit(code) from exc
     except Exception as exc:
         final_status = "FAILED"
         final_metadata = {"error": str(exc)}

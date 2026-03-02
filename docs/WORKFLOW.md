@@ -151,3 +151,39 @@ uv run python scripts/generate_promotion_gate_report.py \
   --strategy RsiStrategy \
   > reports/promotion_gate_rsi_strategy.json
 ```
+
+## 7. Raw-First Data Pipeline Workflow
+
+For live/backtest contract alignment, run market data in this order:
+
+```bash
+uv run python scripts/collect_binance_aggtrades_raw.py --symbols BTC/USDT,ETH/USDT --periodic --poll-seconds 2
+uv run python scripts/materialize_market_windows.py --symbols BTC/USDT,ETH/USDT --timeframes 1s,1m,5m,15m,30m,1h,4h,1d --periodic --poll-seconds 5
+uv run python run_backtest.py --data-mode raw-first --data-source db --backtest-mode windowed
+```
+
+Before merging changes that touch live data files, run:
+
+```bash
+bash scripts/ci/architecture_gate_live_data.sh
+bash scripts/ci/architecture_gate_market_window_contract.sh
+uv run pytest -q \
+  tests/test_periodic_loop_config_contract.py \
+  tests/test_collector_periodic_loop_runtime.py \
+  tests/test_materializer_periodic_loop_timeframe_resolution.py \
+  tests/test_live_fail_fast_missing_committed_data.py \
+  tests/test_live_no_empty_window_degradation.py \
+  tests/test_market_window_schema_parity.py \
+  tests/test_market_window_emission_parity_live_vs_backtest.py \
+  tests/test_market_window_payload_flag.py \
+  tests/test_market_window_payload_rollout_gates.py \
+  tests/test_market_window_parity_flag_validation.py
+```
+
+Rollout gate decision workflow (parity_v2):
+
+```bash
+uv run python scripts/ci/export_market_window_gate_metrics.py --input logs/live/market_window_metrics.ndjson --output reports/live_rollout/baseline_gate_metrics.json --window-hours 24 --require-flag false
+uv run python scripts/ci/export_market_window_gate_metrics.py --input logs/live/market_window_metrics.ndjson --output reports/live_rollout/canary_gate_metrics.json --window-hours 24 --require-flag true
+uv run python scripts/ci/check_market_window_rollout_gates.py --baseline reports/live_rollout/baseline_gate_metrics.json --canary reports/live_rollout/canary_gate_metrics.json --max-p95-payload-bytes 131072 --max-queue-lag-increase-pct 5 --max-fail-fast-incidents 0
+```

@@ -42,6 +42,10 @@ class MarketWindowEvent(Event):
     time: Any
     window_seconds: int
     bars_1s: dict[str, tuple[Any, ...]]
+    event_time_watermark_ms: int | None = None
+    commit_id: str | None = None
+    lag_ms: int | None = None
+    is_stale: bool = False
     timestamp_ns: int | None = None
     sequence: int | None = None
     type: str = "MARKET_WINDOW"

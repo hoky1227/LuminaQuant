@@ -16,6 +16,7 @@
 uv run python scripts/select_strategy_factory_shortlist.py \
   --report-glob "reports/oos_guarded_multistrategy_oos_*.json" \
   --mode oos \
+  --score-config configs/score_config.example.json \
   --single-min-score 0.0 \
   --single-min-return 0.0 \
   --single-min-sharpe 0.7 \
@@ -28,3 +29,22 @@ uv run python scripts/select_strategy_factory_shortlist.py \
 옵션으로 `--allow-multi-asset`을 추가하면 multi-asset 전략도 shortlist에 포함할 수 있습니다.
 `--disable-weights`를 주면 `portfolio_weight` 부여를 끌 수 있고,
 `--set-max-per-asset`, `--set-max-sets`로 `portfolio_sets` 구성을 조절할 수 있습니다.
+
+팩토리 랭킹 단계도 동일 템플릿을 사용할 수 있습니다:
+
+```bash
+uv run python scripts/futures_strategy_factory.py \
+  --mode oos \
+  --report-glob "reports/strategy_team_research_oos_*.json" \
+  --score-config configs/score_config.example.json
+```
+
+## 스코어 설정 템플릿
+
+`configs/score_config.example.json`을 템플릿으로 사용하세요.
+
+- `strategy_shortlist` 섹션 → `scripts/select_strategy_factory_shortlist.py`
+- `futures_strategy_factory` 섹션 → `scripts/futures_strategy_factory.py`
+- 같은 파일을 아래 스크립트에도 재사용할 수 있습니다.
+  - `candidate_research` (`scripts/run_candidate_research.py`)
+  - `portfolio_optimization` (`scripts/run_portfolio_optimization.py`)

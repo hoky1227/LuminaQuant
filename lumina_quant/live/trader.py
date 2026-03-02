@@ -3,9 +3,11 @@ import os
 import queue
 import time
 
+from lumina_quant.backtesting.cli_contract import RawFirstDataMissingError
 from lumina_quant.config import LiveConfig
 from lumina_quant.core.engine import TradingEngine
 from lumina_quant.core.events import OrderEvent
+from lumina_quant.core.market_window_contract import MarketWindowContractError
 from lumina_quant.core.protocols import ExchangeInterface
 from lumina_quant.exchanges import get_exchange
 from lumina_quant.risk_manager import RiskManager
@@ -15,6 +17,10 @@ from lumina_quant.utils.audit_store import AuditStore
 from lumina_quant.utils.logging_utils import setup_logging
 from lumina_quant.utils.notification import NotificationManager
 from lumina_quant.utils.persistence import StateManager
+
+
+class LiveDataFatalError(RuntimeError):
+    """Raised when live data contract breach requires deterministic process exit."""
 
 
 class LiveTrader(TradingEngine):
@@ -122,6 +128,33 @@ class LiveTrader(TradingEngine):
                 self.strategy.decision_cadence_seconds = configured_cadence
         except Exception:
             pass
+        self.materialized_staleness_threshold_seconds = max(
+            1,
+            int(
+                getattr(
+                    self.config,
+                    "MATERIALIZED_STALENESS_THRESHOLD_SECONDS",
+                    45,
+                )
+                or 45
+            ),
+        )
+        self.materialized_staleness_alert_cooldown_seconds = max(
+            1,
+            int(
+                getattr(
+                    self.config,
+                    "MATERIALIZED_STALENESS_ALERT_COOLDOWN_SECONDS",
+                    60,
+                )
+                or 60
+            ),
+        )
+        self._materialized_stale_block_active = False
+        self._materialized_fresh_streak = 0
+        self._materialized_last_alert_monotonic = 0.0
+        self._hard_halt_active = False
+        self._hard_halt_reason = ""
 
         # Initialize Base Engine
         super().__init__(
@@ -638,6 +671,93 @@ class LiveTrader(TradingEngine):
         if self.config.STORAGE_EXPORT_CSV:
             self.portfolio.output_trade_log(os.path.join("data", "live_trades.csv"))
 
+    def _resolve_market_window_staleness(self, event) -> tuple[bool, int]:
+        threshold_ms = int(self.materialized_staleness_threshold_seconds) * 1000
+        lag_ms = int(getattr(event, "lag_ms", 0) or 0)
+        watermark_ms = getattr(event, "event_time_watermark_ms", None)
+        if lag_ms <= 0 and watermark_ms is not None:
+            try:
+                lag_ms = max(0, int(time.time() * 1000) - int(watermark_ms))
+            except Exception:
+                lag_ms = 0
+        stale_flag = bool(getattr(event, "is_stale", False))
+        return (stale_flag or lag_ms > threshold_ms), int(lag_ms)
+
+    def _handle_market_window_staleness(self, event) -> bool:
+        is_stale, lag_ms = self._resolve_market_window_staleness(event)
+        commit_id = str(getattr(event, "commit_id", "") or "")
+        details = {
+            "symbol": ",".join(sorted((event.bars_1s or {}).keys())),
+            "timeframe": "1s",
+            "lag_ms": int(lag_ms),
+            "commit_id": commit_id,
+        }
+        if is_stale:
+            self._materialized_stale_block_active = True
+            self._materialized_fresh_streak = 0
+            self.logger.error("LIVE_DATA_STALE %s", details)
+            now_mono = time.monotonic()
+            if (
+                now_mono - self._materialized_last_alert_monotonic
+                >= self.materialized_staleness_alert_cooldown_seconds
+            ):
+                self._materialized_last_alert_monotonic = now_mono
+                self.notifier.send_message(
+                    "⛔ **Live data stale** "
+                    f"(lag_ms={lag_ms}, commit_id={commit_id or 'n/a'}). "
+                    "Decisions and new orders are blocked until feed recovers."
+                )
+            return True
+
+        if not self._materialized_stale_block_active:
+            return False
+
+        self._materialized_fresh_streak += 1
+        if int(self._materialized_fresh_streak) < 2:
+            return True
+
+        self._materialized_stale_block_active = False
+        self._materialized_fresh_streak = 0
+        self.logger.info("LIVE_DATA_RECOVERED %s", details)
+        self.notifier.send_message("✅ **Live data recovered**. Trading resumed after two fresh windows.")
+        return False
+
+    def _consume_data_fatal(self):
+        consume = getattr(self.data_handler, "consume_fatal_error", None)
+        if not callable(consume):
+            return None
+        return consume()
+
+    def _trigger_hard_halt(self, *, reason: str, error: Exception) -> None:
+        if self._hard_halt_active:
+            return
+        self._hard_halt_active = True
+        self._hard_halt_reason = str(reason)
+        self.portfolio.trading_frozen = True
+        details = {
+            "reason": str(reason),
+            "error_type": error.__class__.__name__,
+            "error": str(error),
+        }
+        self.logger.critical("LIVE_DATA_FAIL_FAST %s", details)
+        self.audit_store.log_risk_event(
+            self.run_id,
+            reason="LIVE_DATA_FAIL_FAST",
+            details=details,
+        )
+        self.notifier.send_message(
+            "🛑 **Live data fail-fast triggered**. "
+            f"reason={reason}. Strategy/order paths are halted until restart."
+        )
+
+    def _ordered_shutdown(self) -> None:
+        self.data_handler.continue_backtest = False
+        if hasattr(self.data_handler, "ws_running"):
+            self.data_handler.ws_running = False
+        shutdown = getattr(self.data_handler, "shutdown", None)
+        if callable(shutdown):
+            shutdown(join_timeout=5.0)
+
     def run(self):
         """Main Live Trading Loop."""
         self.logger.info(f"Starting Live Trading on {self.symbol_list}...")
@@ -645,15 +765,26 @@ class LiveTrader(TradingEngine):
 
         while True:
             try:
+                fatal_exc = self._consume_data_fatal()
+                if fatal_exc is not None:
+                    reason = "live_data_contract_breach"
+                    if isinstance(fatal_exc, RawFirstDataMissingError):
+                        reason = "missing_committed_data"
+                    elif isinstance(fatal_exc, MarketWindowContractError):
+                        reason = "market_window_contract_error"
+                    self._trigger_hard_halt(reason=reason, error=fatal_exc)
+                    self._save_state()
+                    self._ordered_shutdown()
+                    self._close_audit_store(status="FAILED")
+                    raise LiveDataFatalError(str(fatal_exc)) from fatal_exc
+
                 if self._is_stop_requested():
                     self.logger.warning("Stop file detected. Shutting down live trader gracefully.")
                     self.notifier.send_message(
                         "⏹️ **Stop Requested** via control file. Stopping trader."
                     )
                     self._save_state()
-                    self.data_handler.continue_backtest = False
-                    if hasattr(self.data_handler, "ws_running"):
-                        self.data_handler.ws_running = False
+                    self._ordered_shutdown()
                     self._close_audit_store(status="STOPPED")
                     break
 
@@ -675,11 +806,36 @@ class LiveTrader(TradingEngine):
                 # simpler: just log here then call process.
 
                 if event is not None:
+                    if event.type == "MARKET_WINDOW" and self._handle_market_window_staleness(event):
+                        continue
+                    if self._hard_halt_active and event.type in {"SIGNAL", "ORDER"}:
+                        self.logger.error(
+                            "EVENT_BLOCKED_HARD_HALT type=%s reason=%s",
+                            event.type,
+                            self._hard_halt_reason,
+                        )
+                        continue
                     if event.type == "MARKET":
                         self.logger.debug(f"Market Event: {event.symbol}")
                     elif event.type == "SIGNAL":
                         self.logger.info(f"Signal Event: {event.signal_type}")
                     if event.type == "ORDER":
+                        if self._materialized_stale_block_active:
+                            self.logger.error(
+                                "ORDER_BLOCKED_STALE_FEED symbol=%s direction=%s",
+                                event.symbol,
+                                event.direction,
+                            )
+                            self.audit_store.log_risk_event(
+                                self.run_id,
+                                reason="ORDER_BLOCKED_STALE_WINDOW",
+                                details={
+                                    "symbol": event.symbol,
+                                    "direction": event.direction,
+                                    "quantity": event.quantity,
+                                },
+                            )
+                            continue
                         self.logger.info(f"Order Event: {event.direction}")
                         # RISK CHECK
                         current_price = self.data_handler.get_latest_bar_value(
@@ -718,11 +874,11 @@ class LiveTrader(TradingEngine):
             except KeyboardInterrupt:
                 self.logger.info("Stopping Live Trader...")
                 self._save_state()  # Save on exit
-                self.data_handler.continue_backtest = False
-                if hasattr(self.data_handler, "ws_running"):
-                    self.data_handler.ws_running = False
+                self._ordered_shutdown()
                 self._close_audit_store(status="STOPPED")
                 break
+            except LiveDataFatalError:
+                raise
             except Exception as e:
                 self.logger.error(f"Error in main loop: {e}")
                 self._save_state()  # Save on crash attempt
@@ -733,4 +889,4 @@ class LiveTrader(TradingEngine):
     def __del__(self):
         self._close_audit_store(status="STOPPED")
 
-__all__ = ["LiveTrader"]
+__all__ = ["LiveDataFatalError", "LiveTrader"]

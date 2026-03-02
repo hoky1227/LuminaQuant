@@ -1,11 +1,13 @@
 import argparse
 import os
 
+from lumina_quant.backtesting.cli_contract import RawFirstDataMissingError
 from lumina_quant.backtesting.portfolio_backtest import Portfolio
 from lumina_quant.config import LiveConfig
+from lumina_quant.core.market_window_contract import MarketWindowContractError
 from lumina_quant.live.data_poll import LiveDataHandler
 from lumina_quant.live.execution_live import LiveExecutionHandler
-from lumina_quant.live.trader import LiveTrader
+from lumina_quant.live.trader import LiveDataFatalError, LiveTrader
 from lumina_quant.live_selection import (
     extract_selection_config,
     infer_strategy_class_name,
@@ -20,6 +22,17 @@ from lumina_quant.strategies import (
 
 STRATEGY_MAP = get_live_strategy_map(include_opt_in=True)
 DEFAULT_LIVE_STRATEGY_NAME = "MovingAverageCrossStrategy"
+
+
+def _shutdown_on_fatal(trader: LiveTrader, exc: Exception) -> None:
+    print(f"\nCritical live-data contract breach: {exc}")
+    ordered_shutdown = getattr(trader, "_ordered_shutdown", None)
+    if callable(ordered_shutdown):
+        ordered_shutdown()
+    close_audit = getattr(trader, "_close_audit_store", None)
+    if callable(close_audit):
+        close_audit(status="FAILED")
+    raise SystemExit(2) from exc
 
 
 def main():
@@ -127,9 +140,15 @@ def main():
 
     print(f"Trading Symbols: {symbol_list}")
     print(f"Strategy Timeframe: {LiveConfig.TIMEFRAME}")
+    print(
+        "Materialized Staleness Gate: "
+        f"threshold={LiveConfig.MATERIALIZED_STALENESS_THRESHOLD_SECONDS}s, "
+        f"alert_cooldown={LiveConfig.MATERIALIZED_STALENESS_ALERT_COOLDOWN_SECONDS}s"
+    )
     print(f"Strategy Params: {strategy_params}")
 
     # 3. Initialize Trader
+    trader = None
     try:
         trader = LiveTrader(
             symbol_list=symbol_list,
@@ -146,9 +165,18 @@ def main():
         # 4. Run
         print("Starting engine... Press Ctrl+C to stop.")
         trader.run()
+        consume = getattr(trader.data_handler, "consume_fatal_error", None)
+        if callable(consume):
+            fatal_exc = consume()
+            if fatal_exc is not None:
+                _shutdown_on_fatal(trader, fatal_exc)
 
     except KeyboardInterrupt:
         print("\nStopping trader...")
+    except (RawFirstDataMissingError, MarketWindowContractError, LiveDataFatalError) as exc:
+        if trader is not None:
+            _shutdown_on_fatal(trader, exc)
+        raise SystemExit(2) from exc
     except Exception as e:
         print(f"\nCritical Error: {e}")
 

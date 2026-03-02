@@ -22,6 +22,7 @@
 | **[GPU Auto Notes](docs/DESIGN_NOTES_GPU_AUTO.md)** | Polars GPU/CPU auto-selection and fallback design. |
 | **[Validation Report](docs/VALIDATION_REPORT.md)** | Verification + optimization report for core workflows. |
 | **[Futures Strategy Factory](docs/FUTURES_STRATEGY_FACTORY.md)** | Candidate generation, weighted shortlist, and portfolio-set policy. |
+| **[Scoring Config Guide](docs/SCORING_CONFIG_GUIDE.md)** | Shared score-config template usage across research/shortlist/optimization scripts. |
 | **[Workflow Guide](docs/WORKFLOW.md)** | Private/Public branch operation and publish checklist. |
 | **[8GB Baseline Quickstart](docs/QUICKSTART_8GB_BASELINE.md)** | Minimal install/smoke/replay/shadow-live/dashboard/safe-stop/cleanup flow. |
 | **[Dashboard Realtime Report](docs/DASHBOARD_REALTIME_ANALYSIS_REPORT.md)** | Analysis + implementation report for live-refresh dashboard behavior. |
@@ -167,22 +168,79 @@ uv run python scripts/sync_binance_ohlcv.py \
 
 In the public repository, sync/build helpers are intentionally removed. Use prebuilt market parquet files or CSV data.
 
+**Raw aggTrades → committed materialized pipeline (private repo):**
+```bash
+# 1) Raw collector (checkpoint-resumable periodic loop)
+uv run python scripts/collect_binance_aggtrades_raw.py \
+  --symbols BTC/USDT,ETH/USDT \
+  --db-path data/market_parquet \
+  --periodic --poll-seconds 2 --cycles 2
+
+# 2) Materializer (raw -> committed 1s + required trading.timeframes bundle)
+uv run python scripts/materialize_market_windows.py \
+  --symbols BTC/USDT,ETH/USDT \
+  --timeframes 1s,1m,5m,15m,30m,1h,4h,1d \
+  --db-path data/market_parquet \
+  --periodic --poll-seconds 5 --cycles 2
+
+# 3) Live trader reads committed windows only (fail-fast: exit code 2 on missing committed data)
+uv run python run_live.py
+```
+
+Pre-live committed data check:
+```bash
+uv run python - <<'PY'
+from lumina_quant.parquet_market_data import ParquetMarketDataRepository
+repo = ParquetMarketDataRepository("data/market_parquet")
+for symbol in ("BTC/USDT", "ETH/USDT"):
+    frame = repo.load_committed_ohlcv_chunked(exchange="binance", symbol=symbol, timeframe="1s")
+    print(symbol, frame.height, frame["datetime"].max())
+PY
+```
+
+Rollout gate metrics (baseline/canary):
+```bash
+uv run python scripts/ci/export_market_window_gate_metrics.py \
+  --input logs/live/market_window_metrics.ndjson \
+  --output reports/live_rollout/baseline_gate_metrics.json \
+  --window-hours 24 --require-flag false
+
+uv run python scripts/ci/export_market_window_gate_metrics.py \
+  --input logs/live/market_window_metrics.ndjson \
+  --output reports/live_rollout/canary_gate_metrics.json \
+  --window-hours 24 --require-flag true
+
+uv run python scripts/ci/check_market_window_rollout_gates.py \
+  --baseline reports/live_rollout/baseline_gate_metrics.json \
+  --canary reports/live_rollout/canary_gate_metrics.json \
+  --max-p95-payload-bytes 131072 \
+  --max-queue-lag-increase-pct 5 \
+  --max-fail-fast-incidents 0
+```
+
 **Backtest a Strategy:**
 ```bash
-uv run python run_backtest.py
+uv run python run_backtest.py --data-mode raw-first
 
 # Force DB-only data source
-uv run python run_backtest.py --data-source db --market-db-path data/market_parquet
+uv run python run_backtest.py \
+  --data-mode raw-first \
+  --data-source db \
+  --backtest-mode windowed \
+  --market-db-path data/market_parquet
 ```
 
 If `LQ_POSTGRES_DSN` is unset, backtest still runs but skips PostgreSQL audit persistence.
 
 **Walk-Forward Optimization (multi-fold):**
 ```bash
-uv run python optimize.py
+uv run python optimize.py --data-mode raw-first
 
 # Prefer DB data, fallback to CSV in auto mode
-uv run python optimize.py --data-source auto --market-db-path data/market_parquet
+uv run python optimize.py \
+  --data-mode raw-first \
+  --data-source auto \
+  --market-db-path data/market_parquet
 ```
 
 ### Windowed model parity + memory safety defaults
@@ -205,6 +263,8 @@ uv run python optimize.py --data-source auto --market-db-path data/market_parque
 
 **Architecture/Lint Gate:**
 ```bash
+bash scripts/ci/architecture_gate_live_data.sh
+bash scripts/ci/architecture_gate_market_window_contract.sh
 uv run python scripts/check_architecture.py
 uv run ruff format . --check
 uv run ruff check .
@@ -322,6 +382,14 @@ Portfolio shortlist policy (default):
 - **single strategy** must pass score/return/sharpe/trades floors to stay in shortlist
 - **direct multi-asset strategy rows are excluded** from portfolio shortlist unless `--allow-multi-asset` is set
 - portfolio-level candidates are emitted as **`portfolio_sets`** by combining successful single-asset strategies, each with normalized weights (`portfolio_weight`)
+
+Score config template:
+- Use `configs/score_config.example.json`
+- Shared sections:
+  - `candidate_research` → `scripts/run_candidate_research.py --score-config ...`
+  - `portfolio_optimization` → `scripts/run_portfolio_optimization.py --score-config ...`
+  - `strategy_shortlist` → `scripts/select_strategy_factory_shortlist.py --score-config ...`
+  - `futures_strategy_factory` → `scripts/futures_strategy_factory.py --score-config ...`
 
 **Futures Support Feature Collection (funding / mark/index / OI):**
 ```bash

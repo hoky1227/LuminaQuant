@@ -6,6 +6,7 @@ from collections import defaultdict, deque
 from datetime import UTC, datetime
 from typing import Any
 
+import polars as pl
 from lumina_quant.core.events import MarketEvent
 from lumina_quant.market_data import normalize_timeframe_token, timeframe_to_milliseconds
 
@@ -310,3 +311,30 @@ class TimeframeAggregator:
                     self._last_seen_ms[str(symbol)] = int(value)
                 except Exception:
                     continue
+
+
+def aggregate_1s_frame_to_timeframe(frame_1s: pl.DataFrame, *, timeframe: str) -> pl.DataFrame:
+    """Aggregate a canonical 1-second OHLCV frame into a higher timeframe frame."""
+    token = normalize_timeframe_token(timeframe)
+    if frame_1s.is_empty():
+        return frame_1s
+    if token == "1s":
+        return frame_1s
+    tf_ms = int(timeframe_to_milliseconds(token))
+    return (
+        frame_1s.with_columns(pl.col("datetime").dt.epoch("ms").alias("ts_ms"))
+        .with_columns(((pl.col("ts_ms") // tf_ms) * tf_ms).alias("bucket_ms"))
+        .group_by("bucket_ms")
+        .agg(
+            [
+                pl.col("open").first().alias("open"),
+                pl.col("high").max().alias("high"),
+                pl.col("low").min().alias("low"),
+                pl.col("close").last().alias("close"),
+                pl.col("volume").sum().alias("volume"),
+            ]
+        )
+        .sort("bucket_ms")
+        .with_columns(pl.from_epoch("bucket_ms", time_unit="ms").alias("datetime"))
+        .select(["datetime", "open", "high", "low", "close", "volume"])
+    )

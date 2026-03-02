@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from dataclasses import asdict
@@ -47,6 +48,30 @@ os.environ.setdefault(
     "LQ__STORAGE__WAL_COMPACTION_INTERVAL_SECONDS",
     str(int(getattr(_RUNTIME.storage, "wal_compaction_interval_seconds", 3600))),
 )
+os.environ.setdefault(
+    "LQ__STORAGE__COLLECTOR_PERIODIC_ENABLED",
+    "1" if bool(getattr(_RUNTIME.storage, "collector_periodic_enabled", True)) else "0",
+)
+os.environ.setdefault(
+    "LQ__STORAGE__COLLECTOR_POLL_SECONDS",
+    str(int(getattr(_RUNTIME.storage, "collector_poll_seconds", 2))),
+)
+os.environ.setdefault(
+    "LQ__STORAGE__MATERIALIZER_PERIODIC_ENABLED",
+    "1" if bool(getattr(_RUNTIME.storage, "materializer_periodic_enabled", True)) else "0",
+)
+os.environ.setdefault(
+    "LQ__STORAGE__MATERIALIZER_POLL_SECONDS",
+    str(int(getattr(_RUNTIME.storage, "materializer_poll_seconds", 5))),
+)
+os.environ.setdefault(
+    "LQ__STORAGE__MATERIALIZER_BASE_TIMEFRAME",
+    str(getattr(_RUNTIME.storage, "materializer_base_timeframe", "1s") or "1s"),
+)
+os.environ.setdefault(
+    "LQ__STORAGE__MATERIALIZER_REQUIRED_TIMEFRAMES",
+    json.dumps(list(getattr(_RUNTIME.storage, "materializer_required_timeframes", ["1s"]))),
+)
 if str(_RUNTIME.storage.postgres_dsn or "").strip():
     os.environ.setdefault(
         str(_RUNTIME.storage.postgres_dsn_env or "LQ_POSTGRES_DSN"),
@@ -86,6 +111,14 @@ os.environ.setdefault(
     str(int(getattr(_RUNTIME.live, "window_seconds", 20))),
 )
 os.environ.setdefault(
+    "LQ__LIVE__MATERIALIZED_STALENESS_THRESHOLD_SECONDS",
+    str(int(getattr(_RUNTIME.live, "materialized_staleness_threshold_seconds", 45))),
+)
+os.environ.setdefault(
+    "LQ__LIVE__MATERIALIZED_STALENESS_ALERT_COOLDOWN_SECONDS",
+    str(int(getattr(_RUNTIME.live, "materialized_staleness_alert_cooldown_seconds", 60))),
+)
+os.environ.setdefault(
     "LQ__BACKTEST__POLL_SECONDS",
     str(int(getattr(_RUNTIME.backtest, "poll_seconds", 20))),
 )
@@ -96,6 +129,17 @@ os.environ.setdefault(
 os.environ.setdefault(
     "LQ__BACKTEST__DECISION_CADENCE_SECONDS",
     str(int(getattr(_RUNTIME.backtest, "decision_cadence_seconds", 20))),
+)
+os.environ.setdefault(
+    "LQ__MARKET_WINDOW__PARITY_V2_ENABLED",
+    "1" if bool(getattr(_RUNTIME.market_window, "parity_v2_enabled", False)) else "0",
+)
+os.environ.setdefault(
+    "LQ__MARKET_WINDOW__METRICS_LOG_PATH",
+    str(
+        getattr(_RUNTIME.market_window, "metrics_log_path", "logs/live/market_window_metrics.ndjson")
+        or "logs/live/market_window_metrics.ndjson"
+    ),
 )
 
 
@@ -147,6 +191,24 @@ class BaseConfig:
     WAL_COMPACTION_INTERVAL_SECONDS = int(
         getattr(_RUNTIME.storage, "wal_compaction_interval_seconds", 3600)
     )
+    COLLECTOR_PERIODIC_ENABLED = bool(getattr(_RUNTIME.storage, "collector_periodic_enabled", True))
+    COLLECTOR_POLL_SECONDS = int(getattr(_RUNTIME.storage, "collector_poll_seconds", 2))
+    MATERIALIZER_PERIODIC_ENABLED = bool(
+        getattr(_RUNTIME.storage, "materializer_periodic_enabled", True)
+    )
+    MATERIALIZER_POLL_SECONDS = int(getattr(_RUNTIME.storage, "materializer_poll_seconds", 5))
+    MATERIALIZER_BASE_TIMEFRAME = str(
+        getattr(_RUNTIME.storage, "materializer_base_timeframe", "1s") or "1s"
+    ).lower()
+    MATERIALIZER_REQUIRED_TIMEFRAMES = list(
+        getattr(_RUNTIME.storage, "materializer_required_timeframes", ["1s"])
+    ) or ["1s"]
+
+    MARKET_WINDOW_PARITY_V2_ENABLED = bool(getattr(_RUNTIME.market_window, "parity_v2_enabled", False))
+    MARKET_WINDOW_METRICS_LOG_PATH = str(
+        getattr(_RUNTIME.market_window, "metrics_log_path", "logs/live/market_window_metrics.ndjson")
+        or "logs/live/market_window_metrics.ndjson"
+    )
 
 
 class BacktestConfig(BaseConfig):
@@ -191,6 +253,12 @@ class LiveConfig(BaseConfig):
     WINDOW_SECONDS = int(getattr(_RUNTIME.live, "window_seconds", 20))
     INGEST_WINDOW_SECONDS = WINDOW_SECONDS
     DECISION_CADENCE_SECONDS = int(getattr(_RUNTIME.live, "decision_cadence_seconds", 20))
+    MATERIALIZED_STALENESS_THRESHOLD_SECONDS = int(
+        getattr(_RUNTIME.live, "materialized_staleness_threshold_seconds", 45)
+    )
+    MATERIALIZED_STALENESS_ALERT_COOLDOWN_SECONDS = int(
+        getattr(_RUNTIME.live, "materialized_staleness_alert_cooldown_seconds", 60)
+    )
     ORDER_TIMEOUT = int(_RUNTIME.live.order_timeout)
     HEARTBEAT_INTERVAL_SEC = int(_RUNTIME.live.heartbeat_interval_sec)
     RECONCILIATION_INTERVAL_SEC = int(_RUNTIME.live.reconciliation_interval_sec)
@@ -223,6 +291,12 @@ class LiveConfig(BaseConfig):
         runtime = load_runtime_config(config_path=os.getenv("LQ_CONFIG_PATH", "config.yaml"))
         runtime.live.mode = cls.MODE
         runtime.live.require_real_enable_flag = cls.REQUIRE_REAL_ENABLE_FLAG
+        runtime.live.materialized_staleness_threshold_seconds = int(
+            cls.MATERIALIZED_STALENESS_THRESHOLD_SECONDS
+        )
+        runtime.live.materialized_staleness_alert_cooldown_seconds = int(
+            cls.MATERIALIZED_STALENESS_ALERT_COOLDOWN_SECONDS
+        )
         runtime.live.api_key = cls.BINANCE_API_KEY
         runtime.live.secret_key = cls.BINANCE_SECRET_KEY
         runtime.live.exchange.driver = str(cls.EXCHANGE["driver"])
@@ -234,6 +308,14 @@ class LiveConfig(BaseConfig):
         runtime.live.mt5_bridge_python = str(cls.MT5_BRIDGE_PYTHON)
         runtime.live.mt5_bridge_script = str(cls.MT5_BRIDGE_SCRIPT)
         runtime.live.mt5_bridge_use_wslpath = bool(cls.MT5_BRIDGE_USE_WSLPATH)
+        runtime.storage.collector_periodic_enabled = bool(cls.COLLECTOR_PERIODIC_ENABLED)
+        runtime.storage.collector_poll_seconds = int(cls.COLLECTOR_POLL_SECONDS)
+        runtime.storage.materializer_periodic_enabled = bool(cls.MATERIALIZER_PERIODIC_ENABLED)
+        runtime.storage.materializer_poll_seconds = int(cls.MATERIALIZER_POLL_SECONDS)
+        runtime.storage.materializer_base_timeframe = str(cls.MATERIALIZER_BASE_TIMEFRAME)
+        runtime.storage.materializer_required_timeframes = list(cls.MATERIALIZER_REQUIRED_TIMEFRAMES)
+        runtime.market_window.parity_v2_enabled = bool(cls.MARKET_WINDOW_PARITY_V2_ENABLED)
+        runtime.market_window.metrics_log_path = str(cls.MARKET_WINDOW_METRICS_LOG_PATH)
         runtime.trading.symbols = list(cls.SYMBOLS)
         runtime.trading.timeframe = str(cls.TIMEFRAME)
         runtime.trading.timeframes = list(getattr(cls, "TIMEFRAMES", [cls.TIMEFRAME]))

@@ -76,6 +76,7 @@ def test_run_low_memory_uses_lightweight_backtest_flow(monkeypatch):
 
     run_backtest.run(
         data_source="csv",
+        data_mode="legacy",
         low_memory=True,
         persist_output=None,
         auto_collect_db=False,

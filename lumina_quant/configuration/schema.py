@@ -34,7 +34,7 @@ class TradingConfig:
         ]
     )
     timeframes: list[str] = field(
-        default_factory=lambda: ["1m", "5m", "15m", "1h", "4h", "1d"]
+        default_factory=lambda: ["1s", "1m", "5m", "15m", "30m", "1h", "4h", "1d"]
     )
     timeframe: str = "1m"
     initial_capital: float = 10000.0
@@ -87,6 +87,14 @@ class StorageConfig:
     wal_max_bytes: int = 268435456
     wal_compact_on_threshold: bool = True
     wal_compaction_interval_seconds: int = 3600
+    collector_periodic_enabled: bool = True
+    collector_poll_seconds: int = 2
+    materializer_periodic_enabled: bool = True
+    materializer_poll_seconds: int = 5
+    materializer_base_timeframe: str = "1s"
+    materializer_required_timeframes: list[str] = field(
+        default_factory=lambda: ["1s", "1m", "5m", "15m", "30m", "1h", "4h", "1d"]
+    )
     export_csv: bool = True
 
 
@@ -113,6 +121,7 @@ class BacktestRuntimeConfig:
     backtest_poll_seconds: int | None = None
     backtest_window_seconds: int | None = None
     backtest_decision_seconds: int | None = None
+    market_window_parity_v2_enabled: bool | None = None
 
 
 @dataclass(slots=True)
@@ -137,6 +146,8 @@ class LiveRuntimeConfig:
     poll_seconds: int = 20
     window_seconds: int = 20
     decision_cadence_seconds: int = 20
+    materialized_staleness_threshold_seconds: int = 45
+    materialized_staleness_alert_cooldown_seconds: int = 60
     live_poll_seconds: int | None = None
     ingest_window_seconds: int | None = None
     order_timeout: int = 10
@@ -154,6 +165,15 @@ class LiveRuntimeConfig:
     mt5_bridge_python: str = ""
     mt5_bridge_script: str = "scripts/mt5_bridge_worker.py"
     mt5_bridge_use_wslpath: bool = True
+    market_window_parity_v2_enabled: bool | None = None
+
+
+@dataclass(slots=True)
+class MarketWindowConfig:
+    """Shared MARKET_WINDOW contract and rollout controls."""
+
+    parity_v2_enabled: bool = False
+    metrics_log_path: str = "logs/live/market_window_metrics.ndjson"
 
 
 @dataclass(slots=True)
@@ -197,4 +217,5 @@ class RuntimeConfig:
     backtest: BacktestRuntimeConfig = field(default_factory=BacktestRuntimeConfig)
     live: LiveRuntimeConfig = field(default_factory=LiveRuntimeConfig)
     optimization: OptimizationRuntimeConfig = field(default_factory=OptimizationRuntimeConfig)
+    market_window: MarketWindowConfig = field(default_factory=MarketWindowConfig)
     promotion_gate: PromotionGateConfig = field(default_factory=PromotionGateConfig)

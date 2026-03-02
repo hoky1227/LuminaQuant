@@ -39,35 +39,65 @@ def test_strategy_default_window_fallback_emits_legacy_market_events():
 
 def test_live_data_handler_emits_market_window_each_poll_with_configured_window(monkeypatch):
     class _Config:
-        TIMEFRAME = "1m"
+        MARKET_DATA_PARQUET_PATH = "data/market_parquet"
+        MARKET_DATA_EXCHANGE = "binance"
         LIVE_POLL_SECONDS = 1
         INGEST_WINDOW_SECONDS = 7
-        LIVE_INGEST_INTERVAL_SEC = 999
-        POLL_ERROR_BACKOFF_SECONDS = 1
+        MATERIALIZED_STALENESS_THRESHOLD_SECONDS = 45
 
-    class _Exchange:
-        def __init__(self):
-            self.calls = []
+    snapshots = [
+        SimpleNamespace(
+            event_time_ms=1_700_000_000_000,
+            event_time_watermark_ms=1_700_000_000_000,
+            bars_1s={
+                "BTC/USDT": tuple(
+                    (1_700_000_000_000 + (i * 1000), 1.0, 2.0, 0.5, 1.5, 10.0)
+                    for i in range(7)
+                )
+            },
+            commit_id="commit-1",
+            lag_ms=0,
+            is_stale=False,
+        ),
+        SimpleNamespace(
+            event_time_ms=1_700_000_000_500,
+            event_time_watermark_ms=1_700_000_000_500,
+            bars_1s={
+                "BTC/USDT": tuple(
+                    (1_700_000_000_500 + (i * 1000), 1.0, 2.0, 0.5, 1.5, 10.0)
+                    for i in range(7)
+                )
+            },
+            commit_id="commit-2",
+            lag_ms=0,
+            is_stale=False,
+        ),
+    ]
+    read_idx = {"value": 0}
 
-        def fetch_ohlcv(self, symbol, timeframe, limit=0):
-            self.calls.append((symbol, timeframe, int(limit)))
-            if timeframe == "1m":
-                return [[1_699_999_940_000, 1, 1, 1, 1, 1]]
-            base = 1_700_000_000_000
-            return [[base + (i * 1000), 1.0, 2.0, 0.5, 1.5, 10.0] for i in range(limit)]
+    class _ReaderStub:
+        def __init__(self, *args, **kwargs):
+            _ = args, kwargs
+
+        @staticmethod
+        def read_snapshot():
+            idx = min(read_idx["value"], len(snapshots) - 1)
+            read_idx["value"] += 1
+            return snapshots[idx]
 
     class _ThreadStub:
-        def __init__(self, target):
+        def __init__(self, target, daemon=True):
             self.target = target
-            self.daemon = True
+            self.daemon = daemon
 
         def start(self):
             return None
 
     events = queue.Queue()
-    exchange = _Exchange()
+    exchange = SimpleNamespace()
 
-    monkeypatch.setattr("lumina_quant.live.data_poll.threading.Thread", _ThreadStub)
+    monkeypatch.setattr("lumina_quant.live.data_materialized.threading.Thread", _ThreadStub)
+    monkeypatch.setattr("lumina_quant.live.data_materialized.MaterializedWindowReader", _ReaderStub)
     handler = LiveDataHandler(events, ["BTC/USDT"], _Config, exchange)
 
     sleeps = {"count": 0}
@@ -77,7 +107,7 @@ def test_live_data_handler_emits_market_window_each_poll_with_configured_window(
         if sleeps["count"] >= 2:
             handler.continue_backtest = False
 
-    monkeypatch.setattr("lumina_quant.live.data_poll.time.sleep", _sleep)
+    monkeypatch.setattr("lumina_quant.live.data_materialized.time.sleep", _sleep)
     handler.continue_backtest = True
     handler._poll_market_data()
 
@@ -88,9 +118,6 @@ def test_live_data_handler_emits_market_window_each_poll_with_configured_window(
     assert all(evt.window_seconds == 7 for evt in market_windows)
     assert all("BTC/USDT" in evt.bars_1s for evt in market_windows)
     assert all(len(evt.bars_1s["BTC/USDT"]) == 7 for evt in market_windows)
-    assert all(
-        timeframe != "1s" or limit == 7 for _, timeframe, limit in exchange.calls if timeframe == "1s"
-    )
 
 
 @pytest.mark.parametrize("strategy_cadence, expected", [(None, 13), (0, 13), (5, 5)])
