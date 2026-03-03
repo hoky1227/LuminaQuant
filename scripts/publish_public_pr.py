@@ -33,9 +33,13 @@ PROTECTED_PATHS: tuple[str, ...] = (
     "trades.csv",
     "live_equity.csv",
     "live_trades.csv",
+    "src/lumina_quant/strategies",
     "lumina_quant/strategies",
     "strategies",
+    "src/lumina_quant/indicators",
     "lumina_quant/indicators",
+    "src/lumina_quant/data_sync.py",
+    "src/lumina_quant/data_collector.py",
     "lumina_quant/data_sync.py",
     "lumina_quant/data_collector.py",
     "scripts/sync_binance_ohlcv.py",
@@ -45,8 +49,10 @@ PROTECTED_PATHS: tuple[str, ...] = (
 )
 
 SENSITIVE_PATH_RE = re.compile(
-    r"^lumina_quant/strategies/"
+    r"^src/lumina_quant/strategies/"
+    r"|^lumina_quant/strategies/"
     r"|^strategies/"
+    r"|^src/lumina_quant/indicators/"
     r"|^lumina_quant/indicators/"
     r"|^data/"
     r"|^logs/"
@@ -56,6 +62,8 @@ SENSITIVE_PATH_RE = re.compile(
     r"|^\.sisyphus/"
     r"|^AGENTS\.md$"
     r"|^\.env$"
+    r"|^src/lumina_quant/data_sync\.py$"
+    r"|^src/lumina_quant/data_collector\.py$"
     r"|^lumina_quant/data_sync\.py$"
     r"|^lumina_quant/data_collector\.py$"
     r"|^scripts/sync_binance_ohlcv\.py$"

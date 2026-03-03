@@ -22,8 +22,14 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
-DEFAULT_LITERAL_PATHS: tuple[str, ...] = ("lumina_quant/strategies",)
-DEFAULT_FORMULA_PATHS: tuple[str, ...] = ("lumina_quant/indicators/formulaic_definitions.py",)
+DEFAULT_LITERAL_PATHS: tuple[str, ...] = (
+    "src/lumina_quant/strategies",
+    "lumina_quant/strategies",
+)
+DEFAULT_FORMULA_PATHS: tuple[str, ...] = (
+    "src/lumina_quant/indicators/formulaic_definitions.py",
+    "lumina_quant/indicators/formulaic_definitions.py",
+)
 DEFAULT_BASELINE = ".github/hardcoded_params_baseline.json"
 DEFAULT_JSON_REPORT = "reports/quality/hardcoded_params_report.json"
 DEFAULT_MD_REPORT = "reports/quality/hardcoded_params_report.md"
@@ -508,6 +514,11 @@ def _load_baseline_signatures(path: Path) -> set[str]:
 
 def _path_aliases(path: str) -> set[str]:
     aliases = {path}
+
+    if path.startswith("src/lumina_quant/"):
+        aliases.add(path.removeprefix("src/"))
+    elif path.startswith("lumina_quant/"):
+        aliases.add(f"src/{path}")
 
     if path.startswith("lumina_quant/strategies/"):
         aliases.add(path.removeprefix("lumina_quant/"))
