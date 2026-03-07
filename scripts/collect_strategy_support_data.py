@@ -23,6 +23,66 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--until", default="")
     parser.add_argument("--mark-index-interval", default="1m")
     parser.add_argument("--open-interest-period", default="5m")
+    parser.add_argument(
+        "--feature-profile",
+        default="full",
+        choices=["full", "strategy-used", "strategy_used"],
+        help="Collection preset. 'strategy-used' skips mark/index history while keeping funding/OI/liquidations.",
+    )
+    parser.set_defaults(
+        include_funding=None,
+        include_mark_index=None,
+        include_open_interest=None,
+        include_liquidations=None,
+    )
+    parser.add_argument(
+        "--include-funding",
+        dest="include_funding",
+        action="store_true",
+        help="Explicitly enable funding-derived features.",
+    )
+    parser.add_argument(
+        "--skip-funding",
+        dest="include_funding",
+        action="store_false",
+        help="Skip funding-derived features.",
+    )
+    parser.add_argument(
+        "--include-mark-index",
+        dest="include_mark_index",
+        action="store_true",
+        help="Explicitly enable mark/index history collection.",
+    )
+    parser.add_argument(
+        "--skip-mark-index",
+        dest="include_mark_index",
+        action="store_false",
+        help="Skip mark/index history collection.",
+    )
+    parser.add_argument(
+        "--include-open-interest",
+        dest="include_open_interest",
+        action="store_true",
+        help="Explicitly enable open-interest history collection.",
+    )
+    parser.add_argument(
+        "--skip-open-interest",
+        dest="include_open_interest",
+        action="store_false",
+        help="Skip open-interest history collection.",
+    )
+    parser.add_argument(
+        "--include-liquidations",
+        dest="include_liquidations",
+        action="store_true",
+        help="Explicitly enable liquidation history collection.",
+    )
+    parser.add_argument(
+        "--skip-liquidations",
+        dest="include_liquidations",
+        action="store_false",
+        help="Skip liquidation history collection.",
+    )
     parser.add_argument("--retries", type=int, default=3)
     parser.add_argument("--backend", default="parquet-postgres", help="Storage backend.")
     parser.add_argument(
@@ -43,6 +103,11 @@ def main() -> None:
         until=(args.until or None),
         mark_index_interval=str(args.mark_index_interval),
         open_interest_period=str(args.open_interest_period),
+        feature_profile=str(args.feature_profile),
+        include_funding=args.include_funding,
+        include_mark_index=args.include_mark_index,
+        include_open_interest=args.include_open_interest,
+        include_liquidations=args.include_liquidations,
         retries=max(0, int(args.retries)),
         execute=bool(args.execute),
         backend=str(args.backend),

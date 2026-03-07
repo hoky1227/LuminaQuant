@@ -653,6 +653,9 @@ def _http_get_json(
             return json.loads(payload)
         except urllib.error.HTTPError as exc:
             attempt += 1
+            code = int(getattr(exc, "code", 0) or 0)
+            if code in {400, 401, 403, 404}:
+                raise RuntimeError(f"HTTP {code} for {target}") from exc
             if attempt > max(0, int(retries)):
                 raise RuntimeError(f"HTTP {getattr(exc, 'code', '')} for {target}") from exc
             retry_after_raw = exc.headers.get("Retry-After") if getattr(exc, "headers", None) else None
@@ -662,7 +665,6 @@ def _http_get_json(
                     retry_after = max(0.0, float(str(retry_after_raw).strip()))
                 except Exception:
                     retry_after = 0.0
-            code = int(getattr(exc, "code", 0) or 0)
             ceiling = 60.0 if code == 429 else 10.0
             sleep_for = max(wait, retry_after)
             time.sleep(sleep_for)
@@ -822,16 +824,20 @@ def _fetch_price_klines(
     end_ms = int(until_ms)
     throttle_sec = max(0.0, float(base_wait_sec) * 0.25)
     while cursor <= end_ms:
+        params = {
+            "interval": str(interval),
+            "startTime": cursor,
+            "endTime": end_ms,
+            "limit": 1500,
+        }
+        if price_type == "mark":
+            params["symbol"] = _compact_symbol(symbol)
+        else:
+            params["pair"] = _compact_symbol(symbol)
         try:
             data = _http_get_json(
                 url,
-                params={
-                    "symbol": _compact_symbol(symbol),
-                    "interval": str(interval),
-                    "startTime": cursor,
-                    "endTime": end_ms,
-                    "limit": 1500,
-                },
+                params=params,
                 retries=retries,
                 base_wait_sec=base_wait_sec,
             )
@@ -868,7 +874,22 @@ def _fetch_open_interest_history(
     cursor = max(0, int(since_ms))
     end_ms = int(until_ms)
     throttle_sec = max(0.0, float(base_wait_sec) * 0.25)
+    period_token = str(period).strip().lower()
+    unit = period_token[-1:] if period_token else ""
+    size_raw = period_token[:-1] if period_token else ""
+    unit_ms = {
+        "m": 60_000,
+        "h": 3_600_000,
+        "d": 86_400_000,
+        "w": 604_800_000,
+    }.get(unit, 300_000)
+    try:
+        size = max(1, int(size_raw or "1"))
+    except Exception:
+        size = 1
+    request_span_ms = max(1, size * unit_ms * 500)
     while cursor <= end_ms:
+        request_end_ms = min(end_ms, int(cursor) + int(request_span_ms) - 1)
         try:
             data = _http_get_json(
                 url,
@@ -876,7 +897,7 @@ def _fetch_open_interest_history(
                     "symbol": _compact_symbol(symbol),
                     "period": str(period),
                     "startTime": cursor,
-                    "endTime": end_ms,
+                    "endTime": request_end_ms,
                     "limit": 500,
                 },
                 retries=retries,
@@ -884,11 +905,21 @@ def _fetch_open_interest_history(
             )
         except RuntimeError as exc:
             if "HTTP 400" in str(exc):
-                break
+                if int(request_end_ms) >= int(end_ms):
+                    break
+                cursor = int(request_end_ms) + 1
+                if throttle_sec > 0.0:
+                    time.sleep(throttle_sec)
+                continue
             raise
         rows = list(data) if isinstance(data, list) else []
         if not rows:
-            break
+            if int(request_end_ms) >= int(end_ms):
+                break
+            cursor = int(request_end_ms) + 1
+            if throttle_sec > 0.0:
+                time.sleep(throttle_sec)
+            continue
         out.extend(rows)
         last_ts = int(rows[-1].get("timestamp", cursor))
         if last_ts < cursor:
@@ -928,7 +959,7 @@ def _fetch_liquidation_orders(
                 base_wait_sec=base_wait_sec,
             )
         except RuntimeError as exc:
-            if "HTTP 400" in str(exc):
+            if any(code in str(exc) for code in ("HTTP 400", "HTTP 401", "HTTP 403", "HTTP 404", "HTTP 429")):
                 break
             raise
         rows = list(data) if isinstance(data, list) else []
@@ -955,6 +986,10 @@ def sync_futures_feature_points(
     until_ms: int,
     mark_index_interval: str = "1m",
     open_interest_period: str = "5m",
+    include_funding: bool = True,
+    include_mark_index: bool = True,
+    include_open_interest: bool = True,
+    include_liquidations: bool = True,
     retries: int = 3,
     base_wait_sec: float = 0.5,
     backend: str | None = None,
@@ -969,104 +1004,116 @@ def sync_futures_feature_points(
         stream_symbol = normalize_symbol(symbol)
         points: dict[int, dict[str, Any]] = {}
 
-        funding_rows = _fetch_funding_history(
-            symbol=stream_symbol,
-            since_ms=since_ms,
-            until_ms=until_ms,
-            retries=retries,
-            base_wait_sec=base_wait_sec,
-        )
-        for row in funding_rows:
-            ts = int(row.get("fundingTime", 0) or 0)
-            if ts <= 0:
-                continue
-            _merge_feature_point(
-                points,
-                ts,
-                {
-                    "funding_rate": float(row.get("fundingRate"))
-                    if row.get("fundingRate") is not None
-                    else None,
-                    "funding_mark_price": float(row.get("markPrice"))
-                    if row.get("markPrice") is not None
-                    else None,
-                },
+        if include_funding:
+            funding_rows = _fetch_funding_history(
+                symbol=stream_symbol,
+                since_ms=since_ms,
+                until_ms=until_ms,
+                retries=retries,
+                base_wait_sec=base_wait_sec,
             )
+            for row in funding_rows:
+                ts = int(row.get("fundingTime", 0) or 0)
+                if ts <= 0:
+                    continue
+                funding_rate = (
+                    float(row.get("fundingRate")) if row.get("fundingRate") is not None else None
+                )
+                funding_mark_price = (
+                    float(row.get("markPrice")) if row.get("markPrice") is not None else None
+                )
+                _merge_feature_point(
+                    points,
+                    ts,
+                    {
+                        "funding_rate": funding_rate,
+                        "funding_mark_price": funding_mark_price,
+                        "funding_fee_rate": funding_rate,
+                        "funding_fee_quote_per_unit": (
+                            float(funding_rate) * float(funding_mark_price)
+                            if funding_rate is not None and funding_mark_price is not None
+                            else None
+                        ),
+                    },
+                )
 
-        mark_rows = _fetch_price_klines(
-            symbol=stream_symbol,
-            price_type="mark",
-            interval=mark_index_interval,
-            since_ms=since_ms,
-            until_ms=until_ms,
-            retries=retries,
-            base_wait_sec=base_wait_sec,
-        )
-        for row in mark_rows:
-            ts = int(row[0])
-            _merge_feature_point(points, ts, {"mark_price": float(row[4])})
-
-        index_rows = _fetch_price_klines(
-            symbol=stream_symbol,
-            price_type="index",
-            interval=mark_index_interval,
-            since_ms=since_ms,
-            until_ms=until_ms,
-            retries=retries,
-            base_wait_sec=base_wait_sec,
-        )
-        for row in index_rows:
-            ts = int(row[0])
-            _merge_feature_point(points, ts, {"index_price": float(row[4])})
-
-        oi_rows = _fetch_open_interest_history(
-            symbol=stream_symbol,
-            period=open_interest_period,
-            since_ms=since_ms,
-            until_ms=until_ms,
-            retries=retries,
-            base_wait_sec=base_wait_sec,
-        )
-        for row in oi_rows:
-            ts = int(row.get("timestamp", 0) or 0)
-            if ts <= 0:
-                continue
-            oi_val = row.get("sumOpenInterestValue")
-            if oi_val is None:
-                oi_val = row.get("sumOpenInterest")
-            _merge_feature_point(
-                points,
-                ts,
-                {"open_interest": float(oi_val) if oi_val is not None else None},
+        if include_mark_index:
+            mark_rows = _fetch_price_klines(
+                symbol=stream_symbol,
+                price_type="mark",
+                interval=mark_index_interval,
+                since_ms=since_ms,
+                until_ms=until_ms,
+                retries=retries,
+                base_wait_sec=base_wait_sec,
             )
+            for row in mark_rows:
+                ts = int(row[0])
+                _merge_feature_point(points, ts, {"mark_price": float(row[4])})
 
-        liq_rows = _fetch_liquidation_orders(
-            symbol=stream_symbol,
-            since_ms=since_ms,
-            until_ms=until_ms,
-            retries=retries,
-            base_wait_sec=base_wait_sec,
-        )
-        for row in liq_rows:
-            ts = int(row.get("time", 0) or 0)
-            if ts <= 0:
-                continue
-            side = str(row.get("side", "")).upper()
-            qty = float(row.get("origQty", 0.0) or 0.0)
-            price = float(row.get("price", 0.0) or 0.0)
-            notional = qty * price
-            fields: dict[str, Any]
-            if side == "SELL":
-                fields = {
-                    "liquidation_long_qty": qty,
-                    "liquidation_long_notional": notional,
-                }
-            else:
-                fields = {
-                    "liquidation_short_qty": qty,
-                    "liquidation_short_notional": notional,
-                }
-            _merge_feature_point(points, ts, fields)
+            index_rows = _fetch_price_klines(
+                symbol=stream_symbol,
+                price_type="index",
+                interval=mark_index_interval,
+                since_ms=since_ms,
+                until_ms=until_ms,
+                retries=retries,
+                base_wait_sec=base_wait_sec,
+            )
+            for row in index_rows:
+                ts = int(row[0])
+                _merge_feature_point(points, ts, {"index_price": float(row[4])})
+
+        if include_open_interest:
+            oi_rows = _fetch_open_interest_history(
+                symbol=stream_symbol,
+                period=open_interest_period,
+                since_ms=since_ms,
+                until_ms=until_ms,
+                retries=retries,
+                base_wait_sec=base_wait_sec,
+            )
+            for row in oi_rows:
+                ts = int(row.get("timestamp", 0) or 0)
+                if ts <= 0:
+                    continue
+                oi_val = row.get("sumOpenInterestValue")
+                if oi_val is None:
+                    oi_val = row.get("sumOpenInterest")
+                _merge_feature_point(
+                    points,
+                    ts,
+                    {"open_interest": float(oi_val) if oi_val is not None else None},
+                )
+
+        if include_liquidations:
+            liq_rows = _fetch_liquidation_orders(
+                symbol=stream_symbol,
+                since_ms=since_ms,
+                until_ms=until_ms,
+                retries=retries,
+                base_wait_sec=base_wait_sec,
+            )
+            for row in liq_rows:
+                ts = int(row.get("time", 0) or 0)
+                if ts <= 0:
+                    continue
+                side = str(row.get("side", "")).upper()
+                qty = float(row.get("origQty", 0.0) or 0.0)
+                price = float(row.get("price", 0.0) or 0.0)
+                notional = qty * price
+                fields: dict[str, Any]
+                if side == "SELL":
+                    fields = {
+                        "liquidation_long_qty": qty,
+                        "liquidation_long_notional": notional,
+                    }
+                else:
+                    fields = {
+                        "liquidation_short_qty": qty,
+                        "liquidation_short_notional": notional,
+                    }
+                _merge_feature_point(points, ts, fields)
 
         sorted_rows = [points[key] for key in sorted(points.keys())]
         upserted = upsert_futures_feature_points_rows(

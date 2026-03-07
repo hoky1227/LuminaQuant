@@ -93,6 +93,11 @@ def collect_strategy_support_data(
     until: str | int | float | None = None,
     mark_index_interval: str = "1m",
     open_interest_period: str = "5m",
+    feature_profile: str = "full",
+    include_funding: bool | None = None,
+    include_mark_index: bool | None = None,
+    include_open_interest: bool | None = None,
+    include_liquidations: bool | None = None,
     retries: int = 3,
     execute: bool = False,
     backend: str | None = None,
@@ -110,6 +115,48 @@ def collect_strategy_support_data(
     effective_until = (
         int(until_ms) if until_ms is not None else int(datetime.now(UTC).timestamp() * 1000)
     )
+    profile_token = str(feature_profile or "full").strip().lower().replace("-", "_")
+    if profile_token in {"", "default"}:
+        profile_token = "full"
+    if profile_token not in {"full", "strategy_used"}:
+        raise ValueError("feature_profile must be one of: full, strategy_used")
+
+    resolved_include_funding = (
+        bool(include_funding) if include_funding is not None else True
+    )
+    resolved_include_mark_index = (
+        bool(include_mark_index) if include_mark_index is not None else profile_token == "full"
+    )
+    resolved_include_open_interest = (
+        bool(include_open_interest) if include_open_interest is not None else True
+    )
+    resolved_include_liquidations = (
+        bool(include_liquidations) if include_liquidations is not None else True
+    )
+
+    features: list[str] = []
+    if resolved_include_funding:
+        features.extend(
+            [
+                "funding_rate",
+                "funding_mark_price",
+                "funding_fee_rate",
+                "funding_fee_quote_per_unit",
+            ]
+        )
+    if resolved_include_mark_index:
+        features.extend(["mark_price", "index_price"])
+    if resolved_include_open_interest:
+        features.append("open_interest")
+    if resolved_include_liquidations:
+        features.extend(
+            [
+                "liquidation_long_qty",
+                "liquidation_short_qty",
+                "liquidation_long_notional",
+                "liquidation_short_notional",
+            ]
+        )
 
     plan: dict[str, object] = {
         "db_path": str(db_path),
@@ -119,19 +166,16 @@ def collect_strategy_support_data(
         "until_ms": int(effective_until),
         "mark_index_interval": str(mark_index_interval),
         "open_interest_period": str(open_interest_period),
+        "feature_profile": profile_token,
+        "feature_groups": {
+            "funding": bool(resolved_include_funding),
+            "mark_index": bool(resolved_include_mark_index),
+            "open_interest": bool(resolved_include_open_interest),
+            "liquidations": bool(resolved_include_liquidations),
+        },
         "backend": str(backend or ""),
         "execute": bool(execute),
-        "features": [
-            "funding_rate",
-            "funding_mark_price",
-            "mark_price",
-            "index_price",
-            "open_interest",
-            "liquidation_long_qty",
-            "liquidation_short_qty",
-            "liquidation_long_notional",
-            "liquidation_short_notional",
-        ],
+        "features": features,
     }
 
     if not execute:
@@ -147,6 +191,10 @@ def collect_strategy_support_data(
         until_ms=int(effective_until),
         mark_index_interval=str(mark_index_interval),
         open_interest_period=str(open_interest_period),
+        include_funding=bool(resolved_include_funding),
+        include_mark_index=bool(resolved_include_mark_index),
+        include_open_interest=bool(resolved_include_open_interest),
+        include_liquidations=bool(resolved_include_liquidations),
         retries=max(0, int(retries)),
         backend=backend,
     )

@@ -466,6 +466,7 @@ uv run python scripts/collect_strategy_support_data.py \
 
 Collected feature points are stored in parquet-backed `futures_feature_points` datasets with:
 - `funding_rate`, `funding_mark_price`
+- `funding_fee_rate`, `funding_fee_quote_per_unit`
 - `mark_price`, `index_price`
 - `open_interest`
 - `liquidation_long_qty`, `liquidation_short_qty`

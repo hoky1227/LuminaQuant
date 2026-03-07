@@ -263,6 +263,11 @@ AGENTS.md
 var/*
 !var/**/
 !var/**/.gitkeep
+var/reports/*.json
+var/reports/*.csv
+var/reports/*.ndjson
+var/reports/archive/
+var/scripts/*
 
 # Keep source package namespace even with root-level data/ ignores.
 !src/lumina_quant/data/
