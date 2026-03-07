@@ -27,6 +27,7 @@ _REGISTRY_EXPORTS = frozenset(__all__)
 
 
 def __getattr__(name: str) -> Any:
+    """Lazily resolve registry exports to avoid package-level import cycles."""
     if name in _REGISTRY_EXPORTS:
         from . import registry
 
@@ -35,4 +36,5 @@ def __getattr__(name: str) -> Any:
 
 
 def __dir__() -> list[str]:
+    """Expose lazy registry exports in interactive/module introspection."""
     return sorted(set(globals()) | _REGISTRY_EXPORTS)
