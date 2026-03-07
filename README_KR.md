@@ -199,6 +199,13 @@ Collector 부트스트랩 동작:
   `now - storage.collector_bootstrap_lookback_hours`(기본 24시간)부터 시작합니다.
 - 초기 커버리지를 정확히 맞추려면 최초 1회는 `--since`를 명시하는 것을 권장합니다.
 
+Materializer 윈도우 동작:
+- `--start-date/--end-date`를 비우면, 주기적 materializer는 최신 `1s` 커밋
+  manifest를 기준으로 아직 변경될 수 있는 UTC 날짜 파티션만 다시 읽습니다
+  (기본 timeframe 세트에서는 보통 "당일 UTC 구간"만, 날짜 경계 지연이 있으면
+  최대 전일 UTC 파티션까지 재계산).
+- 과거 전체를 의도적으로 다시 만들고 싶으면 `--full-rebuild`를 사용하세요.
+
 라이브 시작 전 커밋 데이터 확인:
 ```bash
 uv run python - <<'PY'
