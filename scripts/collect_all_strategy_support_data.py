@@ -11,6 +11,10 @@ from typing import Any
 import polars as pl
 
 from lumina_quant.config import BaseConfig
+from lumina_quant.data.support_inventory import (
+    build_strategy_support_inventory,
+    write_strategy_support_inventory,
+)
 from lumina_quant.data_sync import parse_timestamp_input, sync_futures_feature_points
 from lumina_quant.market_data import load_futures_feature_points_from_db
 from lumina_quant.symbols import canonical_symbol
@@ -33,6 +37,21 @@ def _build_parser() -> argparse.ArgumentParser:
         "--report-path",
         default="var/reports/strategy_support_data_collection_latest.json",
         help="JSON summary output path.",
+    )
+    parser.add_argument(
+        "--inventory-json-path",
+        default="var/reports/strategy_support_inventory_latest.json",
+        help="Canonical JSON inventory output path.",
+    )
+    parser.add_argument(
+        "--inventory-csv-path",
+        default="var/reports/strategy_support_inventory_latest.csv",
+        help="Canonical CSV inventory output path.",
+    )
+    parser.add_argument(
+        "--skip-inventory",
+        action="store_true",
+        help="Skip post-collection inventory generation.",
     )
     return parser
 
@@ -214,6 +233,21 @@ def main() -> None:
             for row in results
         ],
     }
+    if not bool(args.skip_inventory):
+        inventory_payload = build_strategy_support_inventory(
+            db_path=db_path,
+            exchange=exchange_id,
+            symbols=symbols,
+        )
+        inventory_outputs = write_strategy_support_inventory(
+            payload=inventory_payload,
+            json_path=str(args.inventory_json_path),
+            csv_path=str(args.inventory_csv_path),
+        )
+        payload["inventory"] = {
+            "symbol_count": int(inventory_payload["symbol_count"]),
+            **inventory_outputs,
+        }
     report_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"[done] wrote {report_path}")
 
