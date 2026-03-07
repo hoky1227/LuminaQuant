@@ -318,7 +318,8 @@ def _parse_args() -> argparse.Namespace:
         help=(
             "Disable incremental partition-safe windowing when --start-date/--end-date are empty. "
             "Default behavior re-reads only the UTC date partitions that can still change based "
-            "on the latest committed 1s manifest."
+            "on the latest committed 1s manifest. Use this for historical backfills or raw "
+            "repairs older than the latest committed anchor."
         ),
     )
     return parser.parse_args()

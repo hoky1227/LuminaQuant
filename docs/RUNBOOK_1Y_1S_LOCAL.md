@@ -74,8 +74,10 @@ uv run lq live
 Notes:
 - Without explicit `--start-date/--end-date`, the periodic materializer only
   re-reads the UTC date partitions that can still change from the latest
-  committed `1s` manifest (default bundle => current UTC day so far).
-- Use `--full-rebuild` for intentional historical rebuilds.
+  committed `1s` manifest (default bundle => usually current UTC day so far;
+  actual span depends on the largest required timeframe and anchor gap).
+- Use `--full-rebuild` for intentional historical rebuilds or raw backfills that
+  land earlier than the latest committed materializer anchor.
 
 Live fail-fast contract:
 - committed data missing/parity fatal -> process exits with code `2`
