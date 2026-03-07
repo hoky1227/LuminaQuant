@@ -1,0 +1,77 @@
+{
+  "generated_at_utc": "2026-03-07T13:39:21.059573+00:00",
+  "scope": "metals_futures_support_data",
+  "exchange_id": "binance",
+  "symbols": {
+    "XAUUSDT": {
+      "rows": 124776,
+      "funding_fee_rows": 518,
+      "mark_rows": 124275,
+      "index_rows": 124017,
+      "open_interest_rows": 7803,
+      "liquidation_rows": 0,
+      "coverage_start_ms": 1765433280000,
+      "coverage_end_ms": 1772889720000,
+      "coverage_start_utc": "2025-12-11T06:08:00+00:00",
+      "coverage_end_utc": "2026-03-07T13:22:00+00:00",
+      "oi_start_ms": 1770540600000,
+      "oi_end_ms": 1772881200000,
+      "oi_start_utc": "2026-02-08T08:50:00+00:00",
+      "oi_end_utc": "2026-03-07T11:00:00+00:00"
+    },
+    "XAGUSDT": {
+      "rows": 85641,
+      "funding_fee_rows": 356,
+      "mark_rows": 85301,
+      "index_rows": 85022,
+      "open_interest_rows": 8004,
+      "liquidation_rows": 0,
+      "coverage_start_ms": 1767771720000,
+      "coverage_end_ms": 1772889720000,
+      "coverage_start_utc": "2026-01-07T07:42:00+00:00",
+      "coverage_end_utc": "2026-03-07T13:22:00+00:00",
+      "oi_start_ms": 1770480300000,
+      "oi_end_ms": 1772881200000,
+      "oi_start_utc": "2026-02-07T16:05:00+00:00",
+      "oi_end_utc": "2026-03-07T11:00:00+00:00"
+    },
+    "XPDUSDT": {
+      "rows": 52088,
+      "funding_fee_rows": 215,
+      "mark_rows": 51888,
+      "index_rows": 51888,
+      "open_interest_rows": 1998,
+      "liquidation_rows": 0,
+      "coverage_start_ms": 1769768100000,
+      "coverage_end_ms": 1772881320000,
+      "coverage_start_utc": "2026-01-30T10:15:00+00:00",
+      "coverage_end_utc": "2026-03-07T11:02:00+00:00",
+      "oi_start_ms": 1770518100000,
+      "oi_end_ms": 1771117800000,
+      "oi_start_utc": "2026-02-08T02:35:00+00:00",
+      "oi_end_utc": "2026-02-15T01:10:00+00:00"
+    },
+    "XPTUSDT": {
+      "rows": 52103,
+      "funding_fee_rows": 215,
+      "mark_rows": 51903,
+      "index_rows": 51903,
+      "open_interest_rows": 1997,
+      "liquidation_rows": 0,
+      "coverage_start_ms": 1769767200000,
+      "coverage_end_ms": 1772881320000,
+      "coverage_start_utc": "2026-01-30T10:00:00+00:00",
+      "coverage_end_utc": "2026-03-07T11:02:00+00:00",
+      "oi_start_ms": 1770517200000,
+      "oi_end_ms": 1771116900000,
+      "oi_start_utc": "2026-02-08T02:20:00+00:00",
+      "oi_end_utc": "2026-02-15T00:55:00+00:00"
+    }
+  },
+  "notes": {
+    "funding_fee": "collected from fundingRate history and backfilled into derived columns",
+    "index_price": "collector fixed to use pair parameter for indexPriceKlines",
+    "open_interest": "collector patched to chunk long ranges and skip empty leading windows",
+    "liquidation": "current Binance futures allForceOrders path returned HTTP 400/unsupported for these metals, so rows remain 0"
+  }
+}

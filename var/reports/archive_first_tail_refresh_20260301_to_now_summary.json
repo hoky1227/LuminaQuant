@@ -1,0 +1,149 @@
+{
+  "generated_at_utc": "2026-03-07T10:00:28.239790+00:00",
+  "db_path": "data/market_parquet",
+  "exchange_id": "binance",
+  "start_day": "2026-03-01",
+  "archive_end_day": "2026-03-06",
+  "today_start_utc": "2026-03-07T00:00:00+00:00",
+  "end_utc": "2026-03-07T10:00:28.239790+00:00",
+  "supported_symbols": [
+    "TRX/USDT",
+    "TON/USDT",
+    "ADA/USDT",
+    "DOGE/USDT",
+    "XRP/USDT",
+    "BNB/USDT",
+    "SOL/USDT",
+    "AVAX/USDT",
+    "ETH/USDT",
+    "BTC/USDT"
+  ],
+  "skipped_symbols": [
+    "XAU/USDT",
+    "XAG/USDT",
+    "XPT/USDT",
+    "XPD/USDT"
+  ],
+  "symbols": [
+    {
+      "symbol": "TRX/USDT",
+      "status": "ok",
+      "archive_days_loaded": 6,
+      "archive_days_missing": 0,
+      "archive_rows": 518390,
+      "archive_upserted_rows": 518390,
+      "today_fetched_rows": 35997,
+      "today_upserted_rows": 35997,
+      "today_last_utc": "2026-03-07T10:00:27+00:00",
+      "verified_last_utc": "2026-03-07T10:00:27+00:00"
+    },
+    {
+      "symbol": "TON/USDT",
+      "status": "ok",
+      "archive_days_loaded": 6,
+      "archive_days_missing": 0,
+      "archive_rows": 518382,
+      "archive_upserted_rows": 518382,
+      "today_fetched_rows": 35997,
+      "today_upserted_rows": 35997,
+      "today_last_utc": "2026-03-07T10:00:25+00:00",
+      "verified_last_utc": "2026-03-07T10:00:25+00:00"
+    },
+    {
+      "symbol": "ADA/USDT",
+      "status": "ok",
+      "archive_days_loaded": 6,
+      "archive_days_missing": 0,
+      "archive_rows": 518393,
+      "archive_upserted_rows": 518393,
+      "today_fetched_rows": 36014,
+      "today_upserted_rows": 36014,
+      "today_last_utc": "2026-03-07T10:00:27+00:00",
+      "verified_last_utc": "2026-03-07T10:00:27+00:00"
+    },
+    {
+      "symbol": "DOGE/USDT",
+      "status": "ok",
+      "archive_days_loaded": 6,
+      "archive_days_missing": 0,
+      "archive_rows": 518392,
+      "archive_upserted_rows": 518392,
+      "today_fetched_rows": 36022,
+      "today_upserted_rows": 36022,
+      "today_last_utc": "2026-03-07T10:00:27+00:00",
+      "verified_last_utc": "2026-03-07T10:00:27+00:00"
+    },
+    {
+      "symbol": "XRP/USDT",
+      "status": "ok",
+      "archive_days_loaded": 6,
+      "archive_days_missing": 0,
+      "archive_rows": 518392,
+      "archive_upserted_rows": 518392,
+      "today_fetched_rows": 36017,
+      "today_upserted_rows": 36017,
+      "today_last_utc": "2026-03-07T10:00:28+00:00",
+      "verified_last_utc": "2026-03-07T10:00:28+00:00"
+    },
+    {
+      "symbol": "BNB/USDT",
+      "status": "ok",
+      "archive_days_loaded": 6,
+      "archive_days_missing": 0,
+      "archive_rows": 518392,
+      "archive_upserted_rows": 518392,
+      "today_fetched_rows": 36002,
+      "today_upserted_rows": 36002,
+      "today_last_utc": "2026-03-07T10:00:27+00:00",
+      "verified_last_utc": "2026-03-07T10:00:27+00:00"
+    },
+    {
+      "symbol": "SOL/USDT",
+      "status": "ok",
+      "archive_days_loaded": 6,
+      "archive_days_missing": 0,
+      "archive_rows": 518394,
+      "archive_upserted_rows": 518394,
+      "today_fetched_rows": 36019,
+      "today_upserted_rows": 36019,
+      "today_last_utc": "2026-03-07T10:00:27+00:00",
+      "verified_last_utc": "2026-03-07T10:00:27+00:00"
+    },
+    {
+      "symbol": "AVAX/USDT",
+      "status": "ok",
+      "archive_days_loaded": 6,
+      "archive_days_missing": 0,
+      "archive_rows": 518389,
+      "archive_upserted_rows": 518389,
+      "today_fetched_rows": 36025,
+      "today_upserted_rows": 36025,
+      "today_last_utc": "2026-03-07T10:00:27+00:00",
+      "verified_last_utc": "2026-03-07T10:00:27+00:00"
+    },
+    {
+      "symbol": "ETH/USDT",
+      "status": "ok",
+      "archive_days_loaded": 6,
+      "archive_days_missing": 0,
+      "archive_rows": 518394,
+      "archive_upserted_rows": 518394,
+      "today_fetched_rows": 36024,
+      "today_upserted_rows": 36024,
+      "today_last_utc": "2026-03-07T10:00:28+00:00",
+      "verified_last_utc": "2026-03-07T10:00:28+00:00"
+    },
+    {
+      "symbol": "BTC/USDT",
+      "status": "ok",
+      "archive_days_loaded": 6,
+      "archive_days_missing": 0,
+      "archive_rows": 518392,
+      "archive_upserted_rows": 518392,
+      "today_fetched_rows": 36017,
+      "today_upserted_rows": 36017,
+      "today_last_utc": "2026-03-07T10:00:28+00:00",
+      "verified_last_utc": "2026-03-07T10:00:28+00:00"
+    }
+  ]
+}

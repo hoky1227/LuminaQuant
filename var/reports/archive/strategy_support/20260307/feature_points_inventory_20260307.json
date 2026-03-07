@@ -1,0 +1,53 @@
+{
+  "symbols": {
+    "XAUUSDT": {
+      "rows": 124776,
+      "min_ts": 1765433280000,
+      "max_ts": 1772889720000,
+      "funding_fee_rows": 518,
+      "mark_rows": 124275,
+      "index_rows": 124017,
+      "oi_rows": 7803,
+      "liq_rows": 0,
+      "oi_min_ts": 1770540600000,
+      "oi_max_ts": 1772881200000
+    },
+    "XAGUSDT": {
+      "rows": 85641,
+      "min_ts": 1767771720000,
+      "max_ts": 1772889720000,
+      "funding_fee_rows": 356,
+      "mark_rows": 85301,
+      "index_rows": 85022,
+      "oi_rows": 8004,
+      "liq_rows": 0,
+      "oi_min_ts": 1770480300000,
+      "oi_max_ts": 1772881200000
+    },
+    "XPDUSDT": {
+      "rows": 52088,
+      "min_ts": 1769768100000,
+      "max_ts": 1772881320000,
+      "funding_fee_rows": 215,
+      "mark_rows": 51888,
+      "index_rows": 51888,
+      "oi_rows": 1998,
+      "liq_rows": 0,
+      "oi_min_ts": 1770518100000,
+      "oi_max_ts": 1771117800000
+    },
+    "XPTUSDT": {
+      "rows": 52103,
+      "min_ts": 1769767200000,
+      "max_ts": 1772881320000,
+      "funding_fee_rows": 215,
+      "mark_rows": 51903,
+      "index_rows": 51903,
+      "oi_rows": 1997,
+      "liq_rows": 0,
+      "oi_min_ts": 1770517200000,
+      "oi_max_ts": 1771116900000
+    }
+  },
+  "symbol_count": 4
+}

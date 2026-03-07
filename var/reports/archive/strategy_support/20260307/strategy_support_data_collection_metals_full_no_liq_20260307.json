@@ -1,0 +1,170 @@
+{
+  "generated_at_utc": "2026-03-07T13:34:08.861675+00:00",
+  "db_path": "data/market_parquet",
+  "exchange_id": "binance",
+  "symbols": [
+    {
+      "db_path": "data/market_parquet",
+      "exchange_id": "binance",
+      "symbol_list": [
+        "XAU/USDT"
+      ],
+      "since_ms": 1765440320000,
+      "until_ms": 1772881366000,
+      "mark_index_interval": "1m",
+      "open_interest_period": "5m",
+      "feature_profile": "full",
+      "feature_groups": {
+        "funding": true,
+        "mark_index": true,
+        "open_interest": true,
+        "liquidations": false
+      },
+      "backend": "",
+      "execute": true,
+      "features": [
+        "funding_rate",
+        "funding_mark_price",
+        "funding_fee_rate",
+        "funding_fee_quote_per_unit",
+        "mark_price",
+        "index_price",
+        "open_interest"
+      ],
+      "status": "executed",
+      "upserted_rows": 124517,
+      "per_symbol": [
+        {
+          "symbol": "XAU/USDT",
+          "upserted_rows": 124517,
+          "first_timestamp_ms": 1765440360000,
+          "last_timestamp_ms": 1772881320000
+        }
+      ],
+      "symbol": "XAU/USDT"
+    },
+    {
+      "db_path": "data/market_parquet",
+      "exchange_id": "binance",
+      "symbol_list": [
+        "XAG/USDT"
+      ],
+      "since_ms": 1767780001000,
+      "until_ms": 1772881366000,
+      "mark_index_interval": "1m",
+      "open_interest_period": "5m",
+      "feature_profile": "full",
+      "feature_groups": {
+        "funding": true,
+        "mark_index": true,
+        "open_interest": true,
+        "liquidations": false
+      },
+      "backend": "",
+      "execute": true,
+      "features": [
+        "funding_rate",
+        "funding_mark_price",
+        "funding_fee_rate",
+        "funding_fee_quote_per_unit",
+        "mark_price",
+        "index_price",
+        "open_interest"
+      ],
+      "status": "executed",
+      "upserted_rows": 85361,
+      "per_symbol": [
+        {
+          "symbol": "XAG/USDT",
+          "upserted_rows": 85361,
+          "first_timestamp_ms": 1767780060000,
+          "last_timestamp_ms": 1772881320000
+        }
+      ],
+      "symbol": "XAG/USDT"
+    },
+    {
+      "db_path": "data/market_parquet",
+      "exchange_id": "binance",
+      "symbol_list": [
+        "XPD/USDT"
+      ],
+      "since_ms": 1769768100000,
+      "until_ms": 1772881356000,
+      "mark_index_interval": "1m",
+      "open_interest_period": "5m",
+      "feature_profile": "full",
+      "feature_groups": {
+        "funding": true,
+        "mark_index": true,
+        "open_interest": true,
+        "liquidations": false
+      },
+      "backend": "",
+      "execute": true,
+      "features": [
+        "funding_rate",
+        "funding_mark_price",
+        "funding_fee_rate",
+        "funding_fee_quote_per_unit",
+        "mark_price",
+        "index_price",
+        "open_interest"
+      ],
+      "status": "executed",
+      "upserted_rows": 52088,
+      "per_symbol": [
+        {
+          "symbol": "XPD/USDT",
+          "upserted_rows": 52088,
+          "first_timestamp_ms": 1769768100000,
+          "last_timestamp_ms": 1772881320000
+        }
+      ],
+      "symbol": "XPD/USDT"
+    },
+    {
+      "db_path": "data/market_parquet",
+      "exchange_id": "binance",
+      "symbol_list": [
+        "XPT/USDT"
+      ],
+      "since_ms": 1769767200000,
+      "until_ms": 1772881346000,
+      "mark_index_interval": "1m",
+      "open_interest_period": "5m",
+      "feature_profile": "full",
+      "feature_groups": {
+        "funding": true,
+        "mark_index": true,
+        "open_interest": true,
+        "liquidations": false
+      },
+      "backend": "",
+      "execute": true,
+      "features": [
+        "funding_rate",
+        "funding_mark_price",
+        "funding_fee_rate",
+        "funding_fee_quote_per_unit",
+        "mark_price",
+        "index_price",
+        "open_interest"
+      ],
+      "status": "executed",
+      "upserted_rows": 52103,
+      "per_symbol": [
+        {
+          "symbol": "XPT/USDT",
+          "upserted_rows": 52103,
+          "first_timestamp_ms": 1769767200000,
+          "last_timestamp_ms": 1772881320000
+        }
+      ],
+      "symbol": "XPT/USDT"
+    }
+  ],
+  "notes": [
+    "liquidations skipped due Binance allForceOrders endpoint availability/rate-limit issues during collection"
+  ]
+}

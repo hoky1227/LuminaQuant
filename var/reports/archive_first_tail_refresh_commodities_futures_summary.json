@@ -1,0 +1,66 @@
+{
+  "generated_at_utc": "2026-03-07T11:02:47.686733+00:00",
+  "db_path": "data/market_parquet",
+  "exchange_id": "binance",
+  "archive_end_day": "2026-03-06",
+  "today_start_utc": "2026-03-07T00:00:00+00:00",
+  "end_utc": "2026-03-07T11:02:47.686733+00:00",
+  "symbols": [
+    {
+      "symbol": "XAU/USDT",
+      "status": "ok",
+      "start_day": "2025-12-11",
+      "archive_start_day": "2026-02-28",
+      "archive_days_loaded": 7,
+      "archive_days_missing": 0,
+      "archive_rows": 604790,
+      "archive_upserted_rows": 604790,
+      "today_fetched_rows": 39728,
+      "today_upserted_rows": 39728,
+      "today_last_utc": "2026-03-07T11:02:46+00:00",
+      "verified_last_utc": "2026-03-07T11:02:46+00:00"
+    },
+    {
+      "symbol": "XAG/USDT",
+      "status": "ok",
+      "start_day": "2026-01-07",
+      "archive_start_day": "2026-01-07",
+      "archive_days_loaded": 59,
+      "archive_days_missing": 0,
+      "archive_rows": 5061330,
+      "archive_upserted_rows": 5061330,
+      "today_fetched_rows": 39731,
+      "today_upserted_rows": 39731,
+      "today_last_utc": "2026-03-07T11:02:46+00:00",
+      "verified_last_utc": "2026-03-07T11:02:46+00:00"
+    },
+    {
+      "symbol": "XPT/USDT",
+      "status": "ok",
+      "start_day": "2026-01-30",
+      "archive_start_day": "2026-01-30",
+      "archive_days_loaded": 36,
+      "archive_days_missing": 0,
+      "archive_rows": 3073642,
+      "archive_upserted_rows": 3073642,
+      "today_fetched_rows": 39345,
+      "today_upserted_rows": 39345,
+      "today_last_utc": "2026-03-07T11:02:26+00:00",
+      "verified_last_utc": "2026-03-07T11:02:26+00:00"
+    },
+    {
+      "symbol": "XPD/USDT",
+      "status": "ok",
+      "start_day": "2026-01-30",
+      "archive_start_day": "2026-01-30",
+      "archive_days_loaded": 36,
+      "archive_days_missing": 0,
+      "archive_rows": 3072961,
+      "archive_upserted_rows": 3072961,
+      "today_fetched_rows": 39195,
+      "today_upserted_rows": 39195,
+      "today_last_utc": "2026-03-07T11:02:36+00:00",
+      "verified_last_utc": "2026-03-07T11:02:36+00:00"
+    }
+  ]
+}

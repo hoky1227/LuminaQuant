@@ -1,0 +1,9 @@
+{
+  "generated_at_utc": "2026-03-07T09:47:30.258911+00:00",
+  "db_path": "data/market_parquet",
+  "exchange_id": "binance",
+  "timeframe": "1s",
+  "start_utc": "2026-03-01T00:00:00+00:00",
+  "end_utc": "2026-03-07T09:47:30.258911+00:00",
+  "symbols": []
+}

@@ -1,0 +1,43 @@
+{
+  "generated_at_utc": "2026-03-07T09:44:16.771068+00:00",
+  "db_path": "data/market_parquet",
+  "exchange_id": "binance",
+  "timeframe": "1s",
+  "start_utc": "2025-01-01T00:00:00+00:00",
+  "end_utc": "2026-03-07T09:44:16.771068+00:00",
+  "requested_symbols": [
+    "BTC/USDT",
+    "ETH/USDT",
+    "XRP/USDT",
+    "BNB/USDT",
+    "SOL/USDT",
+    "TRX/USDT",
+    "DOGE/USDT",
+    "ADA/USDT",
+    "TON/USDT",
+    "AVAX/USDT",
+    "XAU/USDT",
+    "XAG/USDT",
+    "XPT/USDT",
+    "XPD/USDT"
+  ],
+  "supported_symbols": [
+    "BTC/USDT",
+    "ETH/USDT",
+    "XRP/USDT",
+    "BNB/USDT",
+    "SOL/USDT",
+    "TRX/USDT",
+    "DOGE/USDT",
+    "ADA/USDT",
+    "TON/USDT",
+    "AVAX/USDT"
+  ],
+  "skipped_symbols": [
+    "XAU/USDT",
+    "XAG/USDT",
+    "XPT/USDT",
+    "XPD/USDT"
+  ],
+  "symbols": []
+}
