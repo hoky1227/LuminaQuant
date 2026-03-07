@@ -19,6 +19,7 @@ def test_sensitive_path_detection_blocks_private_trees():
     assert publish_public_pr.is_sensitive_path("strategies/rsi_strategy.py")
     assert publish_public_pr.is_sensitive_path("lumina_quant/indicators/formulaic_alpha.py")
     assert publish_public_pr.is_sensitive_path("reports/benchmarks/latest.json")
+    assert publish_public_pr.is_sensitive_path(".github/hardcoded_params_baseline.json")
     assert publish_public_pr.is_sensitive_path(".env")
 
 
