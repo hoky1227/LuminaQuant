@@ -1,0 +1,8 @@
+{
+  "artifact_kind": "strict_valid_strategy",
+  "count": 0,
+  "generated_at": "2026-03-09T14:01:31.427748+00:00",
+  "schema_version": "1.0",
+  "selection_basis": "strict_promoted_only",
+  "strategies": []
+}

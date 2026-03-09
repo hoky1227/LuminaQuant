@@ -39,7 +39,7 @@ _PERIODS_PER_YEAR = {
 
 _MIN_BARS = 360
 _CROWDING_SUPPORT_PATH = Path("data") / "market_parquet" / "feature_points"
-_METALS = {"XAU/USDT", "XAG/USDT"}
+_METALS = {"XAU/USDT", "XAG/USDT", "XPT/USDT", "XPD/USDT"}
 _LEADERS = ("BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT")
 _FEATURE_POINT_COLUMNS: tuple[str, ...] = (
     "funding_rate",
@@ -69,6 +69,9 @@ DEFAULT_RESEARCH_SCORING_CONFIG: dict[str, Any] = {
         "turnover_penalty": 2.5,
         "drawdown_penalty": 3.0,
         "turnover_threshold": 2.5,
+        "instability_sharpe_penalty": 0.75,
+        "instability_return_penalty": 35.0,
+        "instability_turnover_penalty": 1.0,
     },
     "hurdle_score_weights": {
         "sharpe_weight": 2.4,
@@ -130,7 +133,12 @@ class SeriesBundle:
     volume: np.ndarray
 
 
-def _load_feature_cache(*, symbols: Sequence[str]) -> dict[str, pl.DataFrame]:
+def _load_feature_cache(
+    *,
+    symbols: Sequence[str],
+    start_date: Any = None,
+    end_date: Any = None,
+) -> dict[str, pl.DataFrame]:
     db_path = str(getattr(BaseConfig, "MARKET_DATA_PARQUET_PATH", "data/market_parquet"))
     exchange = str(getattr(BaseConfig, "MARKET_DATA_EXCHANGE", "binance") or "binance")
     cache: dict[str, pl.DataFrame] = {}
@@ -141,6 +149,8 @@ def _load_feature_cache(*, symbols: Sequence[str]) -> dict[str, pl.DataFrame]:
                 db_path,
                 exchange=exchange,
                 symbol=symbol,
+                start_date=start_date,
+                end_date=end_date,
             )
         except Exception:
             frame = pl.DataFrame()
@@ -324,6 +334,97 @@ def _family_from_strategy(strategy_class: str) -> str:
     if "micro" in token:
         return "micro"
     return "other"
+
+
+def _coerce_utc_datetime(value: Any, *, end_of_day: bool = False) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        dt = value
+    elif isinstance(value, np.datetime64):
+        epoch_ms = int(value.astype("datetime64[ms]").astype(np.int64))
+        dt = datetime.fromtimestamp(epoch_ms / 1000.0, tz=UTC)
+    elif isinstance(value, (int, float)):
+        numeric = int(value)
+        if abs(numeric) < 100_000_000_000:
+            numeric *= 1000
+        dt = datetime.fromtimestamp(numeric / 1000.0, tz=UTC)
+    else:
+        text = str(value).strip()
+        if not text:
+            return None
+        if len(text) == 10 and text[4] == "-" and text[7] == "-":
+            dt = datetime.fromisoformat(text)
+            if end_of_day:
+                dt = dt + timedelta(days=1) - timedelta(milliseconds=1)
+        else:
+            dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
+
+
+def _datetime_to_iso_z(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _to_numpy_datetime64_ms(value: datetime | None) -> np.datetime64 | None:
+    if value is None:
+        return None
+    return np.datetime64(value.astimezone(UTC).replace(tzinfo=None), "ms")
+
+
+def _split_window_bounds(split: Mapping[str, Any] | None) -> tuple[datetime | None, datetime | None]:
+    if not isinstance(split, Mapping):
+        return None, None
+    starts = [
+        _coerce_utc_datetime(split.get("train_start")),
+        _coerce_utc_datetime(split.get("val_start")),
+        _coerce_utc_datetime(split.get("oos_start") or split.get("test_start")),
+    ]
+    ends = [
+        _coerce_utc_datetime(split.get("train_end"), end_of_day=True),
+        _coerce_utc_datetime(split.get("val_end"), end_of_day=True),
+        _coerce_utc_datetime(split.get("oos_end") or split.get("test_end"), end_of_day=True),
+    ]
+    valid_starts = [item for item in starts if item is not None]
+    valid_ends = [item for item in ends if item is not None]
+    return (
+        min(valid_starts) if valid_starts else None,
+        max(valid_ends) if valid_ends else None,
+    )
+
+
+def _resolve_split_config(
+    split: Mapping[str, Any] | None,
+    *,
+    strategy_timeframe: str,
+) -> dict[str, Any]:
+    resolved = dict(split) if isinstance(split, Mapping) else _build_default_split(strategy_timeframe)
+    train_start = _coerce_utc_datetime(resolved.get("train_start"))
+    train_end = _coerce_utc_datetime(resolved.get("train_end"), end_of_day=True)
+    val_start = _coerce_utc_datetime(resolved.get("val_start"))
+    val_end = _coerce_utc_datetime(resolved.get("val_end"), end_of_day=True)
+    oos_start = _coerce_utc_datetime(resolved.get("oos_start") or resolved.get("test_start"))
+    oos_end = _coerce_utc_datetime(
+        resolved.get("oos_end") or resolved.get("test_end"),
+        end_of_day=True,
+    )
+    return {
+        **resolved,
+        "train_start": _datetime_to_iso_z(train_start),
+        "train_end": _datetime_to_iso_z(train_end),
+        "val_start": _datetime_to_iso_z(val_start),
+        "val_end": _datetime_to_iso_z(val_end),
+        "oos_start": _datetime_to_iso_z(oos_start),
+        "oos_end": _datetime_to_iso_z(oos_end),
+        "strategy_timeframe": str(
+            resolved.get("strategy_timeframe") or resolved.get("timeframe") or strategy_timeframe
+        ),
+        "mode": str(resolved.get("mode") or ("exact_dates" if isinstance(split, Mapping) else "rolling_default")),
+    }
 
 
 def _split_lengths(total: int, *, train_frac: float = 0.60, val_frac: float = 0.20) -> tuple[slice, slice, slice]:
@@ -663,8 +764,98 @@ def _hurdle_fields(
     return fields, bool(cost_ok and not hard_reject_reasons), hard_reject_reasons
 
 
-def _series_to_stream(values: np.ndarray, *, offset: int = 0) -> list[dict[str, float]]:
-    return [{"t": float(offset + idx), "v": float(value)} for idx, value in enumerate(values)]
+def _split_masks_from_datetimes(
+    datetimes: np.ndarray,
+    *,
+    split: Mapping[str, Any] | None = None,
+) -> dict[str, np.ndarray]:
+    size = int(datetimes.size)
+    empty = np.zeros(size, dtype=bool)
+    if size <= 0:
+        return {"train": empty, "val": empty, "oos": empty}
+
+    if not isinstance(split, Mapping):
+        split_train, split_val, split_oos = _split_lengths(size)
+        train_mask = np.zeros(size, dtype=bool)
+        val_mask = np.zeros(size, dtype=bool)
+        oos_mask = np.zeros(size, dtype=bool)
+        train_mask[split_train] = True
+        val_mask[split_val] = True
+        oos_mask[split_oos] = True
+        return {"train": train_mask, "val": val_mask, "oos": oos_mask}
+
+    resolved = _resolve_split_config(split, strategy_timeframe=str(split.get("strategy_timeframe") or "1m"))
+    stage_bounds = {
+        "train": (
+            _to_numpy_datetime64_ms(_coerce_utc_datetime(resolved.get("train_start"))),
+            _to_numpy_datetime64_ms(_coerce_utc_datetime(resolved.get("train_end"), end_of_day=True)),
+        ),
+        "val": (
+            _to_numpy_datetime64_ms(_coerce_utc_datetime(resolved.get("val_start"))),
+            _to_numpy_datetime64_ms(_coerce_utc_datetime(resolved.get("val_end"), end_of_day=True)),
+        ),
+        "oos": (
+            _to_numpy_datetime64_ms(_coerce_utc_datetime(resolved.get("oos_start"))),
+            _to_numpy_datetime64_ms(_coerce_utc_datetime(resolved.get("oos_end"), end_of_day=True)),
+        ),
+    }
+
+    ts = np.asarray(datetimes, dtype="datetime64[ms]")
+    covered = np.zeros(size, dtype=bool)
+    out: dict[str, np.ndarray] = {}
+    for stage in ("train", "val", "oos"):
+        start, end = stage_bounds[stage]
+        mask = np.ones(size, dtype=bool)
+        if start is not None:
+            mask &= ts >= start
+        if end is not None:
+            mask &= ts <= end
+        if start is not None and end is not None and end < start:
+            mask &= False
+        mask &= ~covered
+        covered |= mask
+        out[stage] = mask
+    return out
+
+
+def _align_series_to_timestamps(
+    target_timestamps: np.ndarray,
+    *,
+    source_timestamps: np.ndarray,
+    values: np.ndarray,
+) -> np.ndarray:
+    target = np.asarray(target_timestamps, dtype="datetime64[ms]")
+    source = np.asarray(source_timestamps, dtype="datetime64[ms]")
+    arr = np.asarray(values, dtype=float)
+    if target.size == 0 or source.size == 0 or arr.size == 0:
+        return np.zeros(target.size, dtype=float)
+    idx = np.searchsorted(source, target)
+    valid = (idx >= 0) & (idx < source.size)
+    out = np.zeros(target.size, dtype=float)
+    if not np.any(valid):
+        return out
+    matched = valid.copy()
+    matched[valid] = source[idx[valid]] == target[valid]
+    if np.any(matched):
+        out[matched] = arr[idx[matched]]
+    return out
+
+
+def _series_to_stream(
+    values: np.ndarray,
+    *,
+    timestamps: np.ndarray | None = None,
+    offset: int = 0,
+) -> list[dict[str, float | int]]:
+    if timestamps is None:
+        return [{"t": float(offset + idx), "v": float(value)} for idx, value in enumerate(values)]
+
+    ts = np.asarray(timestamps, dtype="datetime64[ms]")
+    out: list[dict[str, float | int]] = []
+    for idx, value in enumerate(values):
+        epoch_ms = int(ts[idx].astype("datetime64[ms]").astype(np.int64))
+        out.append({"t": epoch_ms, "v": float(value)})
+    return out
 
 
 def _normal_cdf(value: float) -> float:
@@ -713,6 +904,125 @@ def _vol_ratio_series(closes: np.ndarray, fast: int = 8, slow: int = 55) -> np.n
         slow_std = _safe_std(rets[idx - s : idx])
         out[idx - 1] = 0.0 if slow_std <= 1e-12 else fast_std / slow_std
     return out
+
+
+def _rolling_volatility_series(closes: np.ndarray, window: int) -> np.ndarray:
+    out = np.full(closes.shape, np.nan, dtype=float)
+    win = max(8, int(window))
+    if closes.size < win:
+        return out
+    log_close = np.log(np.clip(closes, 1e-12, np.inf))
+    rets = np.diff(log_close, prepend=log_close[0])
+    for idx in range(win, rets.size + 1):
+        out[idx - 1] = _safe_std(rets[idx - win : idx])
+    return out
+
+
+def _composite_trend_signal_strength(
+    *,
+    sigma: float,
+    crowding_score: float | None,
+    crowding_reduce_threshold: float,
+    risk_target_vol: float,
+    max_signal_strength: float,
+) -> float:
+    sigma_floor = max(1e-6, float(sigma))
+    strength = float(risk_target_vol) / sigma_floor
+    strength = min(float(max_signal_strength), max(0.10, strength))
+    if crowding_score is not None and abs(float(crowding_score)) >= float(crowding_reduce_threshold):
+        strength *= 0.5
+    return float(max(0.05, strength))
+
+
+def _composite_trend_position_series(
+    *,
+    close: np.ndarray,
+    score: np.ndarray,
+    gate: np.ndarray,
+    crowding: np.ndarray | None,
+    long_threshold: float,
+    short_threshold: float,
+    exit_score_cross: float,
+    risk_target_vol: float,
+    max_signal_strength: float,
+    vol_window: int,
+    max_hold_bars: int,
+    crowding_reduce_threshold: float,
+    crowding_block_threshold: float,
+    allow_short: bool,
+) -> np.ndarray:
+    close_arr = np.asarray(close, dtype=float)
+    score_arr = np.asarray(score, dtype=float)
+    gate_arr = np.asarray(gate, dtype=bool)
+    crowd_arr = (
+        np.full(close_arr.shape, np.nan, dtype=float)
+        if crowding is None
+        else np.asarray(crowding, dtype=float)
+    )
+    sigma_arr = _rolling_volatility_series(close_arr, vol_window)
+    position = np.zeros(close_arr.shape, dtype=float)
+    mode = 0
+    bars_held = 0
+
+    for idx in range(close_arr.size):
+        close_i = float(close_arr[idx])
+        score_i = float(score_arr[idx]) if np.isfinite(score_arr[idx]) else float("nan")
+        gate_i = bool(gate_arr[idx]) if idx < gate_arr.size else False
+        crowd_i = crowd_arr[idx] if idx < crowd_arr.size and np.isfinite(crowd_arr[idx]) else None
+        strength = _composite_trend_signal_strength(
+            sigma=float(sigma_arr[idx]) if np.isfinite(sigma_arr[idx]) else 0.0,
+            crowding_score=crowd_i,
+            crowding_reduce_threshold=float(crowding_reduce_threshold),
+            risk_target_vol=float(risk_target_vol),
+            max_signal_strength=float(max_signal_strength),
+        )
+        blocked = crowd_i is not None and abs(float(crowd_i)) >= float(crowding_block_threshold)
+
+        if not np.isfinite(close_i):
+            position[idx] = float(mode) * strength
+            continue
+
+        if mode == 1:
+            bars_held += 1
+            should_exit = (not gate_i) or (not np.isfinite(score_i)) or (score_i <= float(exit_score_cross)) or (bars_held >= int(max_hold_bars))
+            if should_exit:
+                mode = 0
+                bars_held = 0
+                position[idx] = 0.0
+            else:
+                position[idx] = strength
+            continue
+
+        if mode == -1:
+            bars_held += 1
+            should_exit = (not gate_i) or (not np.isfinite(score_i)) or (score_i >= -float(exit_score_cross)) or (bars_held >= int(max_hold_bars))
+            if should_exit:
+                mode = 0
+                bars_held = 0
+                position[idx] = 0.0
+            else:
+                position[idx] = -strength
+            continue
+
+        if not gate_i or not np.isfinite(score_i) or blocked:
+            position[idx] = 0.0
+            continue
+
+        if score_i >= float(long_threshold):
+            mode = 1
+            bars_held = 0
+            position[idx] = strength
+            continue
+
+        if bool(allow_short) and score_i <= -float(short_threshold):
+            mode = -1
+            bars_held = 0
+            position[idx] = -strength
+            continue
+
+        position[idx] = 0.0
+
+    return position
 
 
 def _vwap_dev_z(high: np.ndarray, low: np.ndarray, close: np.ndarray, volume: np.ndarray, window: int = 60, z_window: int = 120) -> np.ndarray:
@@ -770,29 +1080,46 @@ def _align_bundles(
 ) -> dict[str, np.ndarray] | None:
     if not bundles:
         return None
-    min_len = min(bundle.close.size for bundle in bundles)
-    if min_len < _MIN_BARS:
+    common_datetime = np.asarray(bundles[0].datetime, dtype="datetime64[ms]")
+    for bundle in bundles[1:]:
+        common_datetime = np.intersect1d(
+            common_datetime,
+            np.asarray(bundle.datetime, dtype="datetime64[ms]"),
+            assume_unique=False,
+        )
+        if common_datetime.size < _MIN_BARS:
+            return None
+    if common_datetime.size < _MIN_BARS:
         return None
 
     aligned: dict[str, np.ndarray] = {
-        "datetime": bundles[0].datetime[-min_len:],
+        "datetime": common_datetime,
     }
     for bundle in bundles:
         prefix = bundle.symbol
-        aligned[f"{prefix}:open"] = bundle.open[-min_len:]
-        aligned[f"{prefix}:high"] = bundle.high[-min_len:]
-        aligned[f"{prefix}:low"] = bundle.low[-min_len:]
-        aligned[f"{prefix}:close"] = bundle.close[-min_len:]
-        aligned[f"{prefix}:volume"] = bundle.volume[-min_len:]
+        bundle_datetime = np.asarray(bundle.datetime, dtype="datetime64[ms]")
+        indices = np.searchsorted(bundle_datetime, common_datetime)
+        if np.any(indices >= bundle_datetime.size) or np.any(bundle_datetime[indices] != common_datetime):
+            return None
+        aligned[f"{prefix}:open"] = bundle.open[indices]
+        aligned[f"{prefix}:high"] = bundle.high[indices]
+        aligned[f"{prefix}:low"] = bundle.low[indices]
+        aligned[f"{prefix}:close"] = bundle.close[indices]
+        aligned[f"{prefix}:volume"] = bundle.volume[indices]
         feature_frame = None if feature_cache is None else feature_cache.get(prefix)
         if feature_frame is None or feature_frame.is_empty():
             continue
 
         target = pl.DataFrame(
-            {"datetime": pl.Series("datetime", bundle.datetime[-min_len:])}
+            {"datetime": pl.Series("datetime", common_datetime)}
         )
+        feature_points = feature_frame.select(["datetime", *_FEATURE_POINT_COLUMNS])
+        target_dtype = target.schema.get("datetime")
+        feature_dtype = feature_points.schema.get("datetime")
+        if target_dtype is not None and feature_dtype is not None and target_dtype != feature_dtype:
+            feature_points = feature_points.with_columns(pl.col("datetime").cast(target_dtype))
         joined = target.join_asof(
-            feature_frame.select(["datetime", *_FEATURE_POINT_COLUMNS]).sort("datetime"),
+            feature_points.sort("datetime"),
             on="datetime",
             strategy="backward",
         )
@@ -976,8 +1303,16 @@ def _strategy_signal(
     if strategy_class == "CompositeTrendStrategy":
         long_th = float(params.get("long_threshold", 0.55))
         short_th = float(params.get("short_threshold", 0.55))
+        exit_score_cross = float(params.get("exit_score_cross", 0.05))
         te_min = float(params.get("te_min", 0.25))
         vr_min = float(params.get("vr_min", 0.85))
+        risk_target_vol = float(params.get("risk_target_vol", 0.004))
+        max_signal_strength = float(params.get("max_signal_strength", 2.0))
+        vol_window = int(params.get("vol_window", 120))
+        max_hold_bars = int(params.get("max_hold_bars", 640))
+        allow_short = bool(params.get("allow_short", True))
+        reduce_th = float(params.get("crowding_reduce_threshold", 0.55))
+        block_th = float(params.get("crowding_block_threshold", 0.85))
 
         for s_idx, symbol in enumerate(symbols):
             close = aligned[f"{symbol}:close"]
@@ -999,19 +1334,23 @@ def _strategy_signal(
             score = mom * (1.0 + 0.25 * np.tanh(np.nan_to_num(vol_shock) / 2.0)) * np.clip(te, 0.0, 1.0)
             gate = (te >= te_min) & (vr >= vr_min)
 
-            position = np.where(score >= long_th, 1.0, np.where(score <= -short_th, -1.0, 0.0))
-            position = np.where(gate, position, 0.0)
             crowding = aligned.get(f"{symbol}:crowding_score")
-            if crowding is not None:
-                reduce_th = float(params.get("crowding_reduce_threshold", 0.55))
-                block_th = float(params.get("crowding_block_threshold", 0.85))
-                crowd = np.nan_to_num(np.asarray(crowding, dtype=float), nan=0.0)
-                position = np.where(np.abs(crowd) >= block_th, 0.0, position)
-                position = np.where(
-                    (np.abs(crowd) >= reduce_th) & (position != 0.0),
-                    0.5 * np.sign(position),
-                    position,
-                )
+            position = _composite_trend_position_series(
+                close=np.asarray(close, dtype=float),
+                score=np.asarray(score, dtype=float),
+                gate=np.asarray(gate, dtype=bool),
+                crowding=None if crowding is None else np.asarray(crowding, dtype=float),
+                long_threshold=long_th,
+                short_threshold=short_th,
+                exit_score_cross=exit_score_cross,
+                risk_target_vol=risk_target_vol,
+                max_signal_strength=max_signal_strength,
+                vol_window=vol_window,
+                max_hold_bars=max_hold_bars,
+                crowding_reduce_threshold=reduce_th,
+                crowding_block_threshold=block_th,
+                allow_short=allow_short,
+            )
             exposures[s_idx] = position
 
             _ = high, low  # kept for symmetry with requested factor inputs.
@@ -1200,9 +1539,10 @@ def _evaluate_candidate(
     *,
     cache: Mapping[tuple[str, str], SeriesBundle],
     feature_cache: Mapping[str, pl.DataFrame] | None,
-    benchmark_cache: Mapping[str, np.ndarray],
+    benchmark_cache: Mapping[str, Mapping[str, np.ndarray] | np.ndarray],
     candidate_count: int,
     scoring_config: Mapping[str, Any] | None = None,
+    split: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     symbols = canonicalize_symbol_list(list(candidate.get("symbols") or []))
     timeframe = str(candidate.get("strategy_timeframe") or candidate.get("timeframe") or "1m")
@@ -1227,29 +1567,43 @@ def _evaluate_candidate(
     returns_raw, turnover, exposure, meta = _strategy_signal(candidate, aligned=aligned, symbols=symbols)
     cost_rate = _candidate_cost_rate(candidate)
     returns = returns_raw - (turnover * cost_rate)
+    timestamps = np.asarray(aligned.get("datetime"), dtype="datetime64[ms]")
 
-    split_train, split_val, split_oos = _split_lengths(returns.size)
-    train_returns = returns[split_train]
-    val_returns = returns[split_val]
-    oos_returns = returns[split_oos]
+    split_masks = _split_masks_from_datetimes(timestamps, split=split)
+    train_returns = returns[split_masks["train"]]
+    val_returns = returns[split_masks["val"]]
+    oos_returns = returns[split_masks["oos"]]
 
-    train_turnover = turnover[split_train]
-    val_turnover = turnover[split_val]
-    oos_turnover = turnover[split_oos]
+    train_turnover = turnover[split_masks["train"]]
+    val_turnover = turnover[split_masks["val"]]
+    oos_turnover = turnover[split_masks["oos"]]
 
-    train_exposure = exposure[split_train]
-    val_exposure = exposure[split_val]
-    oos_exposure = exposure[split_oos]
+    train_exposure = exposure[split_masks["train"]]
+    val_exposure = exposure[split_masks["val"]]
+    oos_exposure = exposure[split_masks["oos"]]
 
     periods_per_year = int(_PERIODS_PER_YEAR.get(timeframe, 365))
-    benchmark = benchmark_cache.get(timeframe)
-    if benchmark is None or benchmark.size < returns.size:
-        benchmark = np.zeros_like(returns)
-    benchmark = benchmark[-returns.size :]
+    benchmark_entry = benchmark_cache.get(timeframe)
+    if isinstance(benchmark_entry, Mapping):
+        benchmark_datetime = benchmark_entry.get("datetime")
+        benchmark_returns = benchmark_entry.get("returns")
+        benchmark = _align_series_to_timestamps(
+            timestamps,
+            source_timestamps=np.asarray(
+                benchmark_datetime if benchmark_datetime is not None else [],
+                dtype="datetime64[ms]",
+            ),
+            values=np.asarray(benchmark_returns if benchmark_returns is not None else [], dtype=float),
+        )
+    else:
+        benchmark = np.asarray(benchmark_entry if benchmark_entry is not None else [], dtype=float)
+        if benchmark.size < returns.size:
+            benchmark = np.zeros_like(returns)
+        benchmark = benchmark[-returns.size :]
 
-    train_bench = benchmark[split_train]
-    val_bench = benchmark[split_val]
-    oos_bench = benchmark[split_oos]
+    train_bench = benchmark[split_masks["train"]]
+    val_bench = benchmark[split_masks["val"]]
+    oos_bench = benchmark[split_masks["oos"]]
 
     train_metrics = _compute_metrics(
         train_returns,
@@ -1279,8 +1633,8 @@ def _evaluate_candidate(
     # Cost stress tests on OOS.
     cost_rate_x2 = cost_rate * 2.0
     cost_rate_x3 = cost_rate * 3.0
-    oos_x2 = returns_raw[split_oos] - (oos_turnover * cost_rate_x2)
-    oos_x3 = returns_raw[split_oos] - (oos_turnover * cost_rate_x3)
+    oos_x2 = returns_raw[split_masks["oos"]] - (oos_turnover * cost_rate_x2)
+    oos_x3 = returns_raw[split_masks["oos"]] - (oos_turnover * cost_rate_x3)
     oos_stress_x2 = _compute_metrics(
         oos_x2,
         turnover=oos_turnover,
@@ -1322,6 +1676,7 @@ def _evaluate_candidate(
 
     return {
         "candidate": candidate,
+        "timestamps": timestamps,
         "returns": returns,
         "turnover": turnover,
         "exposure": exposure,
@@ -1344,9 +1699,29 @@ def _evaluate_candidate(
         "metadata": {
             "strategy_family": _family_from_strategy(str(candidate.get("strategy_class") or "")),
             "cost_rate": float(cost_rate),
+            "aligned_bars": int(timestamps.size),
             **meta,
         },
     }
+
+
+def _candidate_instability_penalty(
+    row: dict[str, Any],
+    *,
+    scoring_config: Mapping[str, Any] | None = None,
+) -> float:
+    cfg = _resolve_score_config(scoring_config)
+    weights = dict(cfg["candidate_rank_score_weights"])
+    val = dict(row.get("val") or {})
+    oos = dict(row.get("oos") or {})
+    sharpe_gap = max(0.0, float(val.get("sharpe", 0.0)) - float(oos.get("sharpe", 0.0)))
+    return_gap = max(0.0, float(val.get("return", 0.0)) - float(oos.get("return", 0.0)))
+    turnover_gap = max(0.0, float(oos.get("turnover", 0.0)) - float(val.get("turnover", 0.0)))
+    return float(
+        (float(weights["instability_sharpe_penalty"]) * sharpe_gap)
+        + (float(weights["instability_return_penalty"]) * return_gap)
+        + (float(weights["instability_turnover_penalty"]) * turnover_gap)
+    )
 
 
 def _candidate_rank_score(row: dict[str, Any], *, scoring_config: Mapping[str, Any] | None = None) -> float:
@@ -1363,6 +1738,7 @@ def _candidate_rank_score(row: dict[str, Any], *, scoring_config: Mapping[str, A
             * max(0.0, float(oos.get("turnover", 0.0)) - float(weights["turnover_threshold"]))
         )
         - (float(weights["drawdown_penalty"]) * float(oos.get("mdd", 0.0)))
+        - _candidate_instability_penalty(row, scoring_config=scoring_config)
     )
 
 
@@ -1407,7 +1783,14 @@ def _read_csv_ohlcv(path: Path) -> pl.DataFrame:
     return out
 
 
-def _synthetic_bundle(symbol: str, timeframe: str, *, bars: int = 2400) -> SeriesBundle:
+def _synthetic_bundle(
+    symbol: str,
+    timeframe: str,
+    *,
+    bars: int = 2400,
+    start_date: Any = None,
+    end_date: Any = None,
+) -> SeriesBundle:
     seed = _hash_seed("synthetic", symbol, timeframe)
     rng = random.Random(seed)
 
@@ -1422,7 +1805,17 @@ def _synthetic_bundle(symbol: str, timeframe: str, *, bars: int = 2400) -> Serie
         "1d": 86_400,
     }.get(timeframe, 60)
 
-    start = datetime.now(UTC) - timedelta(seconds=bars * step_seconds)
+    start_bound = _coerce_utc_datetime(start_date)
+    end_bound = _coerce_utc_datetime(end_date, end_of_day=True)
+    if start_bound is not None and end_bound is not None and end_bound > start_bound:
+        requested_bars = int(((end_bound - start_bound).total_seconds()) // step_seconds) + 1
+        bars = max(_MIN_BARS, min(max(bars, requested_bars), 20_000))
+        if requested_bars <= bars:
+            start = start_bound
+        else:
+            start = end_bound - timedelta(seconds=(bars - 1) * step_seconds)
+    else:
+        start = datetime.now(UTC) - timedelta(seconds=bars * step_seconds)
 
     close = np.zeros(bars, dtype=float)
     high = np.zeros(bars, dtype=float)
@@ -1485,6 +1878,8 @@ def _load_bundle_cache(
     *,
     symbols: Sequence[str],
     timeframes: Sequence[str],
+    start_date: Any = None,
+    end_date: Any = None,
 ) -> tuple[dict[tuple[str, str], SeriesBundle], dict[str, list[str]]]:
     cache: dict[tuple[str, str], SeriesBundle] = {}
     source_map: dict[str, list[str]] = {"parquet": [], "csv": [], "synthetic": []}
@@ -1500,6 +1895,8 @@ def _load_bundle_cache(
                 exchange=exchange,
                 symbol_list=list(symbols),
                 timeframe=timeframe,
+                start_date=start_date,
+                end_date=end_date,
             )
         except Exception:
             loaded = {}
@@ -1527,6 +1924,17 @@ def _load_bundle_cache(
                     frame_csv = _read_csv_ohlcv(csv_path)
                 except Exception:
                     frame_csv = pl.DataFrame()
+                if not frame_csv.is_empty() and (start_date is not None or end_date is not None):
+                    start_bound = _coerce_utc_datetime(start_date)
+                    end_bound = _coerce_utc_datetime(end_date, end_of_day=True)
+                    if start_bound is not None:
+                        frame_csv = frame_csv.filter(
+                            pl.col("datetime") >= start_bound.replace(tzinfo=None)
+                        )
+                    if end_bound is not None:
+                        frame_csv = frame_csv.filter(
+                            pl.col("datetime") <= end_bound.replace(tzinfo=None)
+                        )
                 if frame_csv.is_empty() or frame_csv.height < _MIN_BARS:
                     continue
                 csv_bundle = _frame_to_bundle(symbol, timeframe, frame_csv)
@@ -1537,20 +1945,29 @@ def _load_bundle_cache(
                 source_map["csv"].append(f"{symbol}@{timeframe}")
                 continue
 
-            cache[key] = _synthetic_bundle(symbol, timeframe)
+            cache[key] = _synthetic_bundle(symbol, timeframe, start_date=start_date, end_date=end_date)
             source_map["synthetic"].append(f"{symbol}@{timeframe}")
 
     return cache, source_map
 
 
-def _benchmark_cache(cache: Mapping[tuple[str, str], SeriesBundle], timeframes: Sequence[str]) -> dict[str, np.ndarray]:
-    out: dict[str, np.ndarray] = {}
+def _benchmark_cache(
+    cache: Mapping[tuple[str, str], SeriesBundle],
+    timeframes: Sequence[str],
+) -> dict[str, dict[str, np.ndarray]]:
+    out: dict[str, dict[str, np.ndarray]] = {}
     for tf in timeframes:
         bundle = cache.get(("BTC/USDT", tf))
         if bundle is None:
-            out[tf] = np.asarray([], dtype=float)
+            out[tf] = {
+                "datetime": np.asarray([], dtype="datetime64[ms]"),
+                "returns": np.asarray([], dtype=float),
+            }
         else:
-            out[tf] = _returns_from_close(bundle.close)
+            out[tf] = {
+                "datetime": np.asarray(bundle.datetime, dtype="datetime64[ms]"),
+                "returns": _returns_from_close(bundle.close),
+            }
     return out
 
 
@@ -1582,6 +1999,7 @@ def run_candidate_research(
     stage1_keep_ratio: float = 0.35,
     max_candidates: int = 512,
     score_config: Mapping[str, Any] | None = None,
+    split: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Evaluate candidate manifest into train/val/OOS report contract (v2)."""
     base_tf = str(base_timeframe).strip().lower() or "1s"
@@ -1609,13 +2027,17 @@ def run_candidate_research(
             required=CANONICAL_STRATEGY_TIMEFRAMES,
             strict_subset=True,
         )
+        empty_split = _resolve_split_config(
+            split,
+            strategy_timeframe=normalized_timeframes[0] if normalized_timeframes else "1m",
+        )
         return {
             "schema_version": "v2",
             "generated_at": datetime.now(UTC).isoformat(),
             "base_timeframe": base_tf,
             "strategy_timeframes": normalized_timeframes,
             "symbol_universe": canonicalize_symbol_list(symbol_universe or BaseConfig.SYMBOLS),
-            "split": _build_default_split(normalized_timeframes[0] if normalized_timeframes else "1m"),
+            "split": empty_split,
             "candidates": [],
             "stage1": {
                 "input_count": 0,
@@ -1645,10 +2067,24 @@ def run_candidate_research(
     if candidate_symbols:
         universe = canonicalize_symbol_list(list(dict.fromkeys(list(universe) + list(candidate_symbols))))
 
-    cache, data_sources = _load_bundle_cache(
-        symbols=universe,
-        timeframes=normalized_timeframes,
-    )
+    split_timeframe = normalized_timeframes[0] if normalized_timeframes else "1m"
+    resolved_split = _resolve_split_config(split, strategy_timeframe=split_timeframe)
+    load_start, load_end = _split_window_bounds(resolved_split)
+
+    load_bundle_kwargs = {
+        "symbols": universe,
+        "timeframes": normalized_timeframes,
+    }
+    try:
+        cache, data_sources = _load_bundle_cache(
+            **load_bundle_kwargs,
+            start_date=_datetime_to_iso_z(load_start),
+            end_date=_datetime_to_iso_z(load_end),
+        )
+    except TypeError as exc:
+        if "unexpected keyword argument" not in str(exc):
+            raise
+        cache, data_sources = _load_bundle_cache(**load_bundle_kwargs)
     support_feature_symbols = canonicalize_symbol_list(
         itertools.chain.from_iterable(
             list(row.get("symbols") or [])
@@ -1657,20 +2093,36 @@ def run_candidate_research(
             in {"PerpCrowdingCarryStrategy", "CompositeTrendStrategy"}
         )
     )
-    feature_cache = _load_feature_cache(symbols=support_feature_symbols)
+    feature_cache = _load_feature_cache(
+        symbols=support_feature_symbols,
+        start_date=_datetime_to_iso_z(load_start),
+        end_date=_datetime_to_iso_z(load_end),
+    )
     benchmark = _benchmark_cache(cache, normalized_timeframes)
 
     # Stage-1 fast prefilter: evaluate on early train region approximation.
     scored_stage1: list[tuple[float, dict[str, Any]]] = []
     for row in adapted:
-        result = _evaluate_candidate(
-            row,
-            cache=cache,
-            feature_cache=feature_cache,
-            benchmark_cache=benchmark,
-            candidate_count=max(1, len(adapted)),
-            scoring_config=resolved_scoring_config,
-        )
+        evaluate_kwargs = {
+            "cache": cache,
+            "feature_cache": feature_cache,
+            "benchmark_cache": benchmark,
+            "candidate_count": max(1, len(adapted)),
+            "scoring_config": resolved_scoring_config,
+        }
+        try:
+            result = _evaluate_candidate(
+                row,
+                **evaluate_kwargs,
+                split=resolved_split,
+            )
+        except TypeError as exc:
+            if "unexpected keyword argument" not in str(exc):
+                raise
+            result = _evaluate_candidate(
+                row,
+                **evaluate_kwargs,
+            )
         if result.get("error"):
             score = stage1_error_score
         else:
@@ -1735,7 +2187,25 @@ def run_candidate_research(
             continue
 
         returns = np.asarray(result.get("returns"), dtype=float)
-        split_train, split_val, split_oos = _split_lengths(returns.size)
+        raw_timestamps = result.get("timestamps")
+        timestamps = (
+            np.asarray(raw_timestamps, dtype="datetime64[ms]")
+            if raw_timestamps is not None
+            else np.asarray([], dtype="datetime64[ms]")
+        )
+        has_aligned_timestamps = timestamps.size == returns.size
+        if has_aligned_timestamps:
+            split_masks = _split_masks_from_datetimes(timestamps, split=resolved_split)
+        else:
+            train_slice, val_slice, oos_slice = _split_lengths(returns.size)
+            split_masks = {
+                "train": np.zeros(returns.size, dtype=bool),
+                "val": np.zeros(returns.size, dtype=bool),
+                "oos": np.zeros(returns.size, dtype=bool),
+            }
+            split_masks["train"][train_slice] = True
+            split_masks["val"][val_slice] = True
+            split_masks["oos"][oos_slice] = True
 
         train = dict(result.get("train") or {})
         val = dict(result.get("val") or {})
@@ -1758,11 +2228,20 @@ def run_candidate_research(
             "val": val,
             "oos": oos,
             "hurdle_fields": dict(result.get("hurdle_fields") or {}),
-            "return_streams": {
-                "train": _series_to_stream(returns[split_train]),
-                "val": _series_to_stream(returns[split_val], offset=split_train.stop or 0),
-                "oos": _series_to_stream(returns[split_oos], offset=split_val.stop or 0),
-            },
+                "return_streams": {
+                    "train": _series_to_stream(
+                        returns[split_masks["train"]],
+                        timestamps=timestamps[split_masks["train"]] if has_aligned_timestamps else None,
+                    ),
+                    "val": _series_to_stream(
+                        returns[split_masks["val"]],
+                        timestamps=timestamps[split_masks["val"]] if has_aligned_timestamps else None,
+                    ),
+                    "oos": _series_to_stream(
+                        returns[split_masks["oos"]],
+                        timestamps=timestamps[split_masks["oos"]] if has_aligned_timestamps else None,
+                    ),
+                },
             "cost_metrics": {
                 "turnover": float(oos.get("turnover", 0.0)),
                 "fee_cost": float(result.get("metadata", {}).get("cost_rate", 0.0)),
@@ -1806,16 +2285,13 @@ def run_candidate_research(
         reverse=True,
     )
 
-    split_timeframe = normalized_timeframes[0] if normalized_timeframes else "1m"
-    split = _build_default_split(split_timeframe)
-
     return {
         "schema_version": "v2",
         "generated_at": datetime.now(UTC).isoformat(),
         "base_timeframe": base_tf,
         "strategy_timeframes": normalized_timeframes,
         "symbol_universe": universe,
-        "split": split,
+        "split": resolved_split,
         "candidates": report_candidates,
         "stage1": {
             "input_count": len(adapted),

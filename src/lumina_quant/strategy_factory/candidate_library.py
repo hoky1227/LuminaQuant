@@ -5,12 +5,13 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from itertools import product
 from pathlib import Path
 from typing import Any
 
+from lumina_quant.strategies.pair_spread_zscore import bounded_pair_retune_params
 from lumina_quant.symbols import (
     CANONICAL_STRATEGY_TIMEFRAMES,
     canonicalize_symbol_list,
@@ -30,16 +31,26 @@ _DEFAULT_SYMBOL_FALLBACK: tuple[str, ...] = (
     "AVAX/USDT",
     "XAU/USDT",
     "XAG/USDT",
+    "XPT/USDT",
+    "XPD/USDT",
 )
 
 _PAIR_ANCHORS: tuple[tuple[str, str], ...] = (
     ("BTC/USDT", "ETH/USDT"),
+    ("BTC/USDT", "BNB/USDT"),
+    ("BTC/USDT", "TRX/USDT"),
+    ("BNB/USDT", "TRX/USDT"),
     ("ETH/USDT", "SOL/USDT"),
     ("XAU/USDT", "XAG/USDT"),
+    ("XPT/USDT", "XPD/USDT"),
+    ("BTC/USDT", "XAU/USDT"),
+    ("ETH/USDT", "XAU/USDT"),
+    ("BNB/USDT", "XAU/USDT"),
+    ("BTC/USDT", "XAG/USDT"),
 )
 
 _CRYPTO_LEADERS = {"BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT"}
-_METALS = {"XAU/USDT", "XAG/USDT"}
+_METALS = {"XAU/USDT", "XAG/USDT", "XPT/USDT", "XPD/USDT"}
 
 
 try:  # pragma: no cover - guarded import for bootstrap contexts
@@ -52,6 +63,307 @@ except Exception:  # pragma: no cover - safe fallback during partial imports
     DEFAULT_BINANCE_TOP10_PLUS_METALS = _DEFAULT_SYMBOL_FALLBACK
 
 DEFAULT_TIMEFRAMES: tuple[str, ...] = CANONICAL_STRATEGY_TIMEFRAMES
+
+_COMPOSITE_TREND_OOS_STABILITY_SLICE: dict[str, tuple[dict[str, Any], ...]] = {
+    "30m": (
+        {
+            "variant": "stable_ls_core",
+            "long_threshold": 0.60,
+            "short_threshold": 0.45,
+            "te_min": 0.20,
+            "vr_min": 0.80,
+            "exit_score_cross": 0.03,
+            "chop_max": 60.0,
+            "vol_window": 144,
+            "risk_target_vol": 0.0038,
+            "max_signal_strength": 1.35,
+            "atr_stop_mult": 2.0,
+            "trail_atr_mult": 3.0,
+            "max_hold_bars": 960,
+            "crowding_reduce_threshold": 0.50,
+            "crowding_block_threshold": 0.78,
+            "allow_short": True,
+        },
+        {
+            "variant": "stable_ls_highconv",
+            "long_threshold": 0.75,
+            "short_threshold": 0.45,
+            "te_min": 0.20,
+            "vr_min": 0.80,
+            "exit_score_cross": 0.03,
+            "chop_max": 60.0,
+            "vol_window": 144,
+            "risk_target_vol": 0.0036,
+            "max_signal_strength": 1.20,
+            "atr_stop_mult": 2.0,
+            "trail_atr_mult": 3.1,
+            "max_hold_bars": 960,
+            "crowding_reduce_threshold": 0.50,
+            "crowding_block_threshold": 0.78,
+            "allow_short": True,
+        },
+        {
+            "variant": "stable_ls_tefilter",
+            "long_threshold": 0.60,
+            "short_threshold": 0.45,
+            "te_min": 0.25,
+            "vr_min": 0.80,
+            "exit_score_cross": 0.04,
+            "chop_max": 58.0,
+            "vol_window": 160,
+            "risk_target_vol": 0.0035,
+            "max_signal_strength": 1.15,
+            "atr_stop_mult": 2.1,
+            "trail_atr_mult": 3.2,
+            "max_hold_bars": 960,
+            "crowding_reduce_threshold": 0.48,
+            "crowding_block_threshold": 0.75,
+            "allow_short": True,
+        },
+    ),
+    "1h": (
+        {
+            "variant": "stable_lo_core",
+            "long_threshold": 0.60,
+            "short_threshold": 0.75,
+            "te_min": 0.25,
+            "vr_min": 0.80,
+            "exit_score_cross": 0.03,
+            "chop_max": 58.0,
+            "vol_window": 168,
+            "risk_target_vol": 0.0030,
+            "max_signal_strength": 1.10,
+            "atr_stop_mult": 2.0,
+            "trail_atr_mult": 3.0,
+            "max_hold_bars": 720,
+            "crowding_reduce_threshold": 0.45,
+            "crowding_block_threshold": 0.70,
+            "allow_short": False,
+        },
+        {
+            "variant": "stable_lo_highconv",
+            "long_threshold": 0.75,
+            "short_threshold": 0.75,
+            "te_min": 0.25,
+            "vr_min": 0.80,
+            "exit_score_cross": 0.03,
+            "chop_max": 58.0,
+            "vol_window": 168,
+            "risk_target_vol": 0.0028,
+            "max_signal_strength": 1.00,
+            "atr_stop_mult": 2.0,
+            "trail_atr_mult": 3.1,
+            "max_hold_bars": 720,
+            "crowding_reduce_threshold": 0.45,
+            "crowding_block_threshold": 0.70,
+            "allow_short": False,
+        },
+        {
+            "variant": "stable_lo_guarded",
+            "long_threshold": 0.75,
+            "short_threshold": 0.60,
+            "te_min": 0.25,
+            "vr_min": 0.95,
+            "exit_score_cross": 0.02,
+            "chop_max": 56.0,
+            "vol_window": 192,
+            "risk_target_vol": 0.0028,
+            "max_signal_strength": 0.95,
+            "atr_stop_mult": 2.1,
+            "trail_atr_mult": 3.2,
+            "max_hold_bars": 720,
+            "crowding_reduce_threshold": 0.40,
+            "crowding_block_threshold": 0.65,
+            "allow_short": False,
+        },
+    ),
+}
+
+_PAIR_RETUNE_FOCUS_PAIRS_15M: tuple[tuple[str, str], ...] = (
+    ("BTC/USDT", "TRX/USDT"),
+    ("BNB/USDT", "TRX/USDT"),
+)
+
+_PAIR_RETUNE_FOCUS_PAIRS_4H: tuple[tuple[str, str], ...] = (
+    ("BTC/USDT", "ETH/USDT"),
+    ("BTC/USDT", "BNB/USDT"),
+    ("ETH/USDT", "SOL/USDT"),
+    ("XAU/USDT", "XAG/USDT"),
+    ("XPT/USDT", "XPD/USDT"),
+    ("BTC/USDT", "XAU/USDT"),
+    ("ETH/USDT", "XAU/USDT"),
+    ("BNB/USDT", "XAU/USDT"),
+    ("BTC/USDT", "XAG/USDT"),
+)
+
+_PAIR_RETUNE_FOCUS_PAIRS_1D: tuple[tuple[str, str], ...] = (
+    ("BTC/USDT", "ETH/USDT"),
+    ("BTC/USDT", "BNB/USDT"),
+    ("BTC/USDT", "TRX/USDT"),
+    ("XPT/USDT", "XPD/USDT"),
+    ("BTC/USDT", "XAU/USDT"),
+    ("ETH/USDT", "XAU/USDT"),
+    ("BNB/USDT", "XAU/USDT"),
+    ("BTC/USDT", "XAG/USDT"),
+)
+
+_PAIR_RETUNE_SPECS_BY_TIMEFRAME: dict[str, tuple[tuple[float, float, float], ...]] = {
+    "15m": (
+        (2.6, 0.70, 4.2),
+        (3.0, 0.85, 4.8),
+    ),
+    "1h": (
+        (1.8, 0.45, 3.4),
+        (2.2, 0.55, 3.9),
+        (2.6, 0.70, 4.2),
+    ),
+    "4h": (
+        (1.6, 0.35, 3.0),
+        (1.8, 0.45, 3.4),
+        (2.0, 0.50, 3.6),
+        (2.2, 0.55, 3.9),
+        (2.6, 0.70, 4.2),
+    ),
+    "1d": (
+        (1.4, 0.30, 2.8),
+        (1.5, 0.33, 2.9),
+        (1.6, 0.35, 3.0),
+        (1.8, 0.45, 3.4),
+        (2.2, 0.55, 3.9),
+    ),
+}
+
+_PAIR_RETUNE_PARAM_SETS_BY_TIMEFRAME: dict[str, tuple[dict[str, float | int | str], ...]] = {
+    "4h": (
+        {
+            "variant": "participation",
+            "lookback_window": 72,
+            "hedge_window": 144,
+            "min_correlation": 0.05,
+            "cooldown_bars": 4,
+            "reentry_z_buffer": 0.15,
+            "max_hold_bars": 96,
+            "stop_loss_pct": 0.025,
+        },
+        {
+            "variant": "balanced",
+            "lookback_window": 96,
+            "hedge_window": 192,
+            "min_correlation": 0.08,
+            "cooldown_bars": 5,
+            "reentry_z_buffer": 0.18,
+            "max_hold_bars": 120,
+            "stop_loss_pct": 0.025,
+        },
+        {
+            "variant": "stability",
+            "lookback_window": 120,
+            "hedge_window": 240,
+            "min_correlation": 0.12,
+            "cooldown_bars": 6,
+            "reentry_z_buffer": 0.22,
+            "max_hold_bars": 144,
+            "stop_loss_pct": 0.020,
+        },
+        {
+            "variant": "fast_cycle",
+            "lookback_window": 84,
+            "hedge_window": 168,
+            "min_correlation": 0.03,
+            "cooldown_bars": 3,
+            "reentry_z_buffer": 0.12,
+            "max_hold_bars": 72,
+            "stop_loss_pct": 0.030,
+        },
+    ),
+    "1d": (
+        {
+            "variant": "participation",
+            "lookback_window": 48,
+            "hedge_window": 96,
+            "min_correlation": 0.00,
+            "cooldown_bars": 1,
+            "reentry_z_buffer": 0.10,
+            "max_hold_bars": 28,
+            "stop_loss_pct": 0.020,
+        },
+        {
+            "variant": "balanced",
+            "lookback_window": 64,
+            "hedge_window": 128,
+            "min_correlation": 0.04,
+            "cooldown_bars": 2,
+            "reentry_z_buffer": 0.12,
+            "max_hold_bars": 36,
+            "stop_loss_pct": 0.020,
+        },
+        {
+            "variant": "short_window",
+            "lookback_window": 40,
+            "hedge_window": 80,
+            "min_correlation": 0.00,
+            "cooldown_bars": 1,
+            "reentry_z_buffer": 0.08,
+            "max_hold_bars": 24,
+            "stop_loss_pct": 0.020,
+        },
+    ),
+}
+
+_VOLCOMP_RETUNE_SLICE: dict[str, tuple[dict[str, Any], ...]] = {
+    "5m": (
+        {
+            "variant": "guarded_lo_core",
+            "vwap_window": 96,
+            "z_window": 192,
+            "entry_z": 2.2,
+            "exit_z": 0.18,
+            "compression_percentile": 0.12,
+            "compression_vol_ratio": 0.72,
+            "atr_stop_pct": 0.012,
+            "max_hold_bars": 24,
+            "allow_short": False,
+        },
+        {
+            "variant": "guarded_lo_strict",
+            "vwap_window": 120,
+            "z_window": 240,
+            "entry_z": 2.6,
+            "exit_z": 0.15,
+            "compression_percentile": 0.10,
+            "compression_vol_ratio": 0.68,
+            "atr_stop_pct": 0.010,
+            "max_hold_bars": 18,
+            "allow_short": False,
+        },
+    ),
+    "15m": (
+        {
+            "variant": "guarded_lo_core",
+            "vwap_window": 72,
+            "z_window": 168,
+            "entry_z": 2.0,
+            "exit_z": 0.22,
+            "compression_percentile": 0.16,
+            "compression_vol_ratio": 0.78,
+            "atr_stop_pct": 0.016,
+            "max_hold_bars": 36,
+            "allow_short": False,
+        },
+        {
+            "variant": "guarded_lo_strict",
+            "vwap_window": 96,
+            "z_window": 192,
+            "entry_z": 2.4,
+            "exit_z": 0.18,
+            "compression_percentile": 0.12,
+            "compression_vol_ratio": 0.72,
+            "atr_stop_pct": 0.014,
+            "max_hold_bars": 28,
+            "allow_short": False,
+        },
+    ),
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,6 +378,8 @@ class StrategyCandidate:
     symbols: tuple[str, ...]
     params: dict[str, Any]
     notes: str
+    tags: tuple[str, ...] = ()
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         timeframe = str(self.timeframe)
@@ -81,6 +395,8 @@ class StrategyCandidate:
             "symbols": list(self.symbols),
             "params": dict(self.params),
             "notes": self.notes,
+            "tags": list(self.tags),
+            "metadata": dict(self.metadata),
         }
 
 
@@ -114,10 +430,18 @@ def _add_candidate(
     symbols: Sequence[str],
     params: dict[str, Any],
     notes: str,
+    tags: Sequence[str] | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> None:
     symbol_tuple = tuple(canonicalize_symbol_list(symbols))
     if not symbol_tuple:
         return
+    normalized_tags = tuple(str(tag) for tag in list(tags or []) if str(tag))
+    metadata_payload = {
+        "timeframe": str(timeframe),
+        "family": str(family),
+        **dict(metadata or {}),
+    }
     out.append(
         StrategyCandidate(
             candidate_id=_candidate_id(
@@ -133,6 +457,8 @@ def _add_candidate(
             symbols=symbol_tuple,
             params=dict(params),
             notes=notes,
+            tags=normalized_tags,
+            metadata=metadata_payload,
         )
     )
 
@@ -168,63 +494,99 @@ def build_binance_futures_candidates(
     candidates: list[StrategyCandidate] = []
     pairs = _pairs_in_universe(normalized_symbols)
 
-    trend_tfs = [tf for tf in ("30m", "1h", "4h", "1d") if tf in normalized_timeframes]
-    mean_rev_tfs = [tf for tf in ("1m", "5m", "15m") if tf in normalized_timeframes]
-    pair_tfs = [tf for tf in ("5m", "15m", "1h") if tf in normalized_timeframes]
+    trend_tfs = [tf for tf in ("30m", "1h") if tf in normalized_timeframes]
+    mean_rev_tfs = [tf for tf in ("5m", "15m") if tf in normalized_timeframes]
+    pair_tfs = [tf for tf in ("15m", "1h", "4h", "1d") if tf in normalized_timeframes]
     carry_tfs = [tf for tf in ("30m", "1h", "4h") if tf in normalized_timeframes]
     micro_tfs = [tf for tf in ("1s",) if tf in normalized_timeframes]
 
     crypto_symbols = [symbol for symbol in normalized_symbols if symbol not in _METALS]
     laggard_symbols = [symbol for symbol in crypto_symbols if symbol not in _CRYPTO_LEADERS]
 
-    # Primary trend sleeve (RG_PVTM).
+    # Primary trend sleeve (RG_PVTM) with explicit 30m/1h OOS-stability retune only.
     for timeframe in trend_tfs:
         tf_tag = timeframe.replace("/", "-")
-        for long_th, short_th, te_min, vr_min in product((0.45, 0.60, 0.75), (0.45, 0.60, 0.75), (0.20, 0.25), (0.80, 0.95)):
+        for spec in _COMPOSITE_TREND_OOS_STABILITY_SLICE.get(timeframe, ()):
             params = {
-                "long_threshold": float(long_th),
-                "short_threshold": float(short_th),
-                "te_min": float(te_min),
-                "vr_min": float(vr_min),
-                "chop_max": 62.0,
-                "risk_target_vol": 0.004,
-                "atr_stop_mult": 2.0,
-                "trail_atr_mult": 2.8,
-                "allow_short": True,
+                "long_threshold": float(spec["long_threshold"]),
+                "short_threshold": float(spec["short_threshold"]),
+                "exit_score_cross": float(spec["exit_score_cross"]),
+                "te_min": float(spec["te_min"]),
+                "vr_min": float(spec["vr_min"]),
+                "chop_max": float(spec["chop_max"]),
+                "vol_window": int(spec["vol_window"]),
+                "risk_target_vol": float(spec["risk_target_vol"]),
+                "max_signal_strength": float(spec["max_signal_strength"]),
+                "atr_stop_mult": float(spec["atr_stop_mult"]),
+                "trail_atr_mult": float(spec["trail_atr_mult"]),
+                "max_hold_bars": int(spec["max_hold_bars"]),
+                "crowding_reduce_threshold": float(spec["crowding_reduce_threshold"]),
+                "crowding_block_threshold": float(spec["crowding_block_threshold"]),
+                "allow_short": bool(spec["allow_short"]),
             }
+            regime_tag = "ls" if bool(spec["allow_short"]) else "lo"
             _add_candidate(
                 candidates,
-                name=f"composite_trend_{tf_tag}_{long_th:.2f}_{short_th:.2f}_{te_min:.2f}_{vr_min:.2f}",
+                name=(
+                    "composite_trend_stable_"
+                    f"{tf_tag}_{spec['variant']}_{regime_tag}_"
+                    f"{float(spec['long_threshold']):.2f}_{float(spec['short_threshold']):.2f}_"
+                    f"{float(spec['te_min']):.2f}_{float(spec['vr_min']):.2f}"
+                ),
                 family="trend",
                 strategy_class="CompositeTrendStrategy",
                 timeframe=timeframe,
                 symbols=normalized_symbols,
                 params=params,
-                notes="Primary RG_PVTM trend sleeve across full universe.",
+                notes=(
+                    "Primary RG_PVTM trend sleeve with bounded 30m/1h OOS-stability retune "
+                    f"({spec['variant']}, {'long-only' if not bool(spec['allow_short']) else 'long/short'})."
+                ),
+                tags=("trend", "trend-following", "momentum", "oos-stability"),
+                metadata={
+                    "timeframe": timeframe,
+                    "regime": "ls" if bool(spec["allow_short"]) else "lo",
+                    "allow_short": bool(spec["allow_short"]),
+                    "retune_profile": str(spec["variant"]),
+                },
             )
 
     # Vol-compression VWAP reversion sleeve.
     for timeframe in mean_rev_tfs:
         tf_tag = timeframe.replace("/", "-")
-        for entry_z, exit_z, comp_pct in product((1.2, 1.5, 1.9), (0.25, 0.35, 0.50), (0.20, 0.30, 0.40)):
+        for spec in _VOLCOMP_RETUNE_SLICE.get(timeframe, ()):
             params = {
-                "entry_z": float(entry_z),
-                "exit_z": float(exit_z),
-                "compression_percentile": float(comp_pct),
-                "compression_vol_ratio": 0.85,
-                "atr_stop_pct": 0.02,
-                "max_hold_bars": 64,
-                "allow_short": True,
+                "vwap_window": int(spec["vwap_window"]),
+                "z_window": int(spec["z_window"]),
+                "entry_z": float(spec["entry_z"]),
+                "exit_z": float(spec["exit_z"]),
+                "compression_percentile": float(spec["compression_percentile"]),
+                "compression_vol_ratio": float(spec["compression_vol_ratio"]),
+                "atr_stop_pct": float(spec["atr_stop_pct"]),
+                "max_hold_bars": int(spec["max_hold_bars"]),
+                "allow_short": bool(spec["allow_short"]),
             }
             _add_candidate(
                 candidates,
-                name=f"volcomp_vwap_rev_{tf_tag}_{entry_z:.2f}_{exit_z:.2f}_{comp_pct:.2f}",
+                name=(
+                    f"volcomp_vwap_rev_guarded_{tf_tag}_{spec['variant']}_"
+                    f"{float(spec['entry_z']):.2f}_{float(spec['compression_percentile']):.2f}"
+                ),
                 family="mean_reversion",
                 strategy_class="VolCompressionVWAPReversionStrategy",
                 timeframe=timeframe,
                 symbols=normalized_symbols,
                 params=params,
-                notes="Compression-gated VWAP mean reversion diversifier.",
+                notes=(
+                    "Compression-gated VWAP mean reversion with bounded low-turnover guardrails "
+                    f"for {timeframe} follow-up ({spec['variant']})."
+                ),
+                tags=("mean_reversion", "vol_compression", "vwap", "bounded"),
+                metadata={
+                    "timeframe": timeframe,
+                    "entry_guard": "zscore",
+                    "allow_short": bool(spec["allow_short"]),
+                },
             )
 
     # Lead/lag spillover sleeve (metals excluded).
@@ -250,36 +612,72 @@ def build_binance_futures_candidates(
                     symbols=tuple(sorted(set(_CRYPTO_LEADERS).intersection(normalized_symbols)) + laggard_symbols),
                     params=params,
                     notes="Cross-asset lead-lag predictor (crypto only, metals excluded).",
+                    tags=("leadlag", "cross-asset", "intraday", "alpha"),
+                    metadata={
+                        "timeframe": timeframe,
+                        "symbol_scope": "crypto_excluding_metals",
+                        "lag_bands": [2, 3, 4],
+                    },
                 )
 
     # Pair spread sleeve.
     for timeframe in pair_tfs:
         tf_tag = timeframe.replace("/", "-")
-        for symbol_x, symbol_y in pairs:
+        tuned_params = bounded_pair_retune_params(timeframe)
+        tuned_param_sets = tuple(
+            dict(item)
+            for item in _PAIR_RETUNE_PARAM_SETS_BY_TIMEFRAME.get(timeframe, (dict(tuned_params),))
+        )
+        pair_universe = list(pairs)
+        if timeframe == "15m":
+            pair_universe = [pair for pair in pair_universe if pair in _PAIR_RETUNE_FOCUS_PAIRS_15M]
+        elif timeframe == "4h":
+            pair_universe = [pair for pair in pair_universe if pair in _PAIR_RETUNE_FOCUS_PAIRS_4H]
+        elif timeframe == "1d":
+            pair_universe = [pair for pair in pair_universe if pair in _PAIR_RETUNE_FOCUS_PAIRS_1D]
+        for symbol_x, symbol_y in pair_universe:
             pair_token = f"{symbol_x.replace('/', '').lower()}_{symbol_y.replace('/', '').lower()}"
-            for entry_z, exit_z, stop_z in ((1.8, 0.45, 3.4), (2.2, 0.55, 3.9), (2.6, 0.70, 4.2)):
-                params = {
-                    "lookback_window": 96,
-                    "hedge_window": 192,
-                    "entry_z": float(entry_z),
-                    "exit_z": float(exit_z),
-                    "stop_z": float(stop_z),
-                    "max_hold_bars": 240,
-                    "min_correlation": 0.1,
-                    "stop_loss_pct": 0.03,
-                    "symbol_x": symbol_x,
-                    "symbol_y": symbol_y,
-                }
-                _add_candidate(
-                    candidates,
-                    name=f"pair_spread_{tf_tag}_{pair_token}_{entry_z:.1f}_{exit_z:.2f}",
-                    family="market_neutral",
-                    strategy_class="PairSpreadZScoreStrategy",
-                    timeframe=timeframe,
-                    symbols=(symbol_x, symbol_y),
-                    params=params,
-                    notes="Rolling-beta spread z-score with correlation stability filters.",
-                )
+            for tuned_spec in tuned_param_sets:
+                variant = str(tuned_spec.get("variant") or "core")
+                for entry_z, exit_z, stop_z in _PAIR_RETUNE_SPECS_BY_TIMEFRAME.get(timeframe, ()):
+                    params = {
+                        "lookback_window": int(tuned_spec["lookback_window"]),
+                        "hedge_window": int(tuned_spec["hedge_window"]),
+                        "entry_z": float(entry_z),
+                        "exit_z": float(exit_z),
+                        "stop_z": float(stop_z),
+                        "max_hold_bars": int(tuned_spec["max_hold_bars"]),
+                        "min_correlation": float(tuned_spec["min_correlation"]),
+                        "cooldown_bars": int(tuned_spec["cooldown_bars"]),
+                        "reentry_z_buffer": float(tuned_spec["reentry_z_buffer"]),
+                        "stop_loss_pct": float(tuned_spec["stop_loss_pct"]),
+                        "symbol_x": symbol_x,
+                        "symbol_y": symbol_y,
+                    }
+                    _add_candidate(
+                        candidates,
+                        name=f"pair_spread_{tf_tag}_{variant}_{pair_token}_{entry_z:.1f}_{exit_z:.2f}",
+                        family="market_neutral",
+                        strategy_class="PairSpreadZScoreStrategy",
+                        timeframe=timeframe,
+                        symbols=(symbol_x, symbol_y),
+                        params=params,
+                        notes=(
+                            "Rolling-beta spread z-score with bounded turnover/correlation guardrails"
+                            + (" and 15m evidence-focused pair pruning." if timeframe == "15m" else "")
+                            + (
+                                f" {timeframe} uses {variant} tuning to balance participation, stability, and PBO."
+                                if timeframe in {"4h", "1d"}
+                                else "."
+                            )
+                        ),
+                        tags=("market_neutral", "pair", "spread", "zscore"),
+                        metadata={
+                            "timeframe": timeframe,
+                            "pair": f"{symbol_x}_{symbol_y}",
+                            "pair_variant": variant,
+                        },
+                    )
 
     # Optional carry/crowding sleeve.
     if _has_perp_support_data() and carry_tfs:
@@ -304,6 +702,12 @@ def build_binance_futures_candidates(
                     symbols=crypto_symbols,
                     params=params,
                     notes="Funding/OI crowding-aware carry sleeve.",
+                    tags=("carry", "perp", "funding", "crowding"),
+                    metadata={
+                        "timeframe": timeframe,
+                        "data_dependent": _has_perp_support_data(),
+                        "symbol_scope": "crypto",
+                    },
                 )
 
     # Research-only micro sleeve.
@@ -326,6 +730,11 @@ def build_binance_futures_candidates(
                 symbols=crypto_symbols,
                 params=params,
                 notes="Research-only micro breakout sleeve with strict turnover controls.",
+                tags=("micro", "range", "breakout", "research"),
+                metadata={
+                    "timeframe": timeframe,
+                    "research_only": True,
+                },
             )
 
     return candidates

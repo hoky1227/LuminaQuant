@@ -15,7 +15,7 @@ from lumina_quant.symbols import canonical_symbol
 from lumina_quant.tuning import HyperParam, resolve_params_from_schema
 
 _LEADERS = ("BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT")
-_METALS = {"XAU/USDT", "XAG/USDT"}
+_METALS = {"XAU/USDT", "XAG/USDT", "XPT/USDT", "XPD/USDT"}
 
 
 @dataclass(slots=True)

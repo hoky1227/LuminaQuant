@@ -1,0 +1,12 @@
+{
+  "generated_at": "2026-03-09T14:03:42.315221+00:00",
+  "notes": [
+    "Primary decision/follow-up artifacts are currently missing or empty.",
+    "Rebuild the registry/log archive and regenerate deployment scenarios after the next successful exact-window run."
+  ],
+  "primary_scenario_id": "unavailable_missing_decision_artifacts",
+  "scenario_count": 0,
+  "scenarios": [],
+  "schema_version": "1.1",
+  "summary": []
+}

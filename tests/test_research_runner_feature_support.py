@@ -141,3 +141,53 @@ def test_composite_trend_blocks_entries_when_crowding_score_is_extreme():
     )
 
     assert np.allclose(exposure, 0.0)
+
+
+def test_composite_trend_respects_long_only_retune_and_exposure_damping():
+    length = 420
+    close = np.linspace(160.0, 100.0, length, dtype=float)
+    aligned = {
+        "datetime": _minute_datetimes(length),
+        "BTC/USDT:open": close + 0.2,
+        "BTC/USDT:high": close + 0.6,
+        "BTC/USDT:low": close - 0.6,
+        "BTC/USDT:close": close,
+        "BTC/USDT:volume": np.linspace(2_000.0, 4_000.0, length, dtype=float),
+    }
+
+    shortable = {
+        "strategy_class": "CompositeTrendStrategy",
+        "params": {
+            "long_threshold": 0.10,
+            "short_threshold": 0.10,
+            "exit_score_cross": 0.03,
+            "te_min": 0.0,
+            "vr_min": 0.0,
+            "risk_target_vol": 0.0025,
+            "max_signal_strength": 0.60,
+            "allow_short": True,
+        },
+    }
+    long_only = {
+        "strategy_class": "CompositeTrendStrategy",
+        "params": {
+            **dict(shortable["params"]),
+            "allow_short": False,
+        },
+    }
+
+    _, _, exposure_shortable, _ = research_runner._strategy_signal(
+        shortable,
+        aligned=aligned,
+        symbols=["BTC/USDT"],
+    )
+    _, _, exposure_long_only, _ = research_runner._strategy_signal(
+        long_only,
+        aligned=aligned,
+        symbols=["BTC/USDT"],
+    )
+
+    assert np.min(exposure_shortable) < -0.05
+    assert np.max(np.abs(exposure_shortable)) <= 0.60 + 1e-9
+    assert np.all(exposure_long_only >= -1e-9)
+    assert np.max(np.abs(exposure_long_only)) < 0.05

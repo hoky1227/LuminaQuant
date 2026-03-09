@@ -1,0 +1,59 @@
+{
+  "combined_streams": {
+    "oos": [],
+    "train": [],
+    "val": []
+  },
+  "components": [],
+  "generated_at": "2026-03-09T14:03:42.315221+00:00",
+  "label": "Deployment combo unavailable",
+  "metrics": {
+    "oos": {
+      "cagr": 0.0,
+      "calmar": 0.0,
+      "component_count": 0.0,
+      "max_drawdown": 0.0,
+      "pbo": 0.0,
+      "return": 0.0,
+      "sharpe": 0.0,
+      "sortino": 0.0,
+      "total_return": 0.0,
+      "trade_count": 0.0,
+      "volatility": 0.0
+    },
+    "train": {
+      "cagr": 0.0,
+      "calmar": 0.0,
+      "component_count": 0.0,
+      "max_drawdown": 0.0,
+      "pbo": 0.0,
+      "return": 0.0,
+      "sharpe": 0.0,
+      "sortino": 0.0,
+      "total_return": 0.0,
+      "trade_count": 0.0,
+      "volatility": 0.0
+    },
+    "val": {
+      "cagr": 0.0,
+      "calmar": 0.0,
+      "component_count": 0.0,
+      "max_drawdown": 0.0,
+      "pbo": 0.0,
+      "return": 0.0,
+      "sharpe": 0.0,
+      "sortino": 0.0,
+      "total_return": 0.0,
+      "trade_count": 0.0,
+      "volatility": 0.0
+    }
+  },
+  "notes": [
+    "Primary decision/follow-up artifacts are currently missing or empty.",
+    "Rebuild the registry/log archive and regenerate deployment scenarios after the next successful exact-window run."
+  ],
+  "scenario_id": "unavailable_missing_decision_artifacts",
+  "schema_version": "1.1",
+  "selection_basis": "unavailable",
+  "source_stems": []
+}

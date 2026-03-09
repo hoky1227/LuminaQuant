@@ -27,7 +27,7 @@ from lumina_quant.indicators.volatility import bollinger_bandwidth, choppiness_i
 from lumina_quant.indicators.vwap import rolling_vwap, vwap_deviation
 from lumina_quant.symbols import canonical_symbol
 
-_METALS = frozenset({"XAU/USDT", "XAG/USDT"})
+_METALS = frozenset({"XAU/USDT", "XAG/USDT", "XPT/USDT", "XPD/USDT"})
 
 
 def _to_array(values: Sequence[float] | np.ndarray | None) -> np.ndarray:
