@@ -1,5 +1,5 @@
 {
-  "generated_at_utc": "2026-03-07T06:17:37.866467+00:00",
+  "generated_at_utc": "2026-03-10T14:07:03.132439+00:00",
   "literal_paths": [
     "src/lumina_quant/strategies",
     "lumina_quant/strategies"
@@ -28,6 +28,28 @@
     "literal:src/lumina_quant/strategies/leadlag_spillover.py:261:28:3",
     "literal:src/lumina_quant/strategies/leadlag_spillover.py:326:32:0.2",
     "literal:src/lumina_quant/strategies/micro_range_expansion_1s.py:189:25:5",
+    "literal:src/lumina_quant/strategies/pair_spread_zscore.py:21:23:96",
+    "literal:src/lumina_quant/strategies/pair_spread_zscore.py:22:20:192",
+    "literal:src/lumina_quant/strategies/pair_spread_zscore.py:23:23:0.20",
+    "literal:src/lumina_quant/strategies/pair_spread_zscore.py:26:21:240",
+    "literal:src/lumina_quant/strategies/pair_spread_zscore.py:27:21:0.03",
+    "literal:src/lumina_quant/strategies/pair_spread_zscore.py:32:27:144",
+    "literal:src/lumina_quant/strategies/pair_spread_zscore.py:33:24:288",
+    "literal:src/lumina_quant/strategies/pair_spread_zscore.py:35:25:10",
+    "literal:src/lumina_quant/strategies/pair_spread_zscore.py:36:28:0.35",
+    "literal:src/lumina_quant/strategies/pair_spread_zscore.py:37:25:192",
+    "literal:src/lumina_quant/strategies/pair_spread_zscore.py:38:25:0.025",
+    "literal:src/lumina_quant/strategies/pair_spread_zscore.py:41:27:72",
+    "literal:src/lumina_quant/strategies/pair_spread_zscore.py:42:24:144",
+    "literal:src/lumina_quant/strategies/pair_spread_zscore.py:43:27:0.05",
+    "literal:src/lumina_quant/strategies/pair_spread_zscore.py:45:28:0.15",
+    "literal:src/lumina_quant/strategies/pair_spread_zscore.py:46:25:96",
+    "literal:src/lumina_quant/strategies/pair_spread_zscore.py:47:25:0.025",
+    "literal:src/lumina_quant/strategies/pair_spread_zscore.py:50:27:48",
+    "literal:src/lumina_quant/strategies/pair_spread_zscore.py:51:24:96",
+    "literal:src/lumina_quant/strategies/pair_spread_zscore.py:54:28:0.10",
+    "literal:src/lumina_quant/strategies/pair_spread_zscore.py:55:25:28",
+    "literal:src/lumina_quant/strategies/pair_spread_zscore.py:56:25:0.020",
     "literal:src/lumina_quant/strategies/perp_crowding_carry.py:285:32:0.2",
     "literal:src/lumina_quant/strategies/sample_public_strategy.py:11:31:20"
   ]
