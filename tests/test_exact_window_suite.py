@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 import numpy as np
 
 from lumina_quant.eval.exact_window_suite import (
+    _build_candidate_result_row,
     _monthly_hurdle_rows,
     _min_bars_for_timeframe,
     _portfolio_weights,
@@ -262,3 +263,40 @@ def test_resolve_coverage_adaptive_windows_accepts_35_day_full_metals_overlap(mo
     assert resolved["allocation_days"]["train"] >= 16
     assert resolved["allocation_days"]["val"] >= 8
     assert resolved["allocation_days"]["oos"] >= 10
+
+
+def test_build_candidate_result_row_preserves_candidate_provenance_fields():
+    row = _build_candidate_result_row(
+        candidate={
+            "candidate_id": "cand-1",
+            "name": "pair_spread_4h_participation_btcusdt_xauusdt_1.6_0.35",
+            "strategy_class": "PairSpreadZScoreStrategy",
+            "family": "market_neutral",
+            "params": {"entry_z": 1.6},
+            "notes": "Mixed-asset residual pair.",
+            "tags": ["market_neutral", "article_family:crypto-metal-residual-pairs"],
+            "metadata": {
+                "article_pipeline_family_ids": ["crypto-metal-residual-pairs"],
+                "hypothesis_origin": "article_research_pipeline",
+            },
+        },
+        timeframe="4h",
+        symbols_for_candidate=["BTC/USDT", "XAU/USDT"],
+        metrics={
+            "train": {"return": 0.01},
+            "val": {"return": 0.02},
+            "oos": {"return": 0.03},
+        },
+        hurdles={"oos": {"pass": True}},
+        hard_reject={},
+        streams={"oos": [{"t": _ts("2026-03-01T00:00:00Z"), "v": 0.03}]},
+        cost_rate=0.0005,
+        runtime_metadata={"rss_guard_triggered": False},
+    )
+
+    assert row["notes"] == "Mixed-asset residual pair."
+    assert row["tags"] == ["market_neutral", "article_family:crypto-metal-residual-pairs"]
+    assert row["metadata"]["article_pipeline_family_ids"] == ["crypto-metal-residual-pairs"]
+    assert row["metadata"]["hypothesis_origin"] == "article_research_pipeline"
+    assert row["metadata"]["rss_guard_triggered"] is False
+    assert row["metadata"]["cost_rate"] == 0.0005

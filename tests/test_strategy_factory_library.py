@@ -239,6 +239,98 @@ def test_pair_candidate_builder_adds_mixed_asset_pairs_only_when_symbols_present
     assert ("BTC/USDT", "XAG/USDT") in pair_set
 
 
+def test_candidate_library_adds_article_pipeline_provenance_tags_and_metadata():
+    rows = build_binance_futures_candidates(
+        timeframes=["15m", "30m", "1h", "4h"],
+        symbols=[
+            "BTC/USDT",
+            "ETH/USDT",
+            "BNB/USDT",
+            "SOL/USDT",
+            "TRX/USDT",
+            "XAU/USDT",
+            "XAG/USDT",
+        ],
+    )
+    by_name = {row.name: row for row in rows}
+
+    trend_row = next(row for row in rows if row.strategy_class == "CompositeTrendStrategy")
+    assert trend_row.metadata["article_pipeline_family_ids"] == ["regime-conditioned-composite-trend"]
+    assert "article_pipeline" in trend_row.tags
+    assert "article_family:regime-conditioned-composite-trend" in trend_row.tags
+
+    volcomp_row = next(
+        row for row in rows if row.strategy_class == "VolCompressionVWAPReversionStrategy"
+    )
+    assert volcomp_row.metadata["article_pipeline_family_ids"] == ["vol-compression-break-reversion"]
+    assert "article_family:vol-compression-break-reversion" in volcomp_row.tags
+
+    vwap_row = next(row for row in rows if row.strategy_class == "VwapReversionStrategy")
+    assert vwap_row.metadata["article_pipeline_family_ids"] == ["intraday-vwap-reversion"]
+    assert "article_family:intraday-vwap-reversion" in vwap_row.tags
+
+    std_row = next(row for row in rows if row.strategy_class == "MeanReversionStdStrategy")
+    assert std_row.metadata["article_pipeline_family_ids"] == ["single-asset-zscore-reversion"]
+    assert "article_family:single-asset-zscore-reversion" in std_row.tags
+
+    leadlag_row = next(row for row in rows if row.strategy_class == "LeadLagSpilloverStrategy")
+    assert leadlag_row.metadata["article_pipeline_family_ids"] == ["lead-lag-regime-spillover"]
+    assert "article_family:lead-lag-regime-spillover" in leadlag_row.tags
+
+    mixed_pair_row = by_name["pair_spread_4h_participation_btcusdt_xauusdt_1.6_0.35"]
+    assert mixed_pair_row.metadata["article_pipeline_family_ids"] == ["crypto-metal-residual-pairs"]
+    assert "article_family:crypto-metal-residual-pairs" in mixed_pair_row.tags
+
+    crypto_pair_row = by_name["pair_spread_1h_core_btcusdt_trxusdt_1.8_0.45"]
+    assert crypto_pair_row.metadata["article_pipeline_family_ids"] == ["sector-dispersion-reversion"]
+    assert "article_family:sector-dispersion-reversion" in crypto_pair_row.tags
+
+    lag_row = by_name["lag_convergence_4h_metals_core_xauusdt_xagusdt_2_0.018"]
+    assert lag_row.metadata["article_pipeline_family_ids"] == ["metals-lag-convergence"]
+    assert "article_family:metals-lag-convergence" in lag_row.tags
+
+    breakout_row = by_name["rolling_breakout_30m_loose_lo_48_0.001"]
+    assert breakout_row.metadata["article_pipeline_family_ids"] == ["regime-breakout-thrust"]
+    assert "article_family:regime-breakout-thrust" in breakout_row.tags
+
+    regime_row = by_name["regime_breakout_30m_trend_guarded_48_0.68"]
+    assert regime_row.metadata["article_pipeline_family_ids"] == ["regime-breakout-thrust"]
+    assert "article_family:regime-breakout-thrust" in regime_row.tags
+
+    topcap_row = by_name["topcap_tsmom_1h_balanced_16_4_0.015"]
+    assert topcap_row.metadata["article_pipeline_family_ids"] == ["topcap-rotation-relative-momentum"]
+    assert "article_family:topcap-rotation-relative-momentum" in topcap_row.tags
+
+
+def test_candidate_library_generates_lag_convergence_for_xpt_xpd_pairs():
+    rows = build_binance_futures_candidates(
+        timeframes=["4h", "1d"],
+        symbols=["XAU/USDT", "XAG/USDT", "XPT/USDT", "XPD/USDT"],
+    )
+    lag_rows = [row for row in rows if row.strategy_class == "LagConvergenceStrategy"]
+    lag_names = {row.name for row in lag_rows}
+
+    assert lag_rows
+    assert {row.timeframe for row in lag_rows} == {"4h", "1d"}
+    assert any(tuple(row.symbols) == ("XPT/USDT", "XPD/USDT") for row in lag_rows)
+    assert "lag_convergence_4h_metals_core_xptusdt_xpdusdt_2_0.018" in lag_names
+    assert "lag_convergence_1d_metals_core_xptusdt_xpdusdt_1_0.012" in lag_names
+
+
+def test_candidate_library_generates_additional_existing_strategy_families():
+    rows = build_binance_futures_candidates(
+        timeframes=["5m", "15m", "30m", "1h"],
+        symbols=["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "TRX/USDT"],
+    )
+    names = {row.strategy_class for row in rows}
+
+    assert "VwapReversionStrategy" in names
+    assert "MeanReversionStdStrategy" in names
+    assert "RollingBreakoutStrategy" in names
+    assert "RegimeBreakoutCandidateStrategy" in names
+    assert "TopCapTimeSeriesMomentumStrategy" in names
+
+
 def test_registry_exposes_new_candidate_strategies():
     names = get_strategy_names()
     assert "RegimeBreakoutCandidateStrategy" in names

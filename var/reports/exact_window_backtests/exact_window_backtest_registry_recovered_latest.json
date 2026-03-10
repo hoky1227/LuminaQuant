@@ -36,7 +36,7 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-09T14:03:42.240268+00:00",
+      "updated_at_utc": "2026-03-10T13:05:22.524234+00:00",
       "val_start": null,
       "window_profile": "default"
     },
@@ -71,7 +71,7 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-09T14:03:42.240487+00:00",
+      "updated_at_utc": "2026-03-10T13:05:22.539481+00:00",
       "val_start": null,
       "window_profile": "default"
     },
@@ -110,7 +110,7 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/iter_task4_probe_15m/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-09T14:03:42.231831+00:00",
+      "updated_at_utc": "2026-03-10T13:05:22.505011+00:00",
       "val_start": null,
       "window_profile": "archived_log"
     },
@@ -146,7 +146,7 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/timeframes_1d_metals_short_20260309/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-09T14:03:42.242384+00:00",
+      "updated_at_utc": "2026-03-10T13:05:22.549215+00:00",
       "val_start": null,
       "window_profile": "archived_log"
     },
@@ -172,7 +172,7 @@
       "status": "failed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/timeframes_4h_1d_metals_adaptive_20260309/bounded_4h_1d_metals_adaptive_20260309T125425Z/4h-1d/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-09T14:03:42.241337+00:00",
+      "updated_at_utc": "2026-03-10T13:05:22.543151+00:00",
       "val_start": null,
       "window_profile": "archived_log"
     },
@@ -198,7 +198,7 @@
       "status": "failed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/timeframes_4h_1d_metals_adaptive_20260309/bounded_4h_1d_metals_adaptive_20260309T130150Z/4h-1d/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-09T14:03:42.241466+00:00",
+      "updated_at_utc": "2026-03-10T13:05:22.543867+00:00",
       "val_start": null,
       "window_profile": "archived_log"
     },
@@ -234,7 +234,7 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/timeframes_4h_1d_metals_adaptive_20260309/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-09T14:03:42.241585+00:00",
+      "updated_at_utc": "2026-03-10T13:05:22.544566+00:00",
       "val_start": null,
       "window_profile": "archived_log"
     },
@@ -260,7 +260,7 @@
       "status": "failed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/timeframes_4h_1d_metals_core_adaptive_20260309/bounded_4h_1d_metals_core_adaptive_20260309T125538Z/4h-1d/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-09T14:03:42.241713+00:00",
+      "updated_at_utc": "2026-03-10T13:05:22.545125+00:00",
       "val_start": null,
       "window_profile": "archived_log"
     },
@@ -294,7 +294,7 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/timeframes_4h_1d_metals_core_adaptive_20260309/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-09T14:03:42.242071+00:00",
+      "updated_at_utc": "2026-03-10T13:05:22.546364+00:00",
       "val_start": null,
       "window_profile": "archived_log"
     },
@@ -328,7 +328,7 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/timeframes_4h_1d_metals_core_adaptive_20260309/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-09T14:03:42.241835+00:00",
+      "updated_at_utc": "2026-03-10T13:05:22.545961+00:00",
       "val_start": null,
       "window_profile": "archived_log"
     },
@@ -360,7 +360,7 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/timeframes_4h_1d_metals_mixed_20260309/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-09T14:03:42.242579+00:00",
+      "updated_at_utc": "2026-03-10T13:05:22.551648+00:00",
       "val_start": null,
       "window_profile": "archived_log"
     },
@@ -389,7 +389,7 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/timeframes_4h_btc_xag_tuned_20260309/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-09T14:03:42.242347+00:00",
+      "updated_at_utc": "2026-03-10T13:05:22.549174+00:00",
       "val_start": null,
       "window_profile": "archived_log"
     },
@@ -421,7 +421,7 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/timeframes_4h_1d_retune_20260309/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-09T14:03:42.241209+00:00",
+      "updated_at_utc": "2026-03-10T13:05:22.542301+00:00",
       "val_start": null,
       "window_profile": "archived_log"
     },
@@ -460,7 +460,7 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/iter_task4_probe_5m/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-09T14:03:42.234298+00:00",
+      "updated_at_utc": "2026-03-10T13:05:22.512323+00:00",
       "val_start": null,
       "window_profile": "archived_log"
     },
@@ -499,7 +499,7 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/iter_task3_probe_1h/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-09T14:03:42.232082+00:00",
+      "updated_at_utc": "2026-03-10T13:05:22.505883+00:00",
       "val_start": null,
       "window_profile": "archived_log"
     },
@@ -531,7 +531,7 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/timeframes_4h_pbo_final_20260309/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-09T14:03:42.240801+00:00",
+      "updated_at_utc": "2026-03-10T13:05:22.540672+00:00",
       "val_start": null,
       "window_profile": "archived_log"
     },
@@ -574,7 +574,7 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/timeframes_1h_4h_1d_refresh/followup_high_20260309/1h-4h-1d/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-09T14:03:42.235090+00:00",
+      "updated_at_utc": "2026-03-10T13:05:22.515861+00:00",
       "val_start": null,
       "window_profile": "archived_log"
     },
@@ -600,7 +600,7 @@
       "status": "failed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_specialized/metals_all_4h_20260309/metals_all_4h_20260309T124031Z/4h/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-09T14:03:42.240834+00:00",
+      "updated_at_utc": "2026-03-10T13:05:22.540719+00:00",
       "val_start": null,
       "window_profile": "archived_log"
     },
@@ -626,7 +626,7 @@
       "status": "failed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_specialized/mixed_2asset_4h_20260309/mixed_2asset_4h_20260309T124031Z/4h/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-09T14:03:42.240865+00:00",
+      "updated_at_utc": "2026-03-10T13:05:22.540754+00:00",
       "val_start": null,
       "window_profile": "archived_log"
     },
@@ -669,7 +669,7 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/timeframe_15m/resume_15m_20260309/15m/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-09T14:03:42.235041+00:00",
+      "updated_at_utc": "2026-03-10T13:05:22.515801+00:00",
       "val_start": null,
       "window_profile": "archived_log"
     },
@@ -712,7 +712,7 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/timeframe_30m/resume_30m_20260309/30m/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-09T14:03:42.235065+00:00",
+      "updated_at_utc": "2026-03-10T13:05:22.515831+00:00",
       "val_start": null,
       "window_profile": "archived_log"
     },
@@ -755,13 +755,13 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/timeframe_5m/resume_5m_20260309/5m/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-09T14:03:42.235014+00:00",
+      "updated_at_utc": "2026-03-10T13:05:22.515765+00:00",
       "val_start": null,
       "window_profile": "archived_log"
     }
   ],
   "entry_count": 22,
-  "generated_at": "2026-03-09T14:03:42.243358+00:00",
+  "generated_at": "2026-03-10T13:05:22.556161+00:00",
   "provenance": "recovered_from_logs_plus_prior_archive",
   "schema_version": "1.0"
 }

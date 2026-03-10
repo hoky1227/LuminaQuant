@@ -1,0 +1,90 @@
+{
+  "adaptive_windows": {
+    "allocation_days": {
+      "oos": 10,
+      "train": 18,
+      "val": 8
+    },
+    "common_end": "2026-03-07T11:02:00+00:00",
+    "common_start": "2026-01-30T10:15:00+00:00",
+    "oos_start": "2026-02-25T10:15:00+00:00",
+    "profile": "metals_4h",
+    "requested_oos_end_exclusive": "2026-03-07T11:02:00.001000+00:00",
+    "total_days": 36,
+    "train_start": "2026-01-30T10:15:00+00:00",
+    "val_start": "2026-02-17T10:15:00+00:00"
+  },
+  "allow_metals": true,
+  "artifacts": {
+    "details_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_candidate_details_latest.json",
+    "fail_analysis_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_fail_analysis_latest.json",
+    "heavy_lock_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_heavy_run.lock",
+    "manifest_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/xpt_xpd_4h_focus_20260310T115011Z/manifest.json",
+    "memory_evidence_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_memory_evidence_latest.json",
+    "progress_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/xpt_xpd_4h_focus_20260310T115011Z/progress.csv",
+    "root_latest_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/latest.json",
+    "rss_log_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/xpt_xpd_4h_focus_20260310T115011Z/4h/exact_window_rss_latest.jsonl",
+    "run_latest_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/xpt_xpd_4h_focus_20260310T115011Z/latest.json",
+    "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_suite_summary_latest.json"
+  },
+  "batch_dir": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/xpt_xpd_4h_focus_20260310T115011Z/4h",
+  "batch_id": "4h",
+  "candidate_library_hash": "70614111f4559cee911f266ff1cc4943d3299e25f28f58b7c01ea037d3a8c938",
+  "chunk_days": 5,
+  "clamp_ts": "2026-03-07T10:00:00Z",
+  "code_commit_sha": "bdf2a6d33752dd5d5d6cbb46f8f338cb5fbed4b5",
+  "completed_at_utc": "2026-03-10T11:50:18.153837+00:00",
+  "error": null,
+  "evaluated_count": 22,
+  "execution_profile": {
+    "allow_metals": true,
+    "chunk_days": 5,
+    "custom_windows": true,
+    "low_ram_profile": true,
+    "oos_start": "2026-02-25T10:15:00+00:00",
+    "requested_oos_end_exclusive": "2026-03-07T11:02:00.001000+00:00",
+    "requested_symbols": [
+      "XPT/USDT",
+      "XPD/USDT"
+    ],
+    "requested_timeframes": [
+      "4h"
+    ],
+    "requested_timeframes_raw": [
+      "4h"
+    ],
+    "train_start": "2026-01-30T10:15:00+00:00",
+    "val_start": "2026-02-17T10:15:00+00:00",
+    "window_profile": "metals_4h"
+  },
+  "git_dirty": true,
+  "max_parquet_workers": 1,
+  "oos_start": "2026-02-25T10:15:00+00:00",
+  "promoted_count": 0,
+  "requested_oos_end_exclusive": "2026-03-07T11:02:00.001000+00:00",
+  "requested_symbols": [
+    "XPT/USDT",
+    "XPD/USDT"
+  ],
+  "requested_timeframes": [
+    "4h"
+  ],
+  "run_id": "xpt_xpd_4h_focus_20260310T115011Z",
+  "run_root": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/xpt_xpd_4h_focus_20260310T115011Z",
+  "run_signature": "2cb11d4fa8c149d95ca11d6e07f459d8708c8bd366f4c0fc389c4f3f9f8f16e0",
+  "schema_version": "1.0",
+  "started_at_utc": "2026-03-10T11:50:14.262820+00:00",
+  "status": "completed",
+  "train_start": "2026-01-30T10:15:00+00:00",
+  "val_start": "2026-02-17T10:15:00+00:00",
+  "window_profile": "metals_4h",
+  "windows": {
+    "actual_max_timestamp": "2026-03-07T11:02:00+00:00",
+    "actual_oos_end_exclusive": "2026-03-07T11:02:00.001000+00:00",
+    "requested_oos_end_exclusive": "2026-03-07T11:02:00.001000+00:00",
+    "train_end_exclusive": "2026-02-17T10:15:00+00:00",
+    "train_start": "2026-01-30T10:15:00+00:00",
+    "val_end_exclusive": "2026-02-25T10:15:00+00:00",
+    "val_start": "2026-02-17T10:15:00+00:00"
+  }
+}

@@ -104,6 +104,128 @@
       "thesis": "Short-horizon overreactions around liquidity droughts can revert when participation normalizes."
     },
     {
+      "execution_style": "lagged_momentum_convergence",
+      "family_id": "metals-lag-convergence",
+      "preferred_metrics": [
+        "oos_return",
+        "oos_sharpe",
+        "oos_trade_count",
+        "oos_pbo",
+        "oos_max_drawdown"
+      ],
+      "rationale": "Targets XPT/XPD and XAU/XAG overlap windows where pair z-score can undertrade despite usable directional-relative structure.",
+      "target_timeframes": [
+        "4h",
+        "1d"
+      ],
+      "target_universe": [
+        "XAU/USDT",
+        "XAG/USDT",
+        "XPT/USDT",
+        "XPD/USDT"
+      ],
+      "thesis": "Short-history precious-metals pairs need lagged momentum convergence rules instead of wide z-score mean reversion only."
+    },
+    {
+      "execution_style": "regime_filtered_breakout",
+      "family_id": "regime-breakout-thrust",
+      "preferred_metrics": [
+        "oos_return",
+        "oos_sharpe",
+        "oos_calmar",
+        "oos_trade_count",
+        "oos_max_drawdown"
+      ],
+      "rationale": "Adds trend-following breadth without relying solely on the existing composite trend sleeve.",
+      "target_timeframes": [
+        "30m",
+        "1h"
+      ],
+      "target_universe": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "thesis": "Breakout sleeves should survive only when trend and volatility regime filters confirm the thrust."
+    },
+    {
+      "execution_style": "single_asset_mean_reversion",
+      "family_id": "single-asset-zscore-reversion",
+      "preferred_metrics": [
+        "oos_return",
+        "oos_sharpe",
+        "oos_sortino",
+        "oos_trade_count",
+        "oos_max_drawdown"
+      ],
+      "rationale": "Provides a low-complexity baseline mean-reversion family for the automated research loop.",
+      "target_timeframes": [
+        "15m",
+        "30m"
+      ],
+      "target_universe": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT",
+        "XAU/USDT",
+        "XAG/USDT"
+      ],
+      "thesis": "Simple rolling z-score reversion is still useful as a low-complexity sleeve when crowding and trend overlays are absent."
+    },
+    {
+      "execution_style": "vwap_deviation_reversion",
+      "family_id": "intraday-vwap-reversion",
+      "preferred_metrics": [
+        "oos_return",
+        "oos_sharpe",
+        "oos_trade_count",
+        "oos_turnover",
+        "oos_max_drawdown"
+      ],
+      "rationale": "Adds a classic execution-friendly reversion sleeve aligned with the article's many-small-alpha framing.",
+      "target_timeframes": [
+        "5m",
+        "15m"
+      ],
+      "target_universe": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT",
+        "XAG/USDT"
+      ],
+      "thesis": "Intraday VWAP dislocations can revert repeatedly when turnover and stop rules are kept bounded."
+    },
+    {
+      "execution_style": "cross_sectional_relative_momentum",
+      "family_id": "topcap-rotation-relative-momentum",
+      "preferred_metrics": [
+        "oos_return",
+        "oos_sharpe",
+        "oos_trade_count",
+        "oos_max_drawdown",
+        "oos_pbo"
+      ],
+      "rationale": "Adds a lower-implementation-risk relative-value sleeve to complement pair-spread and lag-convergence stat-arb families.",
+      "target_timeframes": [
+        "1h",
+        "4h"
+      ],
+      "target_universe": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "thesis": "Cross-sectional top-cap rotation can express relative-value dispersion without needing pair-specific hedges."
+    },
+    {
       "execution_style": "volatility_compression_reversion",
       "family_id": "vol-compression-break-reversion",
       "preferred_metrics": [
@@ -153,7 +275,7 @@
       "thesis": "Trend sleeves remain useful when paired with explicit regime filters and crowding-aware guards."
     }
   ],
-  "generated_at": "2026-03-09T14:01:31.027048+00:00",
+  "generated_at": "2026-03-10T12:38:03.107993+00:00",
   "label": "article-inspired llm alpha research pipeline",
   "metric_checklist": [
     "return",

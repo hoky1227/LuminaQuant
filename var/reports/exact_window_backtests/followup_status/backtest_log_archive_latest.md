@@ -1,6 +1,6 @@
 # exact-window backtest log archive
 
-- generated_at: `2026-03-09T14:03:42.243566+00:00`
+- generated_at: `2026-03-10T13:05:22.556426+00:00`
 - entry_count: `22`
 - note: recovered advisory archive only; canonical duplicate checks must use `exact_window_run_registry.jsonl`.
 

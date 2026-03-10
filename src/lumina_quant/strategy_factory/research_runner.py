@@ -1047,6 +1047,39 @@ def _vwap_dev_z(high: np.ndarray, low: np.ndarray, close: np.ndarray, volume: np
     return out
 
 
+def _rolling_vwap_deviation(close: np.ndarray, volume: np.ndarray, window: int) -> np.ndarray:
+    out = np.full(close.shape, np.nan, dtype=float)
+    win = max(8, int(window))
+    if close.size < win:
+        return out
+    vol = np.clip(np.asarray(volume, dtype=float), 0.0, np.inf)
+    close_arr = np.asarray(close, dtype=float)
+    for idx in range(win, close_arr.size + 1):
+        px = close_arr[idx - win : idx]
+        vv = vol[idx - win : idx]
+        den = float(np.sum(vv))
+        vw = float(np.sum(px * vv) / den) if den > 1e-12 else _safe_mean(px)
+        if vw <= 1e-12:
+            out[idx - 1] = 0.0
+        else:
+            out[idx - 1] = (float(close_arr[idx - 1]) / vw) - 1.0
+    return out
+
+
+def _rolling_channel(high: np.ndarray, low: np.ndarray, window: int) -> tuple[np.ndarray, np.ndarray]:
+    high_out = np.full(high.shape, np.nan, dtype=float)
+    low_out = np.full(low.shape, np.nan, dtype=float)
+    win = max(8, int(window))
+    if high.size < win + 1:
+        return high_out, low_out
+    hi = np.asarray(high, dtype=float)
+    lo = np.asarray(low, dtype=float)
+    for idx in range(win, hi.size):
+        high_out[idx] = float(np.max(hi[idx - win : idx]))
+        low_out[idx] = float(np.min(lo[idx - win : idx]))
+    return high_out, low_out
+
+
 def _pair_spread_z(px: np.ndarray, py: np.ndarray, window: int = 96) -> np.ndarray:
     n = min(px.size, py.size)
     out = np.full(n, np.nan, dtype=float)
@@ -1409,6 +1442,288 @@ def _strategy_signal(
                 pos = np.where(np.abs(score) <= exit_score, 0.0, pos)
                 exposures[s_idx] = pos
 
+    elif strategy_class == "TopCapTimeSeriesMomentumStrategy":
+        lookback_bars = max(2, int(params.get("lookback_bars", 16)))
+        rebalance_bars = max(1, int(params.get("rebalance_bars", 4)))
+        signal_threshold = float(params.get("signal_threshold", 0.04))
+        max_longs = max(1, int(params.get("max_longs", 2)))
+        max_shorts = max(1, int(params.get("max_shorts", 2)))
+        min_price = max(0.0, float(params.get("min_price", 0.10)))
+        btc_regime_ma = max(0, int(params.get("btc_regime_ma", 0)))
+        btc_symbol = canonical_symbol(str(params.get("btc_symbol") or "BTC/USDT"))
+        if btc_symbol not in symbols:
+            btc_symbol = canonical_symbol(str(symbols[0]))
+
+        position_state = np.zeros(len(symbols), dtype=float)
+        for idx in range(n):
+            if idx < lookback_bars:
+                exposures[:, idx] = position_state
+                continue
+            if (idx + 1) % rebalance_bars != 0:
+                exposures[:, idx] = position_state
+                continue
+
+            momentum_rows: list[tuple[float, str]] = []
+            for symbol in symbols:
+                close_arr = np.asarray(aligned[f"{symbol}:close"], dtype=float)
+                latest = float(close_arr[idx])
+                base = float(close_arr[idx - lookback_bars])
+                if latest < min_price or base <= 0.0 or not np.isfinite(latest) or not np.isfinite(base):
+                    continue
+                momentum = (latest / base) - 1.0
+                if np.isfinite(momentum):
+                    momentum_rows.append((float(momentum), symbol))
+
+            regime = "BOTH"
+            if btc_regime_ma > 0:
+                btc_close = np.asarray(aligned[f"{btc_symbol}:close"], dtype=float)
+                if idx >= btc_regime_ma and np.all(np.isfinite(btc_close[idx - btc_regime_ma + 1 : idx + 1])):
+                    avg = _safe_mean(btc_close[idx - btc_regime_ma + 1 : idx + 1])
+                    regime = "RISK_ON" if float(btc_close[idx]) >= avg else "RISK_OFF"
+
+            momentum_rows.sort(key=lambda item: item[0])
+            longs = [
+                symbol
+                for momentum, symbol in reversed(momentum_rows)
+                if momentum >= signal_threshold
+            ][:max_longs]
+            shorts = [
+                symbol
+                for momentum, symbol in momentum_rows
+                if momentum <= -signal_threshold
+            ][:max_shorts]
+            if regime == "RISK_ON":
+                shorts = []
+            elif regime == "RISK_OFF":
+                longs = []
+            long_set = set(longs)
+            shorts = [symbol for symbol in shorts if symbol not in long_set]
+
+            position_state = np.zeros(len(symbols), dtype=float)
+            for s_idx, symbol in enumerate(symbols):
+                if symbol in long_set:
+                    position_state[s_idx] = 1.0
+                elif symbol in shorts:
+                    position_state[s_idx] = -1.0
+            exposures[:, idx] = position_state
+        meta["cross_sectional"] = True
+
+    elif strategy_class == "MeanReversionStdStrategy":
+        window = max(8, int(params.get("window", 64)))
+        entry_z = float(params.get("entry_z", 2.0))
+        exit_z = max(0.0, float(params.get("exit_z", 0.5)))
+        stop_loss_pct = float(params.get("stop_loss_pct", 0.03))
+        allow_short = bool(params.get("allow_short", True))
+
+        for s_idx, symbol in enumerate(symbols):
+            close = np.asarray(aligned[f"{symbol}:close"], dtype=float)
+            zscore = np.nan_to_num(_rolling_z(close, window), nan=0.0)
+            pos = np.zeros(close.shape, dtype=float)
+            mode = 0
+            entry_price: float | None = None
+            for idx in range(close.size):
+                close_i = float(close[idx])
+                z_i = float(zscore[idx])
+                if not np.isfinite(close_i):
+                    continue
+                if mode == 1 and entry_price is not None:
+                    stop_hit = close_i <= entry_price * (1.0 - stop_loss_pct)
+                    revert_hit = z_i >= -exit_z
+                    if stop_hit or revert_hit:
+                        mode = 0
+                        entry_price = None
+                    else:
+                        pos[idx] = 1.0
+                        continue
+                elif mode == -1 and entry_price is not None:
+                    stop_hit = close_i >= entry_price * (1.0 + stop_loss_pct)
+                    revert_hit = z_i <= exit_z
+                    if stop_hit or revert_hit:
+                        mode = 0
+                        entry_price = None
+                    else:
+                        pos[idx] = -1.0
+                        continue
+
+                if mode == 0:
+                    if z_i <= -entry_z:
+                        mode = 1
+                        entry_price = close_i
+                        pos[idx] = 1.0
+                    elif allow_short and z_i >= entry_z:
+                        mode = -1
+                        entry_price = close_i
+                        pos[idx] = -1.0
+            exposures[s_idx] = pos
+
+    elif strategy_class == "VwapReversionStrategy":
+        window = max(8, int(params.get("window", 64)))
+        entry_dev = float(params.get("entry_dev", 0.02))
+        exit_dev = max(0.0, float(params.get("exit_dev", 0.005)))
+        stop_loss_pct = float(params.get("stop_loss_pct", 0.03))
+        allow_short = bool(params.get("allow_short", True))
+
+        for s_idx, symbol in enumerate(symbols):
+            close = np.asarray(aligned[f"{symbol}:close"], dtype=float)
+            volume = np.asarray(aligned[f"{symbol}:volume"], dtype=float)
+            deviation = np.nan_to_num(_rolling_vwap_deviation(close, volume, window), nan=0.0)
+            pos = np.zeros(close.shape, dtype=float)
+            mode = 0
+            entry_price: float | None = None
+            for idx in range(close.size):
+                close_i = float(close[idx])
+                dev_i = float(deviation[idx])
+                if not np.isfinite(close_i):
+                    continue
+                if mode == 1 and entry_price is not None:
+                    stop_hit = close_i <= entry_price * (1.0 - stop_loss_pct)
+                    revert_hit = dev_i >= -exit_dev
+                    if stop_hit or revert_hit:
+                        mode = 0
+                        entry_price = None
+                    else:
+                        pos[idx] = 1.0
+                        continue
+                elif mode == -1 and entry_price is not None:
+                    stop_hit = close_i >= entry_price * (1.0 + stop_loss_pct)
+                    revert_hit = dev_i <= exit_dev
+                    if stop_hit or revert_hit:
+                        mode = 0
+                        entry_price = None
+                    else:
+                        pos[idx] = -1.0
+                        continue
+
+                if mode == 0:
+                    if dev_i <= -entry_dev:
+                        mode = 1
+                        entry_price = close_i
+                        pos[idx] = 1.0
+                    elif allow_short and dev_i >= entry_dev:
+                        mode = -1
+                        entry_price = close_i
+                        pos[idx] = -1.0
+            exposures[s_idx] = pos
+
+    elif strategy_class == "RollingBreakoutStrategy":
+        lookback_bars = max(8, int(params.get("lookback_bars", 48)))
+        breakout_buffer = float(params.get("breakout_buffer", 0.0))
+        atr_window = max(4, int(params.get("atr_window", 14)))
+        atr_stop_multiplier = float(params.get("atr_stop_multiplier", 2.5))
+        stop_loss_pct = float(params.get("stop_loss_pct", 0.03))
+        allow_short = bool(params.get("allow_short", False))
+
+        for s_idx, symbol in enumerate(symbols):
+            close = np.asarray(aligned[f"{symbol}:close"], dtype=float)
+            high = np.asarray(aligned[f"{symbol}:high"], dtype=float)
+            low = np.asarray(aligned[f"{symbol}:low"], dtype=float)
+            channel_high, channel_low = _rolling_channel(high, low, lookback_bars)
+            prev_close = np.r_[close[0], close[:-1]]
+            tr = np.maximum(high - low, np.maximum(np.abs(high - prev_close), np.abs(low - prev_close)))
+            atr_pct = np.full(close.shape, np.nan, dtype=float)
+            for idx in range(atr_window, close.size + 1):
+                atr_pct[idx - 1] = _safe_mean(tr[idx - atr_window : idx] / np.clip(close[idx - atr_window : idx], 1e-12, np.inf))
+            pos = np.zeros(close.shape, dtype=float)
+            mode = 0
+            entry_price: float | None = None
+            for idx in range(close.size):
+                close_i = float(close[idx])
+                stop_pct = max(
+                    stop_loss_pct,
+                    atr_stop_multiplier * float(atr_pct[idx]) if np.isfinite(atr_pct[idx]) else stop_loss_pct,
+                )
+                upper = float(channel_high[idx]) if np.isfinite(channel_high[idx]) else None
+                lower = float(channel_low[idx]) if np.isfinite(channel_low[idx]) else None
+                if mode == 1 and entry_price is not None:
+                    stop_hit = close_i <= entry_price * (1.0 - stop_pct)
+                    exit_hit = lower is not None and close_i < lower
+                    if stop_hit or exit_hit:
+                        mode = 0
+                        entry_price = None
+                    else:
+                        pos[idx] = 1.0
+                        continue
+                elif mode == -1 and entry_price is not None:
+                    stop_hit = close_i >= entry_price * (1.0 + stop_pct)
+                    exit_hit = upper is not None and close_i > upper
+                    if stop_hit or exit_hit:
+                        mode = 0
+                        entry_price = None
+                    else:
+                        pos[idx] = -1.0
+                        continue
+
+                if mode == 0 and upper is not None and lower is not None:
+                    if close_i >= upper * (1.0 + breakout_buffer):
+                        mode = 1
+                        entry_price = close_i
+                        pos[idx] = 1.0
+                    elif allow_short and close_i <= lower * (1.0 - breakout_buffer):
+                        mode = -1
+                        entry_price = close_i
+                        pos[idx] = -1.0
+            exposures[s_idx] = pos
+
+    elif strategy_class == "RegimeBreakoutCandidateStrategy":
+        lookback_window = max(8, int(params.get("lookback_window", 48)))
+        slope_window = max(4, int(params.get("slope_window", 21)))
+        fast_vol = max(4, int(params.get("volatility_fast_window", 12)))
+        slow_vol = max(fast_vol + 2, int(params.get("volatility_slow_window", 48)))
+        range_entry_threshold = float(params.get("range_entry_threshold", 0.70))
+        slope_entry_threshold = float(params.get("slope_entry_threshold", 0.0))
+        momentum_floor = float(params.get("momentum_floor", 0.0))
+        max_volatility_ratio = float(params.get("max_volatility_ratio", 1.8))
+        stop_loss_pct = float(params.get("stop_loss_pct", 0.03))
+        allow_short = bool(params.get("allow_short", True))
+
+        for s_idx, symbol in enumerate(symbols):
+            close = np.asarray(aligned[f"{symbol}:close"], dtype=float)
+            high = np.asarray(aligned[f"{symbol}:high"], dtype=float)
+            low = np.asarray(aligned[f"{symbol}:low"], dtype=float)
+            channel_high, channel_low = _rolling_channel(high, low, lookback_window)
+            vol_ratio = np.nan_to_num(_vol_ratio_series(close, fast_vol, slow_vol), nan=np.inf)
+            pos = np.zeros(close.shape, dtype=float)
+            mode = 0
+            entry_price: float | None = None
+            for idx in range(close.size):
+                close_i = float(close[idx])
+                upper = float(channel_high[idx]) if np.isfinite(channel_high[idx]) else None
+                lower = float(channel_low[idx]) if np.isfinite(channel_low[idx]) else None
+                if upper is None or lower is None or upper <= lower or idx < slope_window:
+                    continue
+                slope = (close_i / max(float(close[idx - slope_window]), 1e-12)) - 1.0
+                range_pos = (close_i - lower) / max(upper - lower, 1e-12)
+                vol_ok = float(vol_ratio[idx]) <= max_volatility_ratio
+                if mode == 1 and entry_price is not None:
+                    stop_hit = close_i <= entry_price * (1.0 - stop_loss_pct)
+                    exit_hit = slope < 0.0 or range_pos < 0.45 or not vol_ok
+                    if stop_hit or exit_hit:
+                        mode = 0
+                        entry_price = None
+                    else:
+                        pos[idx] = 1.0
+                        continue
+                elif mode == -1 and entry_price is not None:
+                    stop_hit = close_i >= entry_price * (1.0 + stop_loss_pct)
+                    exit_hit = slope > 0.0 or range_pos > 0.55 or not vol_ok
+                    if stop_hit or exit_hit:
+                        mode = 0
+                        entry_price = None
+                    else:
+                        pos[idx] = -1.0
+                        continue
+
+                if mode == 0 and vol_ok:
+                    if range_pos >= range_entry_threshold and slope >= slope_entry_threshold and slope >= momentum_floor:
+                        mode = 1
+                        entry_price = close_i
+                        pos[idx] = 1.0
+                    elif allow_short and range_pos <= (1.0 - range_entry_threshold) and slope <= -slope_entry_threshold and slope <= -momentum_floor:
+                        mode = -1
+                        entry_price = close_i
+                        pos[idx] = -1.0
+            exposures[s_idx] = pos
+
     elif strategy_class in {"PairSpreadZScoreStrategy", "PairTradingZScoreStrategy"} and len(symbols) >= 2:
         symbol_x = canonical_symbol(str(params.get("symbol_x") or symbols[0]))
         symbol_y = canonical_symbol(str(params.get("symbol_y") or symbols[1]))
@@ -1445,6 +1760,69 @@ def _strategy_signal(
         x_pos = np.where(exit_cond, 0.0, x_pos)
         y_pos = np.where(exit_cond, 0.0, y_pos)
 
+        exposures[x_idx] = x_pos
+        exposures[y_idx] = y_pos
+
+    elif strategy_class == "LagConvergenceStrategy" and len(symbols) >= 2:
+        symbol_x = canonical_symbol(str(params.get("symbol_x") or symbols[0]))
+        symbol_y = canonical_symbol(str(params.get("symbol_y") or symbols[1]))
+        if symbol_x not in symbols:
+            symbol_x = symbols[0]
+        if symbol_y not in symbols:
+            symbol_y = symbols[1]
+        x_idx = symbols.index(symbol_x)
+        y_idx = symbols.index(symbol_y)
+
+        lag_bars = max(1, int(params.get("lag_bars", 3)))
+        entry_threshold = float(params.get("entry_threshold", 0.015))
+        exit_threshold = max(0.0, float(params.get("exit_threshold", 0.004)))
+        stop_threshold = max(entry_threshold + 1e-9, float(params.get("stop_threshold", 0.05)))
+        max_hold_bars = max(1, int(params.get("max_hold_bars", 96)))
+
+        x_close = np.asarray(aligned[f"{symbol_x}:close"], dtype=float)
+        y_close = np.asarray(aligned[f"{symbol_y}:close"], dtype=float)
+        x_base = np.roll(x_close, lag_bars)
+        y_base = np.roll(y_close, lag_bars)
+        x_base[:lag_bars] = x_close[:lag_bars]
+        y_base[:lag_bars] = y_close[:lag_bars]
+        mom_x = np.divide(
+            x_close,
+            np.clip(x_base, 1e-12, np.inf),
+            out=np.ones_like(x_close),
+        ) - 1.0
+        mom_y = np.divide(
+            y_close,
+            np.clip(y_base, 1e-12, np.inf),
+            out=np.ones_like(y_close),
+        ) - 1.0
+        spread = np.nan_to_num(mom_x - mom_y, nan=0.0)
+
+        x_pos = np.zeros(n, dtype=float)
+        y_pos = np.zeros(n, dtype=float)
+        mode = 0
+        bars_held = 0
+        for idx in range(n):
+            if idx < lag_bars:
+                continue
+            value = float(spread[idx])
+            if mode == 0:
+                if value <= -entry_threshold:
+                    mode = 1
+                    bars_held = 0
+                elif value >= entry_threshold:
+                    mode = -1
+                    bars_held = 0
+            else:
+                bars_held += 1
+                if abs(value) <= exit_threshold or abs(value) >= stop_threshold or bars_held >= max_hold_bars:
+                    mode = 0
+                    bars_held = 0
+            if mode == 1:
+                x_pos[idx] = 1.0
+                y_pos[idx] = -1.0
+            elif mode == -1:
+                x_pos[idx] = -1.0
+                y_pos[idx] = 1.0
         exposures[x_idx] = x_pos
         exposures[y_idx] = y_pos
 
@@ -1529,6 +1907,8 @@ def _candidate_cost_rate(candidate: dict[str, Any]) -> float:
         return 0.0012
     if "pair" in strategy:
         return 0.0008
+    if "lagconvergence" in strategy or "lag_convergence" in strategy:
+        return 0.0007
     if "leadlag" in strategy:
         return 0.0007
     return 0.0005
@@ -2224,6 +2604,12 @@ def run_candidate_research(
             "timeframe": timeframe,
             "symbols": canonicalize_symbol_list(list(row.get("symbols") or [])),
             "params": dict(row.get("params") or {}),
+            "notes": str(row.get("notes") or result.get("notes") or ""),
+            "tags": [
+                str(tag)
+                for tag in list(row.get("tags") or result.get("tags") or [])
+                if str(tag)
+            ],
             "train": train,
             "val": val,
             "oos": oos,
@@ -2251,7 +2637,10 @@ def run_candidate_research(
             "hard_reject": hard_reject_flag,
             "hard_reject_reasons": hard_reject,
             "pass": bool(result.get("pass", False)) and not hard_reject_flag,
-            "metadata": dict(result.get("metadata") or {}),
+            "metadata": {
+                **dict(row.get("metadata") or {}),
+                **dict(result.get("metadata") or {}),
+            },
         }
         candidate_payload["selection_score"] = _candidate_rank_score(
             candidate_payload,

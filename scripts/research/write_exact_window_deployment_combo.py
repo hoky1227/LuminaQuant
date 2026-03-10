@@ -21,6 +21,12 @@ from lumina_quant.eval.exact_window_suite import _metrics_daily  # noqa: E402
 REPORT_ROOT = REPO_ROOT / "var" / "reports" / "exact_window_backtests"
 FOLLOWUP_ROOT = REPORT_ROOT / "followup_status"
 METALS = {"XAU/USDT", "XAG/USDT", "XPT/USDT", "XPD/USDT"}
+EXPERIMENTAL_MAX_PBO = 0.40
+EXPERIMENTAL_MIN_OOS_SHARPE = 1.0
+EXPERIMENTAL_MIN_OOS_RETURN = 0.0
+EXPERIMENTAL_MIN_TRADE_COUNT = 5.0
+EXPERIMENTAL_MIN_VAL_SHARPE = 0.5
+EXPERIMENTAL_MIN_TRAIN_RETURN = -0.12
 
 PRIMARY_WATCHLIST_STEMS = [
     "4h_btc_xag_tuned_latest",
@@ -213,6 +219,7 @@ def _component_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "timeframe": row.get("strategy_timeframe"),
                 "symbols": symbols,
                 "asset_mix": asset_mix,
+                "risk_flags": list(row.get("_deployment_risk_flags") or []),
                 "train": train,
                 "val": val,
                 "oos": oos,
@@ -256,6 +263,103 @@ def _scenario_rows(bundle: dict[str, Any], decision: dict[str, Any], spec: dict[
     )
 
 
+def _iter_source_detail_rows(decision: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for source in list(decision.get("source_batches") or []):
+        details_path = Path(str(source.get("details_path") or "")).resolve()
+        if not details_path.exists():
+            continue
+        try:
+            payload = json.loads(details_path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if not isinstance(payload, list):
+            continue
+        for row in payload:
+            if isinstance(row, dict):
+                rows.append(dict(row))
+    return rows
+
+
+def _experimental_watchlist_rows(
+    decision: dict[str, Any],
+    *,
+    include_metals: bool | None = None,
+    max_rows: int = 3,
+) -> list[dict[str, Any]]:
+    ranked: list[dict[str, Any]] = []
+    for row in _iter_source_detail_rows(decision):
+        train = dict(row.get("train") or {})
+        val = dict(row.get("val") or {})
+        oos = dict(row.get("oos") or {})
+        symbols = list(row.get("symbols") or [])
+        has_metals = any(symbol in METALS for symbol in symbols)
+        if include_metals is True and not has_metals:
+            continue
+        if include_metals is False and has_metals:
+            continue
+        if float(oos.get("pbo", 1.0) or 1.0) > EXPERIMENTAL_MAX_PBO:
+            continue
+        if float(oos.get("sharpe", 0.0) or 0.0) <= EXPERIMENTAL_MIN_OOS_SHARPE:
+            continue
+        if float(oos.get("return", 0.0) or 0.0) <= EXPERIMENTAL_MIN_OOS_RETURN:
+            continue
+        if float(oos.get("trade_count", 0.0) or 0.0) < EXPERIMENTAL_MIN_TRADE_COUNT:
+            continue
+        if float(val.get("sharpe", 0.0) or 0.0) < EXPERIMENTAL_MIN_VAL_SHARPE:
+            continue
+        if float(train.get("return", 0.0) or 0.0) < EXPERIMENTAL_MIN_TRAIN_RETURN:
+            continue
+
+        copied = dict(row)
+        copied["_deployment_role"] = "experimental watchlist"
+        copied["_deployment_label"] = "research watchlist sleeve"
+        copied["_deployment_stage"] = "experimental_watchlist"
+        copied["_deployment_run_id"] = None
+        copied["_deployment_memory_evidence"] = {}
+        copied["_deployment_risk_flags"] = [
+            "research_only",
+            "no_strict_anchor",
+        ]
+        copied["_deployment_score"] = (
+            float(oos.get("sharpe", 0.0) or 0.0)
+            + (20.0 * float(oos.get("return", 0.0) or 0.0))
+            + (4.0 * float(val.get("sharpe", 0.0) or 0.0))
+            - (3.0 * float(oos.get("pbo", 1.0) or 1.0))
+        )
+        ranked.append(copied)
+
+    ranked.sort(
+        key=lambda row: (
+            float(row.get("_deployment_score", 0.0)),
+            float((row.get("oos") or {}).get("sharpe", 0.0) or 0.0),
+            float((row.get("oos") or {}).get("return", 0.0) or 0.0),
+        ),
+        reverse=True,
+    )
+    selected: list[dict[str, Any]] = []
+    seen_timeframes: set[str] = set()
+    seen_names: set[str] = set()
+    for row in ranked:
+        name = str(row.get("name") or "")
+        timeframe = str(row.get("strategy_timeframe") or "")
+        if name in seen_names:
+            continue
+        if timeframe in seen_timeframes and len(selected) >= 1:
+            continue
+        seen_names.add(name)
+        seen_timeframes.add(timeframe)
+        selected.append(row)
+        if len(selected) >= max_rows:
+            break
+    if not selected:
+        return []
+    weight = 1.0 / float(len(selected))
+    for row in selected:
+        row["_deployment_weight"] = weight
+    return selected
+
+
 def _build_scenarios(bundle: dict[str, Any], decision: dict[str, Any], generated_at: str) -> list[dict[str, Any]]:
     scenarios: list[dict[str, Any]] = []
     for spec in SCENARIO_SPECS:
@@ -275,6 +379,23 @@ def _build_scenarios(bundle: dict[str, Any], decision: dict[str, Any], generated
                 source_stems=list(spec.get("stems") or []),
             )
         )
+    if not scenarios:
+        experimental_rows = _experimental_watchlist_rows(decision, include_metals=False, max_rows=3)
+        if experimental_rows:
+            scenarios.append(
+                _build_payload(
+                    experimental_rows,
+                    generated_at=generated_at,
+                    scenario_id="experimental_research_watchlist",
+                    label="Experimental research watchlist",
+                    selection_basis="research_watchlist_equal_weight",
+                    notes=[
+                        "No strict anchors are currently available.",
+                        "This watchlist keeps only candidates with positive validation/OOS, PBO <= 0.40, and sufficient trade count.",
+                    ],
+                    source_stems=[],
+                )
+            )
     return scenarios
 
 

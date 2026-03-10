@@ -310,6 +310,283 @@ _PAIR_RETUNE_PARAM_SETS_BY_TIMEFRAME: dict[str, tuple[dict[str, float | int | st
     ),
 }
 
+_LAG_CONVERGENCE_FOCUS_PAIRS_BY_TIMEFRAME: dict[str, tuple[tuple[str, str], ...]] = {
+    "4h": (
+        ("XAU/USDT", "XAG/USDT"),
+        ("XPT/USDT", "XPD/USDT"),
+    ),
+    "1d": (
+        ("XAU/USDT", "XAG/USDT"),
+        ("XPT/USDT", "XPD/USDT"),
+    ),
+}
+
+_LAG_CONVERGENCE_SPECS_BY_TIMEFRAME: dict[str, tuple[dict[str, float | int | str], ...]] = {
+    "4h": (
+        {
+            "variant": "metals_core",
+            "lag_bars": 2,
+            "entry_threshold": 0.018,
+            "exit_threshold": 0.006,
+            "stop_threshold": 0.060,
+            "max_hold_bars": 36,
+            "stop_loss_pct": 0.025,
+        },
+        {
+            "variant": "metals_fast",
+            "lag_bars": 1,
+            "entry_threshold": 0.014,
+            "exit_threshold": 0.004,
+            "stop_threshold": 0.050,
+            "max_hold_bars": 24,
+            "stop_loss_pct": 0.030,
+        },
+    ),
+    "1d": (
+        {
+            "variant": "metals_core",
+            "lag_bars": 1,
+            "entry_threshold": 0.012,
+            "exit_threshold": 0.004,
+            "stop_threshold": 0.040,
+            "max_hold_bars": 14,
+            "stop_loss_pct": 0.025,
+        },
+        {
+            "variant": "metals_patience",
+            "lag_bars": 2,
+            "entry_threshold": 0.015,
+            "exit_threshold": 0.005,
+            "stop_threshold": 0.050,
+            "max_hold_bars": 18,
+            "stop_loss_pct": 0.030,
+        },
+    ),
+}
+
+_ROLLING_BREAKOUT_SLICE: dict[str, tuple[dict[str, Any], ...]] = {
+    "30m": (
+        {
+            "variant": "loose_lo",
+            "lookback_bars": 48,
+            "breakout_buffer": 0.001,
+            "atr_window": 14,
+            "atr_stop_multiplier": 2.2,
+            "stop_loss_pct": 0.025,
+            "allow_short": False,
+        },
+        {
+            "variant": "guarded_ls",
+            "lookback_bars": 64,
+            "breakout_buffer": 0.002,
+            "atr_window": 21,
+            "atr_stop_multiplier": 2.8,
+            "stop_loss_pct": 0.030,
+            "allow_short": True,
+        },
+    ),
+    "1h": (
+        {
+            "variant": "loose_lo",
+            "lookback_bars": 36,
+            "breakout_buffer": 0.001,
+            "atr_window": 14,
+            "atr_stop_multiplier": 2.0,
+            "stop_loss_pct": 0.020,
+            "allow_short": False,
+        },
+        {
+            "variant": "guarded_ls",
+            "lookback_bars": 48,
+            "breakout_buffer": 0.002,
+            "atr_window": 18,
+            "atr_stop_multiplier": 2.5,
+            "stop_loss_pct": 0.025,
+            "allow_short": True,
+        },
+    ),
+}
+
+_REGIME_BREAKOUT_SLICE: dict[str, tuple[dict[str, Any], ...]] = {
+    "30m": (
+        {
+            "variant": "trend_guarded",
+            "lookback_window": 48,
+            "slope_window": 21,
+            "volatility_fast_window": 12,
+            "volatility_slow_window": 48,
+            "range_entry_threshold": 0.68,
+            "slope_entry_threshold": 0.001,
+            "momentum_floor": 0.003,
+            "max_volatility_ratio": 1.8,
+            "stop_loss_pct": 0.025,
+            "allow_short": False,
+        },
+        {
+            "variant": "trend_ls",
+            "lookback_window": 64,
+            "slope_window": 24,
+            "volatility_fast_window": 16,
+            "volatility_slow_window": 64,
+            "range_entry_threshold": 0.72,
+            "slope_entry_threshold": 0.0015,
+            "momentum_floor": 0.004,
+            "max_volatility_ratio": 1.7,
+            "stop_loss_pct": 0.030,
+            "allow_short": True,
+        },
+    ),
+    "1h": (
+        {
+            "variant": "trend_guarded",
+            "lookback_window": 36,
+            "slope_window": 18,
+            "volatility_fast_window": 10,
+            "volatility_slow_window": 40,
+            "range_entry_threshold": 0.65,
+            "slope_entry_threshold": 0.0008,
+            "momentum_floor": 0.002,
+            "max_volatility_ratio": 1.9,
+            "stop_loss_pct": 0.020,
+            "allow_short": False,
+        },
+        {
+            "variant": "trend_ls",
+            "lookback_window": 48,
+            "slope_window": 21,
+            "volatility_fast_window": 12,
+            "volatility_slow_window": 48,
+            "range_entry_threshold": 0.70,
+            "slope_entry_threshold": 0.001,
+            "momentum_floor": 0.003,
+            "max_volatility_ratio": 1.8,
+            "stop_loss_pct": 0.025,
+            "allow_short": True,
+        },
+    ),
+}
+
+_MEAN_REVERSION_STD_SLICE: dict[str, tuple[dict[str, Any], ...]] = {
+    "15m": (
+        {
+            "variant": "balanced_ls",
+            "window": 64,
+            "entry_z": 2.0,
+            "exit_z": 0.50,
+            "stop_loss_pct": 0.025,
+            "allow_short": True,
+        },
+        {
+            "variant": "guarded_lo",
+            "window": 96,
+            "entry_z": 2.4,
+            "exit_z": 0.40,
+            "stop_loss_pct": 0.020,
+            "allow_short": False,
+        },
+    ),
+    "30m": (
+        {
+            "variant": "balanced_ls",
+            "window": 48,
+            "entry_z": 1.8,
+            "exit_z": 0.45,
+            "stop_loss_pct": 0.025,
+            "allow_short": True,
+        },
+        {
+            "variant": "guarded_lo",
+            "window": 72,
+            "entry_z": 2.2,
+            "exit_z": 0.35,
+            "stop_loss_pct": 0.020,
+            "allow_short": False,
+        },
+    ),
+}
+
+_VWAP_REVERSION_SLICE: dict[str, tuple[dict[str, Any], ...]] = {
+    "5m": (
+        {
+            "variant": "balanced_ls",
+            "window": 48,
+            "entry_dev": 0.012,
+            "exit_dev": 0.003,
+            "stop_loss_pct": 0.020,
+            "allow_short": True,
+        },
+        {
+            "variant": "guarded_lo",
+            "window": 64,
+            "entry_dev": 0.016,
+            "exit_dev": 0.004,
+            "stop_loss_pct": 0.018,
+            "allow_short": False,
+        },
+    ),
+    "15m": (
+        {
+            "variant": "balanced_ls",
+            "window": 36,
+            "entry_dev": 0.010,
+            "exit_dev": 0.002,
+            "stop_loss_pct": 0.020,
+            "allow_short": True,
+        },
+        {
+            "variant": "guarded_lo",
+            "window": 48,
+            "entry_dev": 0.014,
+            "exit_dev": 0.003,
+            "stop_loss_pct": 0.018,
+            "allow_short": False,
+        },
+    ),
+}
+
+_TOPCAP_TSMOM_SLICE: dict[str, tuple[dict[str, Any], ...]] = {
+    "1h": (
+        {
+            "variant": "balanced",
+            "lookback_bars": 16,
+            "rebalance_bars": 4,
+            "signal_threshold": 0.015,
+            "stop_loss_pct": 0.08,
+            "max_longs": 2,
+            "max_shorts": 2,
+            "min_price": 0.10,
+            "btc_regime_ma": 48,
+            "btc_symbol": "BTC/USDT",
+        },
+        {
+            "variant": "defensive",
+            "lookback_bars": 24,
+            "rebalance_bars": 6,
+            "signal_threshold": 0.020,
+            "stop_loss_pct": 0.07,
+            "max_longs": 2,
+            "max_shorts": 1,
+            "min_price": 0.10,
+            "btc_regime_ma": 64,
+            "btc_symbol": "BTC/USDT",
+        },
+    ),
+    "4h": (
+        {
+            "variant": "balanced",
+            "lookback_bars": 10,
+            "rebalance_bars": 2,
+            "signal_threshold": 0.020,
+            "stop_loss_pct": 0.08,
+            "max_longs": 2,
+            "max_shorts": 2,
+            "min_price": 0.10,
+            "btc_regime_ma": 18,
+            "btc_symbol": "BTC/USDT",
+        },
+    ),
+}
+
 _VOLCOMP_RETUNE_SLICE: dict[str, tuple[dict[str, Any], ...]] = {
     "5m": (
         {
@@ -415,6 +692,76 @@ def _candidate_id(*, name: str, timeframe: str, params: dict[str, Any], symbols:
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:16]
 
 
+def _article_pipeline_family_ids(
+    *,
+    strategy_class: str,
+    timeframe: str,
+    symbols: Sequence[str],
+) -> tuple[str, ...]:
+    symbol_set = set(canonicalize_symbol_list(symbols))
+    strategy_token = str(strategy_class or "").strip()
+    timeframe_token = str(timeframe or "").strip()
+    if strategy_token == "CompositeTrendStrategy":
+        return ("regime-conditioned-composite-trend",)
+    if strategy_token == "VolCompressionVWAPReversionStrategy":
+        return ("vol-compression-break-reversion",)
+    if strategy_token == "LeadLagSpilloverStrategy":
+        return ("lead-lag-regime-spillover",)
+    if strategy_token == "LagConvergenceStrategy":
+        return ("metals-lag-convergence",) if symbol_set.intersection(_METALS) else ()
+    if strategy_token == "TopCapTimeSeriesMomentumStrategy":
+        return ("topcap-rotation-relative-momentum",)
+    if strategy_token in {"RollingBreakoutStrategy", "RegimeBreakoutCandidateStrategy"}:
+        return ("regime-breakout-thrust",)
+    if strategy_token == "MeanReversionStdStrategy":
+        return ("single-asset-zscore-reversion",)
+    if strategy_token == "VwapReversionStrategy":
+        return ("intraday-vwap-reversion",)
+    if strategy_token == "PairSpreadZScoreStrategy":
+        if symbol_set.intersection(_METALS):
+            return ("crypto-metal-residual-pairs",)
+        if timeframe_token in {"15m", "1h"} and symbol_set and symbol_set.isdisjoint(_METALS):
+            return ("sector-dispersion-reversion",)
+    return ()
+
+
+def _with_article_pipeline_provenance(
+    *,
+    strategy_class: str,
+    timeframe: str,
+    symbols: Sequence[str],
+    tags: Sequence[str] | None,
+    metadata: dict[str, Any] | None,
+) -> tuple[tuple[str, ...], dict[str, Any]]:
+    merged_metadata = dict(metadata or {})
+    family_ids = list(
+        dict.fromkeys(
+            [
+                str(item).strip()
+                for item in list(merged_metadata.get("article_pipeline_family_ids") or [])
+                if str(item).strip()
+            ]
+            + list(
+                _article_pipeline_family_ids(
+                    strategy_class=strategy_class,
+                    timeframe=timeframe,
+                    symbols=symbols,
+                )
+            )
+        )
+    )
+    merged_tags = [
+        str(tag).strip()
+        for tag in list(tags or [])
+        if str(tag).strip()
+    ]
+    if family_ids:
+        merged_tags.extend(["article_pipeline", *[f"article_family:{item}" for item in family_ids]])
+        merged_metadata["article_pipeline_family_ids"] = list(family_ids)
+        merged_metadata["hypothesis_origin"] = "article_research_pipeline"
+    return tuple(dict.fromkeys(merged_tags)), merged_metadata
+
+
 def _has_perp_support_data() -> bool:
     path = Path("data") / "market_parquet" / "feature_points"
     return path.exists()
@@ -436,11 +783,17 @@ def _add_candidate(
     symbol_tuple = tuple(canonicalize_symbol_list(symbols))
     if not symbol_tuple:
         return
-    normalized_tags = tuple(str(tag) for tag in list(tags or []) if str(tag))
+    normalized_tags, enriched_metadata = _with_article_pipeline_provenance(
+        strategy_class=strategy_class,
+        timeframe=str(timeframe),
+        symbols=symbol_tuple,
+        tags=tags,
+        metadata=metadata,
+    )
     metadata_payload = {
         "timeframe": str(timeframe),
         "family": str(family),
-        **dict(metadata or {}),
+        **enriched_metadata,
     }
     out.append(
         StrategyCandidate(
@@ -496,7 +849,11 @@ def build_binance_futures_candidates(
 
     trend_tfs = [tf for tf in ("30m", "1h") if tf in normalized_timeframes]
     mean_rev_tfs = [tf for tf in ("5m", "15m") if tf in normalized_timeframes]
+    std_mean_rev_tfs = [tf for tf in ("15m", "30m") if tf in normalized_timeframes]
+    breakout_tfs = [tf for tf in ("30m", "1h") if tf in normalized_timeframes]
+    topcap_tfs = [tf for tf in ("1h", "4h") if tf in normalized_timeframes]
     pair_tfs = [tf for tf in ("15m", "1h", "4h", "1d") if tf in normalized_timeframes]
+    lag_convergence_tfs = [tf for tf in ("4h", "1d") if tf in normalized_timeframes]
     carry_tfs = [tf for tf in ("30m", "1h", "4h") if tf in normalized_timeframes]
     micro_tfs = [tf for tf in ("1s",) if tf in normalized_timeframes]
 
@@ -589,6 +946,74 @@ def build_binance_futures_candidates(
                 },
             )
 
+    # Classic VWAP deviation reversion sleeve.
+    for timeframe in mean_rev_tfs:
+        tf_tag = timeframe.replace("/", "-")
+        for spec in _VWAP_REVERSION_SLICE.get(timeframe, ()):
+            params = {
+                "window": int(spec["window"]),
+                "entry_dev": float(spec["entry_dev"]),
+                "exit_dev": float(spec["exit_dev"]),
+                "stop_loss_pct": float(spec["stop_loss_pct"]),
+                "allow_short": bool(spec["allow_short"]),
+            }
+            _add_candidate(
+                candidates,
+                name=(
+                    f"vwap_reversion_{tf_tag}_{spec['variant']}_"
+                    f"{int(spec['window'])}_{float(spec['entry_dev']):.3f}"
+                ),
+                family="mean_reversion",
+                strategy_class="VwapReversionStrategy",
+                timeframe=timeframe,
+                symbols=normalized_symbols,
+                params=params,
+                notes=(
+                    "Rolling VWAP deviation mean reversion with bounded entry/exit bands "
+                    f"for {timeframe} ({spec['variant']})."
+                ),
+                tags=("mean_reversion", "vwap", "single_asset", "bounded"),
+                metadata={
+                    "timeframe": timeframe,
+                    "allow_short": bool(spec["allow_short"]),
+                    "retune_profile": str(spec["variant"]),
+                },
+            )
+
+    # Classic z-score mean reversion sleeve.
+    for timeframe in std_mean_rev_tfs:
+        tf_tag = timeframe.replace("/", "-")
+        for spec in _MEAN_REVERSION_STD_SLICE.get(timeframe, ()):
+            params = {
+                "window": int(spec["window"]),
+                "entry_z": float(spec["entry_z"]),
+                "exit_z": float(spec["exit_z"]),
+                "stop_loss_pct": float(spec["stop_loss_pct"]),
+                "allow_short": bool(spec["allow_short"]),
+            }
+            _add_candidate(
+                candidates,
+                name=(
+                    f"mean_reversion_std_{tf_tag}_{spec['variant']}_"
+                    f"{int(spec['window'])}_{float(spec['entry_z']):.2f}"
+                ),
+                family="mean_reversion",
+                strategy_class="MeanReversionStdStrategy",
+                timeframe=timeframe,
+                symbols=normalized_symbols,
+                params=params,
+                notes=(
+                    "Single-asset rolling z-score mean reversion with bounded stop rules "
+                    f"for {timeframe} ({spec['variant']})."
+                ),
+                tags=("mean_reversion", "zscore", "single_asset", "bounded"),
+                metadata={
+                    "timeframe": timeframe,
+                    "allow_short": bool(spec["allow_short"]),
+                    "retune_profile": str(spec["variant"]),
+                },
+            )
+
     # Lead/lag spillover sleeve (metals excluded).
     if laggard_symbols:
         for timeframe in mean_rev_tfs:
@@ -617,8 +1042,116 @@ def build_binance_futures_candidates(
                         "timeframe": timeframe,
                         "symbol_scope": "crypto_excluding_metals",
                         "lag_bands": [2, 3, 4],
+                        },
+                    )
+
+    if len(crypto_symbols) >= 4:
+        for timeframe in topcap_tfs:
+            tf_tag = timeframe.replace("/", "-")
+            for spec in _TOPCAP_TSMOM_SLICE.get(timeframe, ()):
+                params = {
+                    "lookback_bars": int(spec["lookback_bars"]),
+                    "rebalance_bars": int(spec["rebalance_bars"]),
+                    "signal_threshold": float(spec["signal_threshold"]),
+                    "stop_loss_pct": float(spec["stop_loss_pct"]),
+                    "max_longs": int(spec["max_longs"]),
+                    "max_shorts": int(spec["max_shorts"]),
+                    "min_price": float(spec["min_price"]),
+                    "btc_regime_ma": int(spec["btc_regime_ma"]),
+                    "btc_symbol": str(spec["btc_symbol"]),
+                }
+                _add_candidate(
+                    candidates,
+                    name=(
+                        f"topcap_tsmom_{tf_tag}_{spec['variant']}_"
+                        f"{int(spec['lookback_bars'])}_{int(spec['rebalance_bars'])}_{float(spec['signal_threshold']):.3f}"
+                    ),
+                    family="cross_sectional",
+                    strategy_class="TopCapTimeSeriesMomentumStrategy",
+                    timeframe=timeframe,
+                    symbols=crypto_symbols,
+                    params=params,
+                    notes=(
+                        "Top-cap long/short relative-momentum rotation with BTC regime gating "
+                        f"for {timeframe} ({spec['variant']})."
+                    ),
+                    tags=("cross_sectional", "relative_momentum", "topcap", "crypto"),
+                    metadata={
+                        "timeframe": timeframe,
+                        "retune_profile": str(spec["variant"]),
+                        "symbol_scope": "crypto",
                     },
                 )
+
+    # Single-asset breakout sleeves.
+    for timeframe in breakout_tfs:
+        tf_tag = timeframe.replace("/", "-")
+        for spec in _ROLLING_BREAKOUT_SLICE.get(timeframe, ()):
+            params = {
+                "lookback_bars": int(spec["lookback_bars"]),
+                "breakout_buffer": float(spec["breakout_buffer"]),
+                "atr_window": int(spec["atr_window"]),
+                "atr_stop_multiplier": float(spec["atr_stop_multiplier"]),
+                "stop_loss_pct": float(spec["stop_loss_pct"]),
+                "allow_short": bool(spec["allow_short"]),
+            }
+            _add_candidate(
+                candidates,
+                name=(
+                    f"rolling_breakout_{tf_tag}_{spec['variant']}_"
+                    f"{int(spec['lookback_bars'])}_{float(spec['breakout_buffer']):.3f}"
+                ),
+                family="trend",
+                strategy_class="RollingBreakoutStrategy",
+                timeframe=timeframe,
+                symbols=normalized_symbols,
+                params=params,
+                notes=(
+                    "Single-asset channel breakout with ATR-aware protective stops "
+                    f"for {timeframe} ({spec['variant']})."
+                ),
+                tags=("trend", "breakout", "single_asset", "atr"),
+                metadata={
+                    "timeframe": timeframe,
+                    "allow_short": bool(spec["allow_short"]),
+                    "retune_profile": str(spec["variant"]),
+                },
+            )
+        for spec in _REGIME_BREAKOUT_SLICE.get(timeframe, ()):
+            params = {
+                "lookback_window": int(spec["lookback_window"]),
+                "slope_window": int(spec["slope_window"]),
+                "volatility_fast_window": int(spec["volatility_fast_window"]),
+                "volatility_slow_window": int(spec["volatility_slow_window"]),
+                "range_entry_threshold": float(spec["range_entry_threshold"]),
+                "slope_entry_threshold": float(spec["slope_entry_threshold"]),
+                "momentum_floor": float(spec["momentum_floor"]),
+                "max_volatility_ratio": float(spec["max_volatility_ratio"]),
+                "stop_loss_pct": float(spec["stop_loss_pct"]),
+                "allow_short": bool(spec["allow_short"]),
+            }
+            _add_candidate(
+                candidates,
+                name=(
+                    f"regime_breakout_{tf_tag}_{spec['variant']}_"
+                    f"{int(spec['lookback_window'])}_{float(spec['range_entry_threshold']):.2f}"
+                ),
+                family="trend",
+                strategy_class="RegimeBreakoutCandidateStrategy",
+                timeframe=timeframe,
+                symbols=normalized_symbols,
+                params=params,
+                notes=(
+                    "Regime-gated breakout candidate with trend and volatility filters "
+                    f"for {timeframe} ({spec['variant']})."
+                ),
+                tags=("trend", "breakout", "regime", "single_asset"),
+                metadata={
+                    "timeframe": timeframe,
+                    "allow_short": bool(spec["allow_short"]),
+                    "retune_profile": str(spec["variant"]),
+                },
+            )
 
     # Pair spread sleeve.
     for timeframe in pair_tfs:
@@ -678,6 +1211,49 @@ def build_binance_futures_candidates(
                             "pair_variant": variant,
                         },
                     )
+
+    for timeframe in lag_convergence_tfs:
+        tf_tag = timeframe.replace("/", "-")
+        pair_universe = [
+            pair
+            for pair in _LAG_CONVERGENCE_FOCUS_PAIRS_BY_TIMEFRAME.get(timeframe, ())
+            if pair in pairs
+        ]
+        for symbol_x, symbol_y in pair_universe:
+            pair_token = f"{symbol_x.replace('/', '').lower()}_{symbol_y.replace('/', '').lower()}"
+            for spec in _LAG_CONVERGENCE_SPECS_BY_TIMEFRAME.get(timeframe, ()):
+                params = {
+                    "symbol_x": symbol_x,
+                    "symbol_y": symbol_y,
+                    "lag_bars": int(spec["lag_bars"]),
+                    "entry_threshold": float(spec["entry_threshold"]),
+                    "exit_threshold": float(spec["exit_threshold"]),
+                    "stop_threshold": float(spec["stop_threshold"]),
+                    "max_hold_bars": int(spec["max_hold_bars"]),
+                    "stop_loss_pct": float(spec["stop_loss_pct"]),
+                }
+                _add_candidate(
+                    candidates,
+                    name=(
+                        f"lag_convergence_{tf_tag}_{spec['variant']}_{pair_token}_"
+                        f"{int(spec['lag_bars'])}_{float(spec['entry_threshold']):.3f}"
+                    ),
+                    family="intermarket",
+                    strategy_class="LagConvergenceStrategy",
+                    timeframe=timeframe,
+                    symbols=(symbol_x, symbol_y),
+                    params=params,
+                    notes=(
+                        "Lagged relative-momentum convergence for short-history metals pairs "
+                        f"on {timeframe} ({spec['variant']})."
+                    ),
+                    tags=("lag_convergence", "metals", "pair", "relative_momentum"),
+                    metadata={
+                        "timeframe": timeframe,
+                        "pair": f"{symbol_x}_{symbol_y}",
+                        "pair_variant": str(spec["variant"]),
+                    },
+                )
 
     # Optional carry/crowding sleeve.
     if _has_perp_support_data() and carry_tfs:

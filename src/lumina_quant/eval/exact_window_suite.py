@@ -64,6 +64,44 @@ def _assert_low_ram_exclusions(rows: list[dict[str, Any]], *, row_kind: str) -> 
         raise RuntimeError(f"Low-RAM exclusions violated for exact-window suite: {joined}")
 
 
+def _build_candidate_result_row(
+    *,
+    candidate: dict[str, Any],
+    timeframe: str,
+    symbols_for_candidate: list[str],
+    metrics: dict[str, dict[str, Any]],
+    hurdles: dict[str, Any],
+    hard_reject: dict[str, Any],
+    streams: dict[str, list[dict[str, Any]]],
+    cost_rate: float,
+    runtime_metadata: dict[str, Any] | None,
+) -> dict[str, Any]:
+    candidate_metadata = dict(candidate.get("metadata") or {})
+    merged_metadata = {
+        **candidate_metadata,
+        **dict(runtime_metadata or {}),
+        "cost_rate": float(cost_rate),
+    }
+    return {
+        "candidate_id": str(candidate.get("candidate_id")),
+        "name": str(candidate.get("name")),
+        "strategy_class": str(candidate.get("strategy_class")),
+        "family": str(candidate.get("family") or rr._family_from_strategy(str(candidate.get("strategy_class")))),
+        "strategy_timeframe": str(timeframe),
+        "symbols": list(symbols_for_candidate),
+        "params": dict(candidate.get("params") or {}),
+        "notes": str(candidate.get("notes") or ""),
+        "tags": [str(tag) for tag in list(candidate.get("tags") or []) if str(tag)],
+        "train": metrics["train"],
+        "val": metrics["val"],
+        "oos": metrics["oos"],
+        "hurdle_fields": dict(hurdles or {}),
+        "hard_reject_reasons": dict(hard_reject or {}),
+        "return_streams": dict(streams or {}),
+        "metadata": merged_metadata,
+    }
+
+
 def _min_bars_for_timeframe(
     timeframe: str,
     *,
@@ -940,25 +978,17 @@ def run_exact_window_suite(
                 scoring_config=resolved_scoring,
             )
             results.append(
-                {
-                    "candidate_id": str(candidate.get("candidate_id")),
-                    "name": str(candidate.get("name")),
-                    "strategy_class": str(candidate.get("strategy_class")),
-                    "family": str(candidate.get("family") or rr._family_from_strategy(str(candidate.get("strategy_class")))),
-                    "strategy_timeframe": timeframe,
-                    "symbols": symbols_for_candidate,
-                    "params": dict(candidate.get("params") or {}),
-                    "train": metrics["train"],
-                    "val": metrics["val"],
-                    "oos": metrics["oos"],
-                    "hurdle_fields": hurdles,
-                    "hard_reject_reasons": hard_reject,
-                    "return_streams": streams,
-                    "metadata": {
-                        "cost_rate": float(cost_rate),
-                        **dict(meta or {}),
-                    },
-                }
+                _build_candidate_result_row(
+                    candidate=candidate,
+                    timeframe=timeframe,
+                    symbols_for_candidate=symbols_for_candidate,
+                    metrics=metrics,
+                    hurdles=hurdles,
+                    hard_reject=hard_reject,
+                    streams=streams,
+                    cost_rate=float(cost_rate),
+                    runtime_metadata=dict(meta or {}),
+                )
             )
             if progress_callback is not None:
                 progress_callback(

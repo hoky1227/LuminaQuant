@@ -1,0 +1,16 @@
+{
+  "batch_id": "4h",
+  "details_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_candidate_details_latest.json",
+  "fail_analysis_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_fail_analysis_latest.json",
+  "heavy_lock_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_heavy_run.lock",
+  "memory_evidence_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_memory_evidence_latest.json",
+  "promoted_count": 0,
+  "rss_log_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_rss_latest.jsonl",
+  "run_dir": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/article_crypto_4h_focus_20260310T114006Z/4h",
+  "run_id": "article_crypto_4h_focus_20260310T114006Z",
+  "run_root": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/article_crypto_4h_focus_20260310T114006Z",
+  "schema_version": "1.0",
+  "status": "completed",
+  "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_suite_summary_latest.json",
+  "updated_at_utc": "2026-03-10T11:41:37.899951+00:00"
+}
