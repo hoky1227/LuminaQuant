@@ -50,6 +50,15 @@ def _detail(
             "oos": {"pass": False},
         },
         "hard_reject_reasons": dict(hard_reject_reasons or {}),
+        "committee": {
+            "technical_score": 0.62,
+            "support_score": 0.73,
+            "regime_score": 0.54,
+            "robustness_score": 0.71,
+            "risk_veto": False,
+            "risk_flags": [],
+            "final_decision": "promote",
+        },
         "return_streams": {
             "val": [
                 {"t": _ts(year, month, day), "v": value}
@@ -268,6 +277,7 @@ def test_write_exact_window_decision_bundle_consolidates_latest_timeframe_slices
     timeframe_rows = {row["timeframe"]: row for row in payload["timeframe_rows"]}
     assert timeframe_rows["5m"]["best_row"]["candidate_id"] == "5m-best"
     assert timeframe_rows["5m"]["summary_path"] == str((new_5m_dir / "exact_window_suite_summary_latest.json").resolve())
+    assert timeframe_rows["1m"]["best_row"].get("committee") is not None
     assert timeframe_rows["1m"]["monthly_hurdle_outcomes"]["validation"]
     assert timeframe_rows["1m"]["monthly_hurdle_outcomes"]["validation_btc_pass"] is True
     assert timeframe_rows["1m"]["memory_evidence"]["peak_rss_mib"] == 128.0

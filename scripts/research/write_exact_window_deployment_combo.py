@@ -113,6 +113,12 @@ def _decorate_deployment_row(
     memory_evidence: dict[str, Any] | None,
     risk_flags: list[str] | None = None,
 ) -> dict[str, Any]:
+    committee = dict(row.get("committee") or {})
+    provided_risk_flags = list(risk_flags or [])
+    derived_risk_flags: list[str] = list(provided_risk_flags)
+    for item in list(committee.get("risk_flags") or []):
+        if str(item) not in derived_risk_flags:
+            derived_risk_flags.append(str(item))
     decorated = {
         **dict(row),
         "_deployment_role": role,
@@ -120,10 +126,11 @@ def _decorate_deployment_row(
         "_deployment_stage": stage,
         "_deployment_run_id": run_id,
         "_deployment_memory_evidence": dict(memory_evidence or {}),
+        "_deployment_final_decision": str(committee.get("final_decision") or ""),
         "_deployment_weight": 1.0,
     }
-    if risk_flags is not None:
-        decorated["_deployment_risk_flags"] = list(risk_flags)
+    if derived_risk_flags:
+        decorated["_deployment_risk_flags"] = derived_risk_flags
     return decorated
 
 
@@ -243,6 +250,8 @@ def _component_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "symbols": symbols,
                 "asset_mix": asset_mix,
                 "risk_flags": list(row.get("_deployment_risk_flags") or []),
+                "committee": dict(row.get("committee") or {}),
+                "final_decision": row.get("_deployment_final_decision"),
                 "train": train,
                 "val": val,
                 "oos": oos,

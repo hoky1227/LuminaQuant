@@ -114,3 +114,53 @@ def test_experimental_watchlist_filters_sparse_1h_candidates(tmp_path: Path):
     component_names = [component["name"] for component in scenario["components"]]
     assert "pair_spread_1h_sparse_candidate" not in component_names
     assert "topcap_tsmom_1h_valid_candidate" in component_names
+
+
+def test_build_scenarios_carries_committee_and_final_decision_to_components(tmp_path: Path):
+    details_path = tmp_path / "exact_window_candidate_details_latest.json"
+    details_path.write_text(
+        json.dumps(
+            [
+                {
+                    "candidate_id": "cand-anchored",
+                    "name": "topcap_tsmom_1h_balanced_16_4_0.015",
+                    "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+                    "family": "cross_sectional",
+                    "strategy_timeframe": "1m",
+                    "symbols": ["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "TRX/USDT"],
+                    "train": {"return": 0.01, "sharpe": 1.1, "pbo": 0.25, "trade_count": 20},
+                    "val": {"return": 0.02, "sharpe": 1.9, "pbo": 0.21, "trade_count": 45},
+                    "oos": {"return": 0.03, "sharpe": 1.6, "pbo": 0.18, "trade_count": 12},
+                    "promoted": True,
+                    "committee": {
+                        "technical_score": 0.71,
+                        "support_score": 0.82,
+                        "regime_score": 0.66,
+                        "robustness_score": 0.73,
+                        "risk_veto": False,
+                        "risk_flags": ["oos_positive_skew_warning"],
+                        "final_decision": "promote",
+                    },
+                    "return_streams": {"train": [{"t": 1, "v": 0.0}], "val": [{"t": 2, "v": 0.02}], "oos": [{"t": 3, "v": 0.03}]},
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    decision = {
+        "timeframe_rows": [],
+        "source_batches": [
+            {
+                "details_path": str(details_path),
+            }
+        ],
+    }
+
+    scenarios = _build_scenarios({}, decision, "2026-03-12T12:00:00+00:00")
+    assert len(scenarios) == 1
+    scenario = scenarios[0]
+    component = scenario["components"][0]
+    assert component["final_decision"] == "promote"
+    assert component["committee"]["final_decision"] == "promote"
+    assert component["committee"]["risk_flags"] == ["oos_positive_skew_warning"]
+    assert set(component["risk_flags"]) >= {"research_only", "no_strict_anchor", "oos_positive_skew_warning"}

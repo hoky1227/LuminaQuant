@@ -300,3 +300,50 @@ def test_build_candidate_result_row_preserves_candidate_provenance_fields():
     assert row["metadata"]["hypothesis_origin"] == "article_research_pipeline"
     assert row["metadata"]["rss_guard_triggered"] is False
     assert row["metadata"]["cost_rate"] == 0.0005
+
+
+def test_build_candidate_result_row_includes_committee_block():
+    row = _build_candidate_result_row(
+        candidate={
+            "candidate_id": "cand-committee",
+            "name": "pair_spread_4h_participation_btcusdt_xauusdt_1.6_0.35",
+            "strategy_class": "PairSpreadZScoreStrategy",
+            "family": "market_neutral",
+            "params": {"entry_z": 1.6},
+            "notes": "Mixed-asset residual pair.",
+            "tags": ["market_neutral"],
+            "metadata": {},
+        },
+        timeframe="4h",
+        symbols_for_candidate=["BTC/USDT", "XAU/USDT"],
+        metrics={
+            "train": {"return": 0.01, "sharpe": 1.2},
+            "val": {"return": 0.02, "sharpe": 1.8, "trade_count": 12, "pbo": 0.21, "mdd": 0.06},
+            "oos": {"return": 0.03, "sharpe": 1.6, "trade_count": 11, "pbo": 0.18, "mdd": 0.10},
+        },
+        hurdles={"oos": {"pass": True}},
+        hard_reject={},
+        streams={
+            "val": [{"t": _ts("2026-03-01T00:00:00Z"), "v": 0.02}],
+            "oos": [{"t": _ts("2026-03-02T00:00:00Z"), "v": 0.03}],
+        },
+        cost_rate=0.0005,
+        runtime_metadata={"rss_guard_triggered": False},
+    )
+
+    committee = dict(row.get("committee") or {})
+    assert set(committee.keys()) == {
+        "technical_score",
+        "support_score",
+        "regime_score",
+        "robustness_score",
+        "risk_veto",
+        "risk_flags",
+        "final_decision",
+    }
+    assert isinstance(committee["technical_score"], float)
+    assert 0.0 <= float(committee["technical_score"]) <= 1.0
+    assert 0.0 <= float(committee["support_score"]) <= 1.0
+    assert 0.0 <= float(committee["regime_score"]) <= 1.0
+    assert 0.0 <= float(committee["robustness_score"]) <= 1.0
+    assert isinstance(committee["risk_flags"], list)

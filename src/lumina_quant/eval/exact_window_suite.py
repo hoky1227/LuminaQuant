@@ -16,6 +16,7 @@ from lumina_quant.config import BaseConfig
 from lumina_quant.market_data import load_data_dict_from_parquet
 from lumina_quant.strategy_factory.candidate_library import build_binance_futures_candidates
 from lumina_quant.strategy_factory import research_runner as rr
+from lumina_quant.strategy_factory.selection import robust_score_from_metrics
 from lumina_quant.symbols import CANONICAL_STRATEGY_TIMEFRAMES, canonical_symbol, canonicalize_symbol_list, normalize_strategy_timeframes
 
 
@@ -64,6 +65,112 @@ def _assert_low_ram_exclusions(rows: list[dict[str, Any]], *, row_kind: str) -> 
         raise RuntimeError(f"Low-RAM exclusions violated for exact-window suite: {joined}")
 
 
+def _clamp_unit(value: float) -> float:
+    return max(0.0, min(1.0, float(value)))
+
+
+def _committee_from_candidate_metrics(
+    *,
+    candidate: dict[str, Any],
+    metrics: dict[str, dict[str, Any]],
+    streams: dict[str, list[dict[str, Any]]],
+    hard_reject: dict[str, Any],
+) -> dict[str, Any]:
+    val = dict(metrics.get("val") or {})
+    oos = dict(metrics.get("oos") or {})
+
+    val_sharpe = float(val.get("sharpe", 0.0))
+    oos_sharpe = float(oos.get("sharpe", 0.0))
+    val_return = float(val.get("return", 0.0))
+    oos_return = float(oos.get("return", 0.0))
+    val_trade = float(val.get("trade_count", 0.0))
+    oos_trade = float(oos.get("trade_count", 0.0))
+    val_pbo = float(val.get("pbo", 1.0))
+    oos_pbo = float(oos.get("pbo", 1.0))
+    oos_mdd = float(oos.get("mdd", 0.0))
+
+    val_stream_points = max(1, len(list(streams.get("val") or [])))
+    oos_stream_points = max(1, len(list(streams.get("oos") or [])))
+
+    oos_premium = max(0.0, min(1.0, oos_return * 5.0 + 0.5))
+    val_premium = max(0.0, min(1.0, val_return * 5.0 + 0.5))
+    technical_score = _clamp_unit(
+        0.45 + (0.25 * val_premium) + (0.30 * oos_premium) + (0.25 * (max(0.0, val_sharpe) / 4.0))
+    )
+    support_score = _clamp_unit(0.6 * (min(1.0, val_trade / 25.0)) + 0.4 * (min(1.0, oos_trade / 12.0)))
+    robustness_score_raw = robust_score_from_metrics(
+        {
+            **dict(oos),
+            "return": float(oos_return),
+            "sharpe": float(oos_sharpe),
+            "mdd": float(oos_mdd),
+            "pbo": float(oos_pbo),
+        }
+    )
+    regime_score = _clamp_unit(
+        0.50 + (0.30 * (min(1.0, (oos_trade + val_trade) / 35.0)))
+        + (0.10 * min(1.0, (val_stream_points / 8.0)))
+        + (0.10 * min(1.0, (oos_stream_points / 8.0)))
+    )
+    robustness_score = min(
+        1.0,
+        max(0.0, (
+            0.5
+            + (0.015 * robustness_score_raw)
+            + (0.10 * max(0.0, val_sharpe))
+            + (0.05 * max(0.0, oos_sharpe))
+        )),
+    )
+
+    risk_flags: list[str] = []
+    if oos_trade <= 0.0:
+        risk_flags.append("low_trade_count")
+    elif oos_trade < 3.0:
+        risk_flags.append("sparse_trade_flow")
+    if oos_pbo > 0.40:
+        risk_flags.append("high_pbo")
+    if val_pbo > 0.40:
+        risk_flags.append("high_train_pbo")
+    if oos_mdd > 0.20:
+        risk_flags.append("high_drawdown")
+    if oos_return < 0.0:
+        risk_flags.append("negative_oos_return")
+    if val_return < 0.0:
+        risk_flags.append("negative_val_return")
+    if "leverage" in str(candidate.get("notes") or "").lower():
+        risk_flags.append("candidate_note_research_hint")
+    if bool(dict(hard_reject or {}).get("trade_count")):
+        risk_flags.append("hard_reject_trade_count")
+
+    risk_veto = bool(
+        oos_trade <= 0.0
+        or oos_pbo > 0.60
+        or oos_mdd > 0.25
+        or (val_return < -0.20 and oos_return < -0.20)
+    )
+
+    if risk_veto:
+        final_decision = "reject"
+    else:
+        average_score = (technical_score + support_score + regime_score + robustness_score) / 4.0
+        if average_score >= 0.70:
+            final_decision = "promote"
+        elif average_score >= 0.45:
+            final_decision = "watch"
+        else:
+            final_decision = "reject"
+
+    return {
+        "technical_score": float(technical_score),
+        "support_score": float(support_score),
+        "regime_score": float(regime_score),
+        "robustness_score": float(robustness_score),
+        "risk_veto": bool(risk_veto),
+        "risk_flags": risk_flags,
+        "final_decision": final_decision,
+    }
+
+
 def _build_candidate_result_row(
     *,
     candidate: dict[str, Any],
@@ -98,6 +205,12 @@ def _build_candidate_result_row(
         "hurdle_fields": dict(hurdles or {}),
         "hard_reject_reasons": dict(hard_reject or {}),
         "return_streams": dict(streams or {}),
+        "committee": _committee_from_candidate_metrics(
+            candidate=candidate,
+            metrics=metrics,
+            streams=streams,
+            hard_reject=hard_reject,
+        ),
         "metadata": merged_metadata,
     }
 
