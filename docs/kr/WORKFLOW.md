@@ -25,7 +25,7 @@
 
 - Public 브랜치는 DB **읽기 전용** 사용만 허용 (기존 저장소/CSV 소비)
 - 거래소 OHLCV 수집/초기 구축 파이프라인은 Private 브랜치에서만 관리
-- 튜닝된 strategy-factory 연구 메타데이터(candidate library, research runner, article-pipeline/deployment 생성기, 전략 메타데이터 테스트)는 Public 브랜치에 포함하지 않음
+- 튜닝된 strategy-factory 연구 메타데이터(candidate library, research runner, article-pipeline/deployment 생성기, 전략 메타데이터 테스트, exact-window 평가/리포팅/대시보드 surface, research candidate/optimization orchestration)는 Public 브랜치에 포함하지 않음
 - DB/로그/런타임 산출물은 git에 포함하지 않음
 
 ## 2. 자동화 스크립트

@@ -27,7 +27,7 @@ Public branch policy:
 
 - Keep DB **read-only** workflows (consume existing Postgres/Parquet/CSV artifacts).
 - Do not include exchange OHLCV bootstrap/sync pipelines.
-- Do not include tuned strategy-factory research metadata (candidate libraries, research runners, article-pipeline/deployment generators, or strategy-specific metadata tests).
+- Do not include tuned strategy-factory research metadata (candidate libraries, research runners, article-pipeline/deployment generators, strategy-specific metadata tests, exact-window evaluation/reporting/dashboard surfaces, or research candidate/optimization orchestration).
 - Keep runtime DB/data artifacts out of git.
 
 ## 3. Automation Scripts

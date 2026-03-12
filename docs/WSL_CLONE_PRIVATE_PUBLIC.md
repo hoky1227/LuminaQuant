@@ -50,7 +50,7 @@ git push private private-main:main
 
 ## 5) Public publish (sensitive paths removed)
 
-The publish script is PR-first and enforces filtering for lumina_quant/strategies/indicators/data/logs/secrets, tuned strategy-factory research metadata, deployment generators, and DB build/sync helpers.
+The publish script is PR-first and enforces filtering for lumina_quant/strategies/indicators/data/logs/secrets, tuned strategy-factory research metadata, exact-window evaluation/reporting/dashboard surfaces, deployment generators, and DB build/sync helpers.
 
 ```bash
 git checkout private-main
