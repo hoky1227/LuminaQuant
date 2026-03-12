@@ -22,6 +22,8 @@ from datetime import UTC, datetime
 
 PROTECTED_PATHS: tuple[str, ...] = (
     "AGENTS.md",
+    ".agents",
+    ".codex",
     ".env",
     ".omx",
     ".sisyphus",
@@ -80,6 +82,8 @@ SENSITIVE_PATH_RE = re.compile(
     r"|^best_optimized_parameters/"
     r"|^\.omx/"
     r"|^\.sisyphus/"
+    r"|^\.agents/"
+    r"|^\.codex/"
     r"|^AGENTS\.md$"
     r"|^\.env$"
     r"|^\.github/hardcoded_params_baseline\.json$"

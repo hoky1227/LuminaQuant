@@ -26,6 +26,8 @@ def test_sensitive_path_detection_blocks_private_trees():
     assert publish_public_pr.is_sensitive_path("tests/test_strategy_factory_library.py")
     assert publish_public_pr.is_sensitive_path("tests/test_research_runner_feature_support.py")
     assert publish_public_pr.is_sensitive_path("reports/benchmarks/latest.json")
+    assert publish_public_pr.is_sensitive_path(".agents/skills/alpha-research-pipeline/SKILL.md")
+    assert publish_public_pr.is_sensitive_path(".codex/prompts/architect.md")
     assert publish_public_pr.is_sensitive_path(".github/hardcoded_params_baseline.json")
     assert publish_public_pr.is_sensitive_path(".env")
 
