@@ -1,6 +1,6 @@
 # deployment scenarios
 
-- generated_at: `2026-03-10T13:05:22.769204+00:00`
+- generated_at: `2026-03-11T12:42:43.177298+00:00`
 - primary_scenario_id: `experimental_research_watchlist`
 - scenario_count: `1`
 

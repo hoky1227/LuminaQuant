@@ -6,6 +6,7 @@ import hashlib
 import itertools
 import json
 import math
+import queue
 import random
 from collections.abc import Iterable, Mapping, Sequence
 from copy import deepcopy
@@ -131,6 +132,184 @@ class SeriesBundle:
     low: np.ndarray
     close: np.ndarray
     volume: np.ndarray
+
+
+class _AlignedStrategyBarStore:
+    def __init__(self, symbols: Sequence[str]):
+        self.symbol_list = canonicalize_symbol_list(list(symbols))
+        self._rows = {
+            symbol: {
+                "datetime": None,
+                "open": 0.0,
+                "high": 0.0,
+                "low": 0.0,
+                "close": 0.0,
+                "volume": 0.0,
+            }
+            for symbol in self.symbol_list
+        }
+
+    def set_bar(
+        self,
+        symbol: str,
+        event_time: Any,
+        *,
+        open_price: float,
+        high_price: float,
+        low_price: float,
+        close_price: float,
+        volume: float,
+    ) -> None:
+        token = canonical_symbol(str(symbol))
+        if token not in self._rows:
+            return
+        self._rows[token] = {
+            "datetime": event_time,
+            "open": float(open_price),
+            "high": float(high_price),
+            "low": float(low_price),
+            "close": float(close_price),
+            "volume": float(volume),
+        }
+
+    def get_latest_bar_value(self, symbol: str, value_type: str) -> float:
+        token = canonical_symbol(str(symbol))
+        row = self._rows.get(token) or {}
+        value = row.get(str(value_type), 0.0)
+        return float(value) if value is not None else 0.0
+
+    def get_latest_bar_datetime(self, symbol: str) -> Any:
+        token = canonical_symbol(str(symbol))
+        row = self._rows.get(token) or {}
+        return row.get("datetime")
+
+
+def _simulate_event_driven_strategy_exposures(
+    strategy_cls: type[Any],
+    *,
+    params: Mapping[str, Any],
+    aligned: Mapping[str, np.ndarray],
+    symbols: Sequence[str],
+) -> np.ndarray:
+    from lumina_quant.core.events import MarketEvent
+
+    canonical_symbols = canonicalize_symbol_list(list(symbols))
+    datetimes = np.asarray(aligned.get("datetime"), dtype=object)
+    n = len(datetimes)
+    exposures = np.zeros((len(canonical_symbols), n), dtype=float)
+    bars = _AlignedStrategyBarStore(canonical_symbols)
+    events: queue.Queue[Any] = queue.Queue()
+    strategy = strategy_cls(bars, events, **dict(params))
+    position_state = dict.fromkeys(canonical_symbols, 0.0)
+    symbol_index = {symbol: idx for idx, symbol in enumerate(canonical_symbols)}
+
+    for idx in range(n):
+        event_time = datetimes[idx]
+        for symbol in canonical_symbols:
+            bars.set_bar(
+                symbol,
+                event_time,
+                open_price=float(aligned[f"{symbol}:open"][idx]),
+                high_price=float(aligned[f"{symbol}:high"][idx]),
+                low_price=float(aligned[f"{symbol}:low"][idx]),
+                close_price=float(aligned[f"{symbol}:close"][idx]),
+                volume=float(aligned[f"{symbol}:volume"][idx]),
+            )
+
+        for symbol in canonical_symbols:
+            strategy.calculate_signals(
+                MarketEvent(
+                    time=event_time,
+                    symbol=symbol,
+                    open=float(aligned[f"{symbol}:open"][idx]),
+                    high=float(aligned[f"{symbol}:high"][idx]),
+                    low=float(aligned[f"{symbol}:low"][idx]),
+                    close=float(aligned[f"{symbol}:close"][idx]),
+                    volume=float(aligned[f"{symbol}:volume"][idx]),
+                )
+            )
+
+        while not events.empty():
+            signal = events.get()
+            token = canonical_symbol(str(getattr(signal, "symbol", "")))
+            if token not in position_state:
+                continue
+            signal_type = str(getattr(signal, "signal_type", "")).upper()
+            if signal_type == "LONG":
+                position_state[token] = 1.0
+            elif signal_type == "SHORT":
+                position_state[token] = -1.0
+            elif signal_type == "EXIT":
+                position_state[token] = 0.0
+
+        for symbol, value in position_state.items():
+            exposures[symbol_index[symbol], idx] = float(value)
+
+    return exposures
+
+
+def _load_event_driven_strategy_impl(strategy_class: str) -> type[Any]:
+    if strategy_class == "Alpha101FormulaStrategy":
+        from lumina_quant.strategies.alpha101_formula import Alpha101FormulaStrategy
+
+        return Alpha101FormulaStrategy
+    if strategy_class == "PairTradingZScoreStrategy":
+        from lumina_quant.strategies.pair_trading_zscore import PairTradingZScoreStrategy
+
+        return PairTradingZScoreStrategy
+    if strategy_class == "PairSpreadZScoreStrategy":
+        from lumina_quant.strategies.pair_spread_zscore import PairSpreadZScoreStrategy
+
+        return PairSpreadZScoreStrategy
+    msg = f"Unsupported event-driven proxy strategy: {strategy_class}"
+    raise ValueError(msg)
+
+
+def _resolve_symbol_pair(
+    symbols: Sequence[str],
+    params: Mapping[str, Any],
+) -> tuple[str, str, int, int]:
+    symbol_x = canonical_symbol(str(params.get("symbol_x") or symbols[0]))
+    symbol_y = canonical_symbol(str(params.get("symbol_y") or symbols[1]))
+    if symbol_x not in symbols:
+        symbol_x = symbols[0]
+    if symbol_y not in symbols:
+        symbol_y = symbols[1]
+    return symbol_x, symbol_y, symbols.index(symbol_x), symbols.index(symbol_y)
+
+
+def _pair_spread_fallback_exposures(
+    *,
+    aligned: Mapping[str, np.ndarray],
+    symbol_x: str,
+    symbol_y: str,
+    length: int,
+    entry_z: float,
+    exit_z: float,
+    lookback: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    z = np.nan_to_num(
+        _pair_spread_z(
+            aligned[f"{symbol_x}:close"],
+            aligned[f"{symbol_y}:close"],
+            window=lookback,
+        ),
+        nan=0.0,
+    )
+
+    long_spread = z <= -entry_z
+    short_spread = z >= entry_z
+    exit_cond = np.abs(z) <= exit_z
+
+    x_pos = np.zeros(length, dtype=float)
+    y_pos = np.zeros(length, dtype=float)
+    x_pos = np.where(long_spread, -1.0, x_pos)
+    y_pos = np.where(long_spread, 1.0, y_pos)
+    x_pos = np.where(short_spread, 1.0, x_pos)
+    y_pos = np.where(short_spread, -1.0, y_pos)
+    x_pos = np.where(exit_cond, 0.0, x_pos)
+    y_pos = np.where(exit_cond, 0.0, y_pos)
+    return x_pos, y_pos
 
 
 def _load_feature_cache(
@@ -1080,6 +1259,69 @@ def _rolling_channel(high: np.ndarray, low: np.ndarray, window: int) -> tuple[np
     return high_out, low_out
 
 
+def _rolling_slope_series(values: np.ndarray, window: int) -> np.ndarray:
+    out = np.full(values.shape, np.nan, dtype=float)
+    win = max(2, int(window))
+    if values.size < win:
+        return out
+
+    arr = np.asarray(values, dtype=float)
+    finite = np.isfinite(arr).astype(np.int64)
+    prefix_valid = np.concatenate(([0], np.cumsum(finite)))
+    clean = np.nan_to_num(arr, nan=0.0)
+    prefix_y = np.concatenate(([0.0], np.cumsum(clean)))
+    indices = np.arange(arr.size, dtype=float)
+    prefix_xy_abs = np.concatenate(([0.0], np.cumsum(clean * indices)))
+
+    sum_x = float(win * (win - 1) / 2.0)
+    sum_x2 = float(((win - 1) * win * ((2 * win) - 1)) / 6.0)
+    denom = float((win * sum_x2) - (sum_x * sum_x))
+    if abs(denom) <= 1e-12:
+        return out
+
+    for end in range(win - 1, arr.size):
+        start = end - win + 1
+        if int(prefix_valid[end + 1] - prefix_valid[start]) != win:
+            continue
+        sum_y = float(prefix_y[end + 1] - prefix_y[start])
+        sum_xy = float(prefix_xy_abs[end + 1] - prefix_xy_abs[start]) - (float(start) * sum_y)
+        numer = float((win * sum_xy) - (sum_x * sum_y))
+        out[end] = numer / denom
+    return out
+
+
+def _composite_momentum_series(
+    values: np.ndarray,
+    *,
+    windows: Sequence[int] = (8, 21, 55),
+    weights: Sequence[float] = (0.5, 0.3, 0.2),
+) -> np.ndarray:
+    out = np.full(values.shape, np.nan, dtype=float)
+    arr = np.asarray(values, dtype=float)
+    if arr.size < 3:
+        return out
+
+    score = np.zeros(arr.shape, dtype=float)
+    total_weight = np.zeros(arr.shape, dtype=float)
+    for win, weight in zip(windows, weights, strict=True):
+        window_i = max(1, int(win))
+        if arr.size <= window_i:
+            continue
+        latest = arr[window_i:]
+        base = arr[:-window_i]
+        valid = np.isfinite(latest) & np.isfinite(base) & (latest > 0.0) & (base > 0.0)
+        if not np.any(valid):
+            continue
+        contribution = np.zeros(latest.shape, dtype=float)
+        contribution[valid] = np.log(latest[valid] / base[valid])
+        score[window_i:] += float(weight) * contribution
+        total_weight[window_i:] += abs(float(weight)) * valid.astype(float)
+
+    valid_out = total_weight > 1e-12
+    out[valid_out] = score[valid_out] / total_weight[valid_out]
+    return out
+
+
 def _pair_spread_z(px: np.ndarray, py: np.ndarray, window: int = 96) -> np.ndarray:
     n = min(px.size, py.size)
     out = np.full(n, np.nan, dtype=float)
@@ -1446,8 +1688,8 @@ def _strategy_signal(
         lookback_bars = max(2, int(params.get("lookback_bars", 16)))
         rebalance_bars = max(1, int(params.get("rebalance_bars", 4)))
         signal_threshold = float(params.get("signal_threshold", 0.04))
-        max_longs = max(1, int(params.get("max_longs", 2)))
-        max_shorts = max(1, int(params.get("max_shorts", 2)))
+        max_longs = max(0, int(params.get("max_longs", 2)))
+        max_shorts = max(0, int(params.get("max_shorts", 2)))
         min_price = max(0.0, float(params.get("min_price", 0.10)))
         btc_regime_ma = max(0, int(params.get("btc_regime_ma", 0)))
         btc_symbol = canonical_symbol(str(params.get("btc_symbol") or "BTC/USDT"))
@@ -1507,6 +1749,23 @@ def _strategy_signal(
                     position_state[s_idx] = -1.0
             exposures[:, idx] = position_state
         meta["cross_sectional"] = True
+
+    elif strategy_class == "Alpha101FormulaStrategy":
+        simulated = _simulate_event_driven_strategy_exposures(
+            _load_event_driven_strategy_impl(strategy_class),
+            params=params,
+            aligned=aligned,
+            symbols=symbols,
+        )
+        exposures[:] = simulated
+        meta["event_driven_proxy"] = True
+        meta["formulaic_alpha101"] = True
+        meta["alpha_id"] = int(params.get("alpha_id", 101))
+        meta["alpha_param_override_count"] = len(
+            params.get("alpha_param_overrides")
+            if isinstance(params.get("alpha_param_overrides"), Mapping)
+            else {}
+        )
 
     elif strategy_class == "MeanReversionStdStrategy":
         window = max(8, int(params.get("window", 64)))
@@ -1682,6 +1941,8 @@ def _strategy_signal(
             low = np.asarray(aligned[f"{symbol}:low"], dtype=float)
             channel_high, channel_low = _rolling_channel(high, low, lookback_window)
             vol_ratio = np.nan_to_num(_vol_ratio_series(close, fast_vol, slow_vol), nan=np.inf)
+            slope_series = _rolling_slope_series(close, slope_window)
+            momentum_series = _composite_momentum_series(close)
             pos = np.zeros(close.shape, dtype=float)
             mode = 0
             entry_price: float | None = None
@@ -1689,14 +1950,15 @@ def _strategy_signal(
                 close_i = float(close[idx])
                 upper = float(channel_high[idx]) if np.isfinite(channel_high[idx]) else None
                 lower = float(channel_low[idx]) if np.isfinite(channel_low[idx]) else None
-                if upper is None or lower is None or upper <= lower or idx < slope_window:
+                slope = float(slope_series[idx]) if np.isfinite(slope_series[idx]) else None
+                momentum = float(momentum_series[idx]) if np.isfinite(momentum_series[idx]) else None
+                if upper is None or lower is None or upper <= lower or slope is None or momentum is None:
                     continue
-                slope = (close_i / max(float(close[idx - slope_window]), 1e-12)) - 1.0
                 range_pos = (close_i - lower) / max(upper - lower, 1e-12)
                 vol_ok = float(vol_ratio[idx]) <= max_volatility_ratio
                 if mode == 1 and entry_price is not None:
                     stop_hit = close_i <= entry_price * (1.0 - stop_loss_pct)
-                    exit_hit = slope < 0.0 or range_pos < 0.45 or not vol_ok
+                    exit_hit = slope < 0.0 or range_pos < 0.50
                     if stop_hit or exit_hit:
                         mode = 0
                         entry_price = None
@@ -1705,7 +1967,7 @@ def _strategy_signal(
                         continue
                 elif mode == -1 and entry_price is not None:
                     stop_hit = close_i >= entry_price * (1.0 + stop_loss_pct)
-                    exit_hit = slope > 0.0 or range_pos > 0.55 or not vol_ok
+                    exit_hit = slope > 0.0 or range_pos > 0.50
                     if stop_hit or exit_hit:
                         mode = 0
                         entry_price = None
@@ -1714,64 +1976,50 @@ def _strategy_signal(
                         continue
 
                 if mode == 0 and vol_ok:
-                    if range_pos >= range_entry_threshold and slope >= slope_entry_threshold and slope >= momentum_floor:
+                    if range_pos >= range_entry_threshold and slope >= slope_entry_threshold and momentum >= momentum_floor:
                         mode = 1
                         entry_price = close_i
                         pos[idx] = 1.0
-                    elif allow_short and range_pos <= (1.0 - range_entry_threshold) and slope <= -slope_entry_threshold and slope <= -momentum_floor:
+                    elif allow_short and range_pos <= (1.0 - range_entry_threshold) and slope <= -slope_entry_threshold and momentum <= -momentum_floor:
                         mode = -1
                         entry_price = close_i
                         pos[idx] = -1.0
             exposures[s_idx] = pos
 
     elif strategy_class in {"PairSpreadZScoreStrategy", "PairTradingZScoreStrategy"} and len(symbols) >= 2:
-        symbol_x = canonical_symbol(str(params.get("symbol_x") or symbols[0]))
-        symbol_y = canonical_symbol(str(params.get("symbol_y") or symbols[1]))
-        if symbol_x not in symbols:
-            symbol_x = symbols[0]
-        if symbol_y not in symbols:
-            symbol_y = symbols[1]
-        x_idx = symbols.index(symbol_x)
-        y_idx = symbols.index(symbol_y)
+        symbol_x, symbol_y, x_idx, y_idx = _resolve_symbol_pair(symbols, params)
 
-        entry_z = float(params.get("entry_z", 2.0))
-        exit_z = float(params.get("exit_z", 0.35))
-        lookback = int(params.get("lookback_window", 96))
+        try:
+            simulated = _simulate_event_driven_strategy_exposures(
+                _load_event_driven_strategy_impl(strategy_class),
+                params=params,
+                aligned=aligned,
+                symbols=(symbol_x, symbol_y),
+            )
+            exposures[x_idx] = simulated[0]
+            exposures[y_idx] = simulated[1]
+            meta["event_driven_proxy"] = True
+        except Exception as exc:
+            entry_z = float(params.get("entry_z", 2.0))
+            exit_z = float(params.get("exit_z", 0.35))
+            lookback = int(params.get("lookback_window", 96))
+            x_pos, y_pos = _pair_spread_fallback_exposures(
+                aligned=aligned,
+                symbol_x=symbol_x,
+                symbol_y=symbol_y,
+                length=n,
+                entry_z=entry_z,
+                exit_z=exit_z,
+                lookback=lookback,
+            )
 
-        z = np.nan_to_num(
-            _pair_spread_z(
-                aligned[f"{symbol_x}:close"],
-                aligned[f"{symbol_y}:close"],
-                window=lookback,
-            ),
-            nan=0.0,
-        )
-
-        long_spread = z <= -entry_z
-        short_spread = z >= entry_z
-        exit_cond = np.abs(z) <= exit_z
-
-        x_pos = np.zeros(n, dtype=float)
-        y_pos = np.zeros(n, dtype=float)
-        x_pos = np.where(long_spread, -1.0, x_pos)
-        y_pos = np.where(long_spread, 1.0, y_pos)
-        x_pos = np.where(short_spread, 1.0, x_pos)
-        y_pos = np.where(short_spread, -1.0, y_pos)
-        x_pos = np.where(exit_cond, 0.0, x_pos)
-        y_pos = np.where(exit_cond, 0.0, y_pos)
-
-        exposures[x_idx] = x_pos
-        exposures[y_idx] = y_pos
+            exposures[x_idx] = x_pos
+            exposures[y_idx] = y_pos
+            meta["event_driven_proxy"] = False
+            meta["event_driven_proxy_error"] = str(exc)
 
     elif strategy_class == "LagConvergenceStrategy" and len(symbols) >= 2:
-        symbol_x = canonical_symbol(str(params.get("symbol_x") or symbols[0]))
-        symbol_y = canonical_symbol(str(params.get("symbol_y") or symbols[1]))
-        if symbol_x not in symbols:
-            symbol_x = symbols[0]
-        if symbol_y not in symbols:
-            symbol_y = symbols[1]
-        x_idx = symbols.index(symbol_x)
-        y_idx = symbols.index(symbol_y)
+        symbol_x, symbol_y, x_idx, y_idx = _resolve_symbol_pair(symbols, params)
 
         lag_bars = max(1, int(params.get("lag_bars", 3)))
         entry_threshold = float(params.get("entry_threshold", 0.015))

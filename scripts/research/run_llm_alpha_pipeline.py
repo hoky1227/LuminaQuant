@@ -11,6 +11,7 @@ for candidate in (REPO_ROOT, SRC_ROOT):
     if str(candidate) not in sys.path:
         sys.path.insert(0, str(candidate))
 
+from lumina_quant.core.memory_budget import DEFAULT_EXECUTION_MEMORY_POLICY  # noqa: E402
 from lumina_quant.workflows.alpha_research_pipeline import (  # noqa: E402
     write_alpha_research_pipeline_manifest,
 )
@@ -40,8 +41,16 @@ def build_parser() -> argparse.ArgumentParser:
         ],
         help="Reference image path. Repeat for multiple paths.",
     )
-    parser.add_argument("--total-memory-cap-gib", type=float, default=8.0)
-    parser.add_argument("--heavy-run-cap-gib", type=float, default=6.5)
+    parser.add_argument(
+        "--total-memory-cap-gib",
+        type=float,
+        default=DEFAULT_EXECUTION_MEMORY_POLICY.total_memory_cap_gib,
+    )
+    parser.add_argument(
+        "--heavy-run-cap-gib",
+        type=float,
+        default=DEFAULT_EXECUTION_MEMORY_POLICY.heavy_run_cap_gib,
+    )
     return parser
 
 

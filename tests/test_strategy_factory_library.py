@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import itertools
+import json
+
+from lumina_quant.strategies import factory_candidate_set
 from lumina_quant.strategies.factory_candidate_set import (
     build_candidate_set,
     summarize_candidate_set,
@@ -17,6 +21,36 @@ from lumina_quant.strategy_factory import (
 )
 
 
+def _evenly_spaced_grid_rows(
+    param_grid: dict[str, tuple[object, ...]],
+    *,
+    max_rows: int,
+) -> list[dict[str, object]]:
+    if not param_grid:
+        return [{}]
+    keys = list(param_grid.keys())
+    rows = [
+        dict(zip(keys, values, strict=True))
+        for values in itertools.product(*(param_grid[key] for key in keys))
+    ]
+    if max_rows <= 0 or len(rows) <= max_rows:
+        return rows
+    if max_rows == 1:
+        return [rows[0]]
+
+    step = (len(rows) - 1) / float(max_rows - 1)
+    deduped: list[dict[str, object]] = []
+    seen: set[str] = set()
+    for idx in range(max_rows):
+        row = rows[round(idx * step)]
+        marker = json.dumps(row, sort_keys=True, separators=(",", ":"))
+        if marker in seen:
+            continue
+        seen.add(marker)
+        deduped.append(row)
+    return deduped
+
+
 def test_factory_candidate_set_is_large_and_diverse():
     candidates = build_candidate_set(
         symbols=["BTC/USDT", "ETH/USDT", "XAU/USDT", "XAG/USDT"],
@@ -31,9 +65,51 @@ def test_factory_candidate_set_is_large_and_diverse():
     assert "mean_reversion" in summary["families"]
 
 
+def test_sample_grid_rows_matches_existing_even_spacing_for_small_grid():
+    param_grid = {
+        "lookback": (8, 16, 24),
+        "threshold": (0.1, 0.2, 0.3),
+        "allow_short": (True, False),
+    }
+
+    expected = _evenly_spaced_grid_rows(
+        param_grid,
+        max_rows=5,
+    )
+    actual = factory_candidate_set._sample_grid_rows(
+        param_grid,
+        max_rows=5,
+    )
+
+    assert actual == expected
+
+
+def test_build_candidate_set_caps_large_param_grid_without_eager_cartesian_blowup(monkeypatch):
+    huge_grid = {f"p{idx}": tuple(range(12)) for idx in range(8)}
+    template = factory_candidate_set.StrategyTemplate(
+        name="SyntheticHugeGridStrategy",
+        family="other",
+        symbol_mode="single",
+        param_grid=huge_grid,
+        tags=("synthetic",),
+    )
+
+    monkeypatch.setattr(factory_candidate_set, "_strategy_templates", lambda: [template])
+
+    candidates = build_candidate_set(
+        symbols=["BTC/USDT"],
+        timeframes=["1m"],
+        max_param_rows_per_strategy=5,
+    )
+
+    assert len(candidates) == 5
+    assert candidates[0]["params"] == {f"p{idx}": 0 for idx in range(8)}
+    assert candidates[-1]["params"] == {f"p{idx}": 11 for idx in range(8)}
+
+
 def test_strategy_factory_library_builds_candidates_and_shortlist():
     rows = build_binance_futures_candidates(
-        timeframes=["1m"],
+        timeframes=["1h"],
         symbols=["BTC/USDT", "ETH/USDT", "XAU/USDT", "XAG/USDT"],
     )
     assert len(rows) > 20
@@ -329,6 +405,20 @@ def test_candidate_library_generates_additional_existing_strategy_families():
     assert "RollingBreakoutStrategy" in names
     assert "RegimeBreakoutCandidateStrategy" in names
     assert "TopCapTimeSeriesMomentumStrategy" in names
+
+
+def test_candidate_library_generates_alpha101_formula_candidates_with_tuned_overrides():
+    rows = build_binance_futures_candidates(
+        timeframes=["1h", "4h"],
+        symbols=["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "TRX/USDT"],
+    )
+    alpha_rows = [row for row in rows if row.strategy_class == "Alpha101FormulaStrategy"]
+
+    assert alpha_rows
+    assert {row.timeframe for row in alpha_rows} == {"1h", "4h"}
+    assert any("alpha_param_overrides" in row.params for row in alpha_rows)
+    assert all(row.metadata["alpha_param_override_keys"] for row in alpha_rows)
+    assert any(row.metadata["alpha_id"] == 101 for row in alpha_rows)
 
 
 def test_registry_exposes_new_candidate_strategies():

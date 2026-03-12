@@ -6,6 +6,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from lumina_quant.core.memory_budget import DEFAULT_EXECUTION_MEMORY_POLICY
+
 
 @dataclass(frozen=True)
 class ResearchFamily:
@@ -227,10 +229,10 @@ def build_alpha_research_pipeline_manifest(
     output_root: Path,
     article_url: str,
     image_paths: list[str],
-    total_memory_cap_gib: float = 8.0,
-    heavy_run_cap_gib: float = 6.5,
-    heavy_run_parallelism: int = 1,
-    light_worker_parallelism: int = 2,
+    total_memory_cap_gib: float = DEFAULT_EXECUTION_MEMORY_POLICY.total_memory_cap_gib,
+    heavy_run_cap_gib: float = DEFAULT_EXECUTION_MEMORY_POLICY.heavy_run_cap_gib,
+    heavy_run_parallelism: int = DEFAULT_EXECUTION_MEMORY_POLICY.heavy_run_parallelism,
+    light_worker_parallelism: int = DEFAULT_EXECUTION_MEMORY_POLICY.light_worker_parallelism,
 ) -> dict[str, Any]:
     policy = ExecutionPolicy(
         total_memory_cap_gib=total_memory_cap_gib,
@@ -287,8 +289,8 @@ def write_alpha_research_pipeline_manifest(
     report_root: Path,
     article_url: str,
     image_paths: list[str],
-    total_memory_cap_gib: float = 8.0,
-    heavy_run_cap_gib: float = 6.5,
+    total_memory_cap_gib: float = DEFAULT_EXECUTION_MEMORY_POLICY.total_memory_cap_gib,
+    heavy_run_cap_gib: float = DEFAULT_EXECUTION_MEMORY_POLICY.heavy_run_cap_gib,
 ) -> dict[str, Any]:
     output_root = report_root / "pipeline"
     output_root.mkdir(parents=True, exist_ok=True)

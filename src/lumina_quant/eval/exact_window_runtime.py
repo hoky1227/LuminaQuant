@@ -8,11 +8,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from lumina_quant.core.memory_budget import (
+    DEFAULT_EXECUTION_MEMORY_POLICY,
+    gib_to_bytes,
+)
+
 _BYTES_PER_MIB = 1024.0 * 1024.0
-_BYTES_PER_GIB = 1024.0 * 1024.0 * 1024.0
 _CGROUP_MAX = "max"
-_DEFAULT_SOFT_FRACTION = 0.60
-_DEFAULT_HARD_FRACTION = 0.80
 _ENV_BUDGET_BYTES = "LQ_EXACT_WINDOW_BUDGET_BYTES"
 _ENV_BUDGET_GIB = "LQ_EXACT_WINDOW_BUDGET_GIB"
 
@@ -105,7 +107,7 @@ def _read_env_budget_bytes() -> int | None:
         except ValueError:
             value = 0.0
         if value > 0.0:
-            return int(value * _BYTES_PER_GIB)
+            return gib_to_bytes(value)
     return None
 
 
@@ -249,14 +251,14 @@ class RSSGuard:
         self.soft_limit_bytes = (
             int(soft_limit_bytes)
             if soft_limit_bytes is not None
-            else int(self.budget_bytes * _DEFAULT_SOFT_FRACTION)
+            else int(self.budget_bytes * DEFAULT_EXECUTION_MEMORY_POLICY.exact_window_soft_fraction)
             if self.budget_bytes is not None
             else None
         )
         self.hard_limit_bytes = (
             int(hard_limit_bytes)
             if hard_limit_bytes is not None
-            else int(self.budget_bytes * _DEFAULT_HARD_FRACTION)
+            else int(self.budget_bytes * DEFAULT_EXECUTION_MEMORY_POLICY.exact_window_hard_fraction)
             if self.budget_bytes is not None
             else None
         )

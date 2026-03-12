@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from lumina_quant.core.memory_budget import DEFAULT_EXECUTION_MEMORY_POLICY
 from lumina_quant.eval import exact_window_runtime as runtime
 
 
@@ -83,3 +84,17 @@ def test_resolve_memory_budget_bytes_uses_env_when_system_budget_missing(monkeyp
     monkeypatch.setenv("LQ_EXACT_WINDOW_BUDGET_GIB", "1.5")
 
     assert runtime.resolve_memory_budget_bytes() == int(1.5 * 1024 * 1024 * 1024)
+
+
+def test_rss_guard_uses_canonical_policy_fractions_by_default(tmp_path: Path):
+    guard = runtime.RSSGuard(
+        log_path=tmp_path / "rss.jsonl",
+        budget_bytes=1_000,
+    )
+
+    assert guard.soft_limit_bytes == int(
+        1_000 * DEFAULT_EXECUTION_MEMORY_POLICY.exact_window_soft_fraction
+    )
+    assert guard.hard_limit_bytes == int(
+        1_000 * DEFAULT_EXECUTION_MEMORY_POLICY.exact_window_hard_fraction
+    )

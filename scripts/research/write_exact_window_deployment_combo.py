@@ -25,7 +25,7 @@ EXPERIMENTAL_MAX_PBO = 0.40
 EXPERIMENTAL_MIN_OOS_SHARPE = 1.0
 EXPERIMENTAL_MIN_OOS_RETURN = 0.0
 EXPERIMENTAL_MIN_TRADE_COUNT = 5.0
-EXPERIMENTAL_MIN_VAL_SHARPE = 0.5
+EXPERIMENTAL_MIN_VAL_SHARPE = 1.0
 EXPERIMENTAL_MIN_TRAIN_RETURN = -0.12
 
 PRIMARY_WATCHLIST_STEMS = [
@@ -103,6 +103,37 @@ def _preferred_followup_best(
     return None, {}, {}
 
 
+def _decorate_deployment_row(
+    row: dict[str, Any],
+    *,
+    role: str,
+    label: str,
+    stage: str,
+    run_id: Any,
+    memory_evidence: dict[str, Any] | None,
+    risk_flags: list[str] | None = None,
+) -> dict[str, Any]:
+    decorated = {
+        **dict(row),
+        "_deployment_role": role,
+        "_deployment_label": label,
+        "_deployment_stage": stage,
+        "_deployment_run_id": run_id,
+        "_deployment_memory_evidence": dict(memory_evidence or {}),
+        "_deployment_weight": 1.0,
+    }
+    if risk_flags is not None:
+        decorated["_deployment_risk_flags"] = list(risk_flags)
+    return decorated
+
+
+def _with_equal_weights(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not rows:
+        return []
+    equal_weight = 1.0 / float(len(rows))
+    return [{**row, "_deployment_weight": equal_weight} for row in rows]
+
+
 def _strict_anchor_rows(decision: dict[str, Any]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for timeframe_row in list(decision.get("timeframe_rows") or []):
@@ -110,15 +141,14 @@ def _strict_anchor_rows(decision: dict[str, Any]) -> list[dict[str, Any]]:
         if not bool(best.get("promoted")):
             continue
         rows.append(
-            {
-                **best,
-                "_deployment_role": "strict anchor",
-                "_deployment_label": f"{timeframe_row.get('timeframe')} strict anchor",
-                "_deployment_stage": "root_decision",
-                "_deployment_run_id": None,
-                "_deployment_memory_evidence": dict(timeframe_row.get("memory_evidence") or {}),
-                "_deployment_weight": 1.0,
-            }
+            _decorate_deployment_row(
+                best,
+                role="strict anchor",
+                label=f"{timeframe_row.get('timeframe')} strict anchor",
+                stage="root_decision",
+                run_id=None,
+                memory_evidence=dict(timeframe_row.get("memory_evidence") or {}),
+            )
         )
     return rows
 
@@ -136,23 +166,16 @@ def _deployment_candidate_rows(
         stage, payload, best = _preferred_followup_best(bundle, stems, timeframe="4h")
         if best:
             rows.append(
-                {
-                    **best,
-                    "_deployment_role": watchlist_role or "watchlist",
-                    "_deployment_label": watchlist_label or "watchlist sleeve",
-                    "_deployment_stage": stage,
-                    "_deployment_run_id": payload.get("run_id"),
-                    "_deployment_memory_evidence": dict(payload.get("memory_evidence") or {}),
-                    "_deployment_weight": 1.0,
-                }
+                _decorate_deployment_row(
+                    best,
+                    role=watchlist_role or "watchlist",
+                    label=watchlist_label or "watchlist sleeve",
+                    stage=str(stage or ""),
+                    run_id=payload.get("run_id"),
+                    memory_evidence=dict(payload.get("memory_evidence") or {}),
+                )
             )
-    component_count = len(rows)
-    if component_count <= 0:
-        return []
-    equal_weight = 1.0 / float(component_count)
-    for row in rows:
-        row["_deployment_weight"] = equal_weight
-    return rows
+    return _with_equal_weights(rows)
 
 
 def _weighted_candidate_stream(rows: list[dict[str, Any]], split: str) -> list[dict[str, float]]:
@@ -304,23 +327,31 @@ def _experimental_watchlist_rows(
             continue
         if float(oos.get("return", 0.0) or 0.0) <= EXPERIMENTAL_MIN_OOS_RETURN:
             continue
-        if float(oos.get("trade_count", 0.0) or 0.0) < EXPERIMENTAL_MIN_TRADE_COUNT:
+        timeframe = str(row.get("strategy_timeframe") or row.get("timeframe") or "").lower()
+        min_trade_count = EXPERIMENTAL_MIN_TRADE_COUNT
+        if timeframe in {"30m", "1h"}:
+            min_trade_count = 20.0
+        elif timeframe == "4h":
+            min_trade_count = 6.0
+        if float(oos.get("trade_count", 0.0) or 0.0) < min_trade_count:
             continue
         if float(val.get("sharpe", 0.0) or 0.0) < EXPERIMENTAL_MIN_VAL_SHARPE:
             continue
         if float(train.get("return", 0.0) or 0.0) < EXPERIMENTAL_MIN_TRAIN_RETURN:
             continue
 
-        copied = dict(row)
-        copied["_deployment_role"] = "experimental watchlist"
-        copied["_deployment_label"] = "research watchlist sleeve"
-        copied["_deployment_stage"] = "experimental_watchlist"
-        copied["_deployment_run_id"] = None
-        copied["_deployment_memory_evidence"] = {}
-        copied["_deployment_risk_flags"] = [
-            "research_only",
-            "no_strict_anchor",
-        ]
+        copied = _decorate_deployment_row(
+            row,
+            role="experimental watchlist",
+            label="research watchlist sleeve",
+            stage="experimental_watchlist",
+            run_id=None,
+            memory_evidence={},
+            risk_flags=[
+                "research_only",
+                "no_strict_anchor",
+            ],
+        )
         copied["_deployment_score"] = (
             float(oos.get("sharpe", 0.0) or 0.0)
             + (20.0 * float(oos.get("return", 0.0) or 0.0))
@@ -354,10 +385,7 @@ def _experimental_watchlist_rows(
             break
     if not selected:
         return []
-    weight = 1.0 / float(len(selected))
-    for row in selected:
-        row["_deployment_weight"] = weight
-    return selected
+    return _with_equal_weights(selected)
 
 
 def _build_scenarios(bundle: dict[str, Any], decision: dict[str, Any], generated_at: str) -> list[dict[str, Any]]:

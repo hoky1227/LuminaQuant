@@ -54,3 +54,63 @@ def test_build_scenarios_falls_back_to_experimental_watchlist_without_strict_anc
     assert scenario["scenario_id"] == "experimental_research_watchlist"
     assert scenario["components"][0]["name"] == "topcap_tsmom_1h_balanced_16_4_0.015"
     assert "research_only" in scenario["components"][0]["risk_flags"]
+
+
+def test_experimental_watchlist_filters_sparse_1h_candidates(tmp_path: Path):
+    details_path = tmp_path / "exact_window_candidate_details_latest.json"
+    details_path.write_text(
+        json.dumps(
+            [
+                {
+                    "candidate_id": "cand-sparse-1h",
+                    "name": "pair_spread_1h_sparse_candidate",
+                    "strategy_class": "PairSpreadZScoreStrategy",
+                    "family": "market_neutral",
+                    "strategy_timeframe": "1h",
+                    "symbols": ["BTC/USDT", "XAG/USDT"],
+                    "train": {"return": -0.05, "sharpe": -0.1, "pbo": 0.25, "trade_count": 40},
+                    "val": {"return": 0.02, "sharpe": 1.8, "pbo": 0.25, "trade_count": 12},
+                    "oos": {"return": 0.03, "sharpe": 1.6, "pbo": 0.25, "trade_count": 8},
+                    "return_streams": {
+                        "train": [{"t": 1, "v": 0.0}],
+                        "val": [{"t": 2, "v": 0.02}],
+                        "oos": [{"t": 3, "v": 0.03}],
+                    },
+                },
+                {
+                    "candidate_id": "cand-valid-1h",
+                    "name": "topcap_tsmom_1h_valid_candidate",
+                    "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+                    "family": "cross_sectional",
+                    "strategy_timeframe": "1h",
+                    "symbols": ["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "TRX/USDT"],
+                    "train": {"return": -0.05, "sharpe": -0.1, "pbo": 0.25, "trade_count": 1200},
+                    "val": {"return": 0.02, "sharpe": 1.8, "pbo": 0.25, "trade_count": 90},
+                    "oos": {"return": 0.03, "sharpe": 1.6, "pbo": 0.25, "trade_count": 24},
+                    "return_streams": {
+                        "train": [{"t": 1, "v": 0.0}],
+                        "val": [{"t": 2, "v": 0.02}],
+                        "oos": [{"t": 3, "v": 0.03}],
+                    },
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+    decision = {
+        "timeframe_rows": [],
+        "source_batches": [
+            {
+                "details_path": str(details_path),
+            }
+        ],
+    }
+
+    scenarios = _build_scenarios({}, decision, "2026-03-11T12:30:00+00:00")
+
+    assert len(scenarios) == 1
+    scenario = scenarios[0]
+    assert scenario["scenario_id"] == "experimental_research_watchlist"
+    component_names = [component["name"] for component in scenario["components"]]
+    assert "pair_spread_1h_sparse_candidate" not in component_names
+    assert "topcap_tsmom_1h_valid_candidate" in component_names

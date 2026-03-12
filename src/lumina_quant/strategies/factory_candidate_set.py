@@ -9,10 +9,10 @@ This module provides a deterministic candidate universe spanning:
 from __future__ import annotations
 
 import hashlib
-import itertools
 import json
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from math import prod
 from typing import Any
 
 from lumina_quant.symbols import (
@@ -48,15 +48,60 @@ class StrategyTemplate:
     tags: tuple[str, ...] = ()
 
 
-def _grid_rows(param_grid: dict[str, Sequence[object]]) -> list[dict[str, object]]:
+def _grid_row_from_index(
+    keys: Sequence[str],
+    values: Sequence[Sequence[object]],
+    flat_index: int,
+) -> dict[str, object]:
+    suffix_products: list[int] = []
+    running = 1
+    for choices in reversed(values):
+        suffix_products.append(running)
+        running *= len(choices)
+    suffix_products.reverse()
+
+    row: dict[str, object] = {}
+    for key, choices, stride in zip(keys, values, suffix_products, strict=True):
+        choice_index = (int(flat_index) // int(stride)) % len(choices)
+        row[key] = choices[choice_index]
+    return row
+
+
+def _sample_grid_rows(
+    param_grid: dict[str, Sequence[object]],
+    *,
+    max_rows: int,
+) -> list[dict[str, object]]:
     if not param_grid:
         return [{}]
+
     keys = list(param_grid.keys())
     values = [list(param_grid[key]) for key in keys]
-    out: list[dict[str, object]] = []
-    for row in itertools.product(*values):
-        out.append(dict(zip(keys, row, strict=True)))
-    return out
+    total_rows = prod(len(choices) for choices in values)
+    if total_rows <= 0:
+        return [{}]
+
+    if max_rows <= 0 or total_rows <= max_rows:
+        indexes = range(total_rows)
+    elif max_rows == 1:
+        indexes = (0,)
+    else:
+        step = (total_rows - 1) / float(max_rows - 1)
+        indexes = [round(idx * step) for idx in range(max_rows)]
+
+    deduped_indexes: list[int] = []
+    seen_indexes: set[int] = set()
+    for flat_index in indexes:
+        marker = int(flat_index)
+        if marker in seen_indexes:
+            continue
+        seen_indexes.add(marker)
+        deduped_indexes.append(marker)
+
+    return [
+        _grid_row_from_index(keys, values, flat_index)
+        for flat_index in deduped_indexes
+    ]
 
 
 def _candidate_id(payload: dict[str, object]) -> str:
@@ -145,33 +190,6 @@ def _default_grid_for_strategy(name: str) -> dict[str, Sequence[object]]:
     return {str(key): _normalize_param_values(value) for key, value in defaults.items()}
 
 
-def _limit_grid_rows(
-    rows: list[dict[str, object]],
-    *,
-    max_rows: int,
-) -> list[dict[str, object]]:
-    if max_rows <= 0 or len(rows) <= max_rows:
-        return rows
-    if max_rows == 1:
-        return [rows[0]]
-
-    step = (len(rows) - 1) / float(max_rows - 1)
-    selected: list[dict[str, object]] = []
-    for idx in range(max_rows):
-        pick = rows[round(idx * step)]
-        selected.append(pick)
-    # preserve order while removing duplicates from rounded picks
-    deduped: list[dict[str, object]] = []
-    seen = set()
-    for row in selected:
-        marker = json.dumps(row, sort_keys=True, separators=(",", ":"))
-        if marker in seen:
-            continue
-        seen.add(marker)
-        deduped.append(row)
-    return deduped
-
-
 def _strategy_templates() -> list[StrategyTemplate]:
     from lumina_quant.strategies import registry as strategy_registry
 
@@ -209,8 +227,8 @@ def build_candidate_set(
 
     for timeframe in timeframe_list:
         for template in templates:
-            rows = _limit_grid_rows(
-                _grid_rows(template.param_grid),
+            rows = _sample_grid_rows(
+                template.param_grid,
                 max_rows=max(1, int(max_param_rows_per_strategy)),
             )
             if template.symbol_mode == "multi":

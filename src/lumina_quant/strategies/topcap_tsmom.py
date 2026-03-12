@@ -65,14 +65,14 @@ class TopCapTimeSeriesMomentumStrategy(Strategy):
             "max_longs": HyperParam.integer(
                 "max_longs",
                 default=6,
-                low=1,
+                low=0,
                 high=256,
                 tunable=False,
             ),
             "max_shorts": HyperParam.integer(
                 "max_shorts",
                 default=5,
-                low=1,
+                low=0,
                 high=256,
                 tunable=False,
             ),

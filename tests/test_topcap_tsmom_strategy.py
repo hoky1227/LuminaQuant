@@ -75,7 +75,7 @@ def _build_price_rows(length=140):
     return symbols, rows
 
 
-def _run_strategy(rows, symbols, split=None):
+def _run_strategy(rows, symbols, split=None, param_overrides=None):
     params = {
         "lookback_bars": 8,
         "rebalance_bars": 2,
@@ -87,6 +87,8 @@ def _run_strategy(rows, symbols, split=None):
         "btc_regime_ma": 0,
         "btc_symbol": "BTC/USDT",
     }
+    if param_overrides:
+        params.update(param_overrides)
 
     def _feed(strategy, bars, events, chunk):
         for time_index, frame in chunk:
@@ -141,6 +143,22 @@ class TestTopCapTimeSeriesMomentumStrategy(unittest.TestCase):
         full_signals = _run_strategy(rows, symbols)
         split_signals = _run_strategy(rows, symbols, split=80)
         self.assertEqual(full_signals, split_signals)
+
+    def test_supports_long_only_rotation_without_short_signals(self):
+        symbols, rows = _build_price_rows()
+        signals = _run_strategy(
+            rows,
+            symbols,
+            param_overrides={
+                "max_longs": 2,
+                "max_shorts": 0,
+            },
+        )
+
+        signal_types = [signal_type for _, _, signal_type in signals]
+        self.assertIn("LONG", signal_types)
+        self.assertIn("EXIT", signal_types)
+        self.assertNotIn("SHORT", signal_types)
 
 
 if __name__ == "__main__":

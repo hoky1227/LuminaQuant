@@ -362,3 +362,281 @@ def test_topcap_tsmom_strategy_signal_produces_cross_sectional_exposure():
     assert meta.get("cross_sectional") is True
     assert np.any(np.abs(exposure) > 0.0)
     assert np.any(turnover > 0.0)
+
+
+def test_topcap_tsmom_strategy_signal_supports_zero_short_budget():
+    length = 120
+    symbols = ["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "TRX/USDT"]
+    aligned = {"datetime": _minute_datetimes(length)}
+    for idx, symbol in enumerate(symbols):
+        base = 100.0 + (idx * 10.0)
+        close = np.full(length, base, dtype=float)
+        if symbol in {"ETH/USDT", "BNB/USDT"}:
+            close[20:] = np.linspace(base, base * 1.25, length - 20, dtype=float)
+        elif symbol in {"SOL/USDT", "TRX/USDT"}:
+            close[20:] = np.linspace(base, base * 0.85, length - 20, dtype=float)
+        else:
+            close[20:] = np.linspace(base, base * 1.05, length - 20, dtype=float)
+        aligned[f"{symbol}:open"] = close
+        aligned[f"{symbol}:high"] = close + 0.2
+        aligned[f"{symbol}:low"] = close - 0.2
+        aligned[f"{symbol}:close"] = close
+        aligned[f"{symbol}:volume"] = np.full(length, 150.0, dtype=float)
+
+    candidate = {
+        "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+        "params": {
+            "lookback_bars": 8,
+            "rebalance_bars": 2,
+            "signal_threshold": 0.01,
+            "stop_loss_pct": 0.08,
+            "max_longs": 2,
+            "max_shorts": 0,
+            "min_price": 0.1,
+            "btc_regime_ma": 0,
+            "btc_symbol": "BTC/USDT",
+        },
+    }
+
+    _, turnover, exposure, meta = research_runner._strategy_signal(
+        candidate,
+        aligned=aligned,
+        symbols=symbols,
+    )
+
+    assert exposure.shape == (length,)
+    assert meta.get("cross_sectional") is True
+    assert np.any(exposure > 0.0)
+    assert np.all(exposure >= 0.0)
+    assert np.any(turnover > 0.0)
+
+
+def test_regime_breakout_strategy_signal_still_trades_persistent_breakout():
+    length = 160
+    close = np.linspace(100.0, 170.0, length, dtype=float)
+    aligned = {
+        "datetime": _minute_datetimes(length),
+        "BTC/USDT:open": close - 0.2,
+        "BTC/USDT:high": close + 0.6,
+        "BTC/USDT:low": close - 0.6,
+        "BTC/USDT:close": close,
+        "BTC/USDT:volume": np.full(length, 250.0, dtype=float),
+    }
+    candidate = {
+        "strategy_class": "RegimeBreakoutCandidateStrategy",
+        "params": {
+            "lookback_window": 36,
+            "slope_window": 18,
+            "volatility_fast_window": 10,
+            "volatility_slow_window": 40,
+            "range_entry_threshold": 0.65,
+            "slope_entry_threshold": 0.0008,
+            "momentum_floor": 0.002,
+            "max_volatility_ratio": 2.5,
+            "stop_loss_pct": 0.02,
+            "allow_short": False,
+        },
+    }
+
+    _, turnover, exposure, meta = research_runner._strategy_signal(
+        candidate,
+        aligned=aligned,
+        symbols=["BTC/USDT"],
+    )
+
+    assert exposure.shape == (length,)
+    assert meta == {}
+    assert np.any(exposure > 0.0)
+    assert np.any(turnover > 0.0)
+
+
+def test_regime_breakout_strategy_signal_respects_composite_momentum_gate():
+    length = 160
+    down = np.linspace(220.0, 100.0, 120, dtype=float)
+    rebound = np.linspace(100.0, 108.0, length - 120, dtype=float)
+    close = np.concatenate([down, rebound])
+    aligned = {
+        "datetime": _minute_datetimes(length),
+        "BTC/USDT:open": close - 0.2,
+        "BTC/USDT:high": close + 0.6,
+        "BTC/USDT:low": close - 0.6,
+        "BTC/USDT:close": close,
+        "BTC/USDT:volume": np.full(length, 250.0, dtype=float),
+    }
+    candidate = {
+        "strategy_class": "RegimeBreakoutCandidateStrategy",
+        "params": {
+            "lookback_window": 36,
+            "slope_window": 18,
+            "volatility_fast_window": 10,
+            "volatility_slow_window": 40,
+            "range_entry_threshold": 0.65,
+            "slope_entry_threshold": 0.0008,
+            "momentum_floor": 0.01,
+            "max_volatility_ratio": 2.5,
+            "stop_loss_pct": 0.02,
+            "allow_short": False,
+        },
+    }
+
+    _, turnover, exposure, _ = research_runner._strategy_signal(
+        candidate,
+        aligned=aligned,
+        symbols=["BTC/USDT"],
+    )
+
+    assert exposure.shape == (length,)
+    assert np.all(exposure >= 0.0)
+    assert not np.any(exposure > 0.0)
+    assert not np.any(turnover > 0.0)
+
+
+def _pair_aligned_prices(length: int = 320) -> dict[str, np.ndarray]:
+    x_close = []
+    y_close = []
+    for idx in range(length):
+        y_price = 100.0 + (0.08 * idx)
+        spread_noise = 0.08 * np.sin(idx / 5.0)
+        if 220 <= idx <= 236:
+            spread_noise += 1.6
+        if 280 <= idx <= 295:
+            spread_noise -= 1.7
+        x_price = y_price + spread_noise
+        x_close.append(x_price)
+        y_close.append(y_price)
+
+    x_close_arr = np.asarray(x_close, dtype=float)
+    y_close_arr = np.asarray(y_close, dtype=float)
+    return {
+        "datetime": _minute_datetimes(length),
+        "XAU/USDT:open": x_close_arr,
+        "XAU/USDT:high": x_close_arr + 0.2,
+        "XAU/USDT:low": x_close_arr - 0.2,
+        "XAU/USDT:close": x_close_arr,
+        "XAU/USDT:volume": np.full(length, 100.0, dtype=float),
+        "XAG/USDT:open": y_close_arr,
+        "XAG/USDT:high": y_close_arr + 0.2,
+        "XAG/USDT:low": y_close_arr - 0.2,
+        "XAG/USDT:close": y_close_arr,
+        "XAG/USDT:volume": np.full(length, 100.0, dtype=float),
+    }
+
+
+def test_pair_trading_strategy_signal_uses_event_driven_proxy():
+    aligned = _pair_aligned_prices()
+    candidate = {
+        "strategy_class": "PairTradingZScoreStrategy",
+        "params": {
+            "lookback_window": 30,
+            "hedge_window": 60,
+            "entry_z": 1.5,
+            "exit_z": 0.25,
+            "stop_z": 4.5,
+            "min_correlation": -1.0,
+            "max_hold_bars": 120,
+            "cooldown_bars": 0,
+            "reentry_z_buffer": 0.0,
+            "symbol_x": "XAU/USDT",
+            "symbol_y": "XAG/USDT",
+        },
+    }
+
+    returns_raw, turnover, exposure, meta = research_runner._strategy_signal(
+        candidate,
+        aligned=aligned,
+        symbols=["XAU/USDT", "XAG/USDT"],
+    )
+
+    assert returns_raw.shape == (320,)
+    assert turnover.shape == (320,)
+    assert exposure.shape == (320,)
+    assert meta.get("event_driven_proxy") is True
+    assert np.any(turnover > 0.0)
+    assert np.any(np.abs(returns_raw) > 0.0)
+
+
+def test_pair_trading_strategy_signal_respects_reentry_buffer():
+    aligned = _pair_aligned_prices()
+    candidate = {
+        "strategy_class": "PairTradingZScoreStrategy",
+        "params": {
+            "lookback_window": 30,
+            "hedge_window": 60,
+            "entry_z": 1.5,
+            "exit_z": 0.25,
+            "stop_z": 4.5,
+            "min_correlation": -1.0,
+            "max_hold_bars": 120,
+            "cooldown_bars": 0,
+            "reentry_z_buffer": 10.0,
+            "symbol_x": "XAU/USDT",
+            "symbol_y": "XAG/USDT",
+        },
+    }
+
+    returns_raw, turnover, exposure, meta = research_runner._strategy_signal(
+        candidate,
+        aligned=aligned,
+        symbols=["XAU/USDT", "XAG/USDT"],
+    )
+
+    assert returns_raw.shape == (320,)
+    assert turnover.shape == (320,)
+    assert exposure.shape == (320,)
+    assert meta.get("event_driven_proxy") is True
+    assert not np.any(turnover > 0.0)
+    assert not np.any(np.abs(returns_raw) > 0.0)
+
+
+def test_alpha101_formula_strategy_signal_uses_event_driven_proxy():
+    length = 96
+    open_price = np.linspace(100.0, 112.0, length, dtype=float)
+    body = np.concatenate(
+        [
+            np.full(24, 0.05, dtype=float),
+            np.full(24, 0.35, dtype=float),
+            np.full(24, -0.35, dtype=float),
+            np.full(24, 0.0, dtype=float),
+        ]
+    )
+    close = open_price + body
+    high = np.maximum(open_price, close) + 0.08
+    low = np.minimum(open_price, close) - 0.08
+    aligned = {
+        "datetime": _minute_datetimes(length),
+        "BTC/USDT:open": open_price,
+        "BTC/USDT:high": high,
+        "BTC/USDT:low": low,
+        "BTC/USDT:close": close,
+        "BTC/USDT:volume": np.linspace(1000.0, 1200.0, length, dtype=float),
+    }
+    candidate = {
+        "strategy_class": "Alpha101FormulaStrategy",
+        "params": {
+            "alpha_id": 101,
+            "rank_window": 20,
+            "history_window": 24,
+            "score_window": 8,
+            "entry_z": 0.9,
+            "exit_z": 0.15,
+            "signal_sign": 1.0,
+            "stop_loss_pct": 0.03,
+            "allow_short": True,
+            "alpha_param_overrides": {"alpha101.101.const.001": 0.01},
+        },
+    }
+
+    returns_raw, turnover, exposure, meta = research_runner._strategy_signal(
+        candidate,
+        aligned=aligned,
+        symbols=["BTC/USDT"],
+    )
+
+    assert returns_raw.shape == (length,)
+    assert turnover.shape == (length,)
+    assert exposure.shape == (length,)
+    assert meta.get("event_driven_proxy") is True
+    assert meta.get("formulaic_alpha101") is True
+    assert meta.get("alpha_param_override_count") == 1
+    assert np.any(np.abs(exposure) > 0.0)
+    assert np.any(turnover > 0.0)

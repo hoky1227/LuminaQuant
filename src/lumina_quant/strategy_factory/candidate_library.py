@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from itertools import product
@@ -587,6 +587,109 @@ _TOPCAP_TSMOM_SLICE: dict[str, tuple[dict[str, Any], ...]] = {
     ),
 }
 
+_ALPHA101_SIGNAL_SLICE: dict[str, tuple[dict[str, Any], ...]] = {
+    "1h": (
+        {
+            "variant": "a005_vwap_tuned",
+            "alpha_id": 5,
+            "rank_window": 24,
+            "history_window": 144,
+            "score_window": 64,
+            "entry_z": 1.15,
+            "exit_z": 0.30,
+            "signal_sign": 1.0,
+            "stop_loss_pct": 0.03,
+            "allow_short": True,
+            "alpha_param_overrides": {
+                "alpha101.5.const.001": 8.0,
+                "alpha101.5.const.002": 14.0,
+            },
+        },
+        {
+            "variant": "a011_flow_tuned",
+            "alpha_id": 11,
+            "rank_window": 24,
+            "history_window": 144,
+            "score_window": 64,
+            "entry_z": 1.10,
+            "exit_z": 0.30,
+            "signal_sign": 1.0,
+            "stop_loss_pct": 0.03,
+            "allow_short": True,
+            "alpha_param_overrides": {
+                "alpha101.11.const.001": 4.0,
+                "alpha101.11.const.002": 4.0,
+                "alpha101.11.const.003": 5.0,
+            },
+        },
+        {
+            "variant": "a017_turn_tuned",
+            "alpha_id": 17,
+            "rank_window": 20,
+            "history_window": 160,
+            "score_window": 64,
+            "entry_z": 1.00,
+            "exit_z": 0.25,
+            "signal_sign": -1.0,
+            "stop_loss_pct": 0.03,
+            "allow_short": False,
+            "alpha_param_overrides": {
+                "alpha101.17.const.001": 12.0,
+                "alpha101.17.const.002": 7.0,
+            },
+        },
+        {
+            "variant": "a101_bodyrange_tuned",
+            "alpha_id": 101,
+            "rank_window": 20,
+            "history_window": 96,
+            "score_window": 48,
+            "entry_z": 1.00,
+            "exit_z": 0.25,
+            "signal_sign": 1.0,
+            "stop_loss_pct": 0.03,
+            "allow_short": False,
+            "alpha_param_overrides": {
+                "alpha101.101.const.001": 0.01,
+            },
+        },
+    ),
+    "4h": (
+        {
+            "variant": "a011_flow_swing",
+            "alpha_id": 11,
+            "rank_window": 20,
+            "history_window": 96,
+            "score_window": 32,
+            "entry_z": 1.05,
+            "exit_z": 0.25,
+            "signal_sign": 1.0,
+            "stop_loss_pct": 0.035,
+            "allow_short": True,
+            "alpha_param_overrides": {
+                "alpha101.11.const.001": 5.0,
+                "alpha101.11.const.002": 5.0,
+                "alpha101.11.const.003": 4.0,
+            },
+        },
+        {
+            "variant": "a101_bodyrange_swing",
+            "alpha_id": 101,
+            "rank_window": 16,
+            "history_window": 80,
+            "score_window": 24,
+            "entry_z": 0.90,
+            "exit_z": 0.20,
+            "signal_sign": 1.0,
+            "stop_loss_pct": 0.035,
+            "allow_short": False,
+            "alpha_param_overrides": {
+                "alpha101.101.const.001": 0.02,
+            },
+        },
+    ),
+}
+
 _VOLCOMP_RETUNE_SLICE: dict[str, tuple[dict[str, Any], ...]] = {
     "5m": (
         {
@@ -711,6 +814,8 @@ def _article_pipeline_family_ids(
         return ("metals-lag-convergence",) if symbol_set.intersection(_METALS) else ()
     if strategy_token == "TopCapTimeSeriesMomentumStrategy":
         return ("topcap-rotation-relative-momentum",)
+    if strategy_token == "Alpha101FormulaStrategy":
+        return ("formulaic-alpha101-research",)
     if strategy_token in {"RollingBreakoutStrategy", "RegimeBreakoutCandidateStrategy"}:
         return ("regime-breakout-thrust",)
     if strategy_token == "MeanReversionStdStrategy":
@@ -825,6 +930,59 @@ def _pairs_in_universe(symbols: Sequence[str]) -> list[tuple[str, str]]:
     return out
 
 
+def _build_alpha101_formula_params(spec: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "alpha_id": int(spec["alpha_id"]),
+        "rank_window": int(spec["rank_window"]),
+        "history_window": int(spec["history_window"]),
+        "score_window": int(spec["score_window"]),
+        "entry_z": float(spec["entry_z"]),
+        "exit_z": float(spec["exit_z"]),
+        "signal_sign": float(spec["signal_sign"]),
+        "stop_loss_pct": float(spec["stop_loss_pct"]),
+        "allow_short": bool(spec["allow_short"]),
+        "alpha_param_overrides": dict(spec["alpha_param_overrides"]),
+    }
+
+
+def _add_alpha101_formula_candidates(
+    out: list[StrategyCandidate],
+    *,
+    timeframes: Sequence[str],
+    symbols: Sequence[str],
+) -> None:
+    for timeframe in timeframes:
+        tf_tag = timeframe.replace("/", "-")
+        for spec in _ALPHA101_SIGNAL_SLICE.get(timeframe, ()):
+            signal_sign = float(spec["signal_sign"])
+            alpha_param_overrides = dict(spec["alpha_param_overrides"])
+            direction_tag = "inv" if signal_sign < 0.0 else "dir"
+            _add_candidate(
+                out,
+                name=(
+                    f"alpha101_formula_{tf_tag}_a{int(spec['alpha_id']):03d}_{spec['variant']}_{direction_tag}"
+                ),
+                family="formulaic_alpha",
+                strategy_class="Alpha101FormulaStrategy",
+                timeframe=timeframe,
+                symbols=symbols,
+                params=_build_alpha101_formula_params(spec),
+                notes=(
+                    "Single-asset Alpha101 factor sleeve with explicit constant overrides "
+                    f"for {timeframe} ({spec['variant']})."
+                ),
+                tags=("alpha101", "formulaic", "single_asset", "factor"),
+                metadata={
+                    "timeframe": timeframe,
+                    "alpha_id": int(spec["alpha_id"]),
+                    "signal_sign": signal_sign,
+                    "allow_short": bool(spec["allow_short"]),
+                    "alpha_param_override_keys": sorted(alpha_param_overrides.keys()),
+                    "retune_profile": str(spec["variant"]),
+                },
+            )
+
+
 def build_binance_futures_candidates(
     *,
     timeframes: Sequence[str] = DEFAULT_TIMEFRAMES,
@@ -852,6 +1010,7 @@ def build_binance_futures_candidates(
     std_mean_rev_tfs = [tf for tf in ("15m", "30m") if tf in normalized_timeframes]
     breakout_tfs = [tf for tf in ("30m", "1h") if tf in normalized_timeframes]
     topcap_tfs = [tf for tf in ("1h", "4h") if tf in normalized_timeframes]
+    alpha101_tfs = [tf for tf in ("1h", "4h") if tf in normalized_timeframes]
     pair_tfs = [tf for tf in ("15m", "1h", "4h", "1d") if tf in normalized_timeframes]
     lag_convergence_tfs = [tf for tf in ("4h", "1d") if tf in normalized_timeframes]
     carry_tfs = [tf for tf in ("30m", "1h", "4h") if tf in normalized_timeframes]
@@ -1082,6 +1241,13 @@ def build_binance_futures_candidates(
                         "symbol_scope": "crypto",
                     },
                 )
+
+    if crypto_symbols:
+        _add_alpha101_formula_candidates(
+            candidates,
+            timeframes=alpha101_tfs,
+            symbols=crypto_symbols,
+        )
 
     # Single-asset breakout sleeves.
     for timeframe in breakout_tfs:

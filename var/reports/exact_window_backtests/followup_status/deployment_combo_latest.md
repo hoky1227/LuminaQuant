@@ -1,6 +1,6 @@
 # deployment combo
 
-- generated_at: `2026-03-10T13:05:22.769204+00:00`
+- generated_at: `2026-03-11T12:42:43.177298+00:00`
 - scenario_id: `experimental_research_watchlist`
 - label: `Experimental research watchlist`
 - selection_basis: `research_watchlist_equal_weight`
