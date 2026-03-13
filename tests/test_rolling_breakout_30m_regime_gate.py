@@ -19,36 +19,34 @@ write_rolling_breakout_30m_gate = MODULE.write_rolling_breakout_30m_gate
 
 
 def _decision_payload() -> dict[str, object]:
-    stream = [
-        {"t": 1735689600000.0, "v": -0.0100},
-        {"t": 1735776000000.0, "v": -0.0060},
-        {"t": 1767225600000.0, "v": 0.0080},
-        {"t": 1767312000000.0, "v": 0.0070},
-        {"t": 1769904000000.0, "v": 0.0300},
-        {"t": 1769990400000.0, "v": 0.0200},
-        {"t": 1770076800000.0, "v": -0.0200},
-    ]
     return {
         "timeframe_rows": [
             {
                 "timeframe": "30m",
                 "windows": {
                     "train_start": "2025-01-01T00:00:00Z",
-                    "actual_oos_end_exclusive": "2026-03-07T10:00:00.001Z",
+                    "train_end_exclusive": "2025-01-03T00:00:00Z",
+                    "val_start": "2025-01-03T00:00:00Z",
+                    "val_end_exclusive": "2025-01-05T00:00:00Z",
+                    "actual_oos_end_exclusive": "2025-01-08T00:00:00Z",
                 },
                 "best_row": {
                     "candidate_id": "cand-rolling",
                     "name": TARGET_CANDIDATE,
                     "strategy_class": "RollingBreakoutStrategy",
                     "symbols": ["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "TRX/USDT"],
-                    "train": {"return": -0.0150, "sharpe": -1.20},
-                    "val": {"return": 0.0150, "sharpe": 1.90},
-                    "oos": {"return": 0.0290, "sharpe": 1.00},
-                    "return_streams": {
-                        "train": stream[:2],
-                        "val": stream[2:4],
-                        "oos": stream[4:],
+                    "params": {
+                        "lookback_bars": 64,
+                        "breakout_buffer": 0.002,
+                        "atr_window": 21,
+                        "atr_stop_multiplier": 2.8,
+                        "stop_loss_pct": 0.03,
+                        "allow_short": True,
                     },
+                    "metadata": {"timeframe": "30m"},
+                    "train": {"return": -0.016, "sharpe": -1.1},
+                    "val": {"return": 0.015, "sharpe": 1.9},
+                    "oos": {"return": 0.028, "sharpe": 1.0},
                 },
             }
         ]
@@ -72,7 +70,7 @@ def _feature_frame() -> pd.DataFrame:
             },
             {
                 "date": "2025-01-02T00:00:00Z",
-                "btc_above_ma192": False,
+                "btc_above_ma192": True,
                 "btc_above_ma336": False,
                 "breadth_ma96_ge_60": False,
                 "breadth_ma192_ge_60": False,
@@ -83,7 +81,19 @@ def _feature_frame() -> pd.DataFrame:
                 "basket_vol_ratio": 1.1,
             },
             {
-                "date": "2026-01-01T00:00:00Z",
+                "date": "2025-01-03T00:00:00Z",
+                "btc_above_ma192": True,
+                "btc_above_ma336": False,
+                "breadth_ma96_ge_60": True,
+                "breadth_ma192_ge_60": False,
+                "basket_vol_ratio_moderate": True,
+                "basket_ret96_pos": False,
+                "breadth_ma96": 0.8,
+                "breadth_ma192": 0.4,
+                "basket_vol_ratio": 1.2,
+            },
+            {
+                "date": "2025-01-04T00:00:00Z",
                 "btc_above_ma192": True,
                 "btc_above_ma336": False,
                 "breadth_ma96_ge_60": True,
@@ -95,7 +105,7 @@ def _feature_frame() -> pd.DataFrame:
                 "basket_vol_ratio": 1.2,
             },
             {
-                "date": "2026-01-02T00:00:00Z",
+                "date": "2025-01-05T00:00:00Z",
                 "btc_above_ma192": True,
                 "btc_above_ma336": False,
                 "breadth_ma96_ge_60": True,
@@ -107,31 +117,19 @@ def _feature_frame() -> pd.DataFrame:
                 "basket_vol_ratio": 1.2,
             },
             {
-                "date": "2026-02-01T00:00:00Z",
+                "date": "2025-01-06T00:00:00Z",
                 "btc_above_ma192": True,
                 "btc_above_ma336": False,
                 "breadth_ma96_ge_60": True,
                 "breadth_ma192_ge_60": False,
                 "basket_vol_ratio_moderate": True,
-                "basket_ret96_pos": True,
+                "basket_ret96_pos": False,
                 "breadth_ma96": 0.8,
                 "breadth_ma192": 0.4,
                 "basket_vol_ratio": 1.2,
             },
             {
-                "date": "2026-02-02T00:00:00Z",
-                "btc_above_ma192": True,
-                "btc_above_ma336": False,
-                "breadth_ma96_ge_60": True,
-                "breadth_ma192_ge_60": False,
-                "basket_vol_ratio_moderate": True,
-                "basket_ret96_pos": True,
-                "breadth_ma96": 0.8,
-                "breadth_ma192": 0.4,
-                "basket_vol_ratio": 1.2,
-            },
-            {
-                "date": "2026-02-03T00:00:00Z",
+                "date": "2025-01-07T00:00:00Z",
                 "btc_above_ma192": False,
                 "btc_above_ma336": False,
                 "breadth_ma96_ge_60": False,
@@ -146,17 +144,42 @@ def _feature_frame() -> pd.DataFrame:
     )
 
 
-def test_build_rolling_breakout_gate_prefers_ex_ante_market_rule():
+def _evaluation_payload() -> dict[str, object]:
+    timestamps = pd.date_range("2025-01-01", periods=7, freq="D", tz="UTC")
+    return {
+        "timestamps": list(timestamps),
+        "returns_raw": [-0.0100, -0.0060, 0.0080, 0.0070, 0.0300, 0.0200, -0.0200],
+        "turnover": [0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02],
+        "exposure": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        "benchmark_returns": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        "cost_rate": 0.0005,
+        "split_masks": {
+            "train": [True, True, False, False, False, False, False],
+            "val": [False, False, True, True, False, False, False],
+            "oos": [False, False, False, False, True, True, True],
+        },
+    }
+
+
+def test_build_rolling_breakout_gate_uses_lagged_ex_ante_rule():
     gate = build_rolling_breakout_30m_gate(
         _decision_payload(),
         feature_frame=_feature_frame(),
+        evaluation_payload=_evaluation_payload(),
     )
 
     selected = dict(gate["selected_rule"])
-    assert selected["rule_id"] == "btc_above_ma192"
-    assert selected["metrics"]["oos"]["gate_days"] == 2
-    assert float(selected["metrics"]["oos"]["return"]) > 0.04
-    assert float(selected["metrics"]["oos"]["activation_ratio"]) > 0.60
+    assert selected["signal_lag_days"] == 1
+    assert float(selected["metrics"]["oos"]["return"]) > 0.0
+    assert float(selected["metrics"]["oos"]["trade_count"]) >= 2.0
+    assert "hard_reject_reasons" in selected
+
+    by_rule = {row["rule_id"]: row for row in gate["evaluated_rules"]}
+    focused = by_rule["btc_above_ma192_and_breadth_ma96_ge_60_and_ret96_pos"]
+    broad = by_rule["btc_above_ma192"]
+    assert focused["signal_lag_days"] == 1
+    assert float(focused["metrics"]["oos"]["return"]) > float(broad["metrics"]["oos"]["return"])
+    assert focused["metrics"]["oos"]["gate_days"] == 2
 
 
 def test_write_rolling_breakout_30m_gate_writes_files(tmp_path: Path):
@@ -164,6 +187,7 @@ def test_write_rolling_breakout_30m_gate_writes_files(tmp_path: Path):
         _decision_payload(),
         report_root=tmp_path,
         feature_frame=_feature_frame(),
+        evaluation_payload=_evaluation_payload(),
     )
 
     json_path = Path(result["json_path"])

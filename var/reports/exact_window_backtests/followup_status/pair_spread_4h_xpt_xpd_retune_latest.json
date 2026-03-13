@@ -1,9 +1,29 @@
 {
   "artifact_kind": "pair_spread_4h_xpt_xpd_retune",
   "baseline_candidate": "pair_spread_4h_balanced_xptusdt_xpdusdt_1.6_0.35",
+  "blockers": [
+    "coverage_days",
+    "no_candidate_passed"
+  ],
   "candidate_count": 12,
-  "generated_at": "2026-03-13T09:36:56.935358+00:00",
-  "schema_version": "1.0",
+  "coverage_guard": {
+    "common_end": "2026-03-07T11:02:00+00:00",
+    "common_start": "2026-01-30T10:15:00+00:00",
+    "min_total_days": 60,
+    "observed_total_days": 36,
+    "pass": false,
+    "profile": "metals_4h",
+    "review_not_before": "2026-03-31T10:15:00+00:00"
+  },
+  "generated_at": "2026-03-13T10:00:12.081791+00:00",
+  "schema_version": "2.0",
+  "survival_thresholds": {
+    "max_pbo": 0.5,
+    "oos_return_min": 0.0,
+    "oos_sharpe_min": 1.0,
+    "oos_trade_count_min": 3.0,
+    "val_sharpe_min": 1.0
+  },
   "survives": false,
   "survivor": null,
   "top_candidates": [
@@ -979,6 +999,14 @@
       "strategy": "PairSpreadZScoreStrategy",
       "strategy_class": "PairSpreadZScoreStrategy",
       "strategy_timeframe": "4h",
+      "survivor_blockers": [
+        "oos_sharpe",
+        "oos_return",
+        "pbo",
+        "val_sharpe",
+        "oos_trade_count",
+        "coverage_days"
+      ],
       "symbols": [
         "XPT/USDT",
         "XPD/USDT"
@@ -2006,6 +2034,14 @@
       "strategy": "PairSpreadZScoreStrategy",
       "strategy_class": "PairSpreadZScoreStrategy",
       "strategy_timeframe": "4h",
+      "survivor_blockers": [
+        "oos_sharpe",
+        "oos_return",
+        "pbo",
+        "val_sharpe",
+        "oos_trade_count",
+        "coverage_days"
+      ],
       "symbols": [
         "XPT/USDT",
         "XPD/USDT"
@@ -3033,6 +3069,14 @@
       "strategy": "PairSpreadZScoreStrategy",
       "strategy_class": "PairSpreadZScoreStrategy",
       "strategy_timeframe": "4h",
+      "survivor_blockers": [
+        "oos_sharpe",
+        "oos_return",
+        "pbo",
+        "val_sharpe",
+        "oos_trade_count",
+        "coverage_days"
+      ],
       "symbols": [
         "XPT/USDT",
         "XPD/USDT"
@@ -4060,6 +4104,14 @@
       "strategy": "PairSpreadZScoreStrategy",
       "strategy_class": "PairSpreadZScoreStrategy",
       "strategy_timeframe": "4h",
+      "survivor_blockers": [
+        "oos_sharpe",
+        "oos_return",
+        "pbo",
+        "val_sharpe",
+        "oos_trade_count",
+        "coverage_days"
+      ],
       "symbols": [
         "XPT/USDT",
         "XPD/USDT"
@@ -5087,6 +5139,14 @@
       "strategy": "PairSpreadZScoreStrategy",
       "strategy_class": "PairSpreadZScoreStrategy",
       "strategy_timeframe": "4h",
+      "survivor_blockers": [
+        "oos_sharpe",
+        "oos_return",
+        "pbo",
+        "val_sharpe",
+        "oos_trade_count",
+        "coverage_days"
+      ],
       "symbols": [
         "XPT/USDT",
         "XPD/USDT"
@@ -6114,6 +6174,14 @@
       "strategy": "PairSpreadZScoreStrategy",
       "strategy_class": "PairSpreadZScoreStrategy",
       "strategy_timeframe": "4h",
+      "survivor_blockers": [
+        "oos_sharpe",
+        "oos_return",
+        "pbo",
+        "val_sharpe",
+        "oos_trade_count",
+        "coverage_days"
+      ],
       "symbols": [
         "XPT/USDT",
         "XPD/USDT"
@@ -7141,6 +7209,14 @@
       "strategy": "PairSpreadZScoreStrategy",
       "strategy_class": "PairSpreadZScoreStrategy",
       "strategy_timeframe": "4h",
+      "survivor_blockers": [
+        "oos_sharpe",
+        "oos_return",
+        "pbo",
+        "val_sharpe",
+        "oos_trade_count",
+        "coverage_days"
+      ],
       "symbols": [
         "XPT/USDT",
         "XPD/USDT"
@@ -8168,6 +8244,14 @@
       "strategy": "PairSpreadZScoreStrategy",
       "strategy_class": "PairSpreadZScoreStrategy",
       "strategy_timeframe": "4h",
+      "survivor_blockers": [
+        "oos_sharpe",
+        "oos_return",
+        "pbo",
+        "val_sharpe",
+        "oos_trade_count",
+        "coverage_days"
+      ],
       "symbols": [
         "XPT/USDT",
         "XPD/USDT"
@@ -9195,6 +9279,14 @@
       "strategy": "PairSpreadZScoreStrategy",
       "strategy_class": "PairSpreadZScoreStrategy",
       "strategy_timeframe": "4h",
+      "survivor_blockers": [
+        "oos_sharpe",
+        "oos_return",
+        "pbo",
+        "val_sharpe",
+        "oos_trade_count",
+        "coverage_days"
+      ],
       "symbols": [
         "XPT/USDT",
         "XPD/USDT"
@@ -10222,6 +10314,14 @@
       "strategy": "PairSpreadZScoreStrategy",
       "strategy_class": "PairSpreadZScoreStrategy",
       "strategy_timeframe": "4h",
+      "survivor_blockers": [
+        "oos_sharpe",
+        "oos_return",
+        "pbo",
+        "val_sharpe",
+        "oos_trade_count",
+        "coverage_days"
+      ],
       "symbols": [
         "XPT/USDT",
         "XPD/USDT"
