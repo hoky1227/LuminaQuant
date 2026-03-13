@@ -2,41 +2,27 @@
 
 from __future__ import annotations
 
+from lumina_quant.live import _source_routing
+
 
 def _resolve_market_data_source(config) -> str:
-    token = str(getattr(config, "MARKET_DATA_SOURCE", "committed") or "committed")
-    token = token.strip().lower().replace("-", "_")
-    if token in {"binance_live", "binance", "live"}:
-        return "binance_live"
-    if token in {"external", "custom"}:
-        return "external"
-    if token in {"polymarket_live", "polymarket"}:
-        return "polymarket_live"
-    return "committed"
+    return _source_routing.resolve_market_data_source(config)
 
 
 def _binance_live_handler_cls():
-    from lumina_quant.live.data_binance_live import BinanceLiveDataHandler
-
-    return BinanceLiveDataHandler
+    return _source_routing.binance_live_handler_cls()
 
 
 def _external_handler_cls():
-    from lumina_quant.live.data_external import ExternalWindowDataHandler
-
-    return ExternalWindowDataHandler
+    return _source_routing.external_handler_cls()
 
 
 def _polymarket_live_handler_cls():
-    from lumina_quant.live.data_polymarket_live import PolymarketLiveDataHandler
-
-    return PolymarketLiveDataHandler
+    return _source_routing.polymarket_live_handler_cls()
 
 
 def _committed_handler_cls():
-    from lumina_quant.live.data_materialized import CommittedWindowDataHandler
-
-    return CommittedWindowDataHandler
+    return _source_routing.committed_handler_cls()
 
 
 class LiveDataHandler:
