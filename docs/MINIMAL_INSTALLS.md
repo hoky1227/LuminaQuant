@@ -32,7 +32,7 @@ Use on Windows or with MT5 bridge mode on WSL/Linux.
 ```bash
 uv sync --extra live-polymarket --extra dev
 ```
-Phase 1 currently targets market-data + paper/shadow workflows. Real execution remains Phase 2 work.
+This lane supports market data, paper/shadow workflows, and experimental real execution paths when Polymarket credentials/private key are configured and `allow_real_execution` is explicitly enabled.
 
 ### Dashboard
 ```bash

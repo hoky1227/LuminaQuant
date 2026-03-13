@@ -28,6 +28,7 @@ uv sync --extra live-mt5 --extra dev
 ```bash
 uv sync --extra live-polymarket --extra dev
 ```
+이 경로는 market data, paper/shadow workflow, 그리고 Polymarket 자격증명/개인키 설정 후 `allow_real_execution`을 명시적으로 켠 경우의 실험적 real execution 경로까지 포함합니다.
 
 ### 대시보드
 ```bash

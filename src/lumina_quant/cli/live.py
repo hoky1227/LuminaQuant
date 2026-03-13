@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import argparse
 import os
 
@@ -5,24 +7,53 @@ from lumina_quant.backtesting.cli_contract import RawFirstDataMissingError
 from lumina_quant.backtesting.portfolio_backtest import Portfolio
 from lumina_quant.config import LiveConfig
 from lumina_quant.core.market_window_contract import MarketWindowContractError
-from lumina_quant.live.data_poll import LiveDataHandler
-from lumina_quant.live.execution_live import LiveExecutionHandler
-from lumina_quant.live.trader import LiveDataFatalError, LiveTrader
 from lumina_quant.live_selection import (
     extract_selection_config,
     infer_strategy_class_name,
     load_selection_payload,
     resolve_selection_file,
 )
-from lumina_quant.strategies import (
-    DEFAULT_STRATEGY_NAME,
-    get_live_strategy_map,
-    resolve_strategy_class,
-)
-
-STRATEGY_MAP = get_live_strategy_map(include_opt_in=True)
 DEFAULT_LIVE_STRATEGY_NAME = "MovingAverageCrossStrategy"
 DEFAULT_WS_STRATEGY_NAME = "RsiStrategy"
+
+
+def _runtime_classes():
+    from lumina_quant.live.data_poll import LiveDataHandler
+    from lumina_quant.live.execution_live import LiveExecutionHandler
+    from lumina_quant.live.trader import LiveDataFatalError, LiveTrader
+
+    return LiveDataHandler, LiveExecutionHandler, LiveDataFatalError, LiveTrader
+
+
+def _strategy_helpers():
+    try:
+        from lumina_quant.strategies import (
+            DEFAULT_STRATEGY_NAME,
+            get_live_strategy_map,
+            resolve_strategy_class,
+        )
+    except Exception:
+        from lumina_quant.strategy import Strategy
+
+        class _PublicStubStrategy(Strategy):
+            def __init__(self, *args, **kwargs):
+                raise RuntimeError("Strategy modules are unavailable in this distribution.")
+
+            def calculate_signals(self, event):
+                _ = event
+                return None
+
+        def _get_live_strategy_map(include_opt_in=True):
+            _ = include_opt_in
+            return {"PublicStubStrategy": _PublicStubStrategy}
+
+        def _resolve_strategy_class(name: str, default_name: str | None = None):
+            _ = (name, default_name)
+            return _PublicStubStrategy
+
+        return "PublicStubStrategy", _get_live_strategy_map, _resolve_strategy_class
+
+    return DEFAULT_STRATEGY_NAME, get_live_strategy_map, resolve_strategy_class
 
 
 def _resolve_transport(value: str | None) -> str:
@@ -32,7 +63,7 @@ def _resolve_transport(value: str | None) -> str:
     raise ValueError(f"Unsupported --transport: {value}")
 
 
-def _shutdown_on_fatal(trader: LiveTrader, exc: Exception) -> None:
+def _shutdown_on_fatal(trader, exc: Exception) -> None:
     print(f"\nCritical live-data contract breach: {exc}")
     ordered_shutdown = getattr(trader, "_ordered_shutdown", None)
     if callable(ordered_shutdown):
@@ -44,6 +75,10 @@ def _shutdown_on_fatal(trader: LiveTrader, exc: Exception) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    default_strategy_registry_name, get_live_strategy_map, resolve_strategy_class = _strategy_helpers()
+    strategy_map = get_live_strategy_map(include_opt_in=True)
+    LiveDataHandler, LiveExecutionHandler, LiveDataFatalError, LiveTrader = _runtime_classes()
+
     parser = argparse.ArgumentParser(description="Run LuminaQuant live trader.")
     parser.add_argument(
         "--transport",
@@ -58,7 +93,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--strategy",
-        choices=sorted(STRATEGY_MAP.keys()),
+        choices=sorted(strategy_map.keys()),
         default="",
         help="Strategy class override. If omitted, live selection artifact is used when available.",
     )
@@ -102,7 +137,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     strategy_cls = resolve_strategy_class(
         default_strategy_name,
-        default_name=DEFAULT_STRATEGY_NAME,
+        default_name=default_strategy_registry_name,
     )
     strategy_name = strategy_cls.__name__
     selection_path = None
@@ -115,8 +150,8 @@ def main(argv: list[str] | None = None) -> int:
             selection_cfg = extract_selection_config(selection_payload)
             candidate_name = str(selection_cfg.get("candidate_name") or "").strip()
             inferred_name = infer_strategy_class_name(candidate_name)
-            if inferred_name and inferred_name in STRATEGY_MAP:
-                strategy_cls = STRATEGY_MAP[inferred_name]
+            if inferred_name and inferred_name in strategy_map:
+                strategy_cls = strategy_map[inferred_name]
                 strategy_name = inferred_name
             selected_symbols = list(selection_cfg.get("symbols") or [])
             if selected_symbols:
@@ -130,7 +165,7 @@ def main(argv: list[str] | None = None) -> int:
 
     manual_strategy = str(args.strategy or "").strip()
     if manual_strategy:
-        strategy_cls = STRATEGY_MAP.get(manual_strategy, strategy_cls)
+        strategy_cls = strategy_map.get(manual_strategy, strategy_cls)
         strategy_name = manual_strategy
         if selection_cfg is not None:
             inferred_name = infer_strategy_class_name(

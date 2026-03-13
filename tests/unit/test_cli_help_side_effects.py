@@ -15,3 +15,9 @@ def test_optimize_help_has_no_optuna_import_warning(capsys):
     captured = capsys.readouterr()
     assert "Optuna not found" not in captured.out
     assert "Run LuminaQuant walk-forward optimization." in captured.out
+
+
+def test_live_help_runs_without_name_errors(capsys):
+    assert cli_main.main(["live", "--help"]) == 0
+    captured = capsys.readouterr()
+    assert "Run LuminaQuant live trader." in captured.out
