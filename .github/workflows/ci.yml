@@ -134,6 +134,8 @@ jobs:
             tests/test_optimize_two_stage.py \
             tests/test_message_bus.py \
             tests/test_runtime_cache.py \
+            tests/test_strategy_registry_defaults.py \
+            tests/test_param_registry.py \
             tests/test_system_assembly.py \
             tests/test_ohlcv_loader.py \
             tests/test_execution_protective_orders.py \

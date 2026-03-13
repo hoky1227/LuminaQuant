@@ -3,6 +3,9 @@
 `scripts/run_research_hurdle.py` builds a large strategy-candidate universe and
 produces a diversified shortlist from existing research reports.
 
+> Public distribution note: the public registry itself exposes only `PublicSampleStrategy`.
+> The strategy names listed below describe the private/source-of-truth research surface.
+
 ## What it produces
 
 1. **Candidate universe** (JSON): parameterized strategy specs across:

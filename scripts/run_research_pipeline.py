@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from lumina_quant.config import BaseConfig
+from lumina_quant.strategy_factory.candidate_library import build_candidate_manifest
 from lumina_quant.strategy_factory.pipeline import (
     build_shortlist_payload,
     render_shortlist_markdown,
@@ -41,12 +42,21 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = _build_parser().parse_args()
+    timeframes = [str(item) for item in list(args.timeframes)]
+    manifest = build_candidate_manifest(
+        timeframes=timeframes,
+        symbols=list(BaseConfig.SYMBOLS),
+    )
+    print(f"[PIPELINE] candidates: {len(list(manifest.get('candidates') or []))}")
+    if args.dry_run:
+        print("[PIPELINE] dry-run mode: no output files written.")
+        return 0
+
     output_dir = Path(str(args.output_dir)).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
-
     manifest_path, manifest = write_candidate_manifest(
         output_dir=output_dir,
-        timeframes=[str(item) for item in list(args.timeframes)],
+        timeframes=timeframes,
         symbols=list(BaseConfig.SYMBOLS),
     )
     print(f"[PIPELINE] candidate manifest: {manifest_path}")
@@ -64,7 +74,7 @@ def main() -> int:
     research_report = run_candidate_research(
         candidates=selected_team,
         base_timeframe="1s",
-        strategy_timeframes=[str(item) for item in list(args.timeframes)],
+        strategy_timeframes=timeframes,
         symbol_universe=list(BaseConfig.SYMBOLS),
         stage1_keep_ratio=0.5,
         max_candidates=max(1, len(selected_team)),

@@ -292,6 +292,8 @@ public/main과 private/main은 동일한 저장소 레이아웃을 유지할 수
 
 해당 패키지가 설치되면 `lumina_quant.strategies.registry`와 `lumina_quant.indicators`가 런타임에 자동으로 private export를 병합합니다.
 
+private 확장 패키지가 없으면 public 레지스트리는 **`PublicSampleStrategy`만** 노출합니다.
+
 
 **전략 팩토리 파이프라인 (후보 + 숏리스트):**
 ```bash

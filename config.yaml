@@ -178,7 +178,7 @@ live:
 # ------------------------------------------
 optimization:
   method: "OPTUNA" # Options: "GRID", "OPTUNA"
-  strategy: "RsiStrategy" # Class name of the strategy to optimize
+  strategy: "PublicSampleStrategy" # Public build optimizes the sample strategy by default
   validation_days: 30
   oos_days: 30
   walk_forward_folds: 3
@@ -221,10 +221,10 @@ promotion_gate:
   max_critical_errors: 0
   require_alpha_card: false
   strategy_profiles:
-    RsiStrategy:
+    PublicSampleStrategy:
       max_order_rejects: 1
       max_order_timeouts: 1
       max_reconciliation_alerts: 0
       max_critical_errors: 0
       require_alpha_card: true
-      alpha_card_path: "reports/alpha_card_rsi_strategy.md"
+      alpha_card_path: "reports/alpha_card_public_sample_strategy.md"

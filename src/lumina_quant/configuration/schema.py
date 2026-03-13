@@ -190,7 +190,7 @@ class OptimizationRuntimeConfig:
     """Optimization-only settings."""
 
     method: str = "OPTUNA"
-    strategy: str = "RsiStrategy"
+    strategy: str = "PublicSampleStrategy"
     optuna: dict[str, Any] = field(default_factory=dict)
     grid: dict[str, Any] = field(default_factory=dict)
     walk_forward_folds: int = 3

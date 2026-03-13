@@ -133,8 +133,8 @@ Recommended flow before enabling real mode:
 ```bash
 uv run python scripts/generate_alpha_card_template.py \
   --config config.yaml \
-  --strategy RsiStrategy \
-  --output reports/alpha_card_rsi_strategy.md
+  --strategy PublicSampleStrategy \
+  --output reports/alpha_card_public_sample_strategy.md
 ```
 
 2. Run promotion gate report (soak + runtime reliability checks):
@@ -147,7 +147,7 @@ uv run python scripts/generate_promotion_gate_report.py \
 # strategy-specific profile from promotion_gate.strategy_profiles
 uv run python scripts/generate_promotion_gate_report.py \
   --config config.yaml \
-  --strategy RsiStrategy
+  --strategy PublicSampleStrategy
 ```
 
 3. Persist the resolved promotion gate profile for review:
@@ -155,8 +155,8 @@ uv run python scripts/generate_promotion_gate_report.py \
 ```bash
 uv run python scripts/generate_promotion_gate_report.py \
   --config config.yaml \
-  --strategy RsiStrategy \
-  > reports/promotion_gate_rsi_strategy.json
+  --strategy PublicSampleStrategy \
+  > reports/promotion_gate_public_sample_strategy.json
 ```
 
 ## 7. Raw-First Data Pipeline Workflow

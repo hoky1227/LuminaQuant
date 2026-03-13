@@ -2,6 +2,8 @@
 
 ## Scope Delivered
 
+> Public distribution note: the public registry exposes only `PublicSampleStrategy`; the strategy names below refer to the private/source-of-truth research surface.
+
 This contribution adds an isolated **strategy factory pipeline** focused on Binance futures research over:
 
 - Timeframes: `1s, 1m, 5m, 15m, 30m, 1h, 4h, 1d`

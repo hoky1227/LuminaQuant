@@ -303,6 +303,8 @@ Proprietary strategy/indicator implementations can be distributed separately as 
 
 When installed, `lumina_quant.strategies.registry` and `lumina_quant.indicators` auto-merge private exports at runtime.
 
+Without the private extension package, the public registry exposes **only** `PublicSampleStrategy`.
+
 
 ### Windowed model parity + memory safety defaults
 
@@ -407,13 +409,13 @@ uv run python scripts/generate_promotion_gate_report.py \
 # Strategy-specific profile from promotion_gate.strategy_profiles
 uv run python scripts/generate_promotion_gate_report.py \
   --config config.yaml \
-  --strategy RsiStrategy
+  --strategy PublicSampleStrategy
 
 # Generate Alpha Card scaffold from runtime config
 uv run python scripts/generate_alpha_card_template.py \
   --config config.yaml \
-  --strategy RsiStrategy \
-  --output reports/alpha_card_rsi_strategy.md
+  --strategy PublicSampleStrategy \
+  --output reports/alpha_card_public_sample_strategy.md
 ```
 
 **Backtest Benchmark Baseline/Regression:**
