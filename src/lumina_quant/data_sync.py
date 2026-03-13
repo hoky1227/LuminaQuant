@@ -14,8 +14,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
-
-import ccxt
 from lumina_quant.market_data import (
     connect_market_data_db,
     export_ohlcv_to_csv,
@@ -68,8 +66,13 @@ def create_binance_exchange(
     secret_key: str = "",
     market_type: str = "spot",
     testnet: bool = False,
-) -> ccxt.Exchange:
+) -> Any:
     """Create a configured Binance CCXT client."""
+    try:
+        import ccxt
+    except Exception as exc:
+        raise RuntimeError("ccxt is required to create a Binance exchange client.") from exc
+
     exchange = ccxt.binance()
     exchange.enableRateLimit = True
     if api_key:

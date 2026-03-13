@@ -1,6 +1,7 @@
 # Exchange Setup & Configuration
 
 LuminaQuant supports multiple exchanges through a unified interface. Currently supported drivers are **CCXT** (for Crypto) and **MetaTrader 5** (for Forex/Stocks).
+This branch also introduces **Phase 1 Polymarket support** for market-data + paper/shadow workflows.
 
 ## 1. Binance (via CCXT)
 
@@ -103,3 +104,37 @@ exchange.execute_order(
 - **"Not Connected"**: Ensure the MT5 Terminal is open and you are logged in.
 - **"IPC Error"**: Sometimes happens if MT5 is run as Administrator but Python is not, or vice versa. Run both with same permissions.
 - **Symbol Not Found**: Ensure the symbol (e.g., "EURUSD") is visible in the **Market Watch** window in MT5.
+
+---
+
+## 3. Polymarket (Phase 1)
+
+Phase 1 support is intentionally scoped to:
+- market-data ingestion
+- signal generation
+- paper/shadow execution lanes
+
+Real execution remains a later phase.
+
+### Configuration (`config.yaml`)
+
+```yaml
+live:
+  market_data_source: polymarket_live
+  exchange:
+    driver: "polymarket"
+    name: "polymarket"
+  polymarket:
+    asset_ids:
+      - "asset-id-1"
+    host: "https://clob.polymarket.com"
+    gamma_host: "https://gamma-api.polymarket.com"
+    data_host: "https://data-api.polymarket.com"
+    market_ws_url: "wss://ws-subscriptions-clob.polymarket.com/ws/market"
+    user_ws_url: "wss://ws-subscriptions-clob.polymarket.com/ws/user"
+```
+
+### Notes
+- Install with the `live-polymarket` extra.
+- Use canonical market-data / paper workflows first.
+- If you need custom upstream data instead of the official Polymarket feed, prefer `live.market_data_source: external` with the external-data guide.

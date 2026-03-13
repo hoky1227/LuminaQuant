@@ -15,6 +15,8 @@ from lumina_quant.configuration.schema import (
     BacktestRuntimeConfig,
     ExecutionConfig,
     LiveExchangeConfig,
+    LiveExternalConfig,
+    LivePolymarketConfig,
     LiveRuntimeConfig,
     MarketWindowConfig,
     OptimizationRuntimeConfig,
@@ -83,6 +85,10 @@ def _normalize_live_source(value: Any) -> str:
         return "committed"
     if token in {"binance_live", "binance", "live"}:
         return "binance_live"
+    if token in {"external", "custom"}:
+        return "external"
+    if token in {"polymarket_live", "polymarket"}:
+        return "polymarket_live"
     return token
 
 
@@ -248,6 +254,14 @@ def build_runtime_config(data: dict[str, Any], env: Mapping[str, str]) -> Runtim
     exchange_raw = (
         live_raw.get("exchange", {}) if isinstance(live_raw.get("exchange", {}), dict) else {}
     )
+    live_external_raw = (
+        live_raw.get("external", {}) if isinstance(live_raw.get("external", {}), dict) else {}
+    )
+    live_polymarket_raw = (
+        live_raw.get("polymarket", {})
+        if isinstance(live_raw.get("polymarket", {}), dict)
+        else {}
+    )
 
     promotion_kwargs = _coerce_dataclass_kwargs(promotion_raw, PromotionGateConfig)
     strategy_profiles = promotion_kwargs.pop("strategy_profiles", {})
@@ -255,6 +269,8 @@ def build_runtime_config(data: dict[str, Any], env: Mapping[str, str]) -> Runtim
     live_kwargs = _coerce_dataclass_kwargs(live_raw, LiveRuntimeConfig)
     for reserved_key in (
         "exchange",
+        "external",
+        "polymarket",
         "api_key",
         "secret_key",
         "telegram_bot_token",
@@ -265,6 +281,12 @@ def build_runtime_config(data: dict[str, Any], env: Mapping[str, str]) -> Runtim
     live = LiveRuntimeConfig(
         **live_kwargs,
         exchange=LiveExchangeConfig(**_coerce_dataclass_kwargs(exchange_raw, LiveExchangeConfig)),
+        external=LiveExternalConfig(
+            **_coerce_dataclass_kwargs(live_external_raw, LiveExternalConfig)
+        ),
+        polymarket=LivePolymarketConfig(
+            **_coerce_dataclass_kwargs(live_polymarket_raw, LivePolymarketConfig)
+        ),
         api_key=str(
             env.get("BINANCE_API_KEY")
             or env.get("EXCHANGE_API_KEY")
@@ -485,6 +507,48 @@ def build_runtime_config(data: dict[str, Any], env: Mapping[str, str]) -> Runtim
         _as_int(getattr(runtime.live, "materialized_staleness_alert_cooldown_seconds", 60), 60),
     )
     runtime.live.reconciliation_interval_sec = _as_int(runtime.live.reconciliation_interval_sec, 30)
+    runtime.live.external.source_kind = str(
+        getattr(runtime.live.external, "source_kind", "jsonl") or "jsonl"
+    ).strip().lower()
+    runtime.live.external.path = str(getattr(runtime.live.external, "path", "") or "").strip()
+    runtime.live.external.poll_seconds = max(
+        1,
+        _as_int(getattr(runtime.live.external, "poll_seconds", 2), 2),
+    )
+    runtime.live.external.allow_stale_seconds = max(
+        1,
+        _as_int(getattr(runtime.live.external, "allow_stale_seconds", 45), 45),
+    )
+    runtime.live.external.schema = str(
+        getattr(runtime.live.external, "schema", "market_window_v1") or "market_window_v1"
+    ).strip().lower()
+    runtime.live.external.symbol_map = dict(getattr(runtime.live.external, "symbol_map", {}) or {})
+    runtime.live.polymarket.host = str(getattr(runtime.live.polymarket, "host", "") or "").strip()
+    runtime.live.polymarket.gamma_host = str(
+        getattr(runtime.live.polymarket, "gamma_host", "") or ""
+    ).strip()
+    runtime.live.polymarket.data_host = str(
+        getattr(runtime.live.polymarket, "data_host", "") or ""
+    ).strip()
+    runtime.live.polymarket.market_ws_url = str(
+        getattr(runtime.live.polymarket, "market_ws_url", "") or ""
+    ).strip()
+    runtime.live.polymarket.user_ws_url = str(
+        getattr(runtime.live.polymarket, "user_ws_url", "") or ""
+    ).strip()
+    runtime.live.polymarket.chain_id = max(
+        1,
+        _as_int(getattr(runtime.live.polymarket, "chain_id", 137), 137),
+    )
+    runtime.live.polymarket.asset_ids = [
+        str(item).strip()
+        for item in list(getattr(runtime.live.polymarket, "asset_ids", []) or [])
+        if str(item).strip()
+    ]
+    runtime.live.polymarket.allow_real_execution = _as_bool(
+        getattr(runtime.live.polymarket, "allow_real_execution", False),
+        False,
+    )
 
     runtime.backtest.random_seed = _as_int(runtime.backtest.random_seed, 42)
     runtime.backtest.leverage = _as_int(runtime.backtest.leverage, 3)

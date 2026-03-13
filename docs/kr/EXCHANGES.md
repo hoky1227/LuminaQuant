@@ -1,6 +1,6 @@
 # 거래소 설정 및 구성 (Exchange Setup)
 
-LuminaQuant는 통합 인터페이스를 통해 여러 거래소를 지원합니다. 현재 지원되는 드라이버는 **CCXT** (암호화폐용)와 **MetaTrader 5** (FX/주식용)입니다.
+LuminaQuant는 통합 인터페이스를 통해 여러 거래소를 지원합니다. 현재 지원되는 드라이버는 **CCXT** (암호화폐용), **MetaTrader 5** (FX/주식용), 그리고 **Phase 1 Polymarket** (시장 데이터 + paper/shadow)입니다.
 
 ## 1. 바이낸스 (Binance, via CCXT)
 
@@ -99,3 +99,36 @@ exchange.execute_order(
 - **"Not Connected"**: MT5 터미널이 켜져 있고 계정에 로그인되었는지 확인하십시오.
 - **"IPC Error"**: MT5를 관리자 권한으로 실행했는데 파이썬은 아닐 경우(또는 그 반대) 발생할 수 있습니다. 둘 다 동일한 권한으로 실행하십시오.
 - **Symbol Not Found**: 거래하려는 종목(예: "EURUSD")이 MT5의 **종합시세(Market Watch)** 창에 추가되어 있는지 확인하십시오.
+
+---
+
+## 3. Polymarket (Phase 1)
+
+Phase 1 범위:
+- 시장 데이터 수집
+- 시그널 생성
+- paper/shadow 실행 경로
+
+실주문(real execution)은 후속 Phase에서 다룹니다.
+
+### 설정 (`config.yaml`)
+
+```yaml
+live:
+  market_data_source: polymarket_live
+  exchange:
+    driver: "polymarket"
+    name: "polymarket"
+  polymarket:
+    asset_ids:
+      - "asset-id-1"
+    host: "https://clob.polymarket.com"
+    gamma_host: "https://gamma-api.polymarket.com"
+    data_host: "https://data-api.polymarket.com"
+    market_ws_url: "wss://ws-subscriptions-clob.polymarket.com/ws/market"
+    user_ws_url: "wss://ws-subscriptions-clob.polymarket.com/ws/user"
+```
+
+### 참고
+- 설치는 `live-polymarket` extra를 사용하세요.
+- 사용자 보유 데이터를 쓰고 싶다면 `live.market_data_source: external` 경로를 우선 고려하세요.

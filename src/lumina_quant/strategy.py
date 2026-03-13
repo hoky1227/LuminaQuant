@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from lumina_quant.core.events import MarketEvent
+from lumina_quant.core.strategy_input import StrategyInputContext
 
 
 class Strategy(ABC):
@@ -38,6 +39,10 @@ class Strategy(ABC):
             return
         self.calculate_signals(event)
 
+    def calculate_signals_context(self, context: StrategyInputContext) -> None:
+        """Optional richer canonical-context callback (defaults to window legacy path)."""
+        self.calculate_signals_window(context.event, context.aggregator)
+
     def get_state(self) -> dict:
         """Backward-compatible default state for strategies that are stateless."""
         return {}
@@ -50,6 +55,10 @@ class Strategy(ABC):
     def get_param_schema(cls) -> dict:
         """Optional hyper-parameter schema for registry-driven tuning."""
         return {}
+
     decision_cadence_seconds: int | None = None
     required_timeframes: tuple[str, ...] = ()
     required_lookbacks: dict[str, int] = {}
+    required_inputs: tuple[str, ...] = ()
+    required_features: tuple[str, ...] = ()
+    preferred_contract: str = "market_window"

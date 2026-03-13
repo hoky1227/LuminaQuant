@@ -125,6 +125,8 @@ class BacktestRuntimeConfig:
     backtest_window_seconds: int | None = None
     backtest_decision_seconds: int | None = None
     market_window_parity_v2_enabled: bool | None = None
+    data_source: str = "auto"
+    external: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -137,6 +139,38 @@ class LiveExchangeConfig:
     position_mode: str = "HEDGE"
     margin_mode: str = "isolated"
     leverage: int = 3
+
+
+@dataclass(slots=True)
+class LiveExternalConfig:
+    """External live data source settings."""
+
+    source_kind: str = "jsonl"
+    path: str = ""
+    poll_seconds: int = 2
+    allow_stale_seconds: int = 45
+    schema: str = "market_window_v1"
+    symbol_map: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class LivePolymarketConfig:
+    """Polymarket-specific live configuration."""
+
+    host: str = "https://clob.polymarket.com"
+    gamma_host: str = "https://gamma-api.polymarket.com"
+    data_host: str = "https://data-api.polymarket.com"
+    market_ws_url: str = "wss://ws-subscriptions-clob.polymarket.com/ws/market"
+    user_ws_url: str = "wss://ws-subscriptions-clob.polymarket.com/ws/user"
+    chain_id: int = 137
+    asset_ids: list[str] = field(default_factory=list)
+    private_key_env: str = "POLYMARKET_PRIVATE_KEY"
+    api_key_env: str = "POLYMARKET_API_KEY"
+    api_secret_env: str = "POLYMARKET_API_SECRET"
+    api_passphrase_env: str = "POLYMARKET_API_PASSPHRASE"
+    funder: str = ""
+    signature_type: int = 0
+    allow_real_execution: bool = False
 
 
 @dataclass(slots=True)
@@ -163,6 +197,8 @@ class LiveRuntimeConfig:
     heartbeat_interval_sec: int = 30
     reconciliation_interval_sec: int = 30
     exchange: LiveExchangeConfig = field(default_factory=LiveExchangeConfig)
+    external: LiveExternalConfig = field(default_factory=LiveExternalConfig)
+    polymarket: LivePolymarketConfig = field(default_factory=LivePolymarketConfig)
     symbol_limits: dict[str, dict[str, float]] = field(default_factory=dict)
     api_key: str = ""
     secret_key: str = ""

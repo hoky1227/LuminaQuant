@@ -3,10 +3,15 @@ from __future__ import annotations
 import argparse
 import sys
 from collections.abc import Callable
-
-from lumina_quant.cli import backtest, dashboard, data, exact_window, live, optimize
+from importlib import import_module
 
 Handler = Callable[[list[str] | None], int]
+
+
+def _load_handler(module_name: str, attr: str = "main") -> Handler:
+    module = import_module(f"lumina_quant.cli.{module_name}")
+    handler = getattr(module, attr)
+    return handler
 
 
 def _run_handler(handler: Handler, argv: list[str]) -> int:
@@ -21,13 +26,13 @@ def _run_handler(handler: Handler, argv: list[str]) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     args = list(argv if argv is not None else sys.argv[1:])
-    commands: dict[str, Handler] = {
-        "backtest": backtest.main,
-        "optimize": optimize.main,
-        "live": live.main,
-        "dashboard": dashboard.main,
-        "data": data.main,
-        "exact-window": exact_window.main,
+    commands = {
+        "backtest": "backtest",
+        "optimize": "optimize",
+        "live": "live",
+        "dashboard": "dashboard",
+        "data": "data",
+        "exact-window": "exact_window",
     }
 
     parser = argparse.ArgumentParser(
@@ -42,7 +47,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 0
 
-    return _run_handler(commands[parsed.command], list(parsed.command_args or []))
+    handler = _load_handler(commands[parsed.command])
+    return _run_handler(handler, list(parsed.command_args or []))
 
 
 if __name__ == "__main__":

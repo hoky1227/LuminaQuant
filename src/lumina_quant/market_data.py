@@ -247,6 +247,18 @@ def symbol_csv_candidates(csv_dir: str, symbol: str) -> list[str]:
     ]
 
 
+def symbol_parquet_candidates(root_dir: str, symbol: str) -> list[str]:
+    """Return common parquet path candidates for a symbol."""
+    normalized = normalize_symbol(symbol)
+    compact = normalized.replace("/", "")
+    return [
+        os.path.join(root_dir, f"{normalized}.parquet"),
+        os.path.join(root_dir, f"{compact}.parquet"),
+        os.path.join(root_dir, f"{normalized.replace('/', '_')}.parquet"),
+        os.path.join(root_dir, f"{normalized.replace('/', '-')}.parquet"),
+    ]
+
+
 def resolve_symbol_csv_path(csv_dir: str, symbol: str) -> str:
     """Resolve the first existing symbol CSV path, fallback to compact name."""
     candidates = symbol_csv_candidates(csv_dir, symbol)
@@ -254,6 +266,50 @@ def resolve_symbol_csv_path(csv_dir: str, symbol: str) -> str:
         if os.path.exists(path):
             return path
     return candidates[1]
+
+
+def load_data_dict_from_external_root(
+    root_path: str,
+    *,
+    symbol_list: list[str],
+    start_date: Any = None,
+    end_date: Any = None,
+) -> dict[str, pl.DataFrame]:
+    """Load canonical OHLCV frames from a user-managed external root."""
+    from lumina_quant.compute.ohlcv_loader import OHLCVFrameLoader
+
+    loader = OHLCVFrameLoader(start_date=start_date, end_date=end_date)
+    root = Path(root_path).expanduser()
+    normalized_symbols = [str(symbol) for symbol in list(symbol_list or []) if str(symbol)]
+    if root.is_file() and len(normalized_symbols) > 1:
+        raise RuntimeError(
+            "Single-file external market data only supports one symbol. Use a directory root for multi-symbol external data."
+        )
+    data: dict[str, pl.DataFrame] = {}
+    for symbol in normalized_symbols:
+        frame = None
+        if root.is_file():
+            candidate_paths = [str(root)]
+        else:
+            candidate_paths = [
+                *symbol_parquet_candidates(str(root), str(symbol)),
+                *symbol_csv_candidates(str(root), str(symbol)),
+            ]
+        for candidate in candidate_paths:
+            path = Path(candidate)
+            if not path.exists():
+                continue
+            try:
+                if path.suffix.lower() == ".parquet":
+                    frame = loader.normalize(pl.read_parquet(path))
+                else:
+                    frame = loader.load_csv(str(path))
+            except Exception:
+                frame = None
+            if frame is not None and not frame.is_empty():
+                data[str(symbol)] = frame
+                break
+    return data
 
 
 def timeframe_to_milliseconds(timeframe: str) -> int:

@@ -4,6 +4,8 @@ from abc import ABC
 from typing import Any
 
 from lumina_quant.core.events import MarketEvent
+from lumina_quant.core.strategy_input import StrategyInputContext
+from lumina_quant.data.feature_points import FEATURE_COLUMNS
 from lumina_quant.event_clock import EventSequencer, assign_event_identity
 from lumina_quant.message_bus import MessageBus
 
@@ -49,6 +51,42 @@ class TradingEngine(ABC):
         self.orders = 0
         self.fills = 0
 
+    def _required_inputs(self) -> tuple[str, ...]:
+        raw = getattr(self.strategy, "required_inputs", ())
+        return tuple(str(item).strip().lower() for item in tuple(raw or ()) if str(item).strip())
+
+    def _required_features(self) -> tuple[str, ...]:
+        raw = getattr(self.strategy, "required_features", ())
+        return tuple(str(item).strip().lower() for item in tuple(raw or ()) if str(item).strip())
+
+    def _assert_strategy_requirements(
+        self,
+        *,
+        available_inputs: set[str],
+        feature_lookup: Any,
+    ) -> None:
+        required_inputs = set(self._required_inputs())
+        missing_inputs = sorted(required_inputs - set(available_inputs))
+        if missing_inputs:
+            raise RuntimeError(
+                "Strategy required_inputs are unavailable for this execution path: "
+                + ", ".join(missing_inputs)
+            )
+
+        required_features = set(self._required_features())
+        if not required_features:
+            return
+        supported_features = {str(item).lower() for item in FEATURE_COLUMNS} | {"feature_points"}
+        unknown_features = sorted(required_features - supported_features)
+        if unknown_features:
+            raise RuntimeError(
+                "Strategy declared unsupported required_features: " + ", ".join(unknown_features)
+            )
+        if feature_lookup is None or not str(getattr(feature_lookup, "db_path", "") or "").strip():
+            raise RuntimeError(
+                "Strategy required_features are unavailable because feature lookup is not configured."
+            )
+
     def process_event(self, event):
         """Routing logic for events."""
         if event is not None:
@@ -78,6 +116,10 @@ class TradingEngine(ABC):
             except Exception:
                 should_process = True
         if should_process:
+            self._assert_strategy_requirements(
+                available_inputs={"market_event", "data_handler", "execution_handler", "exchange"},
+                feature_lookup=getattr(self.data_handler, "_feature_lookup", None),
+            )
             self.strategy.calculate_signals(event)
         self.portfolio.update_timeindex(event)
         # Optional: Simulated execution handler might need to check open orders
@@ -99,6 +141,10 @@ class TradingEngine(ABC):
                 except Exception:
                     should_process = True
             if should_process:
+                self._assert_strategy_requirements(
+                    available_inputs={"market_event", "data_handler", "execution_handler", "exchange"},
+                    feature_lookup=getattr(self.data_handler, "_feature_lookup", None),
+                )
                 self.strategy.calculate_signals(market_event)
 
         # Timestamp-level accounting update (once per second).
@@ -219,8 +265,45 @@ class TradingEngine(ABC):
             aggregator.update_from_1s_batch(bars_1s)
 
         if self._should_process_market_window_event(event):
+            preferred_contract = str(
+                getattr(self.strategy, "preferred_contract", "market_window") or "market_window"
+            ).strip().lower()
             window_fn = getattr(self.strategy, "calculate_signals_window", None)
-            if callable(window_fn):
+            context_fn = getattr(self.strategy, "calculate_signals_context", None)
+            available_inputs = {"market_window", "data_handler", "execution_handler", "exchange"}
+            if aggregator is not None:
+                available_inputs.add("aggregator")
+            if callable(context_fn):
+                available_inputs.add("context")
+            self._assert_strategy_requirements(
+                available_inputs=available_inputs,
+                feature_lookup=getattr(self.data_handler, "_feature_lookup", None),
+            )
+            if callable(context_fn) and preferred_contract == "context":
+                context = StrategyInputContext(
+                    event=event,
+                    aggregator=aggregator,
+                    feature_lookup=getattr(self.data_handler, "_feature_lookup", None),
+                    data_handler=self.data_handler,
+                    execution_handler=self.execution_handler,
+                    exchange=getattr(self.execution_handler, "exchange", None),
+                    provider_metadata={
+                        "data_handler_class": self.data_handler.__class__.__name__,
+                        "execution_handler_class": self.execution_handler.__class__.__name__,
+                        "market_data_source": getattr(self, "market_data_source", None),
+                    },
+                )
+                try:
+                    context_fn(context)
+                except TypeError:
+                    if callable(window_fn):
+                        try:
+                            window_fn(event, aggregator)
+                        except TypeError:
+                            self.strategy.calculate_signals(event)
+                    else:
+                        self.strategy.calculate_signals(event)
+            elif callable(window_fn):
                 try:
                     window_fn(event, aggregator)
                 except TypeError:

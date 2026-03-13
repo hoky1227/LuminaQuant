@@ -256,6 +256,7 @@ class BacktestConfig(BaseConfig):
     START_DATE = _RUNTIME.backtest.start_date
     END_DATE = _RUNTIME.backtest.end_date
     MODE = str(getattr(_RUNTIME.backtest, "mode", "windowed") or "windowed")
+    DATA_SOURCE = str(getattr(_RUNTIME.backtest, "data_source", "auto") or "auto").strip().lower()
     COMMISSION_RATE = float(_RUNTIME.backtest.commission_rate)
     SLIPPAGE_RATE = float(_RUNTIME.backtest.slippage_rate)
     ANNUAL_PERIODS = int(_RUNTIME.backtest.annual_periods)
@@ -288,6 +289,25 @@ class LiveConfig(BaseConfig):
     )
     ORDER_STATE_SOURCE = (
         str(getattr(_RUNTIME.live, "order_state_source", "polling")).strip().lower()
+    )
+    EXTERNAL_DATA_SOURCE_KIND = str(
+        getattr(getattr(_RUNTIME.live, "external", object()), "source_kind", "jsonl")
+    ).strip().lower()
+    EXTERNAL_DATA_PATH = str(
+        getattr(getattr(_RUNTIME.live, "external", object()), "path", "") or ""
+    )
+    EXTERNAL_DATA_SCHEMA = str(
+        getattr(getattr(_RUNTIME.live, "external", object()), "schema", "market_window_v1")
+        or "market_window_v1"
+    ).strip().lower()
+    EXTERNAL_DATA_SYMBOL_MAP = dict(
+        getattr(getattr(_RUNTIME.live, "external", object()), "symbol_map", {}) or {}
+    )
+    EXTERNAL_DATA_POLL_SECONDS = int(
+        getattr(getattr(_RUNTIME.live, "external", object()), "poll_seconds", 2) or 2
+    )
+    EXTERNAL_DATA_ALLOW_STALE_SECONDS = int(
+        getattr(getattr(_RUNTIME.live, "external", object()), "allow_stale_seconds", 45) or 45
     )
     SHADOW_LIVE_ENABLED = bool(getattr(_RUNTIME.live, "shadow_live_enabled", False))
     RECONCILIATION_POLL_FALLBACK_ENABLED = bool(
@@ -338,6 +358,52 @@ class LiveConfig(BaseConfig):
         or "scripts/mt5_bridge_worker.py"
     )
     MT5_BRIDGE_USE_WSLPATH = bool(getattr(_RUNTIME.live, "mt5_bridge_use_wslpath", True))
+    POLYMARKET_HOST = str(
+        getattr(getattr(_RUNTIME.live, "polymarket", object()), "host", "") or ""
+    )
+    POLYMARKET_GAMMA_HOST = str(
+        getattr(getattr(_RUNTIME.live, "polymarket", object()), "gamma_host", "") or ""
+    )
+    POLYMARKET_DATA_HOST = str(
+        getattr(getattr(_RUNTIME.live, "polymarket", object()), "data_host", "") or ""
+    )
+    POLYMARKET_MARKET_WS_URL = str(
+        getattr(getattr(_RUNTIME.live, "polymarket", object()), "market_ws_url", "") or ""
+    )
+    POLYMARKET_USER_WS_URL = str(
+        getattr(getattr(_RUNTIME.live, "polymarket", object()), "user_ws_url", "") or ""
+    )
+    POLYMARKET_CHAIN_ID = int(
+        getattr(getattr(_RUNTIME.live, "polymarket", object()), "chain_id", 137) or 137
+    )
+    POLYMARKET_ASSET_IDS = list(
+        getattr(getattr(_RUNTIME.live, "polymarket", object()), "asset_ids", []) or []
+    )
+    POLYMARKET_PRIVATE_KEY_ENV = str(
+        getattr(getattr(_RUNTIME.live, "polymarket", object()), "private_key_env", "POLYMARKET_PRIVATE_KEY")
+        or "POLYMARKET_PRIVATE_KEY"
+    )
+    POLYMARKET_API_KEY_ENV = str(
+        getattr(getattr(_RUNTIME.live, "polymarket", object()), "api_key_env", "POLYMARKET_API_KEY")
+        or "POLYMARKET_API_KEY"
+    )
+    POLYMARKET_API_SECRET_ENV = str(
+        getattr(getattr(_RUNTIME.live, "polymarket", object()), "api_secret_env", "POLYMARKET_API_SECRET")
+        or "POLYMARKET_API_SECRET"
+    )
+    POLYMARKET_API_PASSPHRASE_ENV = str(
+        getattr(getattr(_RUNTIME.live, "polymarket", object()), "api_passphrase_env", "POLYMARKET_API_PASSPHRASE")
+        or "POLYMARKET_API_PASSPHRASE"
+    )
+    POLYMARKET_FUNDER = str(
+        getattr(getattr(_RUNTIME.live, "polymarket", object()), "funder", "") or ""
+    )
+    POLYMARKET_SIGNATURE_TYPE = int(
+        getattr(getattr(_RUNTIME.live, "polymarket", object()), "signature_type", 0) or 0
+    )
+    POLYMARKET_ALLOW_REAL_EXECUTION = bool(
+        getattr(getattr(_RUNTIME.live, "polymarket", object()), "allow_real_execution", False)
+    )
 
     @classmethod
     def _as_runtime(cls):
@@ -345,6 +411,12 @@ class LiveConfig(BaseConfig):
         runtime.live.mode = cls.MODE
         runtime.live.market_data_source = str(cls.MARKET_DATA_SOURCE)
         runtime.live.order_state_source = str(cls.ORDER_STATE_SOURCE)
+        runtime.live.external.source_kind = str(cls.EXTERNAL_DATA_SOURCE_KIND)
+        runtime.live.external.path = str(cls.EXTERNAL_DATA_PATH)
+        runtime.live.external.schema = str(cls.EXTERNAL_DATA_SCHEMA)
+        runtime.live.external.poll_seconds = int(cls.EXTERNAL_DATA_POLL_SECONDS)
+        runtime.live.external.allow_stale_seconds = int(cls.EXTERNAL_DATA_ALLOW_STALE_SECONDS)
+        runtime.live.external.symbol_map = dict(cls.EXTERNAL_DATA_SYMBOL_MAP)
         runtime.live.shadow_live_enabled = bool(cls.SHADOW_LIVE_ENABLED)
         runtime.live.reconciliation_poll_fallback_enabled = bool(
             cls.RECONCILIATION_POLL_FALLBACK_ENABLED
@@ -369,6 +441,20 @@ class LiveConfig(BaseConfig):
         runtime.live.mt5_bridge_python = str(cls.MT5_BRIDGE_PYTHON)
         runtime.live.mt5_bridge_script = str(cls.MT5_BRIDGE_SCRIPT)
         runtime.live.mt5_bridge_use_wslpath = bool(cls.MT5_BRIDGE_USE_WSLPATH)
+        runtime.live.polymarket.host = str(cls.POLYMARKET_HOST)
+        runtime.live.polymarket.gamma_host = str(cls.POLYMARKET_GAMMA_HOST)
+        runtime.live.polymarket.data_host = str(cls.POLYMARKET_DATA_HOST)
+        runtime.live.polymarket.market_ws_url = str(cls.POLYMARKET_MARKET_WS_URL)
+        runtime.live.polymarket.user_ws_url = str(cls.POLYMARKET_USER_WS_URL)
+        runtime.live.polymarket.chain_id = int(cls.POLYMARKET_CHAIN_ID)
+        runtime.live.polymarket.asset_ids = list(cls.POLYMARKET_ASSET_IDS)
+        runtime.live.polymarket.private_key_env = str(cls.POLYMARKET_PRIVATE_KEY_ENV)
+        runtime.live.polymarket.api_key_env = str(cls.POLYMARKET_API_KEY_ENV)
+        runtime.live.polymarket.api_secret_env = str(cls.POLYMARKET_API_SECRET_ENV)
+        runtime.live.polymarket.api_passphrase_env = str(cls.POLYMARKET_API_PASSPHRASE_ENV)
+        runtime.live.polymarket.funder = str(cls.POLYMARKET_FUNDER)
+        runtime.live.polymarket.signature_type = int(cls.POLYMARKET_SIGNATURE_TYPE)
+        runtime.live.polymarket.allow_real_execution = bool(cls.POLYMARKET_ALLOW_REAL_EXECUTION)
         runtime.storage.collector_periodic_enabled = bool(cls.COLLECTOR_PERIODIC_ENABLED)
         runtime.storage.collector_poll_seconds = int(cls.COLLECTOR_POLL_SECONDS)
         runtime.storage.collector_bootstrap_lookback_hours = int(

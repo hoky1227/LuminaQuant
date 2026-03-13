@@ -136,7 +136,7 @@ backtest:
 # ------------------------------------------
 live:
   mode: "paper" # paper|real
-  market_data_source: "committed" # committed|binance_live
+  market_data_source: "committed" # committed|binance_live|external|polymarket_live
   order_state_source: "polling" # polling|user_stream
   shadow_live_enabled: false
   reconciliation_poll_fallback_enabled: true
@@ -172,6 +172,26 @@ live:
   mt5_bridge_python: ""  # WSL: set to Windows python.exe path for bridge mode
   mt5_bridge_script: "scripts/mt5_bridge_worker.py"
   mt5_bridge_use_wslpath: true
+  external:
+    source_kind: "jsonl" # jsonl|parquet|pipe
+    path: ""
+    poll_seconds: 2
+    allow_stale_seconds: 45
+    schema: "market_window_v1" # market_window_v1|ohlcv_1s_v1
+  polymarket:
+    host: "https://clob.polymarket.com"
+    gamma_host: "https://gamma-api.polymarket.com"
+    data_host: "https://data-api.polymarket.com"
+    market_ws_url: "wss://ws-subscriptions-clob.polymarket.com/ws/market"
+    user_ws_url: "wss://ws-subscriptions-clob.polymarket.com/ws/user"
+    asset_ids: []
+    private_key_env: "POLYMARKET_PRIVATE_KEY"
+    api_key_env: "POLYMARKET_API_KEY"
+    api_secret_env: "POLYMARKET_API_SECRET"
+    api_passphrase_env: "POLYMARKET_API_PASSPHRASE"
+    funder: ""
+    signature_type: 0
+    allow_real_execution: false
 
 # ------------------------------------------
 # Optimization (Hyperparameter Tuning)

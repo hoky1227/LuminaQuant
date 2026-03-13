@@ -52,3 +52,46 @@ def test_validate_accepts_binance_live_with_user_stream_on_ccxt_binance():
     raw["live"]["order_state_source"] = "user_stream"
     runtime = build_runtime_config(raw, env={})
     validate_runtime_config(runtime)
+
+
+def test_validate_accepts_external_source_with_path():
+    raw = _base_raw()
+    raw["live"]["market_data_source"] = "external"
+    raw["live"]["external"] = {
+        "source_kind": "jsonl",
+        "path": "var/data/external/live_windows.jsonl",
+        "schema": "market_window_v1",
+    }
+    runtime = build_runtime_config(raw, env={})
+    validate_runtime_config(runtime)
+
+
+def test_validate_rejects_external_source_without_path():
+    raw = _base_raw()
+    raw["live"]["market_data_source"] = "external"
+    raw["live"]["external"] = {"source_kind": "jsonl", "path": "", "schema": "market_window_v1"}
+    runtime = build_runtime_config(raw, env={})
+    with pytest.raises(ValueError):
+        validate_runtime_config(runtime)
+
+
+def test_validate_accepts_polymarket_live_with_asset_ids():
+    raw = _base_raw()
+    raw["live"]["market_data_source"] = "polymarket_live"
+    raw["live"]["exchange"]["driver"] = "polymarket"
+    raw["live"]["exchange"]["name"] = "polymarket"
+    raw["live"]["polymarket"] = {"asset_ids": ["asset-1"]}
+    runtime = build_runtime_config(raw, env={})
+    validate_runtime_config(runtime)
+
+
+def test_validate_rejects_polymarket_real_mode_in_phase1():
+    raw = _base_raw()
+    raw["live"]["mode"] = "real"
+    raw["live"]["market_data_source"] = "polymarket_live"
+    raw["live"]["exchange"]["driver"] = "polymarket"
+    raw["live"]["exchange"]["name"] = "polymarket"
+    raw["live"]["polymarket"] = {"asset_ids": ["asset-1"], "allow_real_execution": False}
+    runtime = build_runtime_config(raw, env={})
+    with pytest.raises(ValueError):
+        validate_runtime_config(runtime)

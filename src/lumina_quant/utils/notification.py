@@ -1,6 +1,9 @@
 import logging
 
-import requests
+try:
+    import requests
+except Exception:
+    requests = None
 
 
 class NotificationManager:
@@ -24,6 +27,8 @@ class NotificationManager:
         payload = {"chat_id": self.chat_id, "text": message, "parse_mode": "Markdown"}
 
         try:
+            if requests is None:
+                raise RuntimeError("requests dependency is unavailable")
             response = requests.post(url, json=payload, timeout=5)
             if response.status_code != 200:
                 self.logger.error(f"Failed to send Telegram message: {response.text}")

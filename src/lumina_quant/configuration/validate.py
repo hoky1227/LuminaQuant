@@ -105,16 +105,18 @@ def validate_runtime_config(runtime: RuntimeConfig, *, for_live: bool = False) -
     market_data_source = (
         str(getattr(runtime.live, "market_data_source", "committed")).strip().lower()
     )
-    if market_data_source not in {"committed", "binance_live"}:
-        raise ValueError("live.market_data_source must be one of: committed, binance_live.")
+    if market_data_source not in {"committed", "binance_live", "external", "polymarket_live"}:
+        raise ValueError(
+            "live.market_data_source must be one of: committed, binance_live, external, polymarket_live."
+        )
 
     order_state_source = str(getattr(runtime.live, "order_state_source", "polling")).strip().lower()
     if order_state_source not in {"polling", "user_stream"}:
         raise ValueError("live.order_state_source must be one of: polling, user_stream.")
 
     exchange = runtime.live.exchange
-    if exchange.driver not in {"ccxt", "mt5"}:
-        raise ValueError("live.exchange.driver must be 'ccxt' or 'mt5'.")
+    if exchange.driver not in {"ccxt", "mt5", "polymarket"}:
+        raise ValueError("live.exchange.driver must be 'ccxt', 'mt5', or 'polymarket'.")
     if exchange.driver == "mt5":
         system_name = platform.system().lower()
         bridge_python = str(getattr(runtime.live, "mt5_bridge_python", "") or "").strip()
@@ -138,6 +140,39 @@ def validate_runtime_config(runtime: RuntimeConfig, *, for_live: bool = False) -
         raise ValueError(
             "live.order_state_source=user_stream requires live.market_data_source=binance_live."
         )
+    if market_data_source == "external":
+        external = runtime.live.external
+        if str(getattr(external, "source_kind", "")).lower() not in {"jsonl", "parquet", "pipe"}:
+            raise ValueError(
+                "live.external.source_kind must be one of: jsonl, parquet, pipe."
+            )
+        if not str(getattr(external, "path", "") or "").strip():
+            raise ValueError("live.market_data_source=external requires live.external.path.")
+        if str(getattr(external, "schema", "market_window_v1")).lower() not in {
+            "market_window_v1",
+            "ohlcv_1s_v1",
+        }:
+            raise ValueError(
+                "live.external.schema must be one of: market_window_v1, ohlcv_1s_v1."
+            )
+    if market_data_source == "polymarket_live":
+        if str(exchange.driver).lower() != "polymarket":
+            raise ValueError(
+                "live.market_data_source=polymarket_live requires live.exchange.driver='polymarket'."
+            )
+        if order_state_source != "polling":
+            raise ValueError(
+                "live.market_data_source=polymarket_live currently requires live.order_state_source=polling."
+            )
+        asset_ids = list(getattr(runtime.live.polymarket, "asset_ids", []) or [])
+        if not asset_ids:
+            raise ValueError(
+                "live.market_data_source=polymarket_live requires live.polymarket.asset_ids."
+            )
+        if runtime.live.mode == "real" and not bool(getattr(runtime.live.polymarket, "allow_real_execution", False)):
+            raise ValueError(
+                "Polymarket Phase 1 does not support real execution. Use paper mode unless allow_real_execution is explicitly enabled for a later phase."
+            )
     if exchange.position_mode.upper() not in {"ONEWAY", "HEDGE"}:
         raise ValueError("live.exchange.position_mode must be ONEWAY or HEDGE.")
     if exchange.margin_mode not in {"isolated", "cross"}:

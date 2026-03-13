@@ -30,6 +30,7 @@ from lumina_quant.compute.ohlcv_loader import OHLCVFrameLoader
 from lumina_quant.config import BacktestConfig, BaseConfig, LiveConfig, OptimizationConfig
 from lumina_quant.market_data import (
     load_data_dict_from_db,
+    load_data_dict_from_external_root,
     load_data_dict_from_parquet,
     resolve_symbol_csv_path,
     timeframe_to_milliseconds,
@@ -364,6 +365,7 @@ def load_all_data(
     backtest_mode="windowed",
     data_source="auto",
     market_db_path=None,
+    external_data_root=None,
     market_exchange="binance",
     timeframe="1m",
     start_date=None,
@@ -383,6 +385,13 @@ def load_all_data(
     source = str(contract.data_source).strip().lower()
     data = {}
     csv_loader = OHLCVFrameLoader()
+    if source == "external":
+        return load_data_dict_from_external_root(
+            str(external_data_root or market_db_path or csv_dir),
+            symbol_list=[str(item) for item in symbol_list],
+            start_date=start_date,
+            end_date=end_date,
+        )
     use_parquet = bool(market_db_path) and is_parquet_market_data_store(
         str(market_db_path),
         backend=str(MARKET_DB_BACKEND),
@@ -1181,9 +1190,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--data-source",
-        choices=["auto", "csv", "db"],
-        default="auto",
-        help="Market data source for optimization (auto: DB then CSV fallback).",
+        choices=["auto", "csv", "db", "external"],
+        default=str(getattr(BacktestConfig, "DATA_SOURCE", "auto") or "auto"),
+        help="Market data source for optimization (auto: DB then CSV fallback; external: user-managed CSV/parquet root).",
+    )
+    parser.add_argument(
+        "--external-data-root",
+        default="",
+        help="External market-data root for --data-source external (canonical CSV/parquet OHLCV).",
     )
     parser.add_argument(
         "--market-db-path",
@@ -1320,6 +1334,7 @@ def main(argv: list[str] | None = None) -> int:
                 backtest_mode="windowed",
                 data_source=contract.data_source,
                 market_db_path=args.market_db_path,
+                external_data_root=args.external_data_root,
                 market_exchange=args.market_exchange,
                 timeframe=str(args.base_timeframe),
                 start_date=BASE_START,

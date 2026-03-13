@@ -22,14 +22,40 @@ dependencies = [
 lq = "lumina_quant.cli.main:main"
 
 [project.optional-dependencies]
+backtest = [
+    # no extra runtime dependencies beyond project base dependencies
+]
 optimize = [
     "numba>=0.64.0",
     "optuna>=4.7.0",
 ]
-live = [
+live-binance = [
     "ccxt>=4.5.35",
     "requests>=2.31.0",
     "websockets>=12.0",
+]
+live-mt5 = [
+    "MetaTrader5>=5.0.0; platform_system == 'Windows'",
+]
+live-polymarket = [
+    "py-clob-client",
+    "requests>=2.31.0",
+    "websockets>=12.0",
+]
+live = [
+    # compatibility alias for existing documentation/commands
+    "ccxt>=4.5.35",
+    "requests>=2.31.0",
+    "websockets>=12.0",
+]
+all = [
+    "numba>=0.64.0",
+    "optuna>=4.7.0",
+    "ccxt>=4.5.35",
+    "py-clob-client",
+    "requests>=2.31.0",
+    "websockets>=12.0",
+    "MetaTrader5>=5.0.0; platform_system == 'Windows'",
 ]
 gpu = [
     "cudf-polars-cu12>=25.8.0; platform_system == 'Linux' and platform_machine == 'x86_64'",

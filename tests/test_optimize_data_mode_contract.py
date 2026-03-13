@@ -54,3 +54,30 @@ def test_optimize_raw_first_passes_data_mode_to_owner_loader(monkeypatch):
 
     assert "BTC/USDT" in loaded
     assert captured.get("data_mode") == "raw-first"
+
+
+def test_optimize_external_source_uses_external_loader(monkeypatch):
+    called: dict[str, object] = {}
+
+    def _loader(root_path, *, symbol_list, start_date=None, end_date=None):
+        called["root_path"] = root_path
+        called["symbol_list"] = list(symbol_list)
+        called["start_date"] = start_date
+        called["end_date"] = end_date
+        return {"BTC/USDT": object()}
+
+    monkeypatch.setattr(optimize, "load_data_dict_from_external_root", _loader)
+    loaded = optimize.load_all_data(
+        "data",
+        ["BTC/USDT"],
+        data_mode="legacy",
+        backtest_mode="windowed",
+        data_source="external",
+        market_db_path="data/market_parquet",
+        external_data_root="var/data/external/backtest",
+        market_exchange="binance",
+        timeframe="1s",
+    )
+
+    assert "BTC/USDT" in loaded
+    assert called["root_path"] == "var/data/external/backtest"

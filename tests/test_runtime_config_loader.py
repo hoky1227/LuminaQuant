@@ -5,7 +5,7 @@ import tempfile
 import textwrap
 import unittest
 
-from lumina_quant.configuration.loader import load_runtime_config
+from lumina_quant.configuration.loader import build_runtime_config, load_runtime_config
 
 
 class TestRuntimeConfigLoader(unittest.TestCase):
@@ -16,6 +16,9 @@ class TestRuntimeConfigLoader(unittest.TestCase):
             """
             trading:
               symbols: ["BTC/USDT"]
+            execution:
+              gpu_mode: "gpu"
+              compute_backend: "gpu"
             live:
               mode: "paper"
               exchange:
@@ -191,6 +194,9 @@ class TestRuntimeConfigLoader(unittest.TestCase):
             """
             trading:
               symbols: ["BTC/USDT"]
+            execution:
+              gpu_mode: "gpu"
+              compute_backend: "gpu"
             live:
               mode: "paper"
               exchange:
@@ -206,7 +212,24 @@ class TestRuntimeConfigLoader(unittest.TestCase):
             fp.write(yaml_text)
             path = fp.name
         try:
-            runtime = load_runtime_config(config_path=path, env=os.environ)
+            runtime = build_runtime_config(
+                {
+                    "trading": {"symbols": ["BTC/USDT"]},
+                    "execution": {"gpu_mode": "gpu", "compute_backend": "gpu"},
+                    "live": {
+                        "mode": "paper",
+                        "exchange": {
+                            "driver": "ccxt",
+                            "name": "binance",
+                            "market_type": "future",
+                            "position_mode": "HEDGE",
+                            "margin_mode": "isolated",
+                            "leverage": 2,
+                        },
+                    },
+                },
+                env={},
+            )
             self.assertEqual(runtime.execution.gpu_mode, "gpu")
             self.assertEqual(runtime.execution.compute_backend, "gpu")
         finally:

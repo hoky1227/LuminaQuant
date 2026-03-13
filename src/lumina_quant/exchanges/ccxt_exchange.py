@@ -1,6 +1,10 @@
 from typing import Any, cast
 
-import ccxt
+try:
+    import ccxt
+except Exception:
+    ccxt = None
+
 from lumina_quant.core.protocols import ExchangeInterface
 
 
@@ -20,6 +24,9 @@ class CCXTExchange(ExchangeInterface):
         return cast(Any, self.exchange)
 
     def connect(self):
+        if ccxt is None:
+            raise RuntimeError("ccxt dependency is required for CCXTExchange.")
+
         exchange_config = getattr(self.config, "EXCHANGE", None)
         if not isinstance(exchange_config, dict):
             raise ValueError("EXCHANGE config must be a dictionary with name/market_type fields.")

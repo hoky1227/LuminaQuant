@@ -1,5 +1,6 @@
-from .ccxt_exchange import CCXTExchange
-from .mt5_exchange import MT5Exchange
+"""Exchange driver factory with lazy imports for optional dependencies."""
+
+from __future__ import annotations
 
 
 def get_exchange(config: object):
@@ -10,7 +11,18 @@ def get_exchange(config: object):
     driver = str(exchange_config.get("driver", "")).strip().lower()
 
     if driver == "ccxt":
+        from .ccxt_exchange import CCXTExchange
+
         return CCXTExchange(config)
     if driver == "mt5":
+        from .mt5_exchange import MT5Exchange
+
         return MT5Exchange(config)
+    if driver == "polymarket":
+        from .polymarket_exchange import PolymarketExchange
+
+        return PolymarketExchange(config)
     raise ValueError(f"Unknown exchange driver: {driver}")
+
+
+__all__ = ["get_exchange"]

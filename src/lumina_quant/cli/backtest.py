@@ -20,9 +20,16 @@ from lumina_quant.backtesting.data_windowed_parquet import HistoricParquetWindow
 from lumina_quant.backtesting.execution_sim import SimulatedExecutionHandler
 from lumina_quant.backtesting.portfolio_backtest import Portfolio
 from lumina_quant.config import BacktestConfig, BaseConfig, LiveConfig, OptimizationConfig
-from lumina_quant.data_collector import auto_collect_market_data
+try:
+    from lumina_quant.data_collector import auto_collect_market_data
+except Exception:
+    def auto_collect_market_data(*args, **kwargs):
+        raise RuntimeError(
+            "auto_collect_market_data is unavailable in this distribution."
+        )
 from lumina_quant.market_data import (
     load_data_dict_from_db,
+    load_data_dict_from_external_root,
     load_data_dict_from_parquet,
     normalize_timeframe_token,
 )
@@ -255,6 +262,7 @@ def _load_data_dict(
     market_exchange,
     *,
     base_timeframe,
+    external_data_root=None,
     data_mode="legacy",
     backtest_mode="windowed",
     auto_collect_db=True,
@@ -269,6 +277,19 @@ def _load_data_dict(
     source = str(contract.data_source).strip().lower()
     if source == "csv":
         return None
+    if source == "external":
+        data_dict = load_data_dict_from_external_root(
+            str(external_data_root or market_db_path),
+            symbol_list=list(SYMBOL_LIST),
+            start_date=START_DATE,
+            end_date=END_DATE,
+        )
+        if data_dict:
+            return data_dict
+        raise RuntimeError(
+            "No market data found in external root for requested symbols. "
+            "Provide canonical CSV/parquet OHLCV files."
+        )
 
     use_parquet = is_parquet_market_data_store(
         str(market_db_path),
@@ -542,6 +563,7 @@ def run(
     market_db_path=MARKET_DB_PATH,
     market_exchange=MARKET_DB_EXCHANGE,
     base_timeframe=BASE_TIMEFRAME,
+    external_data_root="",
     auto_collect_db=AUTO_COLLECT_DB,
     run_id="",
     low_memory=None,
@@ -596,6 +618,7 @@ def run(
                 "data_source": str(resolved_data_source),
                 "data_mode": str(resolved_data_mode),
                 "market_db_path": str(market_db_path),
+                "external_data_root": str(external_data_root or ""),
                 "market_exchange": str(market_exchange),
                 "base_timeframe": str(timeframe_token),
                 "strategy_timeframe": str(BaseConfig.TIMEFRAME),
@@ -628,6 +651,7 @@ def run(
                 market_db_path,
                 market_exchange,
                 base_timeframe=str(timeframe_token),
+                external_data_root=str(external_data_root or ""),
                 data_mode=resolved_data_mode,
                 backtest_mode=resolved_backtest_mode,
                 auto_collect_db=bool(auto_collect_db),
@@ -755,14 +779,19 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--data-source",
-        choices=["auto", "csv", "db"],
-        default="auto",
-        help="Market data source (auto: DB first then CSV fallback).",
+        choices=["auto", "csv", "db", "external"],
+        default=str(getattr(BacktestConfig, "DATA_SOURCE", "auto") or "auto"),
+        help="Market data source (auto: DB first then CSV fallback; external: user-managed CSV/parquet root).",
     )
     parser.add_argument(
         "--market-db-path",
         default=MARKET_DB_PATH,
         help="Market data parquet root path.",
+    )
+    parser.add_argument(
+        "--external-data-root",
+        default="",
+        help="External market-data root for --data-source external (canonical CSV/parquet OHLCV).",
     )
     parser.add_argument(
         "--market-exchange",
@@ -829,6 +858,7 @@ def main(argv: list[str] | None = None) -> int:
             market_db_path=args.market_db_path,
             market_exchange=args.market_exchange,
             base_timeframe=_normalize_timeframe_or_default(args.base_timeframe, "1s"),
+            external_data_root=args.external_data_root,
             auto_collect_db=(not bool(args.no_auto_collect_db) and bool(AUTO_COLLECT_DB)),
             run_id=args.run_id,
             low_memory=args.low_memory,

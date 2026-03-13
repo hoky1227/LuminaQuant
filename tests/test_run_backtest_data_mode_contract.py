@@ -66,3 +66,40 @@ def test_raw_first_rejects_non_windowed_backtest_mode():
             default_backtest_mode="windowed",
             default_data_source="auto",
         )
+
+
+def test_external_source_uses_external_loader(monkeypatch):
+    called: dict[str, object] = {}
+    monkeypatch.setattr(run_backtest, "SYMBOL_LIST", ["BTC/USDT"])
+
+    def _loader(root_path, *, symbol_list, start_date=None, end_date=None):
+        called["root_path"] = root_path
+        called["symbol_list"] = list(symbol_list)
+        called["start_date"] = start_date
+        called["end_date"] = end_date
+        return {"BTC/USDT": object()}
+
+    monkeypatch.setattr(run_backtest, "load_data_dict_from_external_root", _loader)
+    loaded = run_backtest._load_data_dict(
+        "external",
+        "data/market_parquet",
+        "binance",
+        base_timeframe="1s",
+        external_data_root="var/data/external/backtest",
+        data_mode="legacy",
+        backtest_mode="windowed",
+        auto_collect_db=False,
+    )
+
+    assert "BTC/USDT" in loaded
+    assert called["root_path"] == "var/data/external/backtest"
+
+
+def test_external_single_file_rejects_multi_symbol(tmp_path):
+    path = tmp_path / "single.parquet"
+    path.write_bytes(b"stub")
+    with pytest.raises(RuntimeError):
+        run_backtest.load_data_dict_from_external_root(
+            str(path),
+            symbol_list=["BTC/USDT", "ETH/USDT"],
+        )

@@ -7,7 +7,9 @@ This package intentionally avoids eager imports so optional dependencies
 __all__ = [
     "BinanceLiveDataHandler",
     "BinanceWebSocketDataHandler",
+    "ExternalWindowDataHandler",
     "LiveDataHandler",
     "LiveExecutionHandler",
     "LiveTrader",
+    "PolymarketLiveDataHandler",
 ]

@@ -27,6 +27,8 @@
 | **[8GB Baseline Quickstart](docs/QUICKSTART_8GB_BASELINE.md)** | Minimal install/smoke/replay/shadow-live/dashboard/safe-stop/cleanup flow. |
 | **[Dashboard Realtime Report](docs/DASHBOARD_REALTIME_ANALYSIS_REPORT.md)** | Analysis + implementation report for live-refresh dashboard behavior. |
 | **[Exchange Guide](docs/EXCHANGES.md)** | Detailed setup for **Binance** (CCXT) and **MetaTrader 5**. |
+| **[External Data Guide](docs/EXTERNAL_DATA.md)** | Canonical contracts for user-managed backtest/live data. |
+| **[Minimal Installs](docs/MINIMAL_INSTALLS.md)** | Persona-oriented extras for backtest-only / live-only installs. |
 | **[Trading Manual](docs/TRADING_MANUAL.md)** | **How-To**: Buy/Sell, Leverage, TP/SL, Trailing Stops. |
 | **[Performance Metrics](docs/METRICS.md)** | Explanation of Sharpe, Sortino, Alpha, Beta, etc. |
 | **[Developer API](docs/API.md)** | How to write Strategies and extend the system. |
@@ -100,8 +102,8 @@ cd Quants-agent
 # Ensure compatible Python (project requires < 3.14)
 uv python pin 3.13
 
-# Install base/runtime dependencies
-uv sync --extra optimize --extra dev --extra live
+# Example full local maintainer install
+uv sync --extra backtest --extra optimize --extra live-binance --extra live-mt5 --extra live-polymarket --extra dashboard --extra dev
 
 # (Optional) GPU runtime on Linux x86_64 + CUDA 12
 uv sync --extra gpu
@@ -109,8 +111,11 @@ uv sync --extra gpu
 # Verify install and tests
 uv run python scripts/verify_install.py
 
-# (Optional) For MT5 Support
-uv sync --extra mt5
+# Example minimal profiles
+uv sync --extra backtest --extra dev
+uv sync --extra live-binance --extra dev
+uv sync --extra live-mt5 --extra dev
+uv sync --extra live-polymarket --extra dev
 ```
 
 ### 1-Minute Minimum Viable Run (No DB, No API Keys)
@@ -138,7 +143,7 @@ trading:
 *   **Binance (Crypto)**: Set `driver: "ccxt"`
 *   **MetaTrader 5 (Forex/Stocks)**: Set `driver: "mt5"`
 
-*👉 See [Exchange Guide](docs/EXCHANGES.md) for detailed credentials setup.*
+*👉 See [Exchange Guide](docs/EXCHANGES.md), [External Data Guide](docs/EXTERNAL_DATA.md), and [Minimal Installs](docs/MINIMAL_INSTALLS.md) for provider setup, custom data formats, and minimal dependency profiles.*
 
 ### Public vs Private Repository Scope
 

@@ -52,10 +52,10 @@ def normalize_data_mode(value: str | None, default: str = "raw-first") -> str:
 
 def normalize_data_source(value: str | None, default: str = "auto") -> str:
     token = str(value or default).strip().lower()
-    if token in {"auto", "db", "csv"}:
+    if token in {"auto", "db", "csv", "external"}:
         return token
     raise RawFirstDataMissingError(
-        f"Unsupported data-source '{value}'. Expected one of: auto, db, csv."
+        f"Unsupported data-source '{value}'. Expected one of: auto, db, csv, external."
     )
 
 
@@ -88,6 +88,10 @@ def resolve_data_mode_contract(
         if resolved_data_source == "csv":
             raise RawFirstDataMissingError(
                 "Invalid combination: --data-mode raw-first cannot be used with --data-source csv."
+            )
+        if resolved_data_source == "external":
+            raise RawFirstDataMissingError(
+                "Invalid combination: --data-mode raw-first cannot be used with --data-source external."
             )
 
     return ResolvedDataContract(

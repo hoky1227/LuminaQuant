@@ -26,6 +26,8 @@
 | **[스코어 설정 가이드](docs/kr/SCORING_CONFIG_GUIDE.md)** | 리서치/숏리스트/최적화 스크립트 공용 score-config 템플릿 사용법. |
 | **[대시보드 실시간 분석 리포트](docs/DASHBOARD_REALTIME_ANALYSIS_REPORT.md)** | 실시간 갱신 동작 개선 분석 및 구현 결과. |
 | **[거래소 가이드](docs/kr/EXCHANGES.md)** | **바이낸스(Binance)** (CCXT) 및 **MetaTrader 5 (MT5)** 상세 설정법. |
+| **[외부 데이터 가이드](docs/kr/EXTERNAL_DATA.md)** | 사용자 보유 데이터를 백테스트/라이브에 연결하는 canonical contract 설명. |
+| **[최소 설치 프로필](docs/kr/MINIMAL_INSTALLS.md)** | 백테스트 전용 / 라이브 전용 설치를 위한 persona-oriented extras. |
 | **[거래 매뉴얼](docs/kr/TRADING_MANUAL.md)** | **실전 운용법**: 매수/매도, 레버리지, TP/SL, 트레일링 스탑. |
 | **[성과 지표](docs/kr/METRICS.md)** | Sharpe, Sortino, Alpha, Beta 등 지표에 대한 설명. |
 | **[개발자 API](docs/kr/API.md)** | 전략 작성법 및 시스템 확장 가이드. |
@@ -101,8 +103,8 @@ cd Quants-agent
 # 프로젝트 Python 버전 고정 (< 3.14)
 uv python pin 3.13
 
-# 기본/런타임 의존성 설치
-uv sync --extra optimize --extra dev --extra live
+# 예시: 전체 로컬 개발 설치
+uv sync --extra backtest --extra optimize --extra live-binance --extra live-mt5 --extra live-polymarket --extra dashboard --extra dev
 
 # (선택 사항) Linux x86_64 + CUDA 12 GPU 런타임
 uv sync --extra gpu
@@ -110,8 +112,11 @@ uv sync --extra gpu
 # 설치/테스트 기본 검증
 uv run python scripts/verify_install.py
 
-# (선택 사항) MT5 지원을 위한 설치
-uv sync --extra mt5
+# 예시: 최소 설치 프로필
+uv sync --extra backtest --extra dev
+uv sync --extra live-binance --extra dev
+uv sync --extra live-mt5 --extra dev
+uv sync --extra live-polymarket --extra dev
 ```
 
 ### 1분 최소 실행 (DB/API 키 불필요)
@@ -139,7 +144,7 @@ trading:
 *   **바이낸스 (암호화폐)**: `driver: "ccxt"` 설정
 *   **MetaTrader 5 (FX/주식)**: `driver: "mt5"` 설정
 
-*👉 상세한 인증 설정 방법은 [거래소 가이드](docs/kr/EXCHANGES.md)를 참고하세요.*
+*👉 상세한 인증/제공자 설정은 [거래소 가이드](docs/kr/EXCHANGES.md), [외부 데이터 가이드](docs/kr/EXTERNAL_DATA.md), [최소 설치 프로필](docs/kr/MINIMAL_INSTALLS.md)을 참고하세요.*
 
 ### Public / Private 저장소 범위
 

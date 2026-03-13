@@ -52,6 +52,28 @@ class MyStrategy(Strategy):
         _ = state
 ```
 
+### Optional richer strategy contract
+
+Strategies can now declare the canonical inputs they require without depending on provider-specific raw payloads.
+
+```python
+class MyContextStrategy(Strategy):
+    required_inputs = ("market_window",)
+    required_features = ("feature_points",)
+    preferred_contract = "context"  # market_event | market_window | context
+
+    def calculate_signals_context(self, context):
+        event = context.event
+        aggregator = context.aggregator
+        feature_lookup = context.feature_lookup
+        _ = (event, aggregator, feature_lookup)
+```
+
+Dispatch order is:
+1. `calculate_signals_context(context)` when `preferred_contract == "context"`
+2. otherwise `calculate_signals_window(event, aggregator)`
+3. otherwise legacy `calculate_signals(event)`
+
 ## 2. Data Handler API
 
 The `DataHandler` provides methods to access market data during backtests and live trading.
@@ -60,6 +82,8 @@ The `DataHandler` provides methods to access market data during backtests and li
 - `get_latest_bars(symbol, N=1)`: Returns list of last N tuples.
 - `get_latest_bar_value(symbol, val_type)`: Returns a single float value (e.g. "close", "high").
 - `get_latest_bars_values(symbol, val_type, N=1)`: Returns list of floats.
+
+External data can be supplied through canonical OHLCV CSV/parquet roots (backtest/optimize) or canonical `MARKET_WINDOW` / 1s OHLCV external live adapters. See `docs/EXTERNAL_DATA.md`.
 
 ## 3. Exchange Interface (`ExchangeInterface`)
 
@@ -86,7 +110,7 @@ class ExchangeInterface(ABC):
     def cancel_order(self, order_id, symbol=None): pass
 ```
 
-See `lumina_quant/exchanges/` for `CCXTExchange` and `MT5Exchange` implementations.
+See `lumina_quant/exchanges/` for `CCXTExchange`, `MT5Exchange`, and the Phase 1 `PolymarketExchange` implementation.
 
 ## 4. Runtime Config Layer
 
