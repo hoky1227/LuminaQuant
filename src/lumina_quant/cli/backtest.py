@@ -28,7 +28,49 @@ from lumina_quant.market_data import (
     normalize_timeframe_token,
 )
 from lumina_quant.storage.parquet import is_parquet_market_data_store
-from lumina_quant.strategies import registry as strategy_registry
+from lumina_quant.strategy import Strategy
+
+try:
+    from lumina_quant.strategies import registry as _strategy_registry
+except Exception:
+    class _PublicStubStrategy(Strategy):
+        def __init__(self, *args, **kwargs):
+            raise RuntimeError("Strategy modules are unavailable in this distribution.")
+
+        def calculate_signals(self, event):
+            _ = event
+            return None
+
+    class _PublicStrategyRegistry:
+        DEFAULT_STRATEGY_NAME = "PublicStubStrategy"
+
+        @staticmethod
+        def get_strategy_map() -> dict[str, type[Strategy]]:
+            return {"PublicStubStrategy": _PublicStubStrategy}
+
+        @staticmethod
+        def resolve_strategy_class(
+            name: str,
+            default_name: str | None = None,
+        ) -> type[Strategy]:
+            _ = (name, default_name)
+            return _PublicStubStrategy
+
+        @staticmethod
+        def get_default_strategy_params(strategy_name: str) -> dict[str, Any]:
+            _ = strategy_name
+            return {}
+
+        @staticmethod
+        def resolve_strategy_params(
+            strategy_name: str,
+            overrides: dict[str, Any] | None = None,
+        ) -> dict[str, Any]:
+            _ = strategy_name
+            return dict(overrides or {})
+
+    _strategy_registry = _PublicStrategyRegistry()
+
 from lumina_quant.utils.audit_store import AuditStore
 
 # ==========================================
@@ -59,6 +101,7 @@ MARKET_DB_BACKEND = BaseConfig.STORAGE_BACKEND
 
 
 def _resolve_strategy_setup(*, log: bool) -> tuple[type, dict[str, Any]]:
+    strategy_registry = _strategy_registry
     requested_strategy_name = str(OptimizationConfig.STRATEGY_NAME or "").strip()
     strategy_cls = strategy_registry.resolve_strategy_class(
         requested_strategy_name,
