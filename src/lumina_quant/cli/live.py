@@ -5,7 +5,10 @@ import os
 
 from lumina_quant.backtesting.cli_contract import RawFirstDataMissingError
 from lumina_quant.backtesting.portfolio_backtest import Portfolio
-from lumina_quant.cli._strategy_registry_fallback import load_strategy_registry
+from lumina_quant.cli._strategy_registry_fallback import (
+    import_private_strategy_registry,
+    load_strategy_registry,
+)
 from lumina_quant.config import LiveConfig
 from lumina_quant.core.market_window_contract import MarketWindowContractError
 from lumina_quant.live_selection import (
@@ -28,7 +31,7 @@ def _runtime_classes():
 
 def _strategy_helpers():
     registry = load_strategy_registry(
-        lambda: __import__("lumina_quant.strategies", fromlist=["DEFAULT_STRATEGY_NAME", "get_live_strategy_map", "resolve_strategy_class"])
+        import_private_strategy_registry
     )
     default_name = getattr(registry, "DEFAULT_STRATEGY_NAME", "PublicStubStrategy")
 

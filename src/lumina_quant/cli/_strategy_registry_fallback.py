@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from importlib import import_module
 from typing import Any
 
 from lumina_quant.strategy import Strategy
@@ -88,3 +89,8 @@ def load_strategy_registry(importer: Callable[[], Any]) -> Any:
         return importer()
     except Exception:
         return PublicStrategyRegistry()
+
+
+def import_private_strategy_registry() -> Any:
+    """Import the private/public strategy registry module when available."""
+    return import_module("lumina_quant.strategies").registry

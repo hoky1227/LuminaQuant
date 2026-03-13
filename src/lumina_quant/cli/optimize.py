@@ -26,7 +26,10 @@ from lumina_quant.backtesting.data import HistoricCSVDataHandler
 from lumina_quant.backtesting.data_windowed_parquet import HistoricParquetWindowedDataHandler
 from lumina_quant.backtesting.execution_sim import SimulatedExecutionHandler
 from lumina_quant.backtesting.portfolio_backtest import Portfolio
-from lumina_quant.cli._strategy_registry_fallback import load_strategy_registry
+from lumina_quant.cli._strategy_registry_fallback import (
+    import_private_strategy_registry,
+    load_strategy_registry,
+)
 from lumina_quant.compute.ohlcv_loader import OHLCVFrameLoader
 from lumina_quant.config import BacktestConfig, BaseConfig, LiveConfig, OptimizationConfig
 from lumina_quant.market_data import (
@@ -45,9 +48,7 @@ from lumina_quant.storage.parquet import (
 )
 from lumina_quant.utils.audit_store import AuditStore
 
-_strategy_registry = load_strategy_registry(
-    lambda: __import__("lumina_quant.strategies", fromlist=["registry"]).registry
-)
+_strategy_registry = None
 
 def _auto_collect_market_data(*args, **kwargs):
     try:
@@ -129,6 +130,9 @@ PROFILE_TOTALS = {
 
 
 def _get_strategy_registry():
+    global _strategy_registry
+    if _strategy_registry is None:
+        _strategy_registry = load_strategy_registry(import_private_strategy_registry)
     return _strategy_registry
 
 
@@ -1121,7 +1125,6 @@ def main(argv: list[str] | None = None) -> int:
     global ACTIVE_DATA_SOURCE, ACTIVE_DATA_MODE
     global ACTIVE_MARKET_DB_PATH, ACTIVE_MARKET_EXCHANGE, ACTIVE_BASE_TIMEFRAME
     global PARQUET_MODE, DATA_DICT, PARQUET_REPO
-    _initialize_optimize_runtime_state(log=False)
 
     parser = argparse.ArgumentParser(description="Run LuminaQuant walk-forward optimization.")
     parser.add_argument(
@@ -1133,13 +1136,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--n-trials",
         type=int,
-        default=OPTUNA_TRIALS,
+        default=None,
         help="Optuna trial count per fold when OPTUNA is selected.",
     )
     parser.add_argument(
         "--max-workers",
         type=int,
-        default=MAX_WORKERS,
+        default=None,
         help="Worker process count for grid search.",
     )
     parser.add_argument(
@@ -1205,6 +1208,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Disable automatic DB market-data collection before optimization load.",
     )
     args = parser.parse_args(argv)
+    _initialize_optimize_runtime_state(log=False)
+    if args.n_trials is None:
+        args.n_trials = int(OPTUNA_TRIALS)
+    if args.max_workers is None:
+        args.max_workers = int(MAX_WORKERS)
     args.base_timeframe = _enforce_1s_base_timeframe(str(args.base_timeframe))
     try:
         contract = resolve_data_contract(

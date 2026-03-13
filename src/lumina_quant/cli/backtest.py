@@ -20,7 +20,10 @@ from lumina_quant.backtesting.data import HistoricCSVDataHandler
 from lumina_quant.backtesting.data_windowed_parquet import HistoricParquetWindowedDataHandler
 from lumina_quant.backtesting.execution_sim import SimulatedExecutionHandler
 from lumina_quant.backtesting.portfolio_backtest import Portfolio
-from lumina_quant.cli._strategy_registry_fallback import load_strategy_registry
+from lumina_quant.cli._strategy_registry_fallback import (
+    import_private_strategy_registry,
+    load_strategy_registry,
+)
 from lumina_quant.config import BacktestConfig, BaseConfig, LiveConfig, OptimizationConfig
 from lumina_quant.market_data import (
     load_data_dict_from_db,
@@ -31,9 +34,14 @@ from lumina_quant.market_data import (
 from lumina_quant.storage.parquet import is_parquet_market_data_store
 from lumina_quant.utils.audit_store import AuditStore
 
-_strategy_registry = load_strategy_registry(
-    lambda: __import__("lumina_quant.strategies", fromlist=["registry"]).registry
-)
+_strategy_registry = None
+
+
+def _get_strategy_registry():
+    global _strategy_registry
+    if _strategy_registry is None:
+        _strategy_registry = load_strategy_registry(import_private_strategy_registry)
+    return _strategy_registry
 
 # ==========================================
 # CONFIGURATION FROM YAML
@@ -63,7 +71,7 @@ MARKET_DB_BACKEND = BaseConfig.STORAGE_BACKEND
 
 
 def _resolve_strategy_setup(*, log: bool) -> tuple[type, dict[str, Any]]:
-    strategy_registry = _strategy_registry
+    strategy_registry = _get_strategy_registry()
     requested_strategy_name = str(OptimizationConfig.STRATEGY_NAME or "").strip()
     strategy_cls = strategy_registry.resolve_strategy_class(
         requested_strategy_name,
