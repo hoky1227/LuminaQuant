@@ -23,6 +23,7 @@ def _portfolio(*, equity: float, day_start: float, rolling_loss: float, frozen: 
         def __init__(self):
             self.current_holdings = {"total": equity, "BTC/USDT": 1000.0}
             self.current_positions = {"BTC/USDT": 1.0}
+            self.current_position_legs = {}
             self.day_start_equity = day_start
             self.circuit_breaker_tripped = False
             self.trading_frozen = frozen
@@ -79,3 +80,41 @@ def test_risk_manager_blocks_new_entries_during_trade_freeze():
 
     assert passed is False
     assert "freeze" in reason.lower()
+
+
+def test_risk_manager_blocks_hedge_leg_when_side_aware_exposure_exceeds_cap():
+    manager = RiskManager(_Config)
+    portfolio = _portfolio(equity=10000.0, day_start=10000.0, rolling_loss=0.0)
+    portfolio.current_positions = {"BTC/USDT": 0.0}
+    portfolio.current_position_legs = {"BTC/USDT": {"LONG": 10.0, "SHORT": 10.0}}
+    order = SimpleNamespace(
+        symbol="BTC/USDT",
+        quantity=10.0,
+        direction="BUY",
+        position_side="LONG",
+        reduce_only=False,
+    )
+
+    passed, reason = manager.check_order(order, current_price=100.0, portfolio=portfolio)
+
+    assert passed is False
+    assert "exposure" in reason.lower()
+
+
+def test_risk_manager_allows_side_aware_reduce_of_short_leg_within_cap():
+    manager = RiskManager(_Config)
+    portfolio = _portfolio(equity=10000.0, day_start=10000.0, rolling_loss=0.0)
+    portfolio.current_positions = {"BTC/USDT": 0.0}
+    portfolio.current_position_legs = {"BTC/USDT": {"LONG": 15.0, "SHORT": 5.0}}
+    order = SimpleNamespace(
+        symbol="BTC/USDT",
+        quantity=2.0,
+        direction="BUY",
+        position_side="SHORT",
+        reduce_only=False,
+    )
+
+    passed, reason = manager.check_order(order, current_price=100.0, portfolio=portfolio)
+
+    assert passed is True
+    assert reason == "Passed"

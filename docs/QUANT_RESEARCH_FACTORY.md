@@ -82,6 +82,8 @@ Shortlist JSON now includes:
 uv run python scripts/run_research_pipeline.py --dry-run
 ```
 
+Dry-run prints the candidate count and exits without writing manifest/report files.
+
 ### 4) Alias command
 
 ```bash

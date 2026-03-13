@@ -61,6 +61,9 @@ PROTECTED_PATHS: tuple[str, ...] = (
     "scripts/sync_binance_ohlcv.py",
     "scripts/research/rebuild_exact_window_registry_from_logs.py",
     "scripts/research/refresh_exact_window_bundle.py",
+    "scripts/run_research_pipeline.py",
+    "scripts/run_research_hurdle.py",
+    "scripts/run_bulk_research.py",
     "scripts/research/run_llm_alpha_pipeline.py",
     "scripts/research/write_exact_window_deployment_combo.py",
     "scripts/collect_strategy_support_data.py",
@@ -91,6 +94,7 @@ PROTECTED_PATHS: tuple[str, ...] = (
     "tests/test_run_llm_alpha_pipeline_script.py",
     "tests/test_run_portfolio_optimization_script.py",
     "tests/test_run_research_candidates_script.py",
+    "tests/test_run_research_pipeline_script.py",
     "tests/test_strategy_alias_compat.py",
     "tests/test_strategy_factory_library.py",
     "tests/test_strategy_support_collection_profiles.py",
@@ -134,6 +138,9 @@ SENSITIVE_PATH_RE = re.compile(
     r"|^scripts/sync_binance_ohlcv\.py$"
     r"|^scripts/research/rebuild_exact_window_registry_from_logs\.py$"
     r"|^scripts/research/refresh_exact_window_bundle\.py$"
+    r"|^scripts/run_research_pipeline\.py$"
+    r"|^scripts/run_research_hurdle\.py$"
+    r"|^scripts/run_bulk_research\.py$"
     r"|^scripts/research/run_llm_alpha_pipeline\.py$"
     r"|^scripts/research/write_exact_window_deployment_combo\.py$"
     r"|^scripts/collect_strategy_support_data\.py$"
@@ -164,6 +171,7 @@ SENSITIVE_PATH_RE = re.compile(
     r"|^tests/test_run_llm_alpha_pipeline_script\.py$"
     r"|^tests/test_run_portfolio_optimization_script\.py$"
     r"|^tests/test_run_research_candidates_script\.py$"
+    r"|^tests/test_run_research_pipeline_script\.py$"
     r"|^tests/test_strategy_alias_compat\.py$"
     r"|^tests/test_strategy_factory_library\.py$"
     r"|^tests/test_strategy_support_collection_profiles\.py$"

@@ -23,6 +23,14 @@ STATE_REJECTED = "REJECTED"
 STATE_TIMEOUT = "TIMEOUT"
 
 TERMINAL_STATES = {STATE_FILLED, STATE_CANCELED, STATE_REJECTED, STATE_TIMEOUT}
+_PROTECTIVE_PARAM_KEYS = {
+    "stopLoss",
+    "takeProfit",
+    "stopLossPrice",
+    "takeProfitPrice",
+    "stopLossTriggerPrice",
+    "takeProfitTriggerPrice",
+}
 
 
 def _is_retryable_exception(exc: Exception) -> bool:
@@ -553,6 +561,19 @@ class LiveExecutionHandler(ExecutionHandler):
             params["timeInForce"] = event.time_in_force
         return params
 
+    def _validate_protective_order_params(self, event, params: dict[str, Any]) -> None:
+        has_protection = any(
+            getattr(event, field, None) is not None for field in ("stop_loss", "take_profit")
+        )
+        if not has_protection:
+            return
+        if any(key in params for key in _PROTECTIVE_PARAM_KEYS):
+            return
+        raise RuntimeError(
+            "Live protective orders require explicit exchange_params mapping. "
+            "Provide stop/take-profit exchange_params or omit stop_loss/take_profit."
+        )
+
     def _estimate_commission(self, fill_price, quantity):
         fee_rate = getattr(
             self.config,
@@ -621,6 +642,7 @@ class LiveExecutionHandler(ExecutionHandler):
             return
 
         params = self._build_exchange_params(event)
+        self._validate_protective_order_params(event, params)
         self.logger.info(
             "Submitting order symbol=%s side=%s qty=%s type=%s client_id=%s",
             event.symbol,

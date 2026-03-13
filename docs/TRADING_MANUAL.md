@@ -70,11 +70,11 @@ There are two ways to implement TP/SL: **Hard** (Exchange-side) and **Soft** (St
 
 #### MetaTrader 5 (MT5)
 You must modify `live_execution.py` or use a custom execution logic to pass `params` into the order.
-Currently, `LiveExecutionHandler` does not automatically attach `params` from `SignalEvent`.
+`LiveExecutionHandler` now **fails fast** if `stop_loss` / `take_profit` are present without explicit exchange-side protective `exchange_params`.
 
 **Recommended Approach**:
 In your strategy, when you want to send an order with TP/SL, interacting directly with the `exchange` object is possible but breaks the backtest abstraction.
-**Better**: The `SignalEvent` class doesn't carry TP/SL data by default. You would typically execute "Hard" TP/SL by customizing the `Portfolio` or `ExecutionHandler`.
+**Better**: pass explicit exchange-native protective params through the order metadata or customize the `Portfolio` / `ExecutionHandler` for the target venue.
 
 **However**, if you interact with the exchange manually in your strategy (Advanced):
 

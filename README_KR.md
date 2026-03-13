@@ -300,7 +300,7 @@ public/main과 private/main은 동일한 저장소 레이아웃을 유지할 수
 
 **전략 팩토리 파이프라인 (후보 + 숏리스트):**
 ```bash
-# dry-run
+# dry-run (후보 수만 출력하고 파일은 쓰지 않음)
 uv run python scripts/run_research_pipeline.py --dry-run
 
 # 후보/숏리스트 생성

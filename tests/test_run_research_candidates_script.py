@@ -62,6 +62,36 @@ def test_run_research_candidates_script_smoke(tmp_path: Path):
     assert (tmp_path / "strategy_factory_report_latest.json").exists()
 
 
+def test_run_research_candidates_script_dry_run_skips_outputs(tmp_path: Path):
+    root = Path(__file__).resolve().parents[1]
+    script = root / "scripts" / "run_research_candidates.py"
+    env = dict(os.environ)
+    env["LQ_GPU_MODE"] = "cpu"
+    env["LQ_CONFIG_PATH"] = str(root / "config.yaml")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--output-dir",
+            str(tmp_path),
+            "--max-candidates",
+            "4",
+            "--dry-run",
+        ],
+        cwd=str(tmp_path),
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "[RESEARCH] dry-run mode: candidate_count=" in result.stdout
+    assert not (tmp_path / "candidate_research_latest.json").exists()
+    assert not (tmp_path / "strategy_factory_report_latest.json").exists()
+
+
 def test_run_research_candidates_script_smoke_with_score_config(tmp_path: Path):
     root = Path(__file__).resolve().parents[1]
     script = root / "scripts" / "run_research_candidates.py"

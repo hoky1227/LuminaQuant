@@ -433,7 +433,7 @@ uv run python scripts/benchmark_backtest.py \
 
 **Strategy Factory Pipeline (manifest + shortlist):**
 ```bash
-# Dry run
+# Dry run (prints candidate count only; writes no files)
 uv run python scripts/run_research_pipeline.py --dry-run
 
 # Generate report + shortlist artifacts

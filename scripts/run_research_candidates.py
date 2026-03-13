@@ -573,8 +573,6 @@ def _render_shortlist_markdown(
 
 def main() -> int:
     args = _build_parser().parse_args()
-    output_dir = Path(str(args.output_dir)).resolve()
-    output_dir.mkdir(parents=True, exist_ok=True)
     score_config: dict[str, Any] | None = None
     if str(args.score_config).strip():
         try:
@@ -595,6 +593,12 @@ def main() -> int:
             timeframes=timeframes,
             max_candidates=max(1, int(args.max_candidates)),
         )
+    if args.dry_run:
+        print(f"[RESEARCH] dry-run mode: candidate_count={len(candidates)}")
+        return 0
+
+    output_dir = Path(str(args.output_dir)).resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     coverage_summary: dict[str, Any] | None = None
     try:

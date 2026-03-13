@@ -445,6 +445,7 @@ class LiveTrader(TradingEngine):
             self.runtime_cache.update_position_legs(legs)
             portfolio = getattr(self, "portfolio", None)
             if portfolio is not None:
+                portfolio.current_position_legs = dict(legs)
                 for symbol, qty in net_positions.items():
                     if symbol in portfolio.current_positions:
                         portfolio.current_positions[symbol] = float(qty)
@@ -556,8 +557,10 @@ class LiveTrader(TradingEngine):
         self.runtime_cache.update_positions(exchange_positions)
         if exchange_position_legs:
             self.runtime_cache.update_position_legs(exchange_position_legs)
+            self.portfolio.current_position_legs = dict(exchange_position_legs)
         else:
             self.runtime_cache.update_position_legs({})
+            self.portfolio.current_position_legs = {}
 
         if str(getattr(self.config, "POSITION_MODE", "")).upper() == "HEDGE":
             dual_leg_signature = tuple(
@@ -669,6 +672,7 @@ class LiveTrader(TradingEngine):
     def _flatten_all_positions(self, *, reason, details=None):
         orders_sent = 0
         legs = {}
+        hedge_mode = str(getattr(self.config, "POSITION_MODE", "")).upper() == "HEDGE"
         if hasattr(self.exchange, "get_all_position_legs"):
             try:
                 legs = self.exchange.get_all_position_legs() or {}
@@ -706,6 +710,18 @@ class LiveTrader(TradingEngine):
                 f"🛑 **Flatten All Triggered**: {reason} (orders={orders_sent})"
             )
             return orders_sent
+
+        if hedge_mode:
+            block_details = {"reason": reason, **dict(details or {})}
+            self.audit_store.log_risk_event(
+                self.run_id,
+                reason="FLATTEN_ALL_BLOCKED_MISSING_LEGS",
+                details=block_details,
+            )
+            self.notifier.send_message(
+                f"⛔ **Flatten blocked**: {reason} (hedge legs unavailable; keeping freeze active)"
+            )
+            return 0
 
         for symbol in self.symbol_list:
             qty = float(self.portfolio.current_positions.get(symbol, 0.0))

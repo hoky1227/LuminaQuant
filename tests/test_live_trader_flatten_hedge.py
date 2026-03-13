@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 from lumina_quant.live.trader import LiveTrader
+from lumina_quant.runtime_cache import RuntimeCache
 
 
 class _Audit:
@@ -26,11 +27,19 @@ class _ExchangeWithLegs:
     def get_all_position_legs():
         return {"BTC/USDT": {"LONG": 1.2, "SHORT": 0.4}}
 
+    @staticmethod
+    def get_all_positions():
+        return {"BTC/USDT": 0.8}
+
 
 class _ExchangeWithoutLegs:
     @staticmethod
     def get_all_position_legs():
         return {}
+
+    @staticmethod
+    def get_all_positions():
+        return {"BTC/USDT": -0.7}
 
 
 def _make_trader(exchange, current_positions):
@@ -38,6 +47,7 @@ def _make_trader(exchange, current_positions):
     trader._audit_closed = True
     trader.exchange = exchange
     trader.symbol_list = ["BTC/USDT"]
+    trader.config = SimpleNamespace(POSITION_MODE="ONE_WAY")
     trader.portfolio = SimpleNamespace(current_positions=current_positions)
     trader.events = queue.Queue()
     trader.audit_store = cast(Any, _Audit())
@@ -69,3 +79,67 @@ def test_flatten_all_positions_fallbacks_to_net_position_when_legs_missing():
     assert event.direction == "BUY"
     assert event.position_side == "SHORT"
     assert float(event.quantity) == 0.7
+
+
+def test_flatten_all_positions_blocks_in_hedge_mode_when_legs_missing():
+    trader = _make_trader(_ExchangeWithoutLegs(), {"BTC/USDT": 0.0})
+    trader.config = SimpleNamespace(POSITION_MODE="HEDGE")
+
+    orders_sent = trader._flatten_all_positions(reason="unit-test")
+
+    assert orders_sent == 0
+    assert trader.events.empty()
+    assert trader.audit_store.events[-1][1] == "FLATTEN_ALL_BLOCKED_MISSING_LEGS"
+
+
+def test_reconcile_positions_syncs_portfolio_position_legs():
+    trader = LiveTrader.__new__(LiveTrader)
+    trader._audit_closed = True
+    trader.logger = cast(Any, SimpleNamespace(error=lambda *args, **kwargs: None))
+    trader.exchange = _ExchangeWithLegs()
+    trader.symbol_list = ["BTC/USDT"]
+    trader.portfolio = SimpleNamespace(current_positions={"BTC/USDT": 0.8})
+    trader.runtime_cache = RuntimeCache()
+    trader.config = SimpleNamespace(POSITION_MODE="HEDGE")
+    trader.audit_store = cast(Any, _Audit())
+    trader.notifier = cast(Any, _Notifier())
+    trader.run_id = "run-test"
+    trader.reconciliation_interval_sec = 1
+    trader._last_reconciliation_monotonic = 0.0
+    trader._last_dual_leg_signature = ()
+    trader._last_drift_signature = ()
+    trader._reconciliation_drift_events = 0
+
+    trader._reconcile_positions(force=True)
+
+    assert trader.runtime_cache.position_legs["BTC/USDT"]["LONG"] == 1.2
+    assert trader.runtime_cache.position_legs["BTC/USDT"]["SHORT"] == 0.4
+    assert trader.portfolio.current_position_legs["BTC/USDT"]["LONG"] == 1.2
+    assert trader.portfolio.current_position_legs["BTC/USDT"]["SHORT"] == 0.4
+
+
+def test_account_update_syncs_portfolio_position_legs_for_hedge_risk_checks():
+    trader = LiveTrader.__new__(LiveTrader)
+    trader._audit_closed = True
+    trader.runtime_cache = RuntimeCache()
+    trader.portfolio = SimpleNamespace(
+        current_positions={"BTC/USDT": 0.0},
+        current_position_legs={},
+    )
+
+    trader._apply_account_update(
+        {
+            "positions": [
+                {"symbol": "BTCUSDT", "position_amount": 1.2, "position_side": "LONG"},
+                {"symbol": "BTCUSDT", "position_amount": -0.4, "position_side": "SHORT"},
+            ],
+            "balances": [],
+            "reason": "ACCOUNT_UPDATE",
+            "exchange_ts_ms": 1_700_000_000_000,
+        }
+    )
+
+    assert trader.runtime_cache.position_legs["BTC/USDT"]["LONG"] == 1.2
+    assert trader.runtime_cache.position_legs["BTC/USDT"]["SHORT"] == 0.4
+    assert trader.portfolio.current_position_legs["BTC/USDT"]["LONG"] == 1.2
+    assert trader.portfolio.current_position_legs["BTC/USDT"]["SHORT"] == 0.4

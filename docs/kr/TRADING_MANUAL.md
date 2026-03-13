@@ -70,6 +70,7 @@ TP/SL을 구현하는 두 가지 방법이 있습니다: **Hard** (거래소 측
 
 #### MetaTrader 5 (MT5)
 주문 실행 시 `params`를 통해 `sl`과 `tp` 값을 전달하면 됩니다.
+`stop_loss` / `take_profit` 값을 넣고도 거래소 측 보호주문 파라미터를 명시하지 않으면, 현재 `LiveExecutionHandler` 는 조용히 무시하지 않고 **즉시 실패(fail-fast)** 합니다.
 
 **고급(Advanced)**: 전략 내에서 거래소 객체를 직접 호출하거나, 커스텀 실행 로직을 구현해야 할 수 있습니다.
 

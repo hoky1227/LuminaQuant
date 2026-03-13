@@ -296,7 +296,14 @@ def select_engine(
     verbose: str | bool | None = None,
 ) -> ComputeEngine:
     """Resolve CPU/GPU mode from args/environment with deterministic fallback."""
-    requested_mode = _normalize_gpu_mode(mode or os.getenv("LQ_GPU_MODE", "gpu"))
+    if mode is None:
+        requested_mode = os.getenv(
+            "LQ_GPU_MODE",
+            os.getenv("LQ__EXECUTION__GPU_MODE", "gpu"),
+        )
+    else:
+        requested_mode = mode
+    requested_mode = _normalize_gpu_mode(requested_mode)
     resolved_device = _parse_gpu_device(device if device is not None else os.getenv("LQ_GPU_DEVICE"))
     resolved_vram_gb = _parse_gpu_vram_gb(
         vram_gb if vram_gb is not None else os.getenv("LQ_GPU_VRAM_GB", "0")

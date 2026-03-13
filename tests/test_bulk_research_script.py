@@ -11,5 +11,5 @@ def test_run_bulk_research_dry_run_smoke():
     cmd = [sys.executable, str(script), "--dry-run", "--timeframes", "1m", "--seeds", "20260221"]
     result = subprocess.run(cmd, cwd=str(root), check=False, capture_output=True, text=True)
     assert result.returncode == 0
-    assert "[PIPELINE] candidate manifest:" in result.stdout
-    assert "[PIPELINE] shortlist json:" in result.stdout
+    assert "[PIPELINE] candidates:" in result.stdout
+    assert "[PIPELINE] dry-run mode: no output files written." in result.stdout

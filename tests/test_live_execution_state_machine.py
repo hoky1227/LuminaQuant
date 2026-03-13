@@ -84,6 +84,16 @@ class MockExchange:
         return {}
 
 
+class MockProtectiveExchange(MockExchange):
+    def __init__(self):
+        super().__init__()
+        self.last_params = None
+
+    def execute_order(self, **kwargs):
+        self.last_params = dict(kwargs.get("params") or {})
+        return super().execute_order(**kwargs)
+
+
 class MockTimeoutExchange:
     """Mock exchange for timeout/cancel flow."""
 
@@ -172,6 +182,40 @@ class TestLiveExecutionStateMachine(unittest.TestCase):
         self.assertEqual(exchange.cancel_calls, 1)
         self.assertEqual(len(handler.tracked_orders), 0)
         self.assertTrue(any(payload["state"] == STATE_TIMEOUT for payload in state_events))
+
+    def test_live_protective_orders_fail_fast_without_exchange_params(self):
+        events = queue.Queue()
+        exchange = MockProtectiveExchange()
+        handler = LiveExecutionHandler(events, MockBars(), MockConfig, exchange)
+
+        order = OrderEvent(
+            "BTC/USDT",
+            "MKT",
+            1.0,
+            "BUY",
+            stop_loss=99.0,
+            take_profit=101.0,
+        )
+        with self.assertRaisesRegex(RuntimeError, "explicit exchange_params mapping"):
+            handler.execute_order(order)
+
+    def test_live_protective_orders_allow_explicit_exchange_params_mapping(self):
+        events = queue.Queue()
+        exchange = MockProtectiveExchange()
+        handler = LiveExecutionHandler(events, MockBars(), MockConfig, exchange)
+
+        order = OrderEvent(
+            "BTC/USDT",
+            "MKT",
+            1.0,
+            "BUY",
+            stop_loss=99.0,
+            take_profit=101.0,
+            metadata={"exchange_params": {"stopLossPrice": 99.0, "takeProfitPrice": 101.0}},
+        )
+        handler.execute_order(order)
+        self.assertEqual(exchange.last_params["stopLossPrice"], 99.0)
+        self.assertEqual(exchange.last_params["takeProfitPrice"], 101.0)
 
 
 if __name__ == "__main__":

@@ -18,6 +18,47 @@ class RiskManager:
         )
         self.auto_flatten_on_breach = bool(getattr(config, "AUTO_FLATTEN_ON_BREACH", False))
 
+    @staticmethod
+    def _portfolio_position_legs(portfolio, symbol) -> dict[str, float] | None:
+        if portfolio is None:
+            return None
+        for attr in ("current_position_legs", "position_legs"):
+            payload = getattr(portfolio, attr, None)
+            if not isinstance(payload, dict):
+                continue
+            legs = payload.get(symbol)
+            if isinstance(legs, dict):
+                return {
+                    "LONG": max(0.0, float(legs.get("LONG", 0.0) or 0.0)),
+                    "SHORT": max(0.0, float(legs.get("SHORT", 0.0) or 0.0)),
+                }
+        return None
+
+    @staticmethod
+    def _project_hedge_legs(
+        order_event, current_legs: dict[str, float]
+    ) -> dict[str, float] | None:
+        position_side = str(getattr(order_event, "position_side", "") or "").upper()
+        if position_side not in {"LONG", "SHORT"}:
+            return None
+        direction = str(getattr(order_event, "direction", "") or "").upper()
+        quantity = abs(float(getattr(order_event, "quantity", 0.0) or 0.0))
+        projected = {
+            "LONG": max(0.0, float(current_legs.get("LONG", 0.0) or 0.0)),
+            "SHORT": max(0.0, float(current_legs.get("SHORT", 0.0) or 0.0)),
+        }
+        if position_side == "LONG":
+            if direction == "BUY":
+                projected["LONG"] += quantity
+            elif direction == "SELL":
+                projected["LONG"] = max(0.0, projected["LONG"] - quantity)
+        elif position_side == "SHORT":
+            if direction == "SELL":
+                projected["SHORT"] += quantity
+            elif direction == "BUY":
+                projected["SHORT"] = max(0.0, projected["SHORT"] - quantity)
+        return projected
+
     def check_order(self, order_event, current_price, portfolio=None):
         """Returns True if order is safe, False otherwise."""
         if current_price <= 0:
@@ -54,12 +95,21 @@ class RiskManager:
                 return True, "Passed (reduce-only bypass)."
 
             # Approximate symbol exposure after order execution.
-            cur_qty = float(portfolio.current_positions.get(order_event.symbol, 0.0))
-            signed_order_qty = (
-                order_event.quantity if order_event.direction == "BUY" else -order_event.quantity
+            current_legs = self._portfolio_position_legs(portfolio, order_event.symbol)
+            projected_legs = (
+                self._project_hedge_legs(order_event, current_legs) if current_legs else None
             )
-            projected_qty = cur_qty + signed_order_qty
-            projected_symbol_notional = abs(projected_qty * current_price)
+            if projected_legs is not None:
+                projected_symbol_notional = (
+                    float(projected_legs["LONG"]) + float(projected_legs["SHORT"])
+                ) * current_price
+            else:
+                cur_qty = float(portfolio.current_positions.get(order_event.symbol, 0.0))
+                signed_order_qty = (
+                    order_event.quantity if order_event.direction == "BUY" else -order_event.quantity
+                )
+                projected_qty = cur_qty + signed_order_qty
+                projected_symbol_notional = abs(projected_qty * current_price)
             symbol_cap = total_equity * self.max_symbol_exposure_pct
             if symbol_cap > 0 and projected_symbol_notional > symbol_cap:
                 return (
