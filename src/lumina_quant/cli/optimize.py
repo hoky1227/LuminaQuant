@@ -26,6 +26,7 @@ from lumina_quant.backtesting.data import HistoricCSVDataHandler
 from lumina_quant.backtesting.data_windowed_parquet import HistoricParquetWindowedDataHandler
 from lumina_quant.backtesting.execution_sim import SimulatedExecutionHandler
 from lumina_quant.backtesting.portfolio_backtest import Portfolio
+from lumina_quant.cli._strategy_registry_fallback import load_strategy_registry
 from lumina_quant.compute.ohlcv_loader import OHLCVFrameLoader
 from lumina_quant.config import BacktestConfig, BaseConfig, LiveConfig, OptimizationConfig
 from lumina_quant.market_data import (
@@ -42,71 +43,11 @@ from lumina_quant.storage.parquet import (
     ParquetMarketDataRepository,
     is_parquet_market_data_store,
 )
-from lumina_quant.strategy import Strategy
 from lumina_quant.utils.audit_store import AuditStore
 
-try:
-    from lumina_quant.strategies import registry as _strategy_registry
-except Exception:
-    class _PublicStubStrategy(Strategy):
-        def __init__(self, *args, **kwargs):
-            raise RuntimeError(
-                "Strategy modules are unavailable in this distribution."
-            )
-
-        def calculate_signals(self, event):
-            _ = event
-            return None
-
-    class _PublicStrategyRegistry:
-        DEFAULT_STRATEGY_NAME = "PublicStubStrategy"
-
-        @staticmethod
-        def get_strategy_map():
-            return {"PublicStubStrategy": _PublicStubStrategy}
-
-        @staticmethod
-        def resolve_strategy_class(name: str, default_name: str | None = None):
-            _ = name, default_name
-            return _PublicStubStrategy
-
-        @staticmethod
-        def get_default_strategy_params(strategy_name: str):
-            _ = strategy_name
-            return {}
-
-        @staticmethod
-        def resolve_strategy_params(strategy_name: str, overrides: dict[str, Any] | None = None):
-            _ = strategy_name
-            return dict(overrides or {})
-
-        @staticmethod
-        def get_default_optuna_config(strategy_name: str):
-            _ = strategy_name
-            return {"n_trials": 20, "params": {}}
-
-        @staticmethod
-        def get_default_grid_config(strategy_name: str):
-            _ = strategy_name
-            return {"params": {}}
-
-        @staticmethod
-        def resolve_optuna_config(strategy_name: str, override: dict[str, Any] | None = None):
-            _ = strategy_name
-            cfg = {"n_trials": 20, "params": {}}
-            if isinstance(override, dict):
-                cfg.update(override)
-            return cfg
-
-        @staticmethod
-        def resolve_grid_config(strategy_name: str, override: dict[str, Any] | None = None):
-            _ = strategy_name
-            cfg = {"params": {}}
-            if isinstance(override, dict):
-                cfg.update(override)
-            return cfg
-
-    _strategy_registry = _PublicStrategyRegistry()
+_strategy_registry = load_strategy_registry(
+    lambda: __import__("lumina_quant.strategies", fromlist=["registry"]).registry
+)
 
 def _auto_collect_market_data(*args, **kwargs):
     try:

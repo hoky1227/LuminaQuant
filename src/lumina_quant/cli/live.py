@@ -5,6 +5,7 @@ import os
 
 from lumina_quant.backtesting.cli_contract import RawFirstDataMissingError
 from lumina_quant.backtesting.portfolio_backtest import Portfolio
+from lumina_quant.cli._strategy_registry_fallback import load_strategy_registry
 from lumina_quant.config import LiveConfig
 from lumina_quant.core.market_window_contract import MarketWindowContractError
 from lumina_quant.live_selection import (
@@ -26,34 +27,20 @@ def _runtime_classes():
 
 
 def _strategy_helpers():
-    try:
-        from lumina_quant.strategies import (
-            DEFAULT_STRATEGY_NAME,
-            get_live_strategy_map,
-            resolve_strategy_class,
-        )
-    except Exception:
-        from lumina_quant.strategy import Strategy
+    registry = load_strategy_registry(
+        lambda: __import__("lumina_quant.strategies", fromlist=["DEFAULT_STRATEGY_NAME", "get_live_strategy_map", "resolve_strategy_class"])
+    )
+    default_name = getattr(registry, "DEFAULT_STRATEGY_NAME", "PublicStubStrategy")
 
-        class _PublicStubStrategy(Strategy):
-            def __init__(self, *args, **kwargs):
-                raise RuntimeError("Strategy modules are unavailable in this distribution.")
+    def _get_live_strategy_map(include_opt_in=True):
+        if hasattr(registry, "get_live_strategy_map"):
+            return registry.get_live_strategy_map(include_opt_in=include_opt_in)
+        return registry.get_strategy_map()
 
-            def calculate_signals(self, event):
-                _ = event
-                return None
+    def _resolve_strategy_class(name: str, default_name_override: str | None = None):
+        return registry.resolve_strategy_class(name, default_name=default_name_override or default_name)
 
-        def _get_live_strategy_map(include_opt_in=True):
-            _ = include_opt_in
-            return {"PublicStubStrategy": _PublicStubStrategy}
-
-        def _resolve_strategy_class(name: str, default_name: str | None = None):
-            _ = (name, default_name)
-            return _PublicStubStrategy
-
-        return "PublicStubStrategy", _get_live_strategy_map, _resolve_strategy_class
-
-    return DEFAULT_STRATEGY_NAME, get_live_strategy_map, resolve_strategy_class
+    return default_name, _get_live_strategy_map, _resolve_strategy_class
 
 
 def _resolve_transport(value: str | None) -> str:
