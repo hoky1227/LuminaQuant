@@ -257,6 +257,15 @@ class BacktestConfig(BaseConfig):
     END_DATE = _RUNTIME.backtest.end_date
     MODE = str(getattr(_RUNTIME.backtest, "mode", "windowed") or "windowed")
     DATA_SOURCE = str(getattr(_RUNTIME.backtest, "data_source", "auto") or "auto").strip().lower()
+    EXTERNAL_SOURCE_KIND = str(
+        getattr(getattr(_RUNTIME.backtest, "external", object()), "source_kind", "csv") or "csv"
+    ).strip().lower()
+    EXTERNAL_DATA_ROOT = str(
+        getattr(getattr(_RUNTIME.backtest, "external", object()), "root_path", "") or ""
+    )
+    EXTERNAL_SYMBOL_MAP = dict(
+        getattr(getattr(_RUNTIME.backtest, "external", object()), "symbol_map", {}) or {}
+    )
     COMMISSION_RATE = float(_RUNTIME.backtest.commission_rate)
     SLIPPAGE_RATE = float(_RUNTIME.backtest.slippage_rate)
     ANNUAL_PERIODS = int(_RUNTIME.backtest.annual_periods)

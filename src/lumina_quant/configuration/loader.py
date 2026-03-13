@@ -12,6 +12,7 @@ from typing import Any
 import yaml
 from dotenv import load_dotenv
 from lumina_quant.configuration.schema import (
+    BacktestExternalConfig,
     BacktestRuntimeConfig,
     ExecutionConfig,
     LiveExchangeConfig,
@@ -239,6 +240,11 @@ def build_runtime_config(data: dict[str, Any], env: Mapping[str, str]) -> Runtim
     backtest_raw = (
         mapped.get("backtest", {}) if isinstance(mapped.get("backtest", {}), dict) else {}
     )
+    backtest_external_raw = (
+        backtest_raw.get("external", {})
+        if isinstance(backtest_raw.get("external", {}), dict)
+        else {}
+    )
     live_raw = mapped.get("live", {}) if isinstance(mapped.get("live", {}), dict) else {}
     optimization_raw = (
         mapped.get("optimization", {}) if isinstance(mapped.get("optimization", {}), dict) else {}
@@ -312,7 +318,12 @@ def build_runtime_config(data: dict[str, Any], env: Mapping[str, str]) -> Runtim
         execution=ExecutionConfig(**_coerce_dataclass_kwargs(exec_raw, ExecutionConfig)),
         storage=StorageConfig(**_coerce_dataclass_kwargs(storage_raw, StorageConfig)),
         backtest=BacktestRuntimeConfig(
-            **_coerce_dataclass_kwargs(backtest_raw, BacktestRuntimeConfig)
+            **{
+                **_coerce_dataclass_kwargs(backtest_raw, BacktestRuntimeConfig),
+                "external": BacktestExternalConfig(
+                    **_coerce_dataclass_kwargs(backtest_external_raw, BacktestExternalConfig)
+                ),
+            }
         ),
         live=live,
         optimization=OptimizationRuntimeConfig(
@@ -552,6 +563,18 @@ def build_runtime_config(data: dict[str, Any], env: Mapping[str, str]) -> Runtim
 
     runtime.backtest.random_seed = _as_int(runtime.backtest.random_seed, 42)
     runtime.backtest.leverage = _as_int(runtime.backtest.leverage, 3)
+    runtime.backtest.data_source = str(
+        getattr(runtime.backtest, "data_source", "auto") or "auto"
+    ).strip().lower()
+    runtime.backtest.external.source_kind = str(
+        getattr(runtime.backtest.external, "source_kind", "csv") or "csv"
+    ).strip().lower()
+    runtime.backtest.external.root_path = str(
+        getattr(runtime.backtest.external, "root_path", "") or ""
+    ).strip()
+    runtime.backtest.external.symbol_map = dict(
+        getattr(runtime.backtest.external, "symbol_map", {}) or {}
+    )
     backtest_poll_raw = (
         backtest_raw.get("backtest_poll_seconds")
         if isinstance(backtest_raw, dict) and "backtest_poll_seconds" in backtest_raw

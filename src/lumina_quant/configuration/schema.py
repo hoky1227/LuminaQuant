@@ -102,6 +102,15 @@ class StorageConfig:
 
 
 @dataclass(slots=True)
+class BacktestExternalConfig:
+    """External backtest/optimize data source settings."""
+
+    source_kind: str = "csv"
+    root_path: str = ""
+    symbol_map: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
 class BacktestRuntimeConfig:
     """Backtest-only settings."""
 
@@ -126,7 +135,7 @@ class BacktestRuntimeConfig:
     backtest_decision_seconds: int | None = None
     market_window_parity_v2_enabled: bool | None = None
     data_source: str = "auto"
-    external: dict[str, Any] = field(default_factory=dict)
+    external: BacktestExternalConfig = field(default_factory=BacktestExternalConfig)
 
 
 @dataclass(slots=True)

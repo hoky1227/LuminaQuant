@@ -793,7 +793,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--external-data-root",
-        default="",
+        default=str(getattr(BacktestConfig, "EXTERNAL_DATA_ROOT", "") or ""),
         help="External market-data root for --data-source external (canonical CSV/parquet OHLCV).",
     )
     parser.add_argument(

@@ -23,6 +23,17 @@ uv run lq backtest --data-source external --external-data-root var/data/external
 uv run lq optimize --data-source external --external-data-root var/data/external/backtest
 ```
 
+### Config
+```yaml
+backtest:
+  data_source: external
+  external:
+    source_kind: csv
+    root_path: var/data/external/backtest
+    symbol_map:
+      BTC/USDT: BTCUSDT.csv
+```
+
 ### File naming
 For a symbol like `BTC/USDT`, the loader accepts common forms such as:
 - `BTCUSDT.csv`

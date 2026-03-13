@@ -265,6 +265,41 @@ class TestRuntimeConfigLoader(unittest.TestCase):
         finally:
             os.remove(path)
 
+    def test_backtest_external_config_loaded(self):
+        yaml_text = textwrap.dedent(
+            """
+            trading:
+              symbols: ["BTC/USDT"]
+            backtest:
+              data_source: "external"
+              external:
+                source_kind: "csv"
+                root_path: "var/data/external/backtest"
+                symbol_map:
+                  BTC/USDT: "BTCUSDT.csv"
+            live:
+              mode: "paper"
+              exchange:
+                driver: "ccxt"
+                name: "binance"
+                market_type: "future"
+                position_mode: "HEDGE"
+                margin_mode: "isolated"
+                leverage: 2
+            """
+        ).strip()
+        with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False, encoding="utf-8") as fp:
+            fp.write(yaml_text)
+            path = fp.name
+        try:
+            runtime = load_runtime_config(config_path=path, env={})
+            self.assertEqual(runtime.backtest.data_source, "external")
+            self.assertEqual(runtime.backtest.external.source_kind, "csv")
+            self.assertEqual(runtime.backtest.external.root_path, "var/data/external/backtest")
+            self.assertEqual(runtime.backtest.external.symbol_map["BTC/USDT"], "BTCUSDT.csv")
+        finally:
+            os.remove(path)
+
     def test_trading_timeframes_and_recent_split_days(self):
         yaml_text = textwrap.dedent(
             """

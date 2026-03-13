@@ -23,6 +23,17 @@ uv run lq backtest --data-source external --external-data-root var/data/external
 uv run lq optimize --data-source external --external-data-root var/data/external/backtest
 ```
 
+### 설정
+```yaml
+backtest:
+  data_source: external
+  external:
+    source_kind: csv
+    root_path: var/data/external/backtest
+    symbol_map:
+      BTC/USDT: BTCUSDT.csv
+```
+
 명시적 `external` 모드는 **fail-fast** 입니다. 데이터가 없으면 자동 fallback 하지 않고 즉시 오류를 냅니다.
 
 ## 라이브 외부 데이터

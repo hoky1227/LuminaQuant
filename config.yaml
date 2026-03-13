@@ -115,6 +115,7 @@ backtest:
   start_date: "2025-01-01"
   end_date: null  # null means "up to now" or end of data
   mode: "windowed"
+  data_source: "auto" # auto|csv|db|external
   commission_rate: 0.001  # 0.1%
   slippage_rate: 0.0005   # 0.05%
   annual_periods: 252     # Daily: 252, 1h: 252*24, 1m: 252*24*60
@@ -130,6 +131,10 @@ backtest:
   chunk_days: 1
   chunk_warmup_bars: 0
   skip_ahead_enabled: true
+  external:
+    source_kind: "csv" # csv|parquet|memory(test-only)
+    root_path: ""
+    symbol_map: {}
 
 # ------------------------------------------
 # Live Trading Specific Settings
