@@ -104,12 +104,11 @@ exchange.execute_order(
 
 ## 3. Polymarket (Phase 1)
 
-Phase 1 범위:
+현재 범위:
 - 시장 데이터 수집
 - 시그널 생성
 - paper/shadow 실행 경로
-
-실주문(real execution)은 후속 Phase에서 다룹니다.
+- `allow_real_execution: true` 와 자격증명/개인키가 설정된 경우의 실험적 real order placement/cancel/open-order polling
 
 ### 설정 (`config.yaml`)
 
@@ -127,8 +126,10 @@ live:
     data_host: "https://data-api.polymarket.com"
     market_ws_url: "wss://ws-subscriptions-clob.polymarket.com/ws/market"
     user_ws_url: "wss://ws-subscriptions-clob.polymarket.com/ws/user"
+    allow_real_execution: false
 ```
 
 ### 참고
 - 설치는 `live-polymarket` extra를 사용하세요.
 - 사용자 보유 데이터를 쓰고 싶다면 `live.market_data_source: external` 경로를 우선 고려하세요.
+- real execution은 아직 실험적이므로, 더 넓은 reconciliation/position 지원이 확장되기 전까지는 opt-in 기능으로 취급하세요.

@@ -109,12 +109,11 @@ exchange.execute_order(
 
 ## 3. Polymarket (Phase 1)
 
-Phase 1 support is intentionally scoped to:
+Current support is scoped to:
 - market-data ingestion
 - signal generation
 - paper/shadow execution lanes
-
-Real execution remains a later phase.
+- experimental real order placement/cancel/open-order polling when `allow_real_execution: true` and the Polymarket credentials/private key are configured
 
 ### Configuration (`config.yaml`)
 
@@ -132,9 +131,11 @@ live:
     data_host: "https://data-api.polymarket.com"
     market_ws_url: "wss://ws-subscriptions-clob.polymarket.com/ws/market"
     user_ws_url: "wss://ws-subscriptions-clob.polymarket.com/ws/user"
+    allow_real_execution: false
 ```
 
 ### Notes
 - Install with the `live-polymarket` extra.
 - Use canonical market-data / paper workflows first.
 - If you need custom upstream data instead of the official Polymarket feed, prefer `live.market_data_source: external` with the external-data guide.
+- Real execution remains experimental and should be treated as opt-in until broader reconciliation/position coverage is expanded.
