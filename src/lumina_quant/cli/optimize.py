@@ -108,13 +108,12 @@ except Exception:
 
     strategy_registry = _PublicStrategyRegistry()
 
-try:
-    from lumina_quant.data_collector import auto_collect_market_data
-except Exception:
-    def auto_collect_market_data(*args, **kwargs):
-        raise RuntimeError(
-            "auto_collect_market_data is unavailable in this distribution."
-        )
+def _auto_collect_market_data(*args, **kwargs):
+    try:
+        from lumina_quant.data_collector import auto_collect_market_data as collector
+    except Exception as exc:
+        raise RuntimeError("auto_collect_market_data is unavailable in this distribution.") from exc
+    return collector(*args, **kwargs)
 
 # Optuna Import
 try:
@@ -633,7 +632,7 @@ def _auto_collect_db_if_enabled(
         print("[INFO] Auto collector skipped for parquet market-data backend.")
         return []
 
-    sync_rows = auto_collect_market_data(
+    sync_rows = _auto_collect_market_data(
         symbol_list=list(SYMBOL_LIST),
         timeframe=str(base_timeframe),
         db_path=str(market_db_path),
