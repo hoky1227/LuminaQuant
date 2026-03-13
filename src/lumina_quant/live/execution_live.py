@@ -588,8 +588,17 @@ class LiveExecutionHandler(ExecutionHandler):
             return
         if any(key in params for key in _PROTECTIVE_PARAM_KEYS):
             return
+        live_mode = str(getattr(self.config, "MODE", "paper") or "paper").strip().lower()
+        if live_mode != "real":
+            self.logger.warning(
+                "Proceeding without exchange-side protective params in %s mode for %s; "
+                "stop_loss/take_profit remain unmanaged unless explicit exchange_params are provided.",
+                live_mode or "paper",
+                getattr(event, "symbol", ""),
+            )
+            return
         raise RuntimeError(
-            "Live protective orders require explicit exchange_params mapping. "
+            "Real-mode live protective orders require explicit exchange_params mapping. "
             "Provide stop/take-profit exchange_params or omit stop_loss/take_profit."
         )
 

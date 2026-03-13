@@ -182,6 +182,20 @@ SENSITIVE_PATH_RE = re.compile(
     r"|(^|/)trades\.csv$"
 )
 
+CONTENT_SCAN_EXTENSIONS: tuple[str, ...] = (
+    ".py",
+    ".sh",
+    ".ps1",
+    ".yml",
+    ".yaml",
+    ".toml",
+    ".json",
+)
+CONTENT_SCAN_EXEMPT_PATHS: tuple[str, ...] = (
+    "scripts/publish_public_pr.py",
+    "tests/test_publish_public_pr.py",
+)
+
 DEFAULT_PR_BODY = """## Summary
 - conflict-free sanitized sync branch from private source
 - protected paths are restored from the current public base
@@ -242,6 +256,84 @@ def is_sensitive_path(path: str) -> bool:
 
 def _find_sensitive_paths(paths: list[str]) -> list[str]:
     return [path for path in paths if is_sensitive_path(path)]
+
+
+def _module_token_from_path(path: str) -> str | None:
+    normalized = str(path or "").strip()
+    if normalized.startswith("src/") and normalized.endswith(".py"):
+        return normalized.removeprefix("src/").removesuffix(".py").replace("/", ".")
+    if normalized.startswith("lumina_quant/") and normalized.endswith(".py"):
+        return normalized.removesuffix(".py").replace("/", ".")
+    return None
+
+
+def _content_sensitive_patterns() -> tuple[re.Pattern[str], ...]:
+    patterns: list[re.Pattern[str]] = []
+    for protected_path in PROTECTED_PATHS:
+        normalized = str(protected_path or "").strip().strip("/")
+        if not normalized:
+            continue
+        is_exact_file = "." in normalized.rsplit("/", 1)[-1]
+        if is_exact_file:
+            patterns.append(
+                re.compile(
+                    rf"(?<![A-Za-z0-9_./-]){re.escape(normalized)}(?![A-Za-z0-9_./-])"
+                )
+            )
+        else:
+            patterns.append(
+                re.compile(rf"(?<![A-Za-z0-9_./-]){re.escape(normalized)}/[^\s'\"]+")
+            )
+        if normalized.startswith("src/lumina_quant/strategies") or normalized.startswith(
+            "lumina_quant/strategies"
+        ) or normalized == "strategies":
+            patterns.append(
+                re.compile(
+                    r"\blumina_quant\.strategies\.(?!sample_public_strategy\b)[A-Za-z_][\w.]*"
+                )
+            )
+            continue
+        if normalized.startswith("src/lumina_quant/indicators") or normalized.startswith(
+            "lumina_quant/indicators"
+        ):
+            patterns.append(
+                re.compile(
+                    r"\blumina_quant\.indicators\.(?!sample_public_indicator\b)[A-Za-z_][\w.]*"
+                )
+            )
+            continue
+        module_token = _module_token_from_path(normalized)
+        if module_token:
+            patterns.append(re.compile(rf"\b{re.escape(module_token)}\b"))
+    return tuple(patterns)
+
+
+def _should_content_scan(path: str) -> bool:
+    normalized = str(path or "").strip()
+    if not normalized or is_sensitive_path(normalized):
+        return False
+    if normalized in CONTENT_SCAN_EXEMPT_PATHS:
+        return False
+    if normalized.endswith(".md") or normalized.startswith("docs/"):
+        return False
+    return normalized.endswith(CONTENT_SCAN_EXTENSIONS)
+
+
+def _find_sensitive_content_paths(paths: list[str]) -> list[str]:
+    patterns = _content_sensitive_patterns()
+    flagged: list[str] = []
+    for path in paths:
+        if not _should_content_scan(path):
+            continue
+        candidate = str(path).strip()
+        try:
+            with open(candidate, encoding="utf-8", errors="ignore") as handle:
+                text = handle.read()
+        except OSError:
+            continue
+        if any(pattern.search(text) for pattern in patterns):
+            flagged.append(candidate)
+    return flagged
 
 
 def _restore_protected_paths_from_base() -> None:
@@ -370,6 +462,10 @@ def main() -> int:
         if sensitive:
             joined = "\n - ".join(["", *sensitive])
             raise RuntimeError(f"Sensitive paths are still staged:{joined}")
+        content_sensitive = _find_sensitive_content_paths(staged)
+        if content_sensitive:
+            joined = "\n - ".join(["", *content_sensitive])
+            raise RuntimeError(f"Sensitive content references are still staged:{joined}")
 
         if not staged:
             print("[INFO] No public-safe changes to publish.")

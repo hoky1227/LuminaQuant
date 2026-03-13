@@ -35,6 +35,7 @@ class MockConfig:
     MARKET_TYPE = "future"
     TAKER_FEE_RATE = 0.0004
     ORDER_TIMEOUT = 2
+    MODE = "paper"
 
 
 class MockExchange:
@@ -186,6 +187,25 @@ class TestLiveExecutionStateMachine(unittest.TestCase):
     def test_live_protective_orders_fail_fast_without_exchange_params(self):
         events = queue.Queue()
         exchange = MockProtectiveExchange()
+        class _RealConfig(MockConfig):
+            MODE = "real"
+
+        handler = LiveExecutionHandler(events, MockBars(), _RealConfig, exchange)
+
+        order = OrderEvent(
+            "BTC/USDT",
+            "MKT",
+            1.0,
+            "BUY",
+            stop_loss=99.0,
+            take_profit=101.0,
+        )
+        with self.assertRaisesRegex(RuntimeError, "Real-mode live protective orders require"):
+            handler.execute_order(order)
+
+    def test_live_protective_orders_allow_unmanaged_protection_in_paper_mode(self):
+        events = queue.Queue()
+        exchange = MockProtectiveExchange()
         handler = LiveExecutionHandler(events, MockBars(), MockConfig, exchange)
 
         order = OrderEvent(
@@ -196,8 +216,11 @@ class TestLiveExecutionStateMachine(unittest.TestCase):
             stop_loss=99.0,
             take_profit=101.0,
         )
-        with self.assertRaisesRegex(RuntimeError, "explicit exchange_params mapping"):
-            handler.execute_order(order)
+
+        handler.execute_order(order)
+        assert exchange.last_params is not None
+        self.assertNotIn("stopLossPrice", exchange.last_params)
+        self.assertNotIn("takeProfitPrice", exchange.last_params)
 
     def test_live_protective_orders_allow_explicit_exchange_params_mapping(self):
         events = queue.Queue()

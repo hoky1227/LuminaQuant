@@ -70,7 +70,7 @@ There are two ways to implement TP/SL: **Hard** (Exchange-side) and **Soft** (St
 
 #### MetaTrader 5 (MT5)
 You must modify `live_execution.py` or use a custom execution logic to pass `params` into the order.
-`LiveExecutionHandler` now **fails fast** if `stop_loss` / `take_profit` are present without explicit exchange-side protective `exchange_params`.
+`LiveExecutionHandler` now **fails fast in real mode** if `stop_loss` / `take_profit` are present without explicit exchange-side protective `exchange_params`. In paper/testnet-style modes it logs a warning and proceeds without exchange-side protective orders.
 
 **Recommended Approach**:
 In your strategy, when you want to send an order with TP/SL, interacting directly with the `exchange` object is possible but breaks the backtest abstraction.

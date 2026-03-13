@@ -126,3 +126,121 @@ def test_restore_protected_paths_from_base_drops_private_only_files(tmp_path, mo
     assert not private_only.exists()
     staged = _run_git(repo, "diff", "--cached", "--name-only").stdout.splitlines()
     assert "src/lumina_quant/indicators/advanced_alpha.py" not in staged
+
+
+def test_content_sensitive_detection_blocks_public_path_with_private_reference(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    workflow = repo / ".github" / "workflows" / "ci.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text(
+        "name: ci\njobs:\n  test:\n    steps:\n      - run: python scripts/run_research_pipeline.py\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(repo)
+    flagged = publish_public_pr._find_sensitive_content_paths([".github/workflows/ci.yml"])
+    assert flagged == [".github/workflows/ci.yml"]
+
+
+def test_content_sensitive_detection_derives_module_patterns_from_protected_inventory(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    module = repo / "public_probe.py"
+    module.write_text(
+        "from lumina_quant.eval.exact_window_suite import run_exact_window_suite\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(repo)
+    flagged = publish_public_pr._find_sensitive_content_paths(["public_probe.py"])
+    assert flagged == ["public_probe.py"]
+
+
+def test_content_sensitive_detection_blocks_root_level_exact_protected_file_references(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    workflow = repo / ".github" / "workflows" / "root-files.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text(
+        "name: root-files\njobs:\n  check:\n    steps:\n      - run: cat AGENTS.md && cat .env && cat equity.csv\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(repo)
+    flagged = publish_public_pr._find_sensitive_content_paths([".github/workflows/root-files.yml"])
+    assert flagged == [".github/workflows/root-files.yml"]
+
+
+def test_content_sensitive_detection_blocks_protected_directory_descendants(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    workflow = repo / ".github" / "workflows" / "release.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text(
+        "name: release\njobs:\n  publish:\n    steps:\n      - run: cp reports/private.json artifacts/out.json\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(repo)
+    flagged = publish_public_pr._find_sensitive_content_paths([".github/workflows/release.yml"])
+    assert flagged == [".github/workflows/release.yml"]
+
+
+def test_content_sensitive_detection_blocks_nested_protected_directory_descendants(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    workflow = repo / ".github" / "workflows" / "nested.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text(
+        "name: nested\njobs:\n  publish:\n    steps:\n      - run: cat src/lumina_quant/strategies/private_alpha.py\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(repo)
+    flagged = publish_public_pr._find_sensitive_content_paths([".github/workflows/nested.yml"])
+    assert flagged == [".github/workflows/nested.yml"]
+
+
+def test_content_sensitive_detection_blocks_dot_prefixed_exact_protected_paths(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    workflow = repo / ".github" / "workflows" / "dot-protected.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text(
+        "name: dot-protected\njobs:\n  check:\n    steps:\n      - run: cat .github/hardcoded_params_baseline.json\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(repo)
+    flagged = publish_public_pr._find_sensitive_content_paths([".github/workflows/dot-protected.yml"])
+    assert flagged == [".github/workflows/dot-protected.yml"]
+
+
+def test_content_sensitive_detection_ignores_publish_sanitizer_self_test_file(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    test_file = repo / "tests" / "test_publish_public_pr.py"
+    test_file.parent.mkdir(parents=True)
+    test_file.write_text(
+        "assert 'scripts/run_research_pipeline.py'\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(repo)
+    flagged = publish_public_pr._find_sensitive_content_paths(["tests/test_publish_public_pr.py"])
+    assert flagged == []
