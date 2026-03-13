@@ -18,6 +18,11 @@ class _FakeOpenOrderParams:
         self.kwargs = kwargs
 
 
+class _FakeApiCreds:
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+
+
 class _FakeOrderArgs:
     def __init__(self, **kwargs):
         self.kwargs = kwargs
@@ -75,6 +80,7 @@ class _FakeClient:
 def _sdk():
     return {
         "ClobClient": _FakeClient,
+        "ApiCreds": _FakeApiCreds,
         "OpenOrderParams": _FakeOpenOrderParams,
         "BUY": "BUY",
         "SELL": "SELL",

@@ -13,14 +13,21 @@ from lumina_quant.core.protocols import ExchangeInterface
 
 def _load_sdk_symbols() -> dict[str, Any]:
     from py_clob_client.client import ClobClient  # type: ignore
-    from py_clob_client.clob_types import OpenOrderParams  # type: ignore
+    from py_clob_client.clob_types import ApiCreds, OpenOrderParams  # type: ignore
     from py_clob_client.order_builder.constants import BUY, SELL  # type: ignore
-    from py_clob_client.order_builder.order_builder import OrderArgs  # type: ignore
-    from py_clob_client.order_builder.market_order import MarketOrderArgs  # type: ignore
     from py_clob_client.order_builder.constants import OrderType  # type: ignore
+    try:
+        from py_clob_client.clob_types import OrderArgs  # type: ignore
+    except Exception:  # pragma: no cover - sdk version fallback
+        from py_clob_client.order_builder.order_builder import OrderArgs  # type: ignore
+    try:
+        from py_clob_client.clob_types import MarketOrderArgs  # type: ignore
+    except Exception:  # pragma: no cover - sdk version fallback
+        from py_clob_client.order_builder.market_order import MarketOrderArgs  # type: ignore
 
     return {
         "ClobClient": ClobClient,
+        "ApiCreds": ApiCreds,
         "OpenOrderParams": OpenOrderParams,
         "BUY": BUY,
         "SELL": SELL,
@@ -91,11 +98,11 @@ class PolymarketExchange(ExchangeInterface):
         self.client = client_cls(**kwargs)
 
         if api_key and api_secret and api_passphrase and hasattr(self.client, "set_api_creds"):
-            self._creds = {
-                "api_key": api_key,
-                "api_secret": api_secret,
-                "api_passphrase": api_passphrase,
-            }
+            self._creds = self.sdk["ApiCreds"](
+                api_key=api_key,
+                api_secret=api_secret,
+                api_passphrase=api_passphrase,
+            )
             try:
                 self.client.set_api_creds(self._creds)
             except Exception:
@@ -212,7 +219,10 @@ class PolymarketExchange(ExchangeInterface):
                 amount=float(quantity),
                 side=side_token,
             )
-            signed_order = client.create_market_order(args)
+            if hasattr(client, "create_market_order"):
+                signed_order = client.create_market_order(args)
+            else:
+                signed_order = client.sign_market_order(args)
             response = client.post_order(signed_order, sdk["OrderType"].FOK)
         else:
             args = sdk["OrderArgs"](
@@ -221,7 +231,10 @@ class PolymarketExchange(ExchangeInterface):
                 size=float(quantity),
                 side=side_token,
             )
-            signed_order = client.create_order(args)
+            if hasattr(client, "create_order"):
+                signed_order = client.create_order(args)
+            else:
+                signed_order = client.sign_order(args)
             response = client.post_order(signed_order, sdk["OrderType"].GTC)
         return self._normalize_order(dict(response or {}), symbol=str(symbol))
 
@@ -229,7 +242,10 @@ class PolymarketExchange(ExchangeInterface):
         client = self._require_client()
         sdk = self.sdk or {}
         params = sdk["OpenOrderParams"](**({"asset_id": symbol} if symbol else {}))
-        rows = list(client.get_orders(params) or [])
+        if hasattr(client, "get_orders"):
+            rows = list(client.get_orders(params) or [])
+        else:
+            rows = list(client.get_open_orders(params) or [])
         return [self._normalize_order(dict(row or {}), symbol=symbol) for row in rows]
 
     def cancel_order(self, order_id: str, symbol: str | None = None) -> bool:
@@ -247,7 +263,10 @@ class PolymarketExchange(ExchangeInterface):
 
     def fetch_order(self, order_id: str, symbol: str | None = None) -> dict:
         client = self._require_client()
-        response = dict(client.get_order(str(order_id)) or {})
+        if hasattr(client, "get_order"):
+            response = dict(client.get_order(str(order_id)) or {})
+        else:
+            response = dict(client.fetch_order(str(order_id)) or {})
         return self._normalize_order(response, symbol=symbol)
 
 
