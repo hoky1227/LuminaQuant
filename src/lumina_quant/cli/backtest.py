@@ -4,6 +4,7 @@ import os
 import uuid
 from datetime import UTC, datetime
 from types import SimpleNamespace
+from typing import Any
 
 from lumina_quant.backtesting.backtest import Backtest
 from lumina_quant.backtesting.chunked_runner import run_backtest_chunked
@@ -20,13 +21,6 @@ from lumina_quant.backtesting.data_windowed_parquet import HistoricParquetWindow
 from lumina_quant.backtesting.execution_sim import SimulatedExecutionHandler
 from lumina_quant.backtesting.portfolio_backtest import Portfolio
 from lumina_quant.config import BacktestConfig, BaseConfig, LiveConfig, OptimizationConfig
-try:
-    from lumina_quant.data_collector import auto_collect_market_data
-except Exception:
-    def auto_collect_market_data(*args, **kwargs):
-        raise RuntimeError(
-            "auto_collect_market_data is unavailable in this distribution."
-        )
 from lumina_quant.market_data import (
     load_data_dict_from_db,
     load_data_dict_from_external_root,
@@ -40,57 +34,6 @@ from lumina_quant.utils.audit_store import AuditStore
 # ==========================================
 # CONFIGURATION FROM YAML
 # ==========================================
-# 1. Strategy Selection
-STRATEGY_MAP = strategy_registry.get_strategy_map()
-requested_strategy_name = str(OptimizationConfig.STRATEGY_NAME or "").strip()
-STRATEGY_CLASS = strategy_registry.resolve_strategy_class(
-    requested_strategy_name,
-    default_name=strategy_registry.DEFAULT_STRATEGY_NAME,
-)
-strategy_name = STRATEGY_CLASS.__name__
-
-
-# 2. Strategy Parameters
-STRATEGY_PARAMS = strategy_registry.get_default_strategy_params(strategy_name)
-
-
-# Try loading optimized
-param_path = os.path.join("best_optimized_parameters", strategy_name, "best_params.json")
-meta_path = os.path.join("best_optimized_parameters", strategy_name, "best_params.meta.json")
-
-if os.path.exists(param_path):
-    try:
-        with open(param_path) as f:
-            loaded_params = json.load(f)
-        print(f"[OK] Loaded Optimized Params from {param_path}")
-        STRATEGY_PARAMS = loaded_params
-        if os.path.exists(meta_path):
-            try:
-                with open(meta_path) as meta_file:
-                    meta = json.load(meta_file)
-                selection_basis = str(meta.get("selection_basis", "")).strip().lower()
-                if selection_basis == "validation_only":
-                    print(
-                        "[INFO] Parameter provenance: validation-only selection with locked OOS holdout."
-                    )
-                else:
-                    print(
-                        "[WARN] Parameter provenance metadata exists but selection basis is not "
-                        "'validation_only'."
-                    )
-            except Exception as meta_err:
-                print(f"[WARN] Failed to parse params metadata: {meta_err}")
-        else:
-            print(
-                "[WARN] No parameter provenance metadata file found. "
-                "Consider re-running optimize.py with strict OOS settings."
-            )
-    except Exception as e:
-        print(f"[WARN] Failed to load optimized params: {e}")
-else:
-    print(f"[INFO] Optimized params not found at {param_path}. Using Defaults.")
-
-STRATEGY_PARAMS = strategy_registry.resolve_strategy_params(strategy_name, STRATEGY_PARAMS)
 
 
 # 3. Data Settings
@@ -113,6 +56,64 @@ except Exception:
 MARKET_DB_PATH = BaseConfig.MARKET_DATA_PARQUET_PATH
 MARKET_DB_EXCHANGE = BaseConfig.MARKET_DATA_EXCHANGE
 MARKET_DB_BACKEND = BaseConfig.STORAGE_BACKEND
+
+
+def _resolve_strategy_setup(*, log: bool) -> tuple[type, dict[str, Any]]:
+    requested_strategy_name = str(OptimizationConfig.STRATEGY_NAME or "").strip()
+    strategy_cls = strategy_registry.resolve_strategy_class(
+        requested_strategy_name,
+        default_name=strategy_registry.DEFAULT_STRATEGY_NAME,
+    )
+    strategy_name = strategy_cls.__name__
+    strategy_params = strategy_registry.get_default_strategy_params(strategy_name)
+
+    param_path = os.path.join("best_optimized_parameters", strategy_name, "best_params.json")
+    meta_path = os.path.join("best_optimized_parameters", strategy_name, "best_params.meta.json")
+
+    if os.path.exists(param_path):
+        try:
+            with open(param_path) as handle:
+                strategy_params = json.load(handle)
+            if log:
+                print(f"[OK] Loaded Optimized Params from {param_path}")
+            if os.path.exists(meta_path):
+                try:
+                    with open(meta_path) as meta_file:
+                        meta = json.load(meta_file)
+                    selection_basis = str(meta.get("selection_basis", "")).strip().lower()
+                    if log:
+                        if selection_basis == "validation_only":
+                            print(
+                                "[INFO] Parameter provenance: validation-only selection with locked OOS holdout."
+                            )
+                        else:
+                            print(
+                                "[WARN] Parameter provenance metadata exists but selection basis is not "
+                                "'validation_only'."
+                            )
+                except Exception as exc:
+                    if log:
+                        print(f"[WARN] Failed to parse params metadata: {exc}")
+            elif log:
+                print(
+                    "[WARN] No parameter provenance metadata file found. "
+                    "Consider re-running optimize.py with strict OOS settings."
+                )
+        except Exception as exc:
+            if log:
+                print(f"[WARN] Failed to load optimized params: {exc}")
+    elif log:
+        print(f"[INFO] Optimized params not found at {param_path}. Using Defaults.")
+
+    return strategy_cls, strategy_registry.resolve_strategy_params(strategy_name, strategy_params)
+
+
+def _auto_collect_market_data(*args, **kwargs):
+    try:
+        from lumina_quant.data_collector import auto_collect_market_data as collector
+    except Exception as exc:
+        raise RuntimeError("auto_collect_market_data is unavailable in this distribution.") from exc
+    return collector(*args, **kwargs)
 
 
 def _normalize_timeframe_or_default(value, default):
@@ -302,7 +303,7 @@ def _load_data_dict(
 
     if source in {"auto", "db"} and auto_collect_db and not use_parquet:
         try:
-            sync_rows = auto_collect_market_data(
+            sync_rows = _auto_collect_market_data(
                 symbol_list=list(SYMBOL_LIST),
                 timeframe=str(base_timeframe),
                 db_path=str(market_db_path),
@@ -570,10 +571,12 @@ def run(
     persist_output=None,
     backtest_mode=BACKTEST_MODE,
 ):
+    strategy_cls, strategy_params = _resolve_strategy_setup(log=True)
+
     print("------------------------------------------------")
     print(f"Running Backtest for {SYMBOL_LIST}")
-    print(f"Strategy: {STRATEGY_CLASS.__name__}")
-    print(f"Params: {STRATEGY_PARAMS}")
+    print(f"Strategy: {strategy_cls.__name__}")
+    print(f"Params: {strategy_params}")
     print("------------------------------------------------")
 
     backtest_run_id = str(run_id or "").strip() or str(uuid.uuid4())
@@ -613,8 +616,8 @@ def run(
             mode="backtest",
             metadata={
                 "symbols": list(SYMBOL_LIST),
-                "strategy": STRATEGY_CLASS.__name__,
-                "params": STRATEGY_PARAMS,
+                "strategy": strategy_cls.__name__,
+                "params": strategy_params,
                 "data_source": str(resolved_data_source),
                 "data_mode": str(resolved_data_mode),
                 "market_db_path": str(market_db_path),
@@ -681,8 +684,8 @@ def run(
                 symbol_list=list(SYMBOL_LIST),
                 start_date=START_DATE,
                 end_date=END_DATE,
-                strategy_cls=STRATEGY_CLASS,
-                strategy_params=STRATEGY_PARAMS,
+                strategy_cls=strategy_cls,
+                strategy_params=strategy_params,
                 data_loader=_chunk_loader,
                 chunk_days=max(1, int(BT_CHUNK_DAYS)),
                 strategy_timeframe=str(BaseConfig.TIMEFRAME),
@@ -712,8 +715,8 @@ def run(
                 data_handler_cls=selected_data_handler_cls,
                 execution_handler_cls=SimulatedExecutionHandler,
                 portfolio_cls=Portfolio,
-                strategy_cls=STRATEGY_CLASS,
-                strategy_params=STRATEGY_PARAMS,
+                strategy_cls=strategy_cls,
+                strategy_params=strategy_params,
                 data_dict=data_dict,
                 data_handler_kwargs=selected_data_handler_kwargs,
                 record_history=bool(execution_profile["record_history"]),

@@ -126,7 +126,6 @@ except ImportError:
     optuna = None
     TrialState = None
     OPTUNA_AVAILABLE = False
-    print("Warning: Optuna not found. Run 'uv sync --extra optimize'.")
 
 # ==========================================
 # CONFIGURATION FROM YAML
