@@ -75,10 +75,6 @@ def _shutdown_on_fatal(trader, exc: Exception) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    default_strategy_registry_name, get_live_strategy_map, resolve_strategy_class = _strategy_helpers()
-    strategy_map = get_live_strategy_map(include_opt_in=True)
-    LiveDataHandler, LiveExecutionHandler, LiveDataFatalError, LiveTrader = _runtime_classes()
-
     parser = argparse.ArgumentParser(description="Run LuminaQuant live trader.")
     parser.add_argument(
         "--transport",
@@ -93,7 +89,6 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--strategy",
-        choices=sorted(strategy_map.keys()),
         default="",
         help="Strategy class override. If omitted, live selection artifact is used when available.",
     )
@@ -121,6 +116,10 @@ def main(argv: list[str] | None = None) -> int:
         help="Optional stop-file path for graceful shutdown signal.",
     )
     args = parser.parse_args(argv)
+
+    default_strategy_registry_name, get_live_strategy_map, resolve_strategy_class = _strategy_helpers()
+    strategy_map = get_live_strategy_map(include_opt_in=True)
+    LiveDataHandler, LiveExecutionHandler, LiveDataFatalError, LiveTrader = _runtime_classes()
 
     transport = _resolve_transport(args.transport)
     if args.enable_live_real:
@@ -165,7 +164,9 @@ def main(argv: list[str] | None = None) -> int:
 
     manual_strategy = str(args.strategy or "").strip()
     if manual_strategy:
-        strategy_cls = strategy_map.get(manual_strategy, strategy_cls)
+        if manual_strategy not in strategy_map:
+            raise ValueError(f"Unknown strategy override: {manual_strategy}")
+        strategy_cls = strategy_map[manual_strategy]
         strategy_name = manual_strategy
         if selection_cfg is not None:
             inferred_name = infer_strategy_class_name(
