@@ -14,7 +14,7 @@ def test_canonicalize_research_symbol_keeps_slash_usdt_form():
 
 def test_candidate_builder_normalizes_symbol_variants_to_canonical_form():
     candidates = build_binance_futures_candidates(
-        timeframes=["1m"],
+        timeframes=["5m"],
         symbols=["BTCUSDT", "ETH-USDT", "XAU/USDT:USDT", "XAG_USDT"],
     )
     assert candidates

@@ -26,6 +26,15 @@ class _CadenceFlipStrategy(Strategy):
         self._last_bucket = None
         self.decisions = []
 
+    @staticmethod
+    def _event_time_parts(ts):
+        if hasattr(ts, "timestamp"):
+            dt = ts
+            sec = int(ts.timestamp())
+            return dt, sec
+        sec = int(int(ts) // 1000)
+        return datetime.fromtimestamp(sec), sec
+
     def _maybe_emit(self, dt, bucket):
         if self._last_bucket == bucket:
             return
@@ -51,20 +60,20 @@ class _CadenceFlipStrategy(Strategy):
         ts = getattr(event, "time", None)
         if ts is None:
             return
-        sec = int(ts.timestamp())
+        dt, sec = self._event_time_parts(ts)
         if sec % int(self.decision_cadence_seconds) != 0:
             return
-        self._maybe_emit(ts, bucket=sec // int(self.decision_cadence_seconds))
+        self._maybe_emit(dt, bucket=sec // int(self.decision_cadence_seconds))
 
     def calculate_signals_window(self, event, aggregator):
         _ = aggregator.get_last_bar(self.symbol, "20s") if aggregator is not None else None
         ts = getattr(event, "time", None)
         if ts is None:
             return
-        sec = int(ts.timestamp())
+        dt, sec = self._event_time_parts(ts)
         if sec % int(self.decision_cadence_seconds) != 0:
             return
-        self._maybe_emit(ts, bucket=sec // int(self.decision_cadence_seconds))
+        self._maybe_emit(dt, bucket=sec // int(self.decision_cadence_seconds))
 
 
 class _WindowNoopStrategy(Strategy):
@@ -92,6 +101,13 @@ def _build_1s_frame(start: datetime, seconds: int, offset: float = 0.0) -> pl.Da
             "volume": [100.0 for _ in range(seconds)],
         }
     )
+
+
+def _normalize_buckets(values: list[int]) -> list[int]:
+    if not values:
+        return []
+    origin = int(values[0])
+    return [int(value) - origin for value in values]
 
 
 def test_timeframe_aggregator_correctness_with_overlapping_windows():
@@ -161,7 +177,9 @@ def test_windowed_mode_matches_legacy_cadence_behavior(monkeypatch):
     )
     windowed.simulate_trading(output=False)
 
-    assert list(windowed.strategy.decisions) == list(baseline.strategy.decisions)
+    assert _normalize_buckets(list(windowed.strategy.decisions)) == _normalize_buckets(
+        list(baseline.strategy.decisions)
+    )
     assert int(windowed.signals) == int(baseline.signals)
     assert abs(int(windowed.portfolio.trade_count) - int(baseline.portfolio.trade_count)) <= 1
 

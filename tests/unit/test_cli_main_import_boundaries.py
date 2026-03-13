@@ -29,3 +29,19 @@ def test_main_loads_only_selected_command_handler(monkeypatch):
     monkeypatch.setattr(cli_main, "import_module", fake_import)
     assert cli_main.main(["backtest", "--dry-run"]) == 0
     assert calls == ["lumina_quant.cli.backtest"]
+
+
+def test_main_exposes_lazy_module_attributes_for_compatibility(monkeypatch):
+    calls: list[str] = []
+
+    def fake_import(name: str):
+        calls.append(name)
+        module = ModuleType(name)
+        module.main = lambda args=None: 0
+        return module
+
+    monkeypatch.delitem(cli_main.__dict__, "exact_window", raising=False)
+    monkeypatch.setattr(cli_main, "import_module", fake_import)
+    module = cli_main.exact_window
+    assert module.main([]) == 0
+    assert calls == ["lumina_quant.cli.exact_window"]

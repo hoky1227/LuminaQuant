@@ -4,25 +4,15 @@ from pathlib import Path
 
 import yaml
 
-EXPECTED_SYMBOLS = [
-    "BTC/USDT",
-    "ETH/USDT",
-    "XRP/USDT",
-    "BNB/USDT",
-    "SOL/USDT",
-    "TRX/USDT",
-    "DOGE/USDT",
-    "ADA/USDT",
-    "TON/USDT",
-    "AVAX/USDT",
-    "XAU/USDT",
-    "XAG/USDT",
-]
+from lumina_quant.configuration.schema import TradingConfig
 
 
-def test_config_symbols_universe():
+def _default_trading_symbols() -> list[str]:
+    return list(TradingConfig().symbols)
+
+
+def test_config_symbols_universe_matches_schema_defaults():
     config_path = Path(__file__).resolve().parents[1] / "config.yaml"
     payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     symbols = list(((payload or {}).get("trading") or {}).get("symbols") or [])
-    assert symbols == EXPECTED_SYMBOLS
-
+    assert symbols == _default_trading_symbols()

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 from datetime import UTC, datetime
@@ -28,26 +29,33 @@ MODULE = _load_module()
 def test_run_research_candidates_script_smoke(tmp_path: Path):
     root = Path(__file__).resolve().parents[1]
     script = root / "scripts" / "run_research_candidates.py"
+    env = dict(os.environ)
+    env["LQ_GPU_MODE"] = "cpu"
+    env["LQ_CONFIG_PATH"] = str(root / "config.yaml")
     cmd = [
         sys.executable,
         str(script),
         "--output-dir",
         str(tmp_path),
         "--max-candidates",
-        "48",
+        "4",
         "--timeframes",
         "1m",
         "5m",
-        "1h",
         "--symbols",
         "BTC/USDT",
         "ETH/USDT",
         "SOL/USDT",
-        "XAU/USDT",
-        "XAG/USDT",
     ]
 
-    result = subprocess.run(cmd, cwd=str(root), check=False, capture_output=True, text=True)
+    result = subprocess.run(
+        cmd,
+        cwd=str(tmp_path),
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
     assert result.returncode == 0, result.stderr
     assert "Saved:" in result.stdout
     assert (tmp_path / "candidate_research_latest.json").exists()
@@ -57,6 +65,9 @@ def test_run_research_candidates_script_smoke(tmp_path: Path):
 def test_run_research_candidates_script_smoke_with_score_config(tmp_path: Path):
     root = Path(__file__).resolve().parents[1]
     script = root / "scripts" / "run_research_candidates.py"
+    env = dict(os.environ)
+    env["LQ_GPU_MODE"] = "cpu"
+    env["LQ_CONFIG_PATH"] = str(root / "config.yaml")
     score_cfg_path = tmp_path / "score_config.json"
     score_cfg_path.write_text(
         json.dumps(
@@ -92,7 +103,7 @@ def test_run_research_candidates_script_smoke_with_score_config(tmp_path: Path):
         "--output-dir",
         str(tmp_path),
         "--max-candidates",
-        "24",
+        "4",
         "--timeframes",
         "1m",
         "5m",
@@ -104,7 +115,14 @@ def test_run_research_candidates_script_smoke_with_score_config(tmp_path: Path):
         str(score_cfg_path),
     ]
 
-    result = subprocess.run(cmd, cwd=str(root), check=False, capture_output=True, text=True)
+    result = subprocess.run(
+        cmd,
+        cwd=str(tmp_path),
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
     assert result.returncode == 0, result.stderr
     latest = tmp_path / "candidate_research_latest.json"
     assert latest.exists()

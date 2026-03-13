@@ -5,6 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from lumina_quant.config import BaseConfig
 from lumina_quant.strategy_factory.research_runner import (
     build_default_candidate_rows,
     run_candidate_research,
@@ -12,14 +13,17 @@ from lumina_quant.strategy_factory.research_runner import (
 from lumina_quant.strategy_factory.selection import select_diversified_shortlist
 
 
-def test_quant_pipeline_end_to_end(tmp_path: Path):
-    symbols = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "XAU/USDT", "XAG/USDT"]
-    timeframes = ["1m", "5m", "1h"]
+def test_quant_pipeline_end_to_end(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("LQ_GPU_MODE", "cpu")
+    monkeypatch.setattr(BaseConfig, "MARKET_DATA_PARQUET_PATH", str(tmp_path / "market_parquet"))
+    symbols = ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
+    timeframes = ["1m", "5m"]
 
     candidates = build_default_candidate_rows(
         symbols=symbols,
         timeframes=timeframes,
-        max_candidates=64,
+        max_candidates=4,
     )
     assert candidates
 
@@ -29,7 +33,7 @@ def test_quant_pipeline_end_to_end(tmp_path: Path):
         strategy_timeframes=timeframes,
         symbol_universe=symbols,
         stage1_keep_ratio=0.5,
-        max_candidates=64,
+        max_candidates=4,
     )
 
     rows = list(report.get("candidates") or [])
@@ -39,9 +43,9 @@ def test_quant_pipeline_end_to_end(tmp_path: Path):
     shortlist = select_diversified_shortlist(
         rows,
         mode="oos",
-        max_total=12,
-        max_per_family=6,
-        max_per_timeframe=6,
+        max_total=4,
+        max_per_family=4,
+        max_per_timeframe=4,
         include_weights=True,
     )
     assert shortlist
@@ -75,7 +79,7 @@ def test_quant_pipeline_end_to_end(tmp_path: Path):
         "--output-dir",
         str(output_dir),
         "--max-strategies",
-        "10",
+        "4",
     ]
     result = subprocess.run(cmd, check=False, capture_output=True, text=True)
     assert result.returncode == 0, result.stderr

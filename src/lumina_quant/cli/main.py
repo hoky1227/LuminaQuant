@@ -8,6 +8,16 @@ from importlib import import_module
 Handler = Callable[[list[str] | None], int]
 
 
+COMMAND_MODULES = {
+    "backtest": "backtest",
+    "optimize": "optimize",
+    "live": "live",
+    "dashboard": "dashboard",
+    "data": "data",
+    "exact_window": "exact_window",
+}
+
+
 def _load_handler(module_name: str, attr: str = "main") -> Handler:
     module = import_module(f"lumina_quant.cli.{module_name}")
     handler = getattr(module, attr)
@@ -24,15 +34,24 @@ def _run_handler(handler: Handler, argv: list[str]) -> int:
         return int(code)
 
 
+def __getattr__(name: str):
+    module_name = COMMAND_MODULES.get(name)
+    if module_name is None:
+        raise AttributeError(name)
+    module = import_module(f"lumina_quant.cli.{module_name}")
+    globals()[name] = module
+    return module
+
+
 def main(argv: list[str] | None = None) -> int:
     args = list(argv if argv is not None else sys.argv[1:])
     commands = {
-        "backtest": "backtest",
-        "optimize": "optimize",
-        "live": "live",
-        "dashboard": "dashboard",
-        "data": "data",
-        "exact-window": "exact_window",
+        "backtest": COMMAND_MODULES["backtest"],
+        "optimize": COMMAND_MODULES["optimize"],
+        "live": COMMAND_MODULES["live"],
+        "dashboard": COMMAND_MODULES["dashboard"],
+        "data": COMMAND_MODULES["data"],
+        "exact-window": COMMAND_MODULES["exact_window"],
     }
 
     parser = argparse.ArgumentParser(

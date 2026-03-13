@@ -19,17 +19,39 @@ from lumina_quant.live_selection import (
 )
 DEFAULT_LIVE_STRATEGY_NAME = "MovingAverageCrossStrategy"
 DEFAULT_WS_STRATEGY_NAME = "RsiStrategy"
+STRATEGY_MAP = None
+resolve_strategy_class = None
+LiveDataHandler = None
+LiveExecutionHandler = None
+LiveDataFatalError = None
+LiveTrader = None
 
 
 def _runtime_classes():
-    from lumina_quant.live.data_poll import LiveDataHandler
-    from lumina_quant.live.execution_live import LiveExecutionHandler
-    from lumina_quant.live.trader import LiveDataFatalError, LiveTrader
+    global LiveDataHandler, LiveExecutionHandler, LiveDataFatalError, LiveTrader
+    if LiveDataHandler is None:
+        from lumina_quant.live.data_poll import LiveDataHandler as _LiveDataHandler
 
+        LiveDataHandler = _LiveDataHandler
+    if LiveExecutionHandler is None:
+        from lumina_quant.live.execution_live import (
+            LiveExecutionHandler as _LiveExecutionHandler,
+        )
+
+        LiveExecutionHandler = _LiveExecutionHandler
+    if LiveDataFatalError is None or LiveTrader is None:
+        from lumina_quant.live.trader import (
+            LiveDataFatalError as _LiveDataFatalError,
+            LiveTrader as _LiveTrader,
+        )
+
+        LiveDataFatalError = LiveDataFatalError or _LiveDataFatalError
+        LiveTrader = LiveTrader or _LiveTrader
     return LiveDataHandler, LiveExecutionHandler, LiveDataFatalError, LiveTrader
 
 
 def _strategy_helpers():
+    global STRATEGY_MAP, resolve_strategy_class
     registry = load_strategy_registry(
         import_private_strategy_registry
     )
@@ -43,7 +65,11 @@ def _strategy_helpers():
     def _resolve_strategy_class(name: str, default_name_override: str | None = None):
         return registry.resolve_strategy_class(name, default_name=default_name_override or default_name)
 
-    return default_name, _get_live_strategy_map, _resolve_strategy_class
+    if STRATEGY_MAP is None:
+        STRATEGY_MAP = _get_live_strategy_map(include_opt_in=True)
+    if resolve_strategy_class is None:
+        resolve_strategy_class = _resolve_strategy_class
+    return default_name, _get_live_strategy_map, resolve_strategy_class
 
 
 def _resolve_transport(value: str | None) -> str:
@@ -108,7 +134,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     default_strategy_registry_name, get_live_strategy_map, resolve_strategy_class = _strategy_helpers()
-    strategy_map = get_live_strategy_map(include_opt_in=True)
+    strategy_map = STRATEGY_MAP if isinstance(STRATEGY_MAP, dict) else get_live_strategy_map(include_opt_in=True)
     LiveDataHandler, LiveExecutionHandler, LiveDataFatalError, LiveTrader = _runtime_classes()
 
     transport = _resolve_transport(args.transport)

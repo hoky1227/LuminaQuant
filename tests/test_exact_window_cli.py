@@ -372,11 +372,17 @@ def test_exact_window_cli_blocks_when_another_heavy_run_is_active(tmp_path: Path
 def test_cli_main_dispatches_exact_window(monkeypatch):
     captured: dict[str, object] = {}
 
-    def _stub(argv=None):
-        captured["argv"] = list(argv or [])
-        return 9
+    class _Module:
+        @staticmethod
+        def main(argv=None):
+            captured["argv"] = list(argv or [])
+            return 9
 
-    monkeypatch.setattr(cli_main.exact_window, "main", _stub)
+    monkeypatch.setattr(
+        cli_main,
+        "import_module",
+        lambda name: _Module if name == "lumina_quant.cli.exact_window" else None,
+    )
     rc = cli_main.main(["exact-window", "--emit-memory-baseline"])
     assert rc == 9
     assert captured["argv"] == ["--emit-memory-baseline"]
