@@ -46,7 +46,7 @@ from lumina_quant.strategy import Strategy
 from lumina_quant.utils.audit_store import AuditStore
 
 try:
-    from lumina_quant.strategies import registry as strategy_registry
+    from lumina_quant.strategies import registry as _strategy_registry
 except Exception:
     class _PublicStubStrategy(Strategy):
         def __init__(self, *args, **kwargs):
@@ -106,7 +106,7 @@ except Exception:
                 cfg.update(override)
             return cfg
 
-    strategy_registry = _PublicStrategyRegistry()
+    _strategy_registry = _PublicStrategyRegistry()
 
 def _auto_collect_market_data(*args, **kwargs):
     try:
@@ -130,18 +130,6 @@ except ImportError:
 # CONFIGURATION FROM YAML
 # ==========================================
 
-# 1. Select Method
-OPTIMIZATION_METHOD = OptimizationConfig.METHOD
-
-# 2. Select Strategy
-STRATEGY_MAP = strategy_registry.get_strategy_map()
-requested_strategy_name = str(OptimizationConfig.STRATEGY_NAME or "").strip()
-STRATEGY_CLASS = strategy_registry.resolve_strategy_class(
-    requested_strategy_name,
-    default_name=strategy_registry.DEFAULT_STRATEGY_NAME,
-)
-ACTIVE_STRATEGY_NAME = STRATEGY_CLASS.__name__
-
 # 3. Data Settings
 CSV_DIR = "data"
 SYMBOL_LIST = BaseConfig.SYMBOLS
@@ -154,28 +142,15 @@ DATA_MODE = str(os.getenv("LQ_DATA_MODE", "raw-first") or "raw-first").strip().l
 if DATA_MODE not in {"raw-first", "legacy"}:
     DATA_MODE = "raw-first"
 
-# 4. Optimization Settings
-_RESOLVED_OPTUNA_CONFIG = strategy_registry.resolve_optuna_config(
-    ACTIVE_STRATEGY_NAME,
-    OptimizationConfig.OPTUNA_CONFIG,
-)
-_RESOLVED_GRID_CONFIG = strategy_registry.resolve_grid_config(
-    ACTIVE_STRATEGY_NAME,
-    OptimizationConfig.GRID_CONFIG,
-)
-GRID_PARAMS = dict(_RESOLVED_GRID_CONFIG.get("params", {}))
-OPTUNA_CONFIG = dict(_RESOLVED_OPTUNA_CONFIG.get("params", {}))
-OPTUNA_TRIALS = int(_RESOLVED_OPTUNA_CONFIG.get("n_trials", 20))
+# 4. Optimization Settings / lazy-initialized runtime state
+OPTIMIZATION_METHOD = str(OptimizationConfig.METHOD)
+STRATEGY_CLASS = None
+ACTIVE_STRATEGY_NAME = ""
+GRID_PARAMS: dict[str, Any] = {}
+OPTUNA_CONFIG: dict[str, Any] = {}
+OPTUNA_TRIALS = 20
 MAX_WORKERS = min(2, max(1, int(OptimizationConfig.MAX_WORKERS)))
-
-
-# 5. Data Splitting Settings (WFA)
-try:
-    BASE_START = datetime.strptime(BacktestConfig.START_DATE, "%Y-%m-%d")
-
-except Exception as e:
-    print(f"Error parsing dates from config: {e}. Using defaults.")
-    BASE_START = datetime(2023, 1, 1)
+BASE_START = datetime(2023, 1, 1)
 
 AUTO_COLLECT_DB = str(os.getenv("LQ_AUTO_COLLECT_DB", "0")).strip().lower() not in {
     "0",
@@ -184,12 +159,7 @@ AUTO_COLLECT_DB = str(os.getenv("LQ_AUTO_COLLECT_DB", "0")).strip().lower() not 
     "off",
 }
 
-try:
-    BASE_END = (
-        datetime.strptime(BacktestConfig.END_DATE, "%Y-%m-%d") if BacktestConfig.END_DATE else None
-    )
-except Exception:
-    BASE_END = None
+BASE_END = None
 
 
 def _enforce_1s_base_timeframe(value: str) -> str:
@@ -215,6 +185,59 @@ PROFILE_TOTALS = {
     "orchestration_seconds": 0.0,
     "calls": 0,
 }
+
+
+def _get_strategy_registry():
+    return _strategy_registry
+
+
+def _resolve_strategy_class():
+    strategy_registry = _get_strategy_registry()
+    requested_strategy_name = str(OptimizationConfig.STRATEGY_NAME or "").strip()
+    return strategy_registry.resolve_strategy_class(
+        requested_strategy_name,
+        default_name=strategy_registry.DEFAULT_STRATEGY_NAME,
+    )
+
+
+def _initialize_optimize_runtime_state(*, log: bool = False) -> None:
+    global OPTIMIZATION_METHOD, STRATEGY_CLASS, ACTIVE_STRATEGY_NAME
+    global GRID_PARAMS, OPTUNA_CONFIG, OPTUNA_TRIALS, MAX_WORKERS
+    global BASE_START, BASE_END
+
+    strategy_registry = _get_strategy_registry()
+    STRATEGY_CLASS = _resolve_strategy_class()
+    ACTIVE_STRATEGY_NAME = STRATEGY_CLASS.__name__
+    OPTIMIZATION_METHOD = str(OptimizationConfig.METHOD)
+
+    resolved_optuna_config = strategy_registry.resolve_optuna_config(
+        ACTIVE_STRATEGY_NAME,
+        OptimizationConfig.OPTUNA_CONFIG,
+    )
+    resolved_grid_config = strategy_registry.resolve_grid_config(
+        ACTIVE_STRATEGY_NAME,
+        OptimizationConfig.GRID_CONFIG,
+    )
+    GRID_PARAMS = dict(resolved_grid_config.get("params", {}))
+    OPTUNA_CONFIG = dict(resolved_optuna_config.get("params", {}))
+    OPTUNA_TRIALS = int(resolved_optuna_config.get("n_trials", 20))
+    MAX_WORKERS = min(2, max(1, int(OptimizationConfig.MAX_WORKERS)))
+
+    try:
+        BASE_START = datetime.strptime(BacktestConfig.START_DATE, "%Y-%m-%d")
+    except Exception as exc:
+        if log:
+            print(f"Error parsing dates from config: {exc}. Using defaults.")
+        BASE_START = datetime(2023, 1, 1)
+
+    try:
+        BASE_END = (
+            datetime.strptime(BacktestConfig.END_DATE, "%Y-%m-%d")
+            if BacktestConfig.END_DATE
+            else None
+        )
+    except Exception:
+        BASE_END = None
 
 
 def _env_int(name: str, default: int) -> int:
@@ -678,7 +701,7 @@ def _execute_backtest(
     """
     orchestration_start = time.perf_counter()
     strategy_name = getattr(strategy_cls, "__name__", "")
-    resolved_params = strategy_registry.resolve_strategy_params(
+    resolved_params = _get_strategy_registry().resolve_strategy_params(
         strategy_name,
         params if isinstance(params, dict) else {},
     )
@@ -1155,6 +1178,7 @@ def main(argv: list[str] | None = None) -> int:
     global ACTIVE_DATA_SOURCE, ACTIVE_DATA_MODE
     global ACTIVE_MARKET_DB_PATH, ACTIVE_MARKET_EXCHANGE, ACTIVE_BASE_TIMEFRAME
     global PARQUET_MODE, DATA_DICT, PARQUET_REPO
+    _initialize_optimize_runtime_state(log=False)
 
     parser = argparse.ArgumentParser(description="Run LuminaQuant walk-forward optimization.")
     parser.add_argument(
