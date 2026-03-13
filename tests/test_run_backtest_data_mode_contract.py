@@ -72,9 +72,10 @@ def test_external_source_uses_external_loader(monkeypatch):
     called: dict[str, object] = {}
     monkeypatch.setattr(run_backtest, "SYMBOL_LIST", ["BTC/USDT"])
 
-    def _loader(root_path, *, symbol_list, start_date=None, end_date=None):
+    def _loader(root_path, *, symbol_list, symbol_map=None, start_date=None, end_date=None):
         called["root_path"] = root_path
         called["symbol_list"] = list(symbol_list)
+        called["symbol_map"] = dict(symbol_map or {})
         called["start_date"] = start_date
         called["end_date"] = end_date
         return {"BTC/USDT": object()}
@@ -93,6 +94,7 @@ def test_external_source_uses_external_loader(monkeypatch):
 
     assert "BTC/USDT" in loaded
     assert called["root_path"] == "var/data/external/backtest"
+    assert called["symbol_map"] == {}
 
 
 def test_external_single_file_rejects_multi_symbol(tmp_path):
@@ -103,3 +105,29 @@ def test_external_single_file_rejects_multi_symbol(tmp_path):
             str(path),
             symbol_list=["BTC/USDT", "ETH/USDT"],
         )
+
+
+def test_external_source_passes_symbol_map(monkeypatch):
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(run_backtest, "SYMBOL_LIST", ["BTC/USDT"])
+
+    def _loader(root_path, *, symbol_list, symbol_map=None, start_date=None, end_date=None):
+        captured["root_path"] = root_path
+        captured["symbol_map"] = dict(symbol_map or {})
+        return {"BTC/USDT": object()}
+
+    monkeypatch.setattr(run_backtest, "load_data_dict_from_external_root", _loader)
+    loaded = run_backtest._load_data_dict(
+        "external",
+        "data/market_parquet",
+        "binance",
+        base_timeframe="1s",
+        external_data_root="var/data/external/backtest",
+        external_symbol_map={"BTC/USDT": "custom.csv"},
+        data_mode="legacy",
+        backtest_mode="windowed",
+        auto_collect_db=False,
+    )
+
+    assert "BTC/USDT" in loaded
+    assert captured["symbol_map"] == {"BTC/USDT": "custom.csv"}

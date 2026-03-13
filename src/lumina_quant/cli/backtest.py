@@ -264,6 +264,7 @@ def _load_data_dict(
     *,
     base_timeframe,
     external_data_root=None,
+    external_symbol_map=None,
     data_mode="legacy",
     backtest_mode="windowed",
     auto_collect_db=True,
@@ -282,6 +283,7 @@ def _load_data_dict(
         data_dict = load_data_dict_from_external_root(
             str(external_data_root or market_db_path),
             symbol_list=list(SYMBOL_LIST),
+            symbol_map=dict(external_symbol_map or {}),
             start_date=START_DATE,
             end_date=END_DATE,
         )
@@ -655,6 +657,7 @@ def run(
                 market_exchange,
                 base_timeframe=str(timeframe_token),
                 external_data_root=str(external_data_root or ""),
+                external_symbol_map=dict(getattr(BacktestConfig, "EXTERNAL_SYMBOL_MAP", {}) or {}),
                 data_mode=resolved_data_mode,
                 backtest_mode=resolved_backtest_mode,
                 auto_collect_db=bool(auto_collect_db),

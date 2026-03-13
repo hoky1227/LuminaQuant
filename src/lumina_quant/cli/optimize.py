@@ -387,6 +387,7 @@ def load_all_data(
     data_source="auto",
     market_db_path=None,
     external_data_root=None,
+    external_symbol_map=None,
     market_exchange="binance",
     timeframe="1m",
     start_date=None,
@@ -410,6 +411,7 @@ def load_all_data(
         return load_data_dict_from_external_root(
             str(external_data_root or market_db_path or csv_dir),
             symbol_list=[str(item) for item in symbol_list],
+            symbol_map=dict(external_symbol_map or {}),
             start_date=start_date,
             end_date=end_date,
         )
@@ -1357,6 +1359,7 @@ def main(argv: list[str] | None = None) -> int:
                 data_source=contract.data_source,
                 market_db_path=args.market_db_path,
                 external_data_root=args.external_data_root,
+                external_symbol_map=dict(getattr(BacktestConfig, "EXTERNAL_SYMBOL_MAP", {}) or {}),
                 market_exchange=args.market_exchange,
                 timeframe=str(args.base_timeframe),
                 start_date=BASE_START,

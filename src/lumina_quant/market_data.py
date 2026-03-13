@@ -272,6 +272,7 @@ def load_data_dict_from_external_root(
     root_path: str,
     *,
     symbol_list: list[str],
+    symbol_map: dict[str, str] | None = None,
     start_date: Any = None,
     end_date: Any = None,
 ) -> dict[str, pl.DataFrame]:
@@ -281,6 +282,7 @@ def load_data_dict_from_external_root(
     loader = OHLCVFrameLoader(start_date=start_date, end_date=end_date)
     root = Path(root_path).expanduser()
     normalized_symbols = [str(symbol) for symbol in list(symbol_list or []) if str(symbol)]
+    resolved_symbol_map = dict(symbol_map or {})
     if root.is_file() and len(normalized_symbols) > 1:
         raise RuntimeError(
             "Single-file external market data only supports one symbol. Use a directory root for multi-symbol external data."
@@ -292,6 +294,7 @@ def load_data_dict_from_external_root(
             candidate_paths = [str(root)]
         else:
             candidate_paths = [
+                *( [str(root / resolved_symbol_map[str(symbol)])] if str(symbol) in resolved_symbol_map else [] ),
                 *symbol_parquet_candidates(str(root), str(symbol)),
                 *symbol_csv_candidates(str(root), str(symbol)),
             ]
