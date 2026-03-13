@@ -38,27 +38,3 @@ def committed_handler_cls():
     from lumina_quant.live.data_materialized import CommittedWindowDataHandler
 
     return CommittedWindowDataHandler
-
-
-def build_live_data_handler(*, transport: str, events, symbol_list, config, exchange=None):
-    """Instantiate the appropriate live data handler for the configured source."""
-    source = resolve_market_data_source(config)
-    if source == "binance_live":
-        return binance_live_handler_cls()(
-            events,
-            symbol_list,
-            config,
-            exchange,
-            transport=transport,
-        )
-    if source == "external":
-        return external_handler_cls()(events, symbol_list, config, exchange)
-    if source == "polymarket_live":
-        return polymarket_live_handler_cls()(
-            events,
-            symbol_list,
-            config,
-            exchange,
-            transport=transport,
-        )
-    return committed_handler_cls()(events, symbol_list, config, exchange)

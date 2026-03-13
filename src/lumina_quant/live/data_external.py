@@ -13,18 +13,7 @@ from typing import Any
 import polars as pl
 
 from lumina_quant.core.market_window_contract import build_market_window_event
-
-
-def _symbol_file_candidates(root: Path, symbol: str, symbol_map: dict[str, str]) -> list[Path]:
-    mapped = str(symbol_map.get(symbol, "") or "").strip()
-    compact = symbol.replace("/", "")
-    return [
-        root / mapped,
-        root / f"{symbol}.parquet",
-        root / f"{compact}.parquet",
-        root / f"{symbol.replace('/', '_')}.parquet",
-        root / f"{symbol.replace('/', '-')}.parquet",
-    ]
+from lumina_quant.market_data import external_symbol_candidate_paths
 
 
 class ExternalWindowDataHandler:
@@ -166,9 +155,16 @@ class ExternalWindowDataHandler:
                     "Single-file external live parquet mode only supports one symbol. Use a directory root for multi-symbol external data."
                 )
             return self._path
-        for candidate in _symbol_file_candidates(self._path, symbol, self._symbol_map):
-            if candidate and candidate.exists():
-                return candidate
+        for candidate in external_symbol_candidate_paths(
+            self._path,
+            symbol,
+            symbol_map=self._symbol_map,
+            include_csv=False,
+            include_parquet=True,
+        ):
+            path = Path(candidate)
+            if path.exists():
+                return path
         raise FileNotFoundError(f"External parquet data not found for {symbol} under {self._path}")
 
     def _run_parquet_loop(self) -> None:

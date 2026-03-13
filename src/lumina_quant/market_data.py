@@ -259,6 +259,29 @@ def symbol_parquet_candidates(root_dir: str, symbol: str) -> list[str]:
     ]
 
 
+def external_symbol_candidate_paths(
+    root_path: str | os.PathLike[str],
+    symbol: str,
+    *,
+    symbol_map: dict[str, str] | None = None,
+    include_csv: bool = True,
+    include_parquet: bool = True,
+) -> list[str]:
+    """Return canonical external-data candidate paths for one symbol."""
+    root = Path(root_path).expanduser()
+    resolved_symbol_map = dict(symbol_map or {})
+    candidates: list[str] = []
+    if str(symbol) in resolved_symbol_map:
+        mapped = str(resolved_symbol_map[str(symbol)] or "").strip()
+        if mapped:
+            candidates.append(str(root / mapped))
+    if include_parquet:
+        candidates.extend(symbol_parquet_candidates(str(root), str(symbol)))
+    if include_csv:
+        candidates.extend(symbol_csv_candidates(str(root), str(symbol)))
+    return candidates
+
+
 def resolve_symbol_csv_path(csv_dir: str, symbol: str) -> str:
     """Resolve the first existing symbol CSV path, fallback to compact name."""
     candidates = symbol_csv_candidates(csv_dir, symbol)
@@ -282,7 +305,6 @@ def load_data_dict_from_external_root(
     loader = OHLCVFrameLoader(start_date=start_date, end_date=end_date)
     root = Path(root_path).expanduser()
     normalized_symbols = [str(symbol) for symbol in list(symbol_list or []) if str(symbol)]
-    resolved_symbol_map = dict(symbol_map or {})
     if root.is_file() and len(normalized_symbols) > 1:
         raise RuntimeError(
             "Single-file external market data only supports one symbol. Use a directory root for multi-symbol external data."
@@ -293,11 +315,13 @@ def load_data_dict_from_external_root(
         if root.is_file():
             candidate_paths = [str(root)]
         else:
-            candidate_paths = [
-                *( [str(root / resolved_symbol_map[str(symbol)])] if str(symbol) in resolved_symbol_map else [] ),
-                *symbol_parquet_candidates(str(root), str(symbol)),
-                *symbol_csv_candidates(str(root), str(symbol)),
-            ]
+            candidate_paths = external_symbol_candidate_paths(
+                root,
+                str(symbol),
+                symbol_map=symbol_map,
+                include_csv=True,
+                include_parquet=True,
+            )
         for candidate in candidate_paths:
             path = Path(candidate)
             if not path.exists():
