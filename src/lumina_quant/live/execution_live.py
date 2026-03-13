@@ -74,6 +74,7 @@ class LiveExecutionHandler(ExecutionHandler):
         self.state_machine = OrderStateMachine()
         self.state_projector = OrderStateProjector(state_machine=self.state_machine)
         self._last_exchange_open_ids: set[str] = set()
+        self._last_exchange_open_signature: tuple[tuple[str, ...], ...] = tuple()
         self._last_exchange_open_snapshot_ok = False
         self._last_exchange_open_snapshot_ts = 0.0
 
@@ -371,6 +372,7 @@ class LiveExecutionHandler(ExecutionHandler):
 
         open_ids = {str(item.get("id")) for item in exchange_open if item.get("id")}
         self._last_exchange_open_ids = set(open_ids)
+        self._last_exchange_open_signature = tuple((order_id,) for order_id in sorted(open_ids))
 
         tracked_ids = set(self.tracked_orders.keys())
         for row in exchange_open:
@@ -537,6 +539,23 @@ class LiveExecutionHandler(ExecutionHandler):
     def exchange_open_order_count(self) -> int:
         """Most recent exchange open-order count observed during reconciliation."""
         return len(self._last_exchange_open_ids)
+
+    def tracked_order_signature(self) -> tuple[tuple[str, ...], ...]:
+        rows: list[tuple[str, ...]] = []
+        for order_id, entry in sorted(self.tracked_orders.items()):
+            event = entry.get("event")
+            rows.append(
+                (
+                    str(order_id),
+                    str(entry.get("state") or ""),
+                    str(round(float(entry.get("last_filled") or 0.0), 8)),
+                    str(getattr(event, "client_order_id", None) or ""),
+                )
+            )
+        return tuple(rows)
+
+    def exchange_open_order_signature(self) -> tuple[tuple[str, ...], ...]:
+        return tuple(self._last_exchange_open_signature)
 
     def exchange_open_snapshot_ready(self) -> bool:
         """Whether exchange open-order snapshot has been fetched successfully at least once."""

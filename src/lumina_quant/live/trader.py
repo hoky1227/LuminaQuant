@@ -165,6 +165,13 @@ class LiveTrader(TradingEngine):
             exchange_snapshot_ready=lambda: bool(
                 getattr(self.execution_handler, "exchange_open_snapshot_ready", lambda: False)()
             ),
+            tracked_order_signature=lambda: tuple(
+                getattr(self.execution_handler, "tracked_order_signature", lambda: tuple())()
+            ),
+            cache_open_order_signature=self._cache_open_order_signature,
+            exchange_open_order_signature=lambda: tuple(
+                getattr(self.execution_handler, "exchange_open_order_signature", lambda: tuple())()
+            ),
         )
 
         self.portfolio = portfolio_cls(self.data_handler, self.events, time.time(), self.config)
@@ -500,6 +507,21 @@ class LiveTrader(TradingEngine):
         self.audit_store.log_fill(self.run_id, event)
         self._save_state()
 
+    def _cache_open_order_signature(self) -> tuple[tuple[str, ...], ...]:
+        rows: list[tuple[str, ...]] = []
+        for order_id, payload in sorted(dict(self.runtime_cache.open_orders or {}).items()):
+            if not isinstance(payload, dict):
+                continue
+            rows.append(
+                (
+                    str(order_id),
+                    str(payload.get("state") or ""),
+                    str(round(float(payload.get("last_filled") or 0.0), 8)),
+                    str(payload.get("client_order_id") or ""),
+                )
+            )
+        return tuple(rows)
+
     def _append_outbox(self, event_type: str, payload: dict) -> None:
         item = {
             "event_type": str(event_type),
@@ -541,6 +563,7 @@ class LiveTrader(TradingEngine):
             )
             return
 
+        hedge_mode = str(getattr(self.config, "POSITION_MODE", "")).upper() == "HEDGE"
         exchange_position_legs = {}
         if hasattr(self.exchange, "get_all_position_legs"):
             try:
@@ -555,14 +578,20 @@ class LiveTrader(TradingEngine):
 
         local = self.portfolio.current_positions
         self.runtime_cache.update_positions(exchange_positions)
+        cached_legs = dict(getattr(self.runtime_cache, "position_legs", {}) or {})
+        portfolio_legs = dict(getattr(self.portfolio, "current_position_legs", {}) or {})
         if exchange_position_legs:
-            self.runtime_cache.update_position_legs(exchange_position_legs)
-            self.portfolio.current_position_legs = dict(exchange_position_legs)
+            effective_position_legs = dict(exchange_position_legs)
+            self.runtime_cache.update_position_legs(effective_position_legs)
+            self.portfolio.current_position_legs = dict(effective_position_legs)
+        elif hedge_mode:
+            effective_position_legs = dict(cached_legs or portfolio_legs)
         else:
+            effective_position_legs = {}
             self.runtime_cache.update_position_legs({})
             self.portfolio.current_position_legs = {}
 
-        if str(getattr(self.config, "POSITION_MODE", "")).upper() == "HEDGE":
+        if hedge_mode:
             dual_leg_signature = tuple(
                 sorted(
                     (
@@ -570,7 +599,7 @@ class LiveTrader(TradingEngine):
                         round(float(legs.get("LONG", 0.0)), 8),
                         round(float(legs.get("SHORT", 0.0)), 8),
                     )
-                    for symbol, legs in exchange_position_legs.items()
+                    for symbol, legs in effective_position_legs.items()
                     if float(legs.get("LONG", 0.0)) > 0.0 and float(legs.get("SHORT", 0.0)) > 0.0
                 )
             )
@@ -579,7 +608,7 @@ class LiveTrader(TradingEngine):
                 self.audit_store.log_risk_event(
                     self.run_id,
                     reason="HEDGE_DUAL_LEG_DETECTED",
-                    details={"legs": exchange_position_legs},
+                    details={"legs": effective_position_legs},
                 )
             if not dual_leg_signature:
                 self._last_dual_leg_signature = ()
@@ -679,8 +708,15 @@ class LiveTrader(TradingEngine):
             except Exception as exc:
                 self.logger.error("Flatten could not fetch position legs: %s", exc)
 
+        effective_legs = (
+            dict(legs)
+            if isinstance(legs, dict) and legs
+            else dict(getattr(self.runtime_cache, "position_legs", {}) or {})
+            or dict(getattr(self.portfolio, "current_position_legs", {}) or {})
+        )
+
         for symbol in self.symbol_list:
-            payload = legs.get(symbol) if isinstance(legs, dict) else None
+            payload = effective_legs.get(symbol) if isinstance(effective_legs, dict) else None
             if not isinstance(payload, dict):
                 continue
             long_qty = float(payload.get("LONG", 0.0) or 0.0)
@@ -1002,6 +1038,8 @@ class LiveTrader(TradingEngine):
                     "cache_open_orders": outcome.cache_open_orders,
                     "exchange_open_orders": outcome.exchange_open_orders,
                     "exchange_snapshot_ready": outcome.exchange_snapshot_ready,
+                    "tracked_cache_signature_match": outcome.tracked_cache_signature_match,
+                    "exchange_signature_match": outcome.exchange_signature_match,
                     "elapsed_seconds": round(float(outcome.elapsed_seconds), 3),
                 },
             )
@@ -1016,6 +1054,8 @@ class LiveTrader(TradingEngine):
                 "cache_open_orders": outcome.cache_open_orders,
                 "exchange_open_orders": outcome.exchange_open_orders,
                 "exchange_snapshot_ready": outcome.exchange_snapshot_ready,
+                "tracked_cache_signature_match": outcome.tracked_cache_signature_match,
+                "exchange_signature_match": outcome.exchange_signature_match,
             },
         )
         self._activate_fallback_polling("startup_reconciliation_timeout")

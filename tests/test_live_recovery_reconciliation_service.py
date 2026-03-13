@@ -79,3 +79,58 @@ def test_recovery_reconciliation_service_requires_snapshot_ready_when_configured
     outcome = service.startup_converge(timeout_seconds=3)
     assert outcome.converged is True
     assert outcome.exchange_snapshot_ready is True
+
+
+def test_recovery_reconciliation_service_requires_tracked_and_cache_signatures_to_match():
+    state = {
+        "tracked": (("ord-1", "OPEN", "0.0", "cid-1"),),
+        "cached": (("ord-1", "SUBMITTED", "0.0", "cid-1"),),
+        "calls": 0,
+    }
+
+    def _reconcile_orders():
+        state["calls"] += 1
+        if state["calls"] >= 2:
+            state["cached"] = state["tracked"]
+
+    service = RecoveryReconciliationService(
+        reconcile_positions=lambda: None,
+        reconcile_orders=_reconcile_orders,
+        tracked_orders_count=lambda: len(state["tracked"]),
+        cache_open_orders_count=lambda: len(state["cached"]),
+        tracked_order_signature=lambda: state["tracked"],
+        cache_open_order_signature=lambda: state["cached"],
+    )
+
+    outcome = service.startup_converge(timeout_seconds=3)
+    assert outcome.converged is True
+    assert outcome.tracked_cache_signature_match is True
+
+
+def test_recovery_reconciliation_service_requires_exchange_signature_when_configured():
+    state = {
+        "tracked": (("ord-1", "OPEN", "0.0", "cid-1"),),
+        "cached": (("ord-1", "OPEN", "0.0", "cid-1"),),
+        "exchange": (("ord-2",),),
+        "calls": 0,
+    }
+
+    def _reconcile_orders():
+        state["calls"] += 1
+        if state["calls"] >= 2:
+            state["exchange"] = (("ord-1",),)
+
+    service = RecoveryReconciliationService(
+        reconcile_positions=lambda: None,
+        reconcile_orders=_reconcile_orders,
+        tracked_orders_count=lambda: len(state["tracked"]),
+        cache_open_orders_count=lambda: len(state["cached"]),
+        exchange_open_orders_count=lambda: len(state["exchange"]),
+        tracked_order_signature=lambda: state["tracked"],
+        cache_open_order_signature=lambda: state["cached"],
+        exchange_open_order_signature=lambda: state["exchange"],
+    )
+
+    outcome = service.startup_converge(timeout_seconds=3)
+    assert outcome.converged is True
+    assert outcome.exchange_signature_match is True
