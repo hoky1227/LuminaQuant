@@ -1,0 +1,40 @@
+{
+  "generated_at": "2026-03-14T09:55:42.565654+00:00",
+  "combo": [
+    "composite_trend_stable_30m_stable_ls_core_ls_0.60_0.45_0.20_0.80",
+    "topcap_tsmom_1h_defensive_24_6_0.020",
+    "regime_breakout_1h_trend_ls_48_0.70"
+  ],
+  "params": {
+    "correlation_threshold": 0.4,
+    "cost_penalty": 0.1,
+    "max_strategy_cap": 0.4,
+    "target_vol": 0.08,
+    "max_family_cap": 0.5
+  },
+  "validation_objective": 11.421921601059829,
+  "weights": {
+    "0df2c8b8498ba604": 0.4,
+    "9a24887d739bf4b0": 0.4,
+    "deb70de97b53b507": 0.19999999999999996
+  },
+  "val": {
+    "total_return": 0.05212369821771534,
+    "cagr": 0.8189418178311954,
+    "sharpe": 4.001652400103464,
+    "sortino": 10.11956262704192,
+    "calmar": 38.27088311695073,
+    "max_drawdown": 0.02139856076298574,
+    "volatility": 0.15241169243812133
+  },
+  "oos": {
+    "total_return": 0.009079295332180548,
+    "cagr": 0.09884192707363249,
+    "sharpe": 0.5030607303109312,
+    "sortino": 0.94762452310618,
+    "calmar": 1.687425882890989,
+    "max_drawdown": 0.05857556653350082,
+    "volatility": 0.24415254287674457
+  },
+  "runs": 748
+}

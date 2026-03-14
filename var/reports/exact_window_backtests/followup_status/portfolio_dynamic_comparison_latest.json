@@ -1,0 +1,307 @@
+{
+  "artifact_kind": "portfolio_comparison",
+  "causal_dynamic_portfolio": {
+    "best_params": {
+      "cash_when_no_active": true,
+      "correlation_penalty": 0.0,
+      "lookback_days": 20,
+      "max_family_weight": 0.55,
+      "max_trailing_drawdown": 0.1,
+      "max_weight": 0.5,
+      "min_trailing_return": 0.0,
+      "min_trailing_sharpe": 0.0,
+      "rebalance_days": 3,
+      "regime_strength": 0.5,
+      "use_regime_features": true
+    },
+    "oos": {
+      "cagr": 0.13781667344586013,
+      "calmar": 5.985883861822879,
+      "max_drawdown": 0.023023612991363795,
+      "sharpe": 1.1764008956920013,
+      "sortino": 3.130311250245071,
+      "total_return": 0.012457484650929773,
+      "volatility": 0.11517336627567139
+    },
+    "path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_dynamic_online_current/causal_dynamic_portfolio_latest.json",
+    "val": {
+      "cagr": 0.330145942071572,
+      "calmar": 85.83724680328498,
+      "max_drawdown": 0.0038461851278638326,
+      "sharpe": 5.768397370095939,
+      "sortino": 8.098610586819186,
+      "total_return": 0.024525928052964163,
+      "volatility": 0.04968276243254591
+    },
+    "weights": [
+      {
+        "candidate_id": "feecc2c87fbb8475",
+        "name": "composite_trend_stable_30m_stable_ls_highconv_ls_0.75_0.45_0.20_0.80",
+        "strategy_class": "CompositeTrendStrategy",
+        "timeframe": "30m",
+        "weight": 0.5
+      },
+      {
+        "candidate_id": "4c8fdaeabe315563",
+        "name": "topcap_tsmom_1h_balanced_16_4_0.015",
+        "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+        "timeframe": "1h",
+        "weight": 0.11536161641283528
+      },
+      {
+        "candidate_id": "deb70de97b53b507",
+        "name": "regime_breakout_1h_trend_ls_48_0.70",
+        "strategy_class": "RegimeBreakoutCandidateStrategy",
+        "timeframe": "1h",
+        "weight": 0.02577553550527848
+      }
+    ]
+  },
+  "comparison_scope": [
+    "equal_weight_diagnostic",
+    "current_one_shot_optimized",
+    "exact_window_frozen_tuned",
+    "causal_dynamic_portfolio"
+  ],
+  "current_one_shot_optimized": {
+    "bundle_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_one_shot_current_bundle_latest.json",
+    "legacy_reference_path": "/home/hoky/Quants-agent/LuminaQuant/reports/portfolio_optimization_latest.json",
+    "oos": {
+      "cagr": 0.6289327837877341,
+      "calmar": 10.713604745238294,
+      "max_drawdown": 0.05870412421806637,
+      "sharpe": 1.7067110916177235,
+      "sortino": 4.340534394917453,
+      "total_return": 0.04789913406446966,
+      "volatility": 0.31322550443768743
+    },
+    "path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_one_shot_current_opt/portfolio_optimization_latest.json",
+    "search_summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_one_shot_search/best_search_summary.json",
+    "val": {
+      "cagr": 0.77977446831369,
+      "calmar": 26.466070466415825,
+      "max_drawdown": 0.02946317509821439,
+      "sharpe": 3.0028163085596984,
+      "sortino": 6.19759686323781,
+      "total_return": 0.050180317234329586,
+      "volatility": 0.19841887691699528
+    },
+    "weights": [
+      {
+        "name": "composite_trend_stable_30m_stable_ls_highconv_ls_0.75_0.45_0.20_0.80",
+        "strategy_class": "CompositeTrendStrategy",
+        "timeframe": "30m",
+        "weight": 0.35
+      },
+      {
+        "name": "topcap_tsmom_1h_balanced_16_4_0.015",
+        "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+        "timeframe": "1h",
+        "weight": 0.35
+      },
+      {
+        "name": "regime_breakout_1h_trend_ls_48_0.70",
+        "strategy_class": "RegimeBreakoutCandidateStrategy",
+        "timeframe": "1h",
+        "weight": 0.30000000000000004
+      }
+    ]
+  },
+  "deltas": {
+    "dynamic_vs_current_one_shot_oos_return": -0.03544164941353989,
+    "dynamic_vs_current_one_shot_oos_sharpe": -0.5303101959257221,
+    "tuned_vs_current_one_shot_oos_return": -0.021639550784894768,
+    "tuned_vs_current_one_shot_oos_sharpe": -1.496858213393502,
+    "tuned_vs_equal_weight_oos_return": -0.03251319335915204,
+    "tuned_vs_equal_weight_oos_sharpe": -0.13592835705656578
+  },
+  "equal_weight_baseline": {
+    "normalization_method": "summary_only_missing_component_streams",
+    "normalization_note": "component rows lacked reusable return_streams, so comparison falls back to trusted summary metrics only",
+    "oos": {
+      "avg_trade": 0.0006658516259699479,
+      "benchmark_corr": -0.4178832679754451,
+      "cagr": 0.012690450885585403,
+      "calmar": 0.18333710367799566,
+      "component_count": 4,
+      "deflated_sharpe": 0.03248240637348389,
+      "exposure": 0.3595339189563821,
+      "max_drawdown": 0.06921921766515027,
+      "pbo": 0.5,
+      "return": 0.05877277663872693,
+      "rolling_sharpe_min": -22.391192673791142,
+      "sharpe": 0.34578123528078736,
+      "sortino": 0.48684169449987996,
+      "spa_pvalue": 0.34,
+      "stability": -1.5006903922463195,
+      "total_return": 0.05877277663872693,
+      "trade_count": 153.0,
+      "turnover": 0.03805429682704438,
+      "volatility": 0.038581112837876394,
+      "win_rate": 0.3125434524730778,
+      "worst_month": -0.00138078449263912
+    },
+    "path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/committee_portfolio_followup_latest.json",
+    "val": {
+      "avg_trade": 0.0007382936994750595,
+      "benchmark_corr": -0.26387098191977953,
+      "cagr": 0.015517180241309214,
+      "calmar": 0.47145211964105577,
+      "component_count": 4,
+      "deflated_sharpe": 0.08116387608745088,
+      "exposure": 0.30133611086700884,
+      "max_drawdown": 0.03291358675643108,
+      "pbo": 0.625,
+      "return": 0.06483034281542444,
+      "rolling_sharpe_min": -35.92908679787281,
+      "sharpe": 0.6341192914241363,
+      "sortino": 0.8162936910982905,
+      "spa_pvalue": 0.325,
+      "stability": -1.5030206487531936,
+      "total_return": 0.06483034281542444,
+      "trade_count": 149.75,
+      "turnover": 0.037095291678682765,
+      "volatility": 0.024762965835526632,
+      "win_rate": 0.2879704301075269,
+      "worst_month": -0.0060412975063870444
+    },
+    "weights": [
+      {
+        "name": "composite_trend_stable_30m_stable_ls_highconv_ls_0.75_0.45_0.20_0.80",
+        "strategy_class": "CompositeTrendStrategy",
+        "timeframe": "30m",
+        "weight": 0.25
+      },
+      {
+        "name": "topcap_tsmom_1h_balanced_16_4_0.015",
+        "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+        "timeframe": "1h",
+        "weight": 0.25
+      },
+      {
+        "name": "regime_breakout_1h_trend_ls_48_0.70",
+        "strategy_class": "RegimeBreakoutCandidateStrategy",
+        "timeframe": "1h",
+        "weight": 0.25
+      },
+      {
+        "name": "rolling_breakout_30m_guarded_ls_64_0.002",
+        "strategy_class": "RollingBreakoutStrategy",
+        "timeframe": "30m",
+        "weight": 0.25
+      }
+    ]
+  },
+  "exact_window_frozen_tuned": {
+    "oos": {
+      "cagr": 0.005739981865378274,
+      "calmar": 0.08481530890003625,
+      "max_drawdown": 0.06767624783567605,
+      "sharpe": 0.20985287822422158,
+      "sortino": 0.24979371963966698,
+      "total_return": 0.026259583279574894,
+      "volatility": 0.029309132710955532
+    },
+    "path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_opt_tuned/portfolio_optimization_latest.json",
+    "val": {
+      "cagr": 0.01583229212704995,
+      "calmar": 0.6567476828347171,
+      "max_drawdown": 0.02410711532123433,
+      "sharpe": 0.8263716074984389,
+      "sortino": 1.1635994479104115,
+      "total_return": 0.06613300996213267,
+      "volatility": 0.019231996753443264
+    },
+    "weights": [
+      {
+        "name": "composite_trend_stable_30m_stable_ls_core_ls_0.60_0.45_0.20_0.80",
+        "strategy_class": "CompositeTrendStrategy",
+        "timeframe": "30m",
+        "weight": 0.3
+      },
+      {
+        "name": "topcap_tsmom_1h_defensive_24_6_0.020",
+        "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+        "timeframe": "1h",
+        "weight": 0.3
+      },
+      {
+        "name": "rolling_breakout_30m_guarded_ls_64_0.002",
+        "strategy_class": "RollingBreakoutStrategy",
+        "timeframe": "30m",
+        "weight": 0.3
+      },
+      {
+        "name": "regime_breakout_1h_trend_ls_48_0.70",
+        "strategy_class": "RegimeBreakoutCandidateStrategy",
+        "timeframe": "1h",
+        "weight": 0.09999999999999998
+      }
+    ]
+  },
+  "freeze_artifact_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_exact_window_freeze_latest.json",
+  "frozen_candidates": [
+    {
+      "name": "composite_trend_stable_30m_stable_ls_core_ls_0.60_0.45_0.20_0.80",
+      "strategy_class": "CompositeTrendStrategy",
+      "timeframe": "30m"
+    },
+    {
+      "name": "regime_breakout_1h_trend_ls_48_0.70",
+      "strategy_class": "RegimeBreakoutCandidateStrategy",
+      "timeframe": "1h"
+    },
+    {
+      "name": "rolling_breakout_30m_guarded_ls_64_0.002",
+      "strategy_class": "RollingBreakoutStrategy",
+      "timeframe": "30m"
+    },
+    {
+      "name": "topcap_tsmom_1h_defensive_24_6_0.020",
+      "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+      "timeframe": "1h"
+    }
+  ],
+  "generated_at": "2026-03-14T06:38:42.313085+00:00",
+  "schema_version": "1.2",
+  "search_summary": {
+    "current_one_shot_optimized": {
+      "best_metric": [
+        3.2358774149787957,
+        3.0028163085596984,
+        0.050180317234329586,
+        0.02946317509821439,
+        0.33499999999999996
+      ],
+      "best_params": {
+        "correlation_threshold": 0.4,
+        "cost_penalty": 0.1,
+        "max_family_cap": 0.5,
+        "max_strategy_cap": 0.35,
+        "target_vol": 0.08
+      },
+      "objective": "val_sharpe + 12*val_return - 4*val_max_drawdown - 0.75*hhi - 0.15*turnover",
+      "runs": 384
+    },
+    "exact_window_frozen_tuned": {
+      "best_metric": [
+        1.3135392657590936,
+        0.8263716074984389,
+        0.06613300996213267,
+        0.02410711532123433,
+        0.27999999999999997
+      ],
+      "best_params": {
+        "correlation_threshold": 0.55,
+        "cost_penalty": 0.35,
+        "max_family_cap": 0.5,
+        "max_strategy_cap": 0.3,
+        "target_vol": 0.08
+      },
+      "objective": "val_sharpe + 12*val_return - 4*val_max_drawdown - 0.75*hhi - 0.15*turnover",
+      "runs": 384
+    }
+  },
+  "selection_basis": "validation_only",
+  "tuned_portfolio_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_opt_tuned/portfolio_optimization_latest.json"
+}
