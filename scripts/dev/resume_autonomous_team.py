@@ -11,6 +11,9 @@ MAILBOX = REPO_ROOT / ".omx/state/team" / TEAM_NAME / "mailbox/leader-fixed.json
 CURRENT_OPT = REPO_ROOT / "var/reports/exact_window_backtests/followup_status/portfolio_one_shot_current_opt/portfolio_optimization_latest.json"
 LATEST_RUN = REPO_ROOT / "var/reports/exact_window_backtests/latest.json"
 
+RELAUNCH_CMD = """cd /home/hoky/Quants-agent/LuminaQuant
+./scripts/dev/relaunch_autonomous_team.sh"""
+
 
 def run(cmd: list[str]) -> str:
     proc = subprocess.run(cmd, cwd=REPO_ROOT, capture_output=True, text=True)
@@ -78,7 +81,11 @@ def main() -> int:
     print(f"Repo: {REPO_ROOT}")
     print(f"Branch: {run(['git', 'branch', '--show-current'])}")
     print("\n## Team status")
-    print(run(['omx', 'team', 'status', TEAM_NAME, '--json']))
+    team_status = run(['omx', 'team', 'status', TEAM_NAME, '--json'])
+    print(team_status)
+    if "No such team" in team_status or "No resumable team" in team_status:
+        print("\n## Relaunch")
+        print(RELAUNCH_CMD)
 
     current_opt = load_json(CURRENT_OPT)
     print_json(
