@@ -1118,6 +1118,8 @@ def _composite_trend_position_series(
     close: np.ndarray,
     score: np.ndarray,
     gate: np.ndarray,
+    long_gate: np.ndarray | None = None,
+    short_gate: np.ndarray | None = None,
     crowding: np.ndarray | None,
     long_threshold: float,
     short_threshold: float,
@@ -1133,6 +1135,8 @@ def _composite_trend_position_series(
     close_arr = np.asarray(close, dtype=float)
     score_arr = np.asarray(score, dtype=float)
     gate_arr = np.asarray(gate, dtype=bool)
+    long_gate_arr = gate_arr if long_gate is None else np.asarray(long_gate, dtype=bool)
+    short_gate_arr = gate_arr if short_gate is None else np.asarray(short_gate, dtype=bool)
     crowd_arr = (
         np.full(close_arr.shape, np.nan, dtype=float)
         if crowding is None
@@ -1147,6 +1151,8 @@ def _composite_trend_position_series(
         close_i = float(close_arr[idx])
         score_i = float(score_arr[idx]) if np.isfinite(score_arr[idx]) else float("nan")
         gate_i = bool(gate_arr[idx]) if idx < gate_arr.size else False
+        long_gate_i = bool(long_gate_arr[idx]) if idx < long_gate_arr.size else gate_i
+        short_gate_i = bool(short_gate_arr[idx]) if idx < short_gate_arr.size else gate_i
         crowd_i = crowd_arr[idx] if idx < crowd_arr.size and np.isfinite(crowd_arr[idx]) else None
         strength = _composite_trend_signal_strength(
             sigma=float(sigma_arr[idx]) if np.isfinite(sigma_arr[idx]) else 0.0,
@@ -1163,7 +1169,7 @@ def _composite_trend_position_series(
 
         if mode == 1:
             bars_held += 1
-            should_exit = (not gate_i) or (not np.isfinite(score_i)) or (score_i <= float(exit_score_cross)) or (bars_held >= int(max_hold_bars))
+            should_exit = (not long_gate_i) or (not np.isfinite(score_i)) or (score_i <= float(exit_score_cross)) or (bars_held >= int(max_hold_bars))
             if should_exit:
                 mode = 0
                 bars_held = 0
@@ -1174,7 +1180,7 @@ def _composite_trend_position_series(
 
         if mode == -1:
             bars_held += 1
-            should_exit = (not gate_i) or (not np.isfinite(score_i)) or (score_i >= -float(exit_score_cross)) or (bars_held >= int(max_hold_bars))
+            should_exit = (not short_gate_i) or (not np.isfinite(score_i)) or (score_i >= -float(exit_score_cross)) or (bars_held >= int(max_hold_bars))
             if should_exit:
                 mode = 0
                 bars_held = 0
@@ -1183,17 +1189,17 @@ def _composite_trend_position_series(
                 position[idx] = -strength
             continue
 
-        if not gate_i or not np.isfinite(score_i) or blocked:
+        if (not long_gate_i and not short_gate_i) or not np.isfinite(score_i) or blocked:
             position[idx] = 0.0
             continue
 
-        if score_i >= float(long_threshold):
+        if long_gate_i and score_i >= float(long_threshold):
             mode = 1
             bars_held = 0
             position[idx] = strength
             continue
 
-        if bool(allow_short) and score_i <= -float(short_threshold):
+        if bool(allow_short) and short_gate_i and score_i <= -float(short_threshold):
             mode = -1
             bars_held = 0
             position[idx] = -strength
@@ -1586,8 +1592,20 @@ def _strategy_signal(
         vol_window = int(params.get("vol_window", 120))
         max_hold_bars = int(params.get("max_hold_bars", 640))
         allow_short = bool(params.get("allow_short", True))
+        benchmark_regime_ma = max(0, int(params.get("benchmark_regime_ma", 0)))
+        benchmark_symbol = canonical_symbol(str(params.get("benchmark_symbol") or "BTC/USDT"))
+        if benchmark_symbol not in symbols:
+            benchmark_symbol = canonical_symbol(str(symbols[0]))
         reduce_th = float(params.get("crowding_reduce_threshold", 0.55))
         block_th = float(params.get("crowding_block_threshold", 0.85))
+
+        benchmark_long_gate = np.ones(n, dtype=bool)
+        if benchmark_regime_ma > 0:
+            benchmark_close = np.asarray(aligned[f"{benchmark_symbol}:close"], dtype=float)
+            for idx in range(benchmark_regime_ma - 1, n):
+                window = benchmark_close[idx - benchmark_regime_ma + 1 : idx + 1]
+                if np.all(np.isfinite(window)):
+                    benchmark_long_gate[idx] = bool(float(benchmark_close[idx]) >= _safe_mean(window))
 
         for s_idx, symbol in enumerate(symbols):
             close = aligned[f"{symbol}:close"]
@@ -1608,12 +1626,15 @@ def _strategy_signal(
             vol_shock = _rolling_z(np.nan_to_num(volume, nan=0.0), 64)
             score = mom * (1.0 + 0.25 * np.tanh(np.nan_to_num(vol_shock) / 2.0)) * np.clip(te, 0.0, 1.0)
             gate = (te >= te_min) & (vr >= vr_min)
+            long_gate = gate & benchmark_long_gate
 
             crowding = aligned.get(f"{symbol}:crowding_score")
             position = _composite_trend_position_series(
                 close=np.asarray(close, dtype=float),
                 score=np.asarray(score, dtype=float),
                 gate=np.asarray(gate, dtype=bool),
+                long_gate=np.asarray(long_gate, dtype=bool),
+                short_gate=np.asarray(gate, dtype=bool),
                 crowding=None if crowding is None else np.asarray(crowding, dtype=float),
                 long_threshold=long_th,
                 short_threshold=short_th,
@@ -1629,6 +1650,10 @@ def _strategy_signal(
             exposures[s_idx] = position
 
             _ = high, low  # kept for symmetry with requested factor inputs.
+        if benchmark_regime_ma > 0:
+            meta["benchmark_regime_ma"] = benchmark_regime_ma
+            meta["benchmark_symbol"] = benchmark_symbol
+            meta["crash_aware_gate"] = True
 
     elif strategy_class in {"VolCompressionVWAPReversionStrategy", "VolCompressionVwapReversionStrategy", "VolatilityCompressionReversionStrategy"}:
         entry_z = float(params.get("entry_z", 1.5))
@@ -1688,16 +1713,41 @@ def _strategy_signal(
         lookback_bars = max(2, int(params.get("lookback_bars", 16)))
         rebalance_bars = max(1, int(params.get("rebalance_bars", 4)))
         signal_threshold = float(params.get("signal_threshold", 0.04))
+        stop_loss_pct = max(0.0, float(params.get("stop_loss_pct", 0.08)))
+        take_profit_pct = max(0.0, float(params.get("take_profit_pct", 0.0)))
         max_longs = max(0, int(params.get("max_longs", 2)))
         max_shorts = max(0, int(params.get("max_shorts", 2)))
         min_price = max(0.0, float(params.get("min_price", 0.10)))
         btc_regime_ma = max(0, int(params.get("btc_regime_ma", 0)))
+        benchmark_drawdown_window = max(0, int(params.get("benchmark_drawdown_window", 0)))
+        benchmark_drawdown_limit = max(0.0, float(params.get("benchmark_drawdown_limit", 0.0)))
+        residualize_btc = bool(params.get("residualize_btc", False))
+        residualize_mean = bool(params.get("residualize_mean", False))
         btc_symbol = canonical_symbol(str(params.get("btc_symbol") or "BTC/USDT"))
         if btc_symbol not in symbols:
             btc_symbol = canonical_symbol(str(symbols[0]))
 
         position_state = np.zeros(len(symbols), dtype=float)
+        entry_price = np.full(len(symbols), np.nan, dtype=float)
         for idx in range(n):
+            current_close_map = {
+                symbol: float(np.asarray(aligned[f"{symbol}:close"], dtype=float)[idx])
+                for symbol in symbols
+            }
+            if stop_loss_pct > 0.0 or take_profit_pct > 0.0:
+                for s_idx, symbol in enumerate(symbols):
+                    if position_state[s_idx] == 0.0 or not np.isfinite(entry_price[s_idx]):
+                        continue
+                    close_i = current_close_map[symbol]
+                    if not np.isfinite(close_i) or close_i <= 0.0:
+                        continue
+                    stop_long = position_state[s_idx] > 0.0 and close_i <= float(entry_price[s_idx]) * (1.0 - stop_loss_pct)
+                    stop_short = position_state[s_idx] < 0.0 and close_i >= float(entry_price[s_idx]) * (1.0 + stop_loss_pct)
+                    tp_long = take_profit_pct > 0.0 and position_state[s_idx] > 0.0 and close_i >= float(entry_price[s_idx]) * (1.0 + take_profit_pct)
+                    tp_short = take_profit_pct > 0.0 and position_state[s_idx] < 0.0 and close_i <= float(entry_price[s_idx]) * (1.0 - take_profit_pct)
+                    if stop_long or stop_short or tp_long or tp_short:
+                        position_state[s_idx] = 0.0
+                        entry_price[s_idx] = np.nan
             if idx < lookback_bars:
                 exposures[:, idx] = position_state
                 continue
@@ -1717,12 +1767,31 @@ def _strategy_signal(
                     momentum_rows.append((float(momentum), symbol))
 
             regime = "BOTH"
-            if btc_regime_ma > 0:
-                btc_close = np.asarray(aligned[f"{btc_symbol}:close"], dtype=float)
-                if idx >= btc_regime_ma and np.all(np.isfinite(btc_close[idx - btc_regime_ma + 1 : idx + 1])):
-                    avg = _safe_mean(btc_close[idx - btc_regime_ma + 1 : idx + 1])
-                    regime = "RISK_ON" if float(btc_close[idx]) >= avg else "RISK_OFF"
+            btc_close = np.asarray(aligned[f"{btc_symbol}:close"], dtype=float)
+            if benchmark_drawdown_window > 0 and benchmark_drawdown_limit > 0.0 and idx >= benchmark_drawdown_window - 1:
+                window = btc_close[idx - benchmark_drawdown_window + 1 : idx + 1]
+                if np.all(np.isfinite(window)):
+                    peak = float(np.max(window))
+                    if peak > 0.0:
+                        drawdown = (float(btc_close[idx]) / peak) - 1.0
+                        if drawdown <= -benchmark_drawdown_limit:
+                            regime = "RISK_OFF"
+            if regime != "RISK_OFF" and btc_regime_ma > 0 and idx >= btc_regime_ma and np.all(
+                np.isfinite(btc_close[idx - btc_regime_ma + 1 : idx + 1])
+            ):
+                avg = _safe_mean(btc_close[idx - btc_regime_ma + 1 : idx + 1])
+                regime = "RISK_ON" if float(btc_close[idx]) >= avg else "RISK_OFF"
 
+            momentum_map = {symbol: momentum for momentum, symbol in momentum_rows}
+            if residualize_btc and btc_symbol in momentum_map:
+                btc_momentum = float(momentum_map[btc_symbol])
+                for symbol in list(momentum_map):
+                    momentum_map[symbol] = float(momentum_map[symbol]) - btc_momentum
+            if residualize_mean and momentum_map:
+                mean_momentum = _safe_mean(np.asarray(list(momentum_map.values()), dtype=float))
+                for symbol in list(momentum_map):
+                    momentum_map[symbol] = float(momentum_map[symbol]) - mean_momentum
+            momentum_rows = [(float(momentum_map[symbol]), symbol) for _, symbol in momentum_rows]
             momentum_rows.sort(key=lambda item: item[0])
             longs = [
                 symbol
@@ -1741,14 +1810,32 @@ def _strategy_signal(
             long_set = set(longs)
             shorts = [symbol for symbol in shorts if symbol not in long_set]
 
-            position_state = np.zeros(len(symbols), dtype=float)
             for s_idx, symbol in enumerate(symbols):
+                next_position = 0.0
                 if symbol in long_set:
-                    position_state[s_idx] = 1.0
+                    next_position = 1.0
                 elif symbol in shorts:
-                    position_state[s_idx] = -1.0
+                    next_position = -1.0
+                if next_position == 0.0:
+                    if position_state[s_idx] != 0.0:
+                        entry_price[s_idx] = np.nan
+                    position_state[s_idx] = 0.0
+                    continue
+                if position_state[s_idx] != next_position or not np.isfinite(entry_price[s_idx]):
+                    entry_price[s_idx] = current_close_map[symbol]
+                position_state[s_idx] = next_position
             exposures[:, idx] = position_state
         meta["cross_sectional"] = True
+        if take_profit_pct > 0.0:
+            meta["take_profit_pct"] = take_profit_pct
+        if residualize_btc or residualize_mean:
+            meta["residualized_cross_sectional"] = True
+            meta["residualize_btc"] = residualize_btc
+            meta["residualize_mean"] = residualize_mean
+        if benchmark_drawdown_window > 0 and benchmark_drawdown_limit > 0.0:
+            meta["crash_aware_gate"] = True
+            meta["benchmark_drawdown_window"] = benchmark_drawdown_window
+            meta["benchmark_drawdown_limit"] = benchmark_drawdown_limit
 
     elif strategy_class == "Alpha101FormulaStrategy":
         simulated = _simulate_event_driven_strategy_exposures(

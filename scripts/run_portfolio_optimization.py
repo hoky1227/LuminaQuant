@@ -13,6 +13,11 @@ from typing import Any
 
 import numpy as np
 
+from lumina_quant.portfolio_split_contract import (
+    PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES,
+    memory_policy_payload,
+)
+
 _METALS = {"XAU/USDT", "XAG/USDT", "XPT/USDT", "XPD/USDT"}
 
 DEFAULT_PORTFOLIO_SCORING_CONFIG: dict[str, Any] = {
@@ -685,6 +690,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-family-cap", type=float, default=None)
     parser.add_argument("--max-asset-cap", type=float, default=None)
     parser.add_argument("--max-metals-cap", type=float, default=None)
+    parser.add_argument("--memory-budget-bytes", type=int, default=PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES)
     return parser
 
 
@@ -695,6 +701,7 @@ def main() -> int:
 
     score_config_payload: dict[str, Any] | None = None
     score_config_path = None
+    memory_budget_bytes = max(1, int(args.memory_budget_bytes))
     if str(args.score_config).strip():
         score_config_path = Path(str(args.score_config)).resolve()
         try:
@@ -973,6 +980,7 @@ def main() -> int:
             },
             "source": str(score_config_path) if score_config_path is not None else "",
         },
+        "memory_policy": memory_policy_payload(budget_bytes=memory_budget_bytes),
         "weights": allocation_rows,
         "sleeve_budget": dict(sorted(sleeve_budget.items())),
         "portfolio_return_streams": {

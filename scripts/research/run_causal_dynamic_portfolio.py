@@ -19,7 +19,10 @@ from lumina_quant.eval.exact_window_runtime import RSSLimitExceeded
 from lumina_quant.portfolio_split_contract import (
     FOLLOWUP_ROOT,
     OOS_START_DATE,
+    PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES,
+    PORTFOLIO_CURRENT_OPTIMIZATION,
     PORTFOLIO_ONE_SHOT_INCUMBENT_BUNDLE,
+    PORTFOLIO_ONE_SHOT_CURRENT_BUNDLE,
     TRAIN_END_EXCLUSIVE,
     TRAIN_START,
     VAL_END_EXCLUSIVE,
@@ -47,6 +50,10 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
     if not math.isfinite(out):
         return float(default)
     return out
+
+
+def _load_json(path: Path) -> dict[str, Any]:
+    return dict(json.loads(path.read_text(encoding="utf-8")))
 
 
 def _canonical_timestamp(value: Any) -> datetime | None:
@@ -98,6 +105,25 @@ def _daily_compound_stream(stream: list[dict[str, Any]]) -> dict[str, float]:
             compounded *= 1.0 + ret
         out[day_key] = compounded - 1.0
     return out
+
+
+def _current_one_shot_comparison_entry(
+    *,
+    bundle_path: Path | None = None,
+    portfolio_path: Path | None = None,
+) -> dict[str, Any]:
+    bundle_path = bundle_path or PORTFOLIO_ONE_SHOT_CURRENT_BUNDLE
+    portfolio_path = portfolio_path or PORTFOLIO_CURRENT_OPTIMIZATION
+    portfolio_payload = _load_json(portfolio_path)
+    _load_json(bundle_path)
+    portfolio_metrics = dict(portfolio_payload.get("portfolio_metrics") or {})
+    return {
+        "path": str(portfolio_path.resolve()),
+        "bundle_path": str(bundle_path.resolve()),
+        "weights": list(portfolio_payload.get("weights") or []),
+        "val": dict(portfolio_metrics.get("val") or {}),
+        "oos": dict(portfolio_metrics.get("oos") or {}),
+    }
 
 
 def _metrics(returns: np.ndarray, periods_per_year: int = 365) -> dict[str, float]:
@@ -689,6 +715,7 @@ def write_dynamic_allocator_report(
         run_name="causal_dynamic_portfolio",
         output_dir=output_dir,
         input_path=resolved_input,
+        budget_bytes=PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES,
     )
     status = "completed"
     error: str | None = None
@@ -732,7 +759,7 @@ def write_dynamic_allocator_report(
         "selection_basis": "validation_only_dynamic_search_on_preselected_current_sleeves",
         "objective_profile": "balanced_multi_metric",
         "split_windows": split_windows(),
-        "memory_policy": memory_policy_payload(),
+        "memory_policy": memory_policy_payload(budget_bytes=PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES),
         "memory_summary": memory_summary,
         "best_params": dict(best["params"]),
         "validation_objective": float(best["objective"]),
@@ -793,6 +820,11 @@ def write_dynamic_comparison(
     comparison_input: Path = COMPARISON_INPUT,
 ) -> dict[str, Any]:
     existing = json.loads(comparison_input.read_text(encoding="utf-8"))
+    existing["current_one_shot_optimized"] = _current_one_shot_comparison_entry()
+    scope = list(existing.get("comparison_scope") or [])
+    if "current_one_shot_optimized" not in scope:
+        scope.append("current_one_shot_optimized")
+    existing["comparison_scope"] = scope
     dynamic_val = dict((dynamic_payload.get("split_metrics") or {}).get("val") or {})
     dynamic_oos = dict((dynamic_payload.get("split_metrics") or {}).get("oos") or {})
     existing["causal_dynamic_portfolio"] = {
@@ -808,10 +840,10 @@ def write_dynamic_comparison(
         "weights": list(dynamic_payload.get("final_allocation") or []),
         "best_params": dict(dynamic_payload.get("best_params") or {}),
     }
-    existing["comparison_scope"] = [
-        *list(existing.get("comparison_scope") or []),
-        "causal_dynamic_portfolio",
-    ]
+    scope = list(existing.get("comparison_scope") or [])
+    if "causal_dynamic_portfolio" not in scope:
+        scope.append("causal_dynamic_portfolio")
+    existing["comparison_scope"] = scope
     existing["deltas"]["dynamic_vs_current_one_shot_oos_return"] = _safe_float(
         dynamic_oos.get("total_return"), 0.0
     ) - _safe_float(existing["current_one_shot_optimized"]["oos"].get("total_return"), 0.0)

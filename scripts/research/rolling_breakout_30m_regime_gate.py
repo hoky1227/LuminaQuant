@@ -17,9 +17,12 @@ REPORT_ROOT = Path(__file__).resolve().parents[2] / "var" / "reports" / "exact_w
 FOLLOWUP_ROOT = REPORT_ROOT / "followup_status"
 
 TARGET_CANDIDATE = "rolling_breakout_30m_guarded_ls_64_0.002"
-SCHEMA_VERSION = "3.0"
+SCHEMA_VERSION = "4.0"
 TARGET_TIMEFRAME = "30m"
 REGIME_SIGNAL_LAG_DAYS = 1
+DEFAULT_SELECTION_BASIS = "train_val_only"
+FULL_SPLIT_SELECTION_BASIS = "full_split"
+TRAIN_VAL_SELECTION_BASIS = "train_val_only"
 ROLLING_SURVIVAL_THRESHOLDS = {
     "oos_sharpe_min": 1.0,
     "oos_return_min": 0.0,
@@ -28,6 +31,13 @@ ROLLING_SURVIVAL_THRESHOLDS = {
     "oos_trade_count_min": 20.0,
     "min_activation_ratio": 0.10,
     "max_activation_ratio": 0.80,
+}
+TRAIN_VAL_ONLY_SURVIVAL_THRESHOLDS = {
+    "val_sharpe_min": 1.0,
+    "val_return_min": 0.0,
+    "train_return_min": -0.12,
+    "min_activation_ratio": 0.10,
+    "max_activation_ratio": 0.85,
 }
 TARGET_RULES: tuple[dict[str, Any], ...] = (
     {
@@ -395,10 +405,24 @@ def _split_streams(
     return streams
 
 
-def _rule_score(metrics: Mapping[str, Any]) -> float:
+def _rule_score(
+    metrics: Mapping[str, Any],
+    *,
+    selection_basis: str = DEFAULT_SELECTION_BASIS,
+) -> float:
     train = dict(metrics.get("train") or {})
     val = dict(metrics.get("val") or {})
     oos = dict(metrics.get("oos") or {})
+    if str(selection_basis).strip().lower() == TRAIN_VAL_SELECTION_BASIS:
+        activation_ratio = _safe_float(val.get("activation_ratio"), 0.0)
+        return float(
+            (2.5 * _safe_float(val.get("sharpe"), 0.0))
+            + (12.0 * _safe_float(val.get("return"), 0.0))
+            + (2.0 * _safe_float(train.get("return"), 0.0))
+            + (0.25 * _safe_float(train.get("sharpe"), 0.0))
+            - (2.0 * max(0.0, TRAIN_VAL_ONLY_SURVIVAL_THRESHOLDS["min_activation_ratio"] - activation_ratio))
+            - (2.0 * max(0.0, activation_ratio - TRAIN_VAL_ONLY_SURVIVAL_THRESHOLDS["max_activation_ratio"]))
+        )
     return float(
         (2.5 * _safe_float(oos.get("sharpe"), 0.0))
         + (1.25 * _safe_float(val.get("sharpe"), 0.0))
@@ -411,10 +435,29 @@ def _rule_score(metrics: Mapping[str, Any]) -> float:
     )
 
 
-def _survivor_blockers(metrics: Mapping[str, Any]) -> list[str]:
+def _survivor_blockers(
+    metrics: Mapping[str, Any],
+    *,
+    selection_basis: str = DEFAULT_SELECTION_BASIS,
+) -> list[str]:
+    mode = str(selection_basis).strip().lower()
+    train = dict(metrics.get("train") or {})
     val = dict(metrics.get("val") or {})
     oos = dict(metrics.get("oos") or {})
     blockers: list[str] = []
+    if mode == TRAIN_VAL_SELECTION_BASIS:
+        if _safe_float(val.get("sharpe"), 0.0) < TRAIN_VAL_ONLY_SURVIVAL_THRESHOLDS["val_sharpe_min"]:
+            blockers.append("val_sharpe")
+        if _safe_float(val.get("return"), 0.0) <= TRAIN_VAL_ONLY_SURVIVAL_THRESHOLDS["val_return_min"]:
+            blockers.append("val_return")
+        if _safe_float(train.get("return"), 0.0) < TRAIN_VAL_ONLY_SURVIVAL_THRESHOLDS["train_return_min"]:
+            blockers.append("train_return")
+        activation_ratio = _safe_float(val.get("activation_ratio"), 0.0)
+        if activation_ratio < TRAIN_VAL_ONLY_SURVIVAL_THRESHOLDS["min_activation_ratio"]:
+            blockers.append("activation_ratio_low")
+        if activation_ratio > TRAIN_VAL_ONLY_SURVIVAL_THRESHOLDS["max_activation_ratio"]:
+            blockers.append("activation_ratio_high")
+        return blockers
     if _safe_float(oos.get("sharpe"), 0.0) < ROLLING_SURVIVAL_THRESHOLDS["oos_sharpe_min"]:
         blockers.append("oos_sharpe")
     if _safe_float(oos.get("return"), 0.0) <= ROLLING_SURVIVAL_THRESHOLDS["oos_return_min"]:
@@ -440,6 +483,7 @@ def _evaluate_rule(
     rule_id: str,
     label: str,
     conditions: tuple[str, ...],
+    selection_basis: str = DEFAULT_SELECTION_BASIS,
 ) -> dict[str, Any]:
     daily_rule_frame = _daily_rule_frame(features, conditions=conditions)
     gated_frame = _gated_bar_frame(evaluation, daily_rule_frame)
@@ -452,18 +496,27 @@ def _evaluate_rule(
         metrics["val"],
         metrics["oos"],
     )
+    train_val_blockers = _survivor_blockers(
+        metrics,
+        selection_basis=TRAIN_VAL_SELECTION_BASIS,
+    )
+    selected_blockers = _survivor_blockers(metrics, selection_basis=selection_basis)
     return {
         "rule_id": rule_id,
         "label": label,
         "conditions": list(conditions),
         "signal_lag_days": REGIME_SIGNAL_LAG_DAYS,
-        "score": _rule_score(metrics),
+        "selection_basis": selection_basis,
+        "selection_uses_oos": str(selection_basis).strip().lower() != TRAIN_VAL_SELECTION_BASIS,
+        "score": _rule_score(metrics, selection_basis=selection_basis),
         "metrics": metrics,
         "hurdle_fields": hurdle_fields,
         "pass": _safe_bool(passed),
         "hard_reject_reasons": hard_reject,
-        "survivor_blockers": _survivor_blockers(metrics),
-        "survives": not _survivor_blockers(metrics),
+        "survivor_blockers": selected_blockers,
+        "survives": not selected_blockers,
+        "survives_train_val": not train_val_blockers,
+        "train_val_survivor_blockers": train_val_blockers,
         "gate_days_total": int(daily_rule_frame["gate_active"].sum()),
         "gated_streams": _split_streams(
             evaluation,
@@ -477,9 +530,13 @@ def build_rolling_breakout_30m_gate(
     decision: Mapping[str, Any],
     candidate: str = TARGET_CANDIDATE,
     *,
+    selection_basis: str = DEFAULT_SELECTION_BASIS,
     feature_frame: pd.DataFrame | None = None,
     evaluation_payload: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
+    normalized_selection_basis = str(selection_basis).strip().lower() or DEFAULT_SELECTION_BASIS
+    if normalized_selection_basis not in {FULL_SPLIT_SELECTION_BASIS, TRAIN_VAL_SELECTION_BASIS}:
+        raise ValueError(f"unsupported selection_basis={selection_basis!r}")
     timeframe_row, candidate_row = _candidate_timeframe_row(decision, candidate=candidate)
     windows = dict(timeframe_row.get("windows") or {})
     evaluation = _baseline_evaluation(
@@ -501,6 +558,7 @@ def build_rolling_breakout_30m_gate(
             rule_id=str(spec["rule_id"]),
             label=str(spec["label"]),
             conditions=tuple(spec["conditions"]),
+            selection_basis=normalized_selection_basis,
         )
         for spec in TARGET_RULES
     ]
@@ -510,9 +568,30 @@ def build_rolling_breakout_30m_gate(
         candidate_pool,
         key=lambda item: (
             _safe_float(item.get("score"), 0.0),
-            _safe_float(((item.get("metrics") or {}).get("oos") or {}).get("sharpe"), 0.0),
-            _safe_float(((item.get("metrics") or {}).get("oos") or {}).get("return"), 0.0),
+            _safe_float(
+                (
+                    ((item.get("metrics") or {}).get("val") or {}).get("sharpe")
+                    if normalized_selection_basis == TRAIN_VAL_SELECTION_BASIS
+                    else ((item.get("metrics") or {}).get("oos") or {}).get("sharpe")
+                ),
+                0.0,
+            ),
+            _safe_float(
+                (
+                    ((item.get("metrics") or {}).get("val") or {}).get("return")
+                    if normalized_selection_basis == TRAIN_VAL_SELECTION_BASIS
+                    else ((item.get("metrics") or {}).get("oos") or {}).get("return")
+                ),
+                0.0,
+            ),
         ),
+    )
+    survives_train_val = _safe_bool(chosen.get("survives_train_val"))
+    selected_survives = _safe_bool(chosen.get("survives"))
+    recommended_survives = (
+        survives_train_val
+        if normalized_selection_basis == TRAIN_VAL_SELECTION_BASIS
+        else selected_survives
     )
 
     gated_candidate_row = {
@@ -523,17 +602,22 @@ def build_rolling_breakout_30m_gate(
         "oos": dict((chosen.get("metrics") or {}).get("oos") or {}),
         "hurdle_fields": dict(chosen.get("hurdle_fields") or {}),
         "pass": _safe_bool(chosen.get("pass")),
-        "survives": _safe_bool(chosen.get("survives")),
+        "selection_basis": normalized_selection_basis,
+        "survives": selected_survives,
+        "survives_train_val": survives_train_val,
         "hard_reject_reasons": dict(chosen.get("hard_reject_reasons") or {}),
         "survivor_blockers": list(chosen.get("survivor_blockers") or []),
+        "train_val_survivor_blockers": list(chosen.get("train_val_survivor_blockers") or []),
         "return_streams": dict(chosen.get("gated_streams") or {}),
         "metadata": {
             **dict(candidate_row.get("metadata") or {}),
+            "selection_basis": normalized_selection_basis,
             "activation_rule_id": str(chosen.get("rule_id") or ""),
             "activation_rule_conditions": list(chosen.get("conditions") or []),
             "activation_rule_label": str(chosen.get("label") or ""),
             "activation_signal_lag_days": REGIME_SIGNAL_LAG_DAYS,
-            "activation_rule_survives": _safe_bool(chosen.get("survives")),
+            "activation_rule_survives": recommended_survives,
+            "activation_rule_survives_train_val": survives_train_val,
         },
     }
 
@@ -541,13 +625,20 @@ def build_rolling_breakout_30m_gate(
         "schema_version": SCHEMA_VERSION,
         "artifact_kind": "rolling_breakout_30m_regime_gate",
         "generated_at": datetime.now(UTC).isoformat(),
+        "selection_basis": normalized_selection_basis,
+        "selection_uses_oos": normalized_selection_basis != TRAIN_VAL_SELECTION_BASIS,
         "candidate_name": str(candidate_row.get("name") or candidate),
         "candidate_id": str(candidate_row.get("candidate_id") or ""),
         "strategy_class": str(candidate_row.get("strategy_class") or ""),
         "timeframe": TARGET_TIMEFRAME,
-        "survival_thresholds": dict(ROLLING_SURVIVAL_THRESHOLDS),
-        "survives": _safe_bool(chosen.get("survives")),
-        "recommended_action": "activate_conditionally" if _safe_bool(chosen.get("survives")) else "do_not_activate",
+        "survival_thresholds": dict(
+            TRAIN_VAL_ONLY_SURVIVAL_THRESHOLDS
+            if normalized_selection_basis == TRAIN_VAL_SELECTION_BASIS
+            else ROLLING_SURVIVAL_THRESHOLDS
+        ),
+        "survives": recommended_survives,
+        "survives_train_val": survives_train_val,
+        "recommended_action": "activate_conditionally" if recommended_survives else "do_not_activate",
         "windows": windows,
         "selected_rule": chosen,
         "evaluated_rules": evaluated_rules,
@@ -577,12 +668,14 @@ def write_rolling_breakout_30m_gate(
     candidate: str = TARGET_CANDIDATE,
     report_root: Path | str = REPORT_ROOT,
     run_name: str = "rolling_breakout_30m_gate",
+    selection_basis: str = DEFAULT_SELECTION_BASIS,
     feature_frame: pd.DataFrame | None = None,
     evaluation_payload: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     payload = build_rolling_breakout_30m_gate(
         decision,
         candidate=candidate,
+        selection_basis=selection_basis,
         feature_frame=feature_frame,
         evaluation_payload=evaluation_payload,
     )
@@ -599,11 +692,14 @@ def write_rolling_breakout_30m_gate(
         "",
         f"- generated_at: `{payload['generated_at']}`",
         f"- candidate: `{payload['candidate_name']}`",
+        f"- selection_basis: `{payload.get('selection_basis')}`",
+        f"- selection_uses_oos: `{payload.get('selection_uses_oos')}`",
         f"- selected_rule: `{selected.get('rule_id')}`",
         f"- label: {selected.get('label')}",
         f"- conditions: `{', '.join(selected.get('conditions') or [])}`",
         f"- signal_lag_days: `{selected.get('signal_lag_days')}`",
         f"- survives: `{payload.get('survives')}`",
+        f"- survives_train_val: `{payload.get('survives_train_val')}`",
         f"- recommended_action: `{payload.get('recommended_action')}`",
         f"- gated_oos_return: `{_safe_float(selected_oos.get('return'), 0.0):.4%}`",
         f"- gated_oos_sharpe: `{_safe_float(selected_oos.get('sharpe'), 0.0):.3f}`",

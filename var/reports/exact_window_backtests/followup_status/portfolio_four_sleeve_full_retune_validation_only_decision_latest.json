@@ -1,0 +1,586 @@
+{
+  "artifact_kind": "portfolio_max_performance_decision",
+  "candidates": [
+    {
+      "artifact_kind": "portfolio_one_shot_current_opt",
+      "artifact_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_one_shot_current_opt/portfolio_optimization_latest.json",
+      "candidate_key": "current_one_shot_incumbent",
+      "decision_reason": "Current one-shot incumbent baseline.",
+      "label": "Current one-shot incumbent",
+      "notes": [
+        "Baseline incumbent for the max-performance loop.",
+        "Restricted sleeve bundle: /home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_one_shot_incumbent_bundle_latest.json"
+      ],
+      "oos": {
+        "cagr": 0.6289327837877341,
+        "calmar": 10.713604745238294,
+        "max_drawdown": 0.05870412421806637,
+        "sharpe": 1.7067110916177235,
+        "sortino": 4.340534394917453,
+        "total_return": 0.04789913406446966,
+        "volatility": 0.31322550443768743
+      },
+      "oos_max_drawdown_delta": 0.0,
+      "oos_sharpe_delta": 0.0,
+      "oos_total_return_delta": 0.0,
+      "promotable": false,
+      "promotion_score": 4.306514319806826,
+      "promotion_score_delta": 0.0,
+      "selection_basis": "incumbent_saved_one_shot_weights",
+      "source_artifact_kind": "portfolio_one_shot_current_opt",
+      "train": {
+        "cagr": -0.10181746447818285,
+        "calmar": -0.557572458709836,
+        "max_drawdown": 0.18260848951143993,
+        "sharpe": -0.4556062326536862,
+        "sortino": -0.9377162272271935,
+        "total_return": -0.10181746447818285,
+        "volatility": 0.1946140050325783
+      },
+      "val": {
+        "cagr": 0.77977446831369,
+        "calmar": 26.466070466415825,
+        "max_drawdown": 0.02946317509821439,
+        "sharpe": 3.0028163085596984,
+        "sortino": 6.19759686323781,
+        "total_return": 0.050180317234329586,
+        "volatility": 0.19841887691699528
+      },
+      "weights": [
+        {
+          "candidate_id": "feecc2c87fbb8475",
+          "family": "trend",
+          "fit_return": 0.04987876459743679,
+          "fit_sharpe": 4.427750205476359,
+          "fit_split": "val",
+          "name": "composite_trend_stable_30m_stable_ls_highconv_ls_0.75_0.45_0.20_0.80",
+          "oos_return": 0.029547105294839504,
+          "oos_sharpe": 2.2953624409038818,
+          "report_return": 0.029547105294839504,
+          "report_sharpe": 2.2953624409038818,
+          "report_split": "oos",
+          "strategy_class": "CompositeTrendStrategy",
+          "symbols": [
+            "BTC/USDT",
+            "ETH/USDT",
+            "BNB/USDT",
+            "SOL/USDT",
+            "TRX/USDT"
+          ],
+          "timeframe": "30m",
+          "weight": 0.35
+        },
+        {
+          "candidate_id": "4c8fdaeabe315563",
+          "family": "cross_sectional",
+          "fit_return": 0.018372483665204387,
+          "fit_sharpe": 1.640883072742277,
+          "fit_split": "val",
+          "name": "topcap_tsmom_1h_balanced_16_4_0.015",
+          "oos_return": 0.032378603658792526,
+          "oos_sharpe": 1.4641557597854604,
+          "report_return": 0.032378603658792526,
+          "report_sharpe": 1.4641557597854604,
+          "report_split": "oos",
+          "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+          "symbols": [
+            "BTC/USDT",
+            "ETH/USDT",
+            "BNB/USDT",
+            "SOL/USDT",
+            "TRX/USDT"
+          ],
+          "timeframe": "1h",
+          "weight": 0.35
+        },
+        {
+          "candidate_id": "deb70de97b53b507",
+          "family": "trend",
+          "fit_return": 0.08606681665810556,
+          "fit_sharpe": 3.538834691452231,
+          "fit_split": "val",
+          "name": "regime_breakout_1h_trend_ls_48_0.70",
+          "oos_return": 0.08078017551551175,
+          "oos_sharpe": 2.0090595076426387,
+          "report_return": 0.08078017551551175,
+          "report_sharpe": 2.0090595076426387,
+          "report_split": "oos",
+          "strategy_class": "RegimeBreakoutCandidateStrategy",
+          "symbols": [
+            "BTC/USDT",
+            "ETH/USDT",
+            "BNB/USDT",
+            "SOL/USDT",
+            "TRX/USDT"
+          ],
+          "timeframe": "1h",
+          "weight": 0.30000000000000004
+        }
+      ]
+    },
+    {
+      "artifact_kind": "portfolio_comparison.exact_window_frozen_tuned",
+      "artifact_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_opt_tuned/portfolio_optimization_latest.json",
+      "candidate_key": "exact_window_frozen_tuned",
+      "decision_reason": "promotion score improvement did not clear the base threshold; OOS total return did not improve; OOS max drawdown did not improve",
+      "label": "Exact-window frozen tuned challenger",
+      "notes": [
+        "Validation-ranked frozen challenger from the exact-window sleeve freeze path."
+      ],
+      "oos": {
+        "cagr": 0.005739981865378274,
+        "calmar": 0.08481530890003625,
+        "max_drawdown": 0.06767624783567605,
+        "sharpe": 0.20985287822422158,
+        "sortino": 0.24979371963966698,
+        "total_return": 0.026259583279574894,
+        "volatility": 0.029309132710955532
+      },
+      "oos_max_drawdown_delta": 0.008972123617609684,
+      "oos_sharpe_delta": -1.496858213393502,
+      "oos_total_return_delta": -0.021639550784894768,
+      "promotable": false,
+      "promotion_score": 0.27567120290793673,
+      "promotion_score_delta": -4.03084311689889,
+      "selection_basis": "validation_only",
+      "source_artifact_kind": "portfolio_comparison.exact_window_frozen_tuned",
+      "train": {},
+      "val": {
+        "cagr": 0.01583229212704995,
+        "calmar": 0.6567476828347171,
+        "max_drawdown": 0.02410711532123433,
+        "sharpe": 0.8263716074984389,
+        "sortino": 1.1635994479104115,
+        "total_return": 0.06613300996213267,
+        "volatility": 0.019231996753443264
+      },
+      "weights": [
+        {
+          "name": "composite_trend_stable_30m_stable_ls_core_ls_0.60_0.45_0.20_0.80",
+          "strategy_class": "CompositeTrendStrategy",
+          "timeframe": "30m",
+          "weight": 0.3
+        },
+        {
+          "name": "topcap_tsmom_1h_defensive_24_6_0.020",
+          "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+          "timeframe": "1h",
+          "weight": 0.3
+        },
+        {
+          "name": "rolling_breakout_30m_guarded_ls_64_0.002",
+          "strategy_class": "RollingBreakoutStrategy",
+          "timeframe": "30m",
+          "weight": 0.3
+        },
+        {
+          "name": "regime_breakout_1h_trend_ls_48_0.70",
+          "strategy_class": "RegimeBreakoutCandidateStrategy",
+          "timeframe": "1h",
+          "weight": 0.09999999999999998
+        }
+      ]
+    },
+    {
+      "artifact_kind": "portfolio_backbone_triplet_search",
+      "artifact_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_backbone_triplet_search_latest.json",
+      "candidate_key": "backbone_preserving_triplet_search",
+      "decision_reason": "promotion score improvement did not clear the base threshold; OOS total return did not improve",
+      "label": "Backbone-preserving triplet search challenger",
+      "notes": [
+        "Same-family backbone-preserving challenger."
+      ],
+      "oos": {
+        "cagr": 0.09884192707363249,
+        "calmar": 1.687425882890989,
+        "max_drawdown": 0.05857556653350082,
+        "sharpe": 0.5030607303109312,
+        "sortino": 0.94762452310618,
+        "total_return": 0.009079295332180548,
+        "volatility": 0.24415254287674457
+      },
+      "oos_max_drawdown_delta": -0.0001285576845655445,
+      "oos_sharpe_delta": -1.2036503613067921,
+      "oos_total_return_delta": -0.038819838732289114,
+      "promotable": false,
+      "promotion_score": 0.6768481817174369,
+      "promotion_score_delta": -3.6296661380893895,
+      "selection_basis": "validation_objective_then_locked_oos",
+      "source_artifact_kind": "portfolio_backbone_triplet_search",
+      "train": {},
+      "val": {
+        "cagr": 0.8189418178311954,
+        "calmar": 38.27088311695073,
+        "max_drawdown": 0.02139856076298574,
+        "sharpe": 4.001652400103464,
+        "sortino": 10.11956262704192,
+        "total_return": 0.05212369821771534,
+        "volatility": 0.15241169243812133
+      },
+      "weights": []
+    },
+    {
+      "artifact_kind": "portfolio_dynamic_comparison.causal_dynamic_portfolio",
+      "artifact_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_dynamic_online_current/causal_dynamic_portfolio_latest.json",
+      "candidate_key": "causal_dynamic_portfolio",
+      "decision_reason": "promotion score improvement did not clear the base threshold; OOS total return did not improve",
+      "label": "Causal dynamic challenger",
+      "notes": [
+        "Dynamic allocation challenger evaluated after incumbent-first lanes."
+      ],
+      "oos": {
+        "cagr": 0.13781667344586013,
+        "calmar": 5.985883861822879,
+        "max_drawdown": 0.023023612991363795,
+        "sharpe": 1.1764008956920013,
+        "sortino": 3.130311250245071,
+        "total_return": 0.012457484650929773,
+        "volatility": 0.11517336627567139
+      },
+      "oos_max_drawdown_delta": -0.03568051122670257,
+      "oos_sharpe_delta": -0.5303101959257221,
+      "oos_total_return_delta": -0.03544164941353989,
+      "promotable": false,
+      "promotion_score": 2.816698589297153,
+      "promotion_score_delta": -1.4898157305096733,
+      "selection_basis": "validation_only",
+      "source_artifact_kind": "portfolio_dynamic_comparison.causal_dynamic_portfolio",
+      "train": {},
+      "val": {
+        "cagr": 0.330145942071572,
+        "calmar": 85.83724680328498,
+        "max_drawdown": 0.0038461851278638326,
+        "sharpe": 5.768397370095939,
+        "sortino": 8.098610586819186,
+        "total_return": 0.024525928052964163,
+        "volatility": 0.04968276243254591
+      },
+      "weights": [
+        {
+          "candidate_id": "feecc2c87fbb8475",
+          "name": "composite_trend_stable_30m_stable_ls_highconv_ls_0.75_0.45_0.20_0.80",
+          "strategy_class": "CompositeTrendStrategy",
+          "timeframe": "30m",
+          "weight": 0.5
+        },
+        {
+          "candidate_id": "4c8fdaeabe315563",
+          "name": "topcap_tsmom_1h_balanced_16_4_0.015",
+          "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+          "timeframe": "1h",
+          "weight": 0.11536161641283528
+        },
+        {
+          "candidate_id": "deb70de97b53b507",
+          "name": "regime_breakout_1h_trend_ls_48_0.70",
+          "strategy_class": "RegimeBreakoutCandidateStrategy",
+          "timeframe": "1h",
+          "weight": 0.02577553550527848
+        }
+      ]
+    },
+    {
+      "artifact_kind": "portfolio_overlay_comparison.causal_overlay_portfolio",
+      "artifact_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_overlay_current/causal_overlay_portfolio_latest.json",
+      "candidate_key": "causal_overlay_portfolio",
+      "decision_reason": "promotion score improvement did not clear the base threshold; OOS total return did not improve",
+      "label": "Causal overlay challenger",
+      "notes": [
+        "Light overlay challenger evaluated on the incumbent backbone."
+      ],
+      "oos": {
+        "cagr": 0.26254137673823785,
+        "calmar": 4.590543652738419,
+        "max_drawdown": 0.05719178306508921,
+        "sharpe": 0.9540071089926616,
+        "sortino": 2.221828079263361,
+        "total_return": 0.022606347417474693,
+        "volatility": 0.28440295396074344
+      },
+      "oos_max_drawdown_delta": -0.001512341152977159,
+      "oos_sharpe_delta": -0.7527039826250619,
+      "oos_total_return_delta": -0.02529278664699497,
+      "promotable": false,
+      "promotion_score": 1.9746954284525127,
+      "promotion_score_delta": -2.3318188913543136,
+      "selection_basis": "validation_only",
+      "source_artifact_kind": "portfolio_overlay_comparison.causal_overlay_portfolio",
+      "train": {},
+      "val": {
+        "cagr": 0.2213716174872593,
+        "calmar": 82.22307489774425,
+        "max_drawdown": 0.002692329589504716,
+        "sharpe": 5.76839737009594,
+        "sortino": 8.098610586819188,
+        "total_return": 0.017129186402154106,
+        "volatility": 0.03477793370278213
+      },
+      "weights": [
+        {
+          "candidate_id": "feecc2c87fbb8475",
+          "name": "composite_trend_stable_30m_stable_ls_highconv_ls_0.75_0.45_0.20_0.80",
+          "strategy_class": "CompositeTrendStrategy",
+          "timeframe": "30m",
+          "weight": 0.35
+        },
+        {
+          "candidate_id": "4c8fdaeabe315563",
+          "name": "topcap_tsmom_1h_balanced_16_4_0.015",
+          "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+          "timeframe": "1h",
+          "weight": 0.35
+        },
+        {
+          "candidate_id": "deb70de97b53b507",
+          "name": "regime_breakout_1h_trend_ls_48_0.70",
+          "strategy_class": "RegimeBreakoutCandidateStrategy",
+          "timeframe": "1h",
+          "weight": 0.23525194755476964
+        }
+      ]
+    },
+    {
+      "artifact_kind": "portfolio_four_sleeve_comparison.anchored_four_sleeve_tuned",
+      "artifact_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_four_sleeve_full_retune_validation_only_tuned/portfolio_optimization_latest.json",
+      "candidate_key": "anchored_four_sleeve_tuned",
+      "decision_reason": "promotion score improvement did not clear the base threshold; OOS total return did not improve; OOS max drawdown did not improve",
+      "label": "Anchored four-sleeve tuned challenger",
+      "notes": [
+        "Incumbent-aware four-sleeve challenger with RollingBreakout gate.",
+        "Rolling gate: selection_basis=train_val_only survives_train_val=True"
+      ],
+      "oos": {
+        "cagr": -0.00458311332293404,
+        "calmar": -0.06080795822336112,
+        "max_drawdown": 0.07537028798268885,
+        "sharpe": -0.1290584574630634,
+        "sortino": -0.1189249525099583,
+        "total_return": -0.02058866070048948,
+        "volatility": 0.031743652690222876
+      },
+      "oos_max_drawdown_delta": 0.016666163764622488,
+      "oos_sharpe_delta": -1.8357695490807868,
+      "oos_total_return_delta": -0.06848779476495914,
+      "promotable": false,
+      "promotion_score": -0.7079384851172023,
+      "promotion_score_delta": -5.014452804924028,
+      "selection_basis": "validation_only",
+      "source_artifact_kind": "portfolio_four_sleeve_comparison.anchored_four_sleeve_tuned",
+      "train": {},
+      "val": {
+        "cagr": 0.015839214483752917,
+        "calmar": 0.7386220407116224,
+        "max_drawdown": 0.021444275435502425,
+        "sharpe": 0.835123665462501,
+        "sortino": 1.1145487607388338,
+        "total_return": 0.0661626281149621,
+        "volatility": 0.019033343745049874
+      },
+      "weights": [
+        {
+          "candidate_id": "regime_breakout_1h_tightest_ls_72_0.80",
+          "family": "trend",
+          "fit_return": 0.12553627877498297,
+          "fit_sharpe": 5.2934365832166,
+          "fit_split": "val",
+          "name": "regime_breakout_1h_tightest_ls_72_0.80",
+          "oos_return": -0.07354722011097026,
+          "oos_sharpe": -1.7379753479339806,
+          "report_return": -0.07354722011097026,
+          "report_sharpe": -1.7379753479339806,
+          "report_split": "oos",
+          "strategy_class": "RegimeBreakoutCandidateStrategy",
+          "symbols": [
+            "BTC/USDT",
+            "ETH/USDT",
+            "BNB/USDT",
+            "SOL/USDT",
+            "TRX/USDT"
+          ],
+          "timeframe": "1h",
+          "weight": 0.25
+        },
+        {
+          "candidate_id": "0df2c8b8498ba604",
+          "family": "trend",
+          "fit_return": 0.06294902822074588,
+          "fit_sharpe": 5.032914561408509,
+          "fit_split": "val",
+          "name": "composite_trend_stable_30m_stable_ls_core_ls_0.60_0.45_0.20_0.80",
+          "oos_return": 0.02211027593723447,
+          "oos_sharpe": 1.625160470439894,
+          "report_return": 0.02211027593723447,
+          "report_sharpe": 1.625160470439894,
+          "report_split": "oos",
+          "strategy_class": "CompositeTrendStrategy",
+          "symbols": [
+            "BTC/USDT",
+            "ETH/USDT",
+            "BNB/USDT",
+            "SOL/USDT",
+            "TRX/USDT"
+          ],
+          "timeframe": "30m",
+          "weight": 0.25
+        },
+        {
+          "candidate_id": "topcap_tsmom_1h_slow_rebalance_16_6_0.015",
+          "family": "cross_sectional",
+          "fit_return": 0.029241250266660135,
+          "fit_sharpe": 3.147506150688959,
+          "fit_split": "val",
+          "name": "topcap_tsmom_1h_slow_rebalance_16_6_0.015",
+          "oos_return": 0.022000426319839228,
+          "oos_sharpe": 1.2917246380563887,
+          "report_return": 0.022000426319839228,
+          "report_sharpe": 1.2917246380563887,
+          "report_split": "oos",
+          "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+          "symbols": [
+            "BTC/USDT",
+            "ETH/USDT",
+            "BNB/USDT",
+            "SOL/USDT",
+            "TRX/USDT"
+          ],
+          "timeframe": "1h",
+          "weight": 0.25
+        },
+        {
+          "candidate_id": "31c211b2e613c328",
+          "family": "trend",
+          "fit_return": 0.045728619969308326,
+          "fit_sharpe": 2.9040158825902815,
+          "fit_split": "val",
+          "name": "rolling_breakout_30m_guarded_ls_64_0.0015",
+          "oos_return": -0.060502798444294625,
+          "oos_sharpe": -2.5651197597219224,
+          "report_return": -0.060502798444294625,
+          "report_sharpe": -2.5651197597219224,
+          "report_split": "oos",
+          "strategy_class": "RollingBreakoutStrategy",
+          "symbols": [
+            "BTC/USDT",
+            "ETH/USDT",
+            "BNB/USDT",
+            "SOL/USDT",
+            "TRX/USDT"
+          ],
+          "timeframe": "30m",
+          "weight": 0.25
+        }
+      ]
+    }
+  ],
+  "challenger_rankings": [
+    {
+      "candidate_key": "causal_dynamic_portfolio",
+      "label": "Causal dynamic challenger",
+      "promotable": false,
+      "promotion_score": 2.816698589297153,
+      "promotion_score_delta": -1.4898157305096733
+    },
+    {
+      "candidate_key": "causal_overlay_portfolio",
+      "label": "Causal overlay challenger",
+      "promotable": false,
+      "promotion_score": 1.9746954284525127,
+      "promotion_score_delta": -2.3318188913543136
+    },
+    {
+      "candidate_key": "backbone_preserving_triplet_search",
+      "label": "Backbone-preserving triplet search challenger",
+      "promotable": false,
+      "promotion_score": 0.6768481817174369,
+      "promotion_score_delta": -3.6296661380893895
+    },
+    {
+      "candidate_key": "exact_window_frozen_tuned",
+      "label": "Exact-window frozen tuned challenger",
+      "promotable": false,
+      "promotion_score": 0.27567120290793673,
+      "promotion_score_delta": -4.03084311689889
+    },
+    {
+      "candidate_key": "anchored_four_sleeve_tuned",
+      "label": "Anchored four-sleeve tuned challenger",
+      "promotable": false,
+      "promotion_score": -0.7079384851172023,
+      "promotion_score_delta": -5.014452804924028
+    }
+  ],
+  "comparison_scope": [
+    "current_one_shot_incumbent",
+    "exact_window_frozen_tuned",
+    "backbone_preserving_triplet_search",
+    "causal_dynamic_portfolio",
+    "causal_overlay_portfolio",
+    "anchored_four_sleeve_tuned"
+  ],
+  "generated_at": "2026-03-14T13:31:34.078418+00:00",
+  "incumbent_bundle_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_one_shot_incumbent_bundle_latest.json",
+  "incumbent_components": [
+    {
+      "candidate_id": "feecc2c87fbb8475",
+      "name": "composite_trend_stable_30m_stable_ls_highconv_ls_0.75_0.45_0.20_0.80",
+      "strategy_class": "CompositeTrendStrategy",
+      "timeframe": "30m",
+      "weight": 0.35
+    },
+    {
+      "candidate_id": "4c8fdaeabe315563",
+      "name": "topcap_tsmom_1h_balanced_16_4_0.015",
+      "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+      "timeframe": "1h",
+      "weight": 0.35
+    },
+    {
+      "candidate_id": "deb70de97b53b507",
+      "name": "regime_breakout_1h_trend_ls_48_0.70",
+      "strategy_class": "RegimeBreakoutCandidateStrategy",
+      "timeframe": "1h",
+      "weight": 0.30000000000000004
+    }
+  ],
+  "missing_artifacts": [],
+  "notes": [
+    "Promotion uses locked-OOS metrics only after each challenger artifact is frozen.",
+    "Locked OOS starts at 2026-02-01T00:00:00Z and remains excluded from tuning decisions.",
+    "If thresholds are not clearly exceeded, incumbent tie policy keeps the current one-shot leader."
+  ],
+  "promotion_formula": "(1.0 * oos_sharpe) + (0.35 * oos_sortino) + (0.10 * oos_calmar) + (10.0 * oos_total_return) - (4.0 * oos_max_drawdown) - (0.75 * oos_volatility)",
+  "promotion_thresholds": {
+    "drawdown_relief_required": true,
+    "promotion_score_delta_min": 0.1,
+    "promotion_score_delta_with_drawdown_relief_min": 0.25,
+    "require_positive_total_return_delta": true
+  },
+  "recommended_action": "Retain the incumbent and continue with cleanup, evidence collation, and reproducibility hardening.",
+  "schema_version": "1.0",
+  "selection_basis": "locked_oos_promotion_score",
+  "split_contract": {
+    "oos_start": "2026-02-01T00:00:00Z",
+    "source": "/home/hoky/Quants-agent/LuminaQuant/src/lumina_quant/portfolio_split_contract.py",
+    "train_end_exclusive": "2026-01-01T00:00:00Z",
+    "train_start": "2025-01-01T00:00:00Z",
+    "val_end_exclusive": "2026-02-01T00:00:00Z",
+    "val_start": "2026-01-01T00:00:00Z"
+  },
+  "supporting_artifacts": {
+    "incumbent_bundle": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_one_shot_incumbent_bundle_latest.json",
+    "incumbent_portfolio": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_one_shot_current_opt/portfolio_optimization_latest.json",
+    "portfolio_backbone_triplet_search": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_backbone_triplet_search_latest.json",
+    "portfolio_comparison": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_comparison_latest.json",
+    "portfolio_dynamic_comparison": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_dynamic_comparison_latest.json",
+    "portfolio_four_sleeve_comparison": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_four_sleeve_full_retune_validation_only_comparison_latest.json",
+    "portfolio_overlay_comparison": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_overlay_comparison_latest.json"
+  },
+  "winner": {
+    "candidate_key": "current_one_shot_incumbent",
+    "label": "Current one-shot incumbent",
+    "promotion_score": 4.306514319806826,
+    "promotion_score_delta": 0.0,
+    "reason": "No challenger cleared the locked-OOS promotion rule; keep the current one-shot incumbent.",
+    "status": "retained_incumbent"
+  }
+}

@@ -1,0 +1,350 @@
+{
+  "anchor_decisions": [
+    {
+      "decision": "keep_anchor",
+      "reason": "no challenger cleared incumbent-aware thresholds",
+      "score_delta": 0.0,
+      "selected_candidate_id": "feecc2c87fbb8475",
+      "selected_name": "composite_trend_stable_30m_stable_ls_highconv_ls_0.75_0.45_0.20_0.80",
+      "sleeve": "composite_trend_30m",
+      "strategy_class": "CompositeTrendStrategy",
+      "timeframe": "30m"
+    },
+    {
+      "decision": "keep_anchor",
+      "reason": "no challenger cleared incumbent-aware thresholds",
+      "score_delta": 0.0,
+      "selected_candidate_id": "4c8fdaeabe315563",
+      "selected_name": "topcap_tsmom_1h_balanced_16_4_0.015",
+      "sleeve": "topcap_tsmom_1h",
+      "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+      "timeframe": "1h"
+    },
+    {
+      "decision": "keep_anchor",
+      "reason": "no challenger cleared incumbent-aware thresholds",
+      "score_delta": 0.0,
+      "selected_candidate_id": "deb70de97b53b507",
+      "selected_name": "regime_breakout_1h_trend_ls_48_0.70",
+      "sleeve": "regime_breakout_1h",
+      "strategy_class": "RegimeBreakoutCandidateStrategy",
+      "timeframe": "1h"
+    },
+    {
+      "decision": "rolling_gate_admitted",
+      "reason": "rolling breakout admitted only after train+val gate survival",
+      "score_delta": null,
+      "selected_candidate_id": "a79680513062c403",
+      "selected_name": "rolling_breakout_30m_guarded_ls_64_0.002",
+      "sleeve": "rolling_breakout_30m",
+      "strategy_class": "RollingBreakoutStrategy",
+      "timeframe": "30m"
+    }
+  ],
+  "artifact_kind": "portfolio_exact_window_freeze_manifest",
+  "baseline_support": {
+    "equal_weight_diagnostic": {
+      "combined_streams": {},
+      "component_count": 4,
+      "component_names": [
+        "composite_trend_stable_30m_stable_ls_highconv_ls_0.75_0.45_0.20_0.80",
+        "topcap_tsmom_1h_balanced_16_4_0.015",
+        "regime_breakout_1h_trend_ls_48_0.70",
+        "rolling_breakout_30m_guarded_ls_64_0.002"
+      ],
+      "generated_at": "2026-03-13T10:12:58.331598+00:00",
+      "normalization_method": "summary_only_missing_component_streams",
+      "path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/committee_portfolio_followup_latest.json",
+      "portfolio_metrics": {
+        "oos": {
+          "avg_trade": 0.0006658516259699479,
+          "benchmark_corr": -0.4178832679754451,
+          "cagr": 0.012690450885585403,
+          "calmar": 0.18333710367799566,
+          "component_count": 4,
+          "deflated_sharpe": 0.03248240637348389,
+          "exposure": 0.3595339189563821,
+          "max_drawdown": 0.06921921766515027,
+          "pbo": 0.5,
+          "return": 0.05877277663872693,
+          "rolling_sharpe_min": -22.391192673791142,
+          "sharpe": 0.34578123528078736,
+          "sortino": 0.48684169449987996,
+          "spa_pvalue": 0.34,
+          "stability": -1.5006903922463195,
+          "total_return": 0.05877277663872693,
+          "trade_count": 153.0,
+          "turnover": 0.03805429682704438,
+          "volatility": 0.038581112837876394,
+          "win_rate": 0.3125434524730778,
+          "worst_month": -0.00138078449263912
+        },
+        "train": {
+          "avg_trade": -0.00010531937674693653,
+          "benchmark_corr": -0.20727984955131915,
+          "cagr": -0.0026403184093309884,
+          "calmar": -0.013110181035383035,
+          "component_count": 4,
+          "deflated_sharpe": 0.0067622687969843,
+          "exposure": 0.30637262310372476,
+          "max_drawdown": 0.2013945041799987,
+          "pbo": 0.5,
+          "return": -0.1191871747786063,
+          "rolling_sharpe_min": -36.851936887861385,
+          "sharpe": -0.09077754137563647,
+          "sortino": -0.09092700179921114,
+          "spa_pvalue": 1.0,
+          "stability": -1.605700986939718,
+          "total_return": -0.1191871747786063,
+          "trade_count": 1819.75,
+          "turnover": 0.04052903692812308,
+          "volatility": 0.02554853481634894,
+          "win_rate": 0.2912485447990787,
+          "worst_month": -0.21140197387943627
+        },
+        "val": {
+          "avg_trade": 0.0007382936994750595,
+          "benchmark_corr": -0.26387098191977953,
+          "cagr": 0.015517180241309214,
+          "calmar": 0.47145211964105577,
+          "component_count": 4,
+          "deflated_sharpe": 0.08116387608745088,
+          "exposure": 0.30133611086700884,
+          "max_drawdown": 0.03291358675643108,
+          "pbo": 0.625,
+          "return": 0.06483034281542444,
+          "rolling_sharpe_min": -35.92908679787281,
+          "sharpe": 0.6341192914241363,
+          "sortino": 0.8162936910982905,
+          "spa_pvalue": 0.325,
+          "stability": -1.5030206487531936,
+          "total_return": 0.06483034281542444,
+          "trade_count": 149.75,
+          "turnover": 0.037095291678682765,
+          "volatility": 0.024762965835526632,
+          "win_rate": 0.2879704301075269,
+          "worst_month": -0.0060412975063870444
+        }
+      },
+      "split_windows": {}
+    },
+    "one_shot_optimized": {
+      "combined_streams": {},
+      "generated_at": "2026-03-01T06:40:47.549733+00:00",
+      "normalization_method": "summary_only_missing_streams",
+      "path": "/home/hoky/Quants-agent/LuminaQuant/reports/portfolio_optimization_latest.json",
+      "portfolio_metrics": {
+        "oos": {
+          "cagr": 0.015859046637445307,
+          "calmar": 11.908099465600166,
+          "max_drawdown": 0.0013317865443817078,
+          "sharpe": 4.043632299001232,
+          "sortino": 5.345212230404284,
+          "total_return": 0.008658975783093714,
+          "volatility": 0.003893154196415824
+        },
+        "train": {
+          "cagr": 0.0066734382043209806,
+          "calmar": 1.3153184109143432,
+          "max_drawdown": 0.005073629433714033,
+          "sharpe": 2.1288043244518087,
+          "sortino": 3.1542707249878106,
+          "total_return": 0.010993583686577324,
+          "volatility": 0.0031267359505754494
+        },
+        "val": {
+          "cagr": 0.010634100594538731,
+          "calmar": 5.781759036327189,
+          "max_drawdown": 0.0018392500496343667,
+          "sharpe": 2.8179046770201377,
+          "sortino": 4.799232305902732,
+          "total_return": 0.005812970520426841,
+          "volatility": 0.003756382333598958
+        }
+      },
+      "split_windows": {},
+      "weight_count": 5
+    }
+  },
+  "comparison_scope": [
+    "equal_weight_diagnostic",
+    "one_shot_optimized",
+    "portfolio_four_sleeve_anchored_bundle"
+  ],
+  "generated_at": "2026-03-14T12:17:26.065420+00:00",
+  "memory_policy": {
+    "disk_budget_gib": 30.0,
+    "exact_window_hard_fraction": 0.8,
+    "exact_window_soft_fraction": 0.6,
+    "heavy_lock_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_followup_heavy_run.lock",
+    "heavy_run_cap_gib": 6.5,
+    "heavy_run_parallelism": 1,
+    "light_worker_parallelism": 2,
+    "rss_limit_fraction": 0.9,
+    "rss_limit_gib": 7.2,
+    "total_memory_cap_bytes": 8589934592,
+    "total_memory_cap_gib": 8.0
+  },
+  "notes": [
+    "Incumbent-aware mode seeds the existing one-shot incumbent sleeves and only promotes local challengers when the explicit anchor thresholds are met.",
+    "RollingBreakout admission is conditional on the rebuilt train+val-only gate; locked OOS is excluded from sleeve admission.",
+    "PairSpread 4h remains excluded unless the follow-up guard explicitly survives.",
+    "Equal-weight baseline default handling is rebuild/normalize from component streams before comparison.",
+    "RollingBreakout cleared the train+val-only gate and is admitted as the conditional fourth sleeve.",
+    "One-shot optimized baseline defaults to reports/portfolio_optimization_latest.json."
+  ],
+  "pairspread_exclusion": {
+    "coverage_guard": {
+      "common_end": "2026-03-07T11:02:00+00:00",
+      "common_start": "2026-01-30T10:15:00+00:00",
+      "min_total_days": 60,
+      "observed_total_days": 36,
+      "pass": false,
+      "profile": "metals_4h",
+      "review_not_before": "2026-03-31T10:15:00+00:00"
+    },
+    "excluded": true,
+    "review_not_before": "2026-03-31"
+  },
+  "rolling_admission_blocked": false,
+  "rolling_gate": {
+    "recommended_action": "activate_conditionally",
+    "selection_basis": "train_val_only",
+    "survives_train_val": true
+  },
+  "schema_version": "1.0",
+  "selected_rows": [
+    {
+      "anchor_decision": "keep_anchor",
+      "anchor_score": 13.845053881361222,
+      "candidate_id": "feecc2c87fbb8475",
+      "freeze_score": 13.99837262389554,
+      "freeze_secondary_score": 0.3879298461675936,
+      "name": "composite_trend_stable_30m_stable_ls_highconv_ls_0.75_0.45_0.20_0.80",
+      "selection_basis": "incumbent_anchor_rolling_gate",
+      "split_windows": {
+        "oos": {
+          "end": "2026-03-07T00:00:00Z",
+          "point_count": 35,
+          "start": "2026-02-01T00:00:00Z"
+        },
+        "train": {
+          "end": "2025-12-31T00:00:00Z",
+          "point_count": 365,
+          "start": "2025-01-01T00:00:00Z"
+        },
+        "val": {
+          "end": "2026-01-31T00:00:00Z",
+          "point_count": 31,
+          "start": "2026-01-01T00:00:00Z"
+        }
+      },
+      "strategy_class": "CompositeTrendStrategy",
+      "timeframe": "30m"
+    },
+    {
+      "anchor_decision": "keep_anchor",
+      "anchor_score": 11.129573921227362,
+      "candidate_id": "deb70de97b53b507",
+      "freeze_score": 11.924962180768192,
+      "freeze_secondary_score": -0.40191635468538767,
+      "name": "regime_breakout_1h_trend_ls_48_0.70",
+      "selection_basis": "incumbent_anchor_rolling_gate",
+      "split_windows": {
+        "oos": {
+          "end": "2026-03-07T00:00:00Z",
+          "point_count": 35,
+          "start": "2026-02-01T00:00:00Z"
+        },
+        "train": {
+          "end": "2025-12-31T00:00:00Z",
+          "point_count": 365,
+          "start": "2025-01-01T00:00:00Z"
+        },
+        "val": {
+          "end": "2026-01-31T00:00:00Z",
+          "point_count": 31,
+          "start": "2026-01-01T00:00:00Z"
+        }
+      },
+      "strategy_class": "RegimeBreakoutCandidateStrategy",
+      "timeframe": "1h"
+    },
+    {
+      "anchor_decision": "rolling_gate_admitted",
+      "anchor_score": 7.175051210008929,
+      "candidate_id": "a79680513062c403",
+      "freeze_score": 7.357353421827119,
+      "freeze_secondary_score": 0.14224949591812358,
+      "name": "rolling_breakout_30m_guarded_ls_64_0.002",
+      "selection_basis": "incumbent_anchor_rolling_gate",
+      "split_windows": {
+        "oos": {
+          "end": "2026-03-07T10:00:00Z",
+          "point_count": 1653,
+          "start": "2026-02-01T00:00:00Z"
+        },
+        "train": {
+          "end": "2025-12-31T23:30:00Z",
+          "point_count": 17520,
+          "start": "2025-01-01T00:00:00Z"
+        },
+        "val": {
+          "end": "2026-01-31T23:30:00Z",
+          "point_count": 1488,
+          "start": "2026-01-01T00:00:00Z"
+        }
+      },
+      "strategy_class": "RollingBreakoutStrategy",
+      "timeframe": "30m"
+    },
+    {
+      "anchor_decision": "keep_anchor",
+      "anchor_score": 3.6135842400000233,
+      "candidate_id": "4c8fdaeabe315563",
+      "freeze_score": 3.8438294705885356,
+      "freeze_secondary_score": -0.21101762534803337,
+      "name": "topcap_tsmom_1h_balanced_16_4_0.015",
+      "selection_basis": "incumbent_anchor_rolling_gate",
+      "split_windows": {
+        "oos": {
+          "end": "2026-03-07T00:00:00Z",
+          "point_count": 35,
+          "start": "2026-02-01T00:00:00Z"
+        },
+        "train": {
+          "end": "2025-12-31T00:00:00Z",
+          "point_count": 365,
+          "start": "2025-01-01T00:00:00Z"
+        },
+        "val": {
+          "end": "2026-01-31T00:00:00Z",
+          "point_count": 31,
+          "start": "2026-01-01T00:00:00Z"
+        }
+      },
+      "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+      "timeframe": "1h"
+    }
+  ],
+  "selection_basis": "incumbent_anchor_rolling_gate",
+  "source_manifest": {
+    "composite_trend_30m": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/expansion_crypto_15m_30m_1h_20260310T115853Z/15m-30m-1h/exact_window_candidate_details_20260310T120626Z.json",
+    "regime_breakout_1h": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/topcap_crypto_1h_focus_20260310T123813Z/1h/exact_window_candidate_details_20260310T124047Z.json",
+    "rolling_breakout_30m": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/expansion_crypto_15m_30m_1h_20260310T115853Z/15m-30m-1h/exact_window_candidate_details_20260310T120626Z.json",
+    "topcap_tsmom_1h": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/topcap_crypto_1h_focus_20260310T123813Z/1h/exact_window_candidate_details_20260310T124047Z.json"
+  },
+  "source_of_truth": {
+    "composite_trend_30m": "incumbent_bundle_anchor",
+    "regime_breakout_1h": "incumbent_bundle_anchor",
+    "rolling_breakout_30m": "rolling_breakout_train_val_gate",
+    "topcap_tsmom_1h": "incumbent_bundle_anchor"
+  },
+  "split_windows": {
+    "oos_start": "2026-02-01T00:00:00Z",
+    "train_end_exclusive": "2026-01-01T00:00:00Z",
+    "train_start": "2025-01-01T00:00:00Z",
+    "val_end_exclusive": "2026-02-01T00:00:00Z",
+    "val_start": "2026-01-01T00:00:00Z"
+  }
+}

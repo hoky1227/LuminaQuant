@@ -120,6 +120,62 @@ _COMPOSITE_TREND_OOS_STABILITY_SLICE: dict[str, tuple[dict[str, Any], ...]] = {
             "crowding_block_threshold": 0.75,
             "allow_short": True,
         },
+        {
+            "variant": "stable_ls_crashguard",
+            "long_threshold": 0.75,
+            "short_threshold": 0.45,
+            "te_min": 0.20,
+            "vr_min": 0.82,
+            "exit_score_cross": 0.03,
+            "chop_max": 58.0,
+            "vol_window": 144,
+            "risk_target_vol": 0.0034,
+            "max_signal_strength": 1.10,
+            "atr_stop_mult": 2.0,
+            "trail_atr_mult": 3.2,
+            "max_hold_bars": 768,
+            "crowding_reduce_threshold": 0.48,
+            "crowding_block_threshold": 0.72,
+            "benchmark_regime_ma": 96,
+            "benchmark_symbol": "BTC/USDT",
+            "allow_short": True,
+        },
+        {
+            "variant": "stable_ls_exec_trail",
+            "long_threshold": 0.75,
+            "short_threshold": 0.45,
+            "te_min": 0.20,
+            "vr_min": 0.80,
+            "exit_score_cross": 0.02,
+            "chop_max": 60.0,
+            "vol_window": 144,
+            "risk_target_vol": 0.0035,
+            "max_signal_strength": 1.15,
+            "atr_stop_mult": 1.8,
+            "trail_atr_mult": 2.4,
+            "max_hold_bars": 768,
+            "crowding_reduce_threshold": 0.48,
+            "crowding_block_threshold": 0.76,
+            "allow_short": True,
+        },
+        {
+            "variant": "stable_ls_exec_shorthold",
+            "long_threshold": 0.75,
+            "short_threshold": 0.45,
+            "te_min": 0.20,
+            "vr_min": 0.80,
+            "exit_score_cross": 0.04,
+            "chop_max": 60.0,
+            "vol_window": 144,
+            "risk_target_vol": 0.0035,
+            "max_signal_strength": 1.10,
+            "atr_stop_mult": 2.0,
+            "trail_atr_mult": 2.8,
+            "max_hold_bars": 640,
+            "crowding_reduce_threshold": 0.48,
+            "crowding_block_threshold": 0.76,
+            "allow_short": True,
+        },
     ),
     "1h": (
         {
@@ -234,6 +290,57 @@ _PAIR_RETUNE_SPECS_BY_TIMEFRAME: dict[str, tuple[tuple[float, float, float], ...
 }
 
 _PAIR_RETUNE_PARAM_SETS_BY_TIMEFRAME: dict[str, tuple[dict[str, float | int | str], ...]] = {
+    "1h": (
+        {
+            "variant": "core",
+            "lookback_window": 96,
+            "hedge_window": 192,
+            "min_correlation": 0.20,
+            "cooldown_bars": 8,
+            "reentry_z_buffer": 0.25,
+            "max_hold_bars": 240,
+            "stop_loss_pct": 0.030,
+        },
+        {
+            "variant": "state_vwap",
+            "lookback_window": 96,
+            "hedge_window": 192,
+            "min_correlation": 0.25,
+            "cooldown_bars": 8,
+            "reentry_z_buffer": 0.25,
+            "max_hold_bars": 168,
+            "stop_loss_pct": 0.030,
+            "vwap_window": 72,
+            "min_volume_window": 24,
+            "min_volume_ratio": 0.20,
+        },
+        {
+            "variant": "state_volconv",
+            "lookback_window": 120,
+            "hedge_window": 240,
+            "min_correlation": 0.22,
+            "cooldown_bars": 10,
+            "reentry_z_buffer": 0.30,
+            "max_hold_bars": 192,
+            "stop_loss_pct": 0.025,
+            "vol_lag_bars": 2,
+            "min_vol_convergence": 0.60,
+            "beta_stop_scale_min": 0.85,
+            "beta_stop_scale_max": 2.0,
+        },
+        {
+            "variant": "state_atr",
+            "lookback_window": 96,
+            "hedge_window": 192,
+            "min_correlation": 0.25,
+            "cooldown_bars": 8,
+            "reentry_z_buffer": 0.25,
+            "max_hold_bars": 168,
+            "stop_loss_pct": 0.025,
+            "atr_window": 14,
+            "atr_max_pct": 0.04,
+        },
+    ),
     "4h": (
         {
             "variant": "participation",
@@ -559,6 +666,34 @@ _TOPCAP_TSMOM_SLICE: dict[str, tuple[dict[str, Any], ...]] = {
             "btc_symbol": "BTC/USDT",
         },
         {
+            "variant": "resid_btc",
+            "lookback_bars": 16,
+            "rebalance_bars": 4,
+            "signal_threshold": 0.010,
+            "stop_loss_pct": 0.08,
+            "max_longs": 2,
+            "max_shorts": 2,
+            "min_price": 0.10,
+            "btc_regime_ma": 48,
+            "btc_symbol": "BTC/USDT",
+            "residualize_btc": True,
+            "residualize_mean": False,
+        },
+        {
+            "variant": "resid_beta_neutral",
+            "lookback_bars": 24,
+            "rebalance_bars": 4,
+            "signal_threshold": 0.008,
+            "stop_loss_pct": 0.07,
+            "max_longs": 2,
+            "max_shorts": 2,
+            "min_price": 0.10,
+            "btc_regime_ma": 48,
+            "btc_symbol": "BTC/USDT",
+            "residualize_btc": True,
+            "residualize_mean": True,
+        },
+        {
             "variant": "defensive",
             "lookback_bars": 24,
             "rebalance_bars": 6,
@@ -568,6 +703,83 @@ _TOPCAP_TSMOM_SLICE: dict[str, tuple[dict[str, Any], ...]] = {
             "max_shorts": 1,
             "min_price": 0.10,
             "btc_regime_ma": 64,
+            "btc_symbol": "BTC/USDT",
+        },
+        {
+            "variant": "crashguard",
+            "lookback_bars": 16,
+            "rebalance_bars": 4,
+            "signal_threshold": 0.015,
+            "stop_loss_pct": 0.07,
+            "max_longs": 2,
+            "max_shorts": 2,
+            "min_price": 0.10,
+            "btc_regime_ma": 48,
+            "btc_symbol": "BTC/USDT",
+            "benchmark_drawdown_window": 48,
+            "benchmark_drawdown_limit": 0.08,
+        },
+        {
+            "variant": "exec_tightstop",
+            "lookback_bars": 16,
+            "rebalance_bars": 4,
+            "signal_threshold": 0.015,
+            "stop_loss_pct": 0.05,
+            "max_longs": 2,
+            "max_shorts": 2,
+            "min_price": 0.10,
+            "btc_regime_ma": 48,
+            "btc_symbol": "BTC/USDT",
+        },
+        {
+            "variant": "exec_fastrebalance",
+            "lookback_bars": 16,
+            "rebalance_bars": 2,
+            "signal_threshold": 0.012,
+            "stop_loss_pct": 0.07,
+            "max_longs": 2,
+            "max_shorts": 2,
+            "min_price": 0.10,
+            "btc_regime_ma": 48,
+            "btc_symbol": "BTC/USDT",
+        },
+        {
+            "variant": "exec_takeprofit",
+            "lookback_bars": 16,
+            "rebalance_bars": 4,
+            "signal_threshold": 0.015,
+            "stop_loss_pct": 0.08,
+            "take_profit_pct": 0.10,
+            "max_longs": 2,
+            "max_shorts": 2,
+            "min_price": 0.10,
+            "btc_regime_ma": 48,
+            "btc_symbol": "BTC/USDT",
+        },
+        {
+            "variant": "exec_tightstop_tp",
+            "lookback_bars": 16,
+            "rebalance_bars": 4,
+            "signal_threshold": 0.015,
+            "stop_loss_pct": 0.05,
+            "take_profit_pct": 0.10,
+            "max_longs": 2,
+            "max_shorts": 2,
+            "min_price": 0.10,
+            "btc_regime_ma": 48,
+            "btc_symbol": "BTC/USDT",
+        },
+        {
+            "variant": "exec_fastrebalance_tp",
+            "lookback_bars": 16,
+            "rebalance_bars": 2,
+            "signal_threshold": 0.012,
+            "stop_loss_pct": 0.07,
+            "take_profit_pct": 0.08,
+            "max_longs": 2,
+            "max_shorts": 2,
+            "min_price": 0.10,
+            "btc_regime_ma": 48,
             "btc_symbol": "BTC/USDT",
         },
     ),
@@ -1040,7 +1252,22 @@ def build_binance_futures_candidates(
                 "crowding_block_threshold": float(spec["crowding_block_threshold"]),
                 "allow_short": bool(spec["allow_short"]),
             }
+            if "benchmark_regime_ma" in spec:
+                params["benchmark_regime_ma"] = int(spec["benchmark_regime_ma"])
+            if "benchmark_symbol" in spec:
+                params["benchmark_symbol"] = str(spec["benchmark_symbol"])
             regime_tag = "ls" if bool(spec["allow_short"]) else "lo"
+            tags = ["trend", "trend-following", "momentum", "oos-stability"]
+            note_suffix = ""
+            if int(spec.get("benchmark_regime_ma", 0) or 0) > 0:
+                tags.append("crash_aware")
+                note_suffix = (
+                    f" Crash-aware long gate uses {spec.get('benchmark_symbol', 'BTC/USDT')} "
+                    f"vs {int(spec['benchmark_regime_ma'])}-bar MA."
+                )
+            if "exec_" in str(spec.get("variant") or ""):
+                tags.append("execution_risk")
+                note_suffix = f"{note_suffix} Execution-risk retune." if note_suffix else " Execution-risk retune."
             _add_candidate(
                 candidates,
                 name=(
@@ -1057,13 +1284,16 @@ def build_binance_futures_candidates(
                 notes=(
                     "Primary RG_PVTM trend sleeve with bounded 30m/1h OOS-stability retune "
                     f"({spec['variant']}, {'long-only' if not bool(spec['allow_short']) else 'long/short'})."
+                    f"{note_suffix}"
                 ),
-                tags=("trend", "trend-following", "momentum", "oos-stability"),
+                tags=tuple(tags),
                 metadata={
                     "timeframe": timeframe,
                     "regime": "ls" if bool(spec["allow_short"]) else "lo",
                     "allow_short": bool(spec["allow_short"]),
                     "retune_profile": str(spec["variant"]),
+                    "benchmark_regime_ma": int(spec.get("benchmark_regime_ma", 0) or 0),
+                    "benchmark_symbol": str(spec.get("benchmark_symbol") or ""),
                 },
             )
 
@@ -1219,6 +1449,40 @@ def build_binance_futures_candidates(
                     "btc_regime_ma": int(spec["btc_regime_ma"]),
                     "btc_symbol": str(spec["btc_symbol"]),
                 }
+                if "take_profit_pct" in spec:
+                    params["take_profit_pct"] = float(spec["take_profit_pct"])
+                if "residualize_btc" in spec:
+                    params["residualize_btc"] = bool(spec["residualize_btc"])
+                if "residualize_mean" in spec:
+                    params["residualize_mean"] = bool(spec["residualize_mean"])
+                if "benchmark_drawdown_window" in spec:
+                    params["benchmark_drawdown_window"] = int(spec["benchmark_drawdown_window"])
+                if "benchmark_drawdown_limit" in spec:
+                    params["benchmark_drawdown_limit"] = float(spec["benchmark_drawdown_limit"])
+                tags = ["cross_sectional", "relative_momentum", "topcap", "crypto"]
+                residual_notes = []
+                if bool(spec.get("residualize_btc", False)):
+                    tags.append("residual_momentum")
+                    residual_notes.append("BTC-common-move residualization")
+                if bool(spec.get("residualize_mean", False)):
+                    tags.append("factor_neutral")
+                    residual_notes.append("cross-sectional mean neutralization")
+                if int(spec.get("benchmark_drawdown_window", 0) or 0) > 0 and float(spec.get("benchmark_drawdown_limit", 0.0) or 0.0) > 0.0:
+                    tags.append("crash_aware")
+                    residual_notes.append(
+                        f"benchmark drawdown gate {int(spec['benchmark_drawdown_window'])} bars/{float(spec['benchmark_drawdown_limit']):.1%}"
+                    )
+                if str(spec.get("variant") or "").startswith("exec_"):
+                    tags.append("execution_risk")
+                    residual_notes.append("execution-risk retune")
+                if float(spec.get("take_profit_pct", 0.0) or 0.0) > 0.0:
+                    tags.append("take_profit")
+                    residual_notes.append(f"take profit {float(spec['take_profit_pct']):.1%}")
+                note_suffix = (
+                    " with " + " + ".join(residual_notes) + "."
+                    if residual_notes
+                    else "."
+                )
                 _add_candidate(
                     candidates,
                     name=(
@@ -1232,13 +1496,17 @@ def build_binance_futures_candidates(
                     params=params,
                     notes=(
                         "Top-cap long/short relative-momentum rotation with BTC regime gating "
-                        f"for {timeframe} ({spec['variant']})."
+                        f"for {timeframe} ({spec['variant']}){note_suffix}"
                     ),
-                    tags=("cross_sectional", "relative_momentum", "topcap", "crypto"),
+                    tags=tuple(tags),
                     metadata={
                         "timeframe": timeframe,
                         "retune_profile": str(spec["variant"]),
                         "symbol_scope": "crypto",
+                        "residualize_btc": bool(spec.get("residualize_btc", False)),
+                        "residualize_mean": bool(spec.get("residualize_mean", False)),
+                        "benchmark_drawdown_window": int(spec.get("benchmark_drawdown_window", 0) or 0),
+                        "benchmark_drawdown_limit": float(spec.get("benchmark_drawdown_limit", 0.0) or 0.0),
                     },
                 )
 
@@ -1353,6 +1621,42 @@ def build_binance_futures_candidates(
                         "symbol_x": symbol_x,
                         "symbol_y": symbol_y,
                     }
+                    for optional_key in (
+                        "vwap_window",
+                        "min_volume_window",
+                        "min_volume_ratio",
+                        "vol_lag_bars",
+                        "min_vol_convergence",
+                        "atr_window",
+                        "atr_max_pct",
+                        "beta_stop_scale_min",
+                        "beta_stop_scale_max",
+                    ):
+                        if optional_key in tuned_spec:
+                            params[optional_key] = tuned_spec[optional_key]
+                    tags = ["market_neutral", "pair", "spread", "zscore"]
+                    state_notes = []
+                    if int(tuned_spec.get("vwap_window", 0) or 0) > 0:
+                        tags.append("pair_state")
+                        state_notes.append(f"VWAP normalization {int(tuned_spec['vwap_window'])}")
+                    if float(tuned_spec.get("min_volume_ratio", 0.0) or 0.0) > 0.0:
+                        tags.append("pair_state")
+                        state_notes.append(f"volume ratio >= {float(tuned_spec['min_volume_ratio']):.2f}")
+                    if float(tuned_spec.get("min_vol_convergence", 0.0) or 0.0) > 0.0:
+                        tags.append("pair_state")
+                        state_notes.append(
+                            f"vol convergence z >= {float(tuned_spec['min_vol_convergence']):.2f}"
+                        )
+                    if int(tuned_spec.get("atr_window", 0) or 0) > 0:
+                        tags.append("pair_state")
+                        state_notes.append(
+                            f"ATR filter {int(tuned_spec['atr_window'])}/{float(tuned_spec.get('atr_max_pct', 1.0)):.2f}"
+                        )
+                    note_suffix = (
+                        " " + "; ".join(state_notes) + "."
+                        if state_notes
+                        else ""
+                    )
                     _add_candidate(
                         candidates,
                         name=f"pair_spread_{tf_tag}_{variant}_{pair_token}_{entry_z:.1f}_{exit_z:.2f}",
@@ -1369,8 +1673,9 @@ def build_binance_futures_candidates(
                                 if timeframe in {"4h", "1d"}
                                 else "."
                             )
+                            + note_suffix
                         ),
-                        tags=("market_neutral", "pair", "spread", "zscore"),
+                        tags=tuple(dict.fromkeys(tags)),
                         metadata={
                             "timeframe": timeframe,
                             "pair": f"{symbol_x}_{symbol_y}",

@@ -1,0 +1,41 @@
+{
+  "artifact_kind": "autonomous_research_loop_worker3_latest_state_addendum",
+  "canonical_artifacts_present": {
+    "experiments_tsv": "True",
+    "ideas_backlog_latest_md": "True",
+    "research_state_latest_json": "True",
+    "stack_audit_latest_md": "True"
+  },
+  "generated_at": "2026-03-14T14:17:45Z",
+  "ledger_counts": {
+    "crash": 2,
+    "discard": 11,
+    "keep": 1
+  },
+  "memory_contract": {
+    "explicit_budget_injection": {
+      "causal_dynamic_portfolio": 8589934592,
+      "causal_overlay_portfolio": 8589934592,
+      "portfolio_optimizer": 8589934592
+    },
+    "heavy_lock_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_followup_heavy_run.lock",
+    "registry_only_duplicate_guard": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_run_registry.jsonl",
+    "single_heavy_lane": true,
+    "total_budget_bytes": 8589934592
+  },
+  "output_markdown": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_research_loop/worker3_latest_state_addendum_latest.md",
+  "reviewer": "worker-3",
+  "row_count": 14,
+  "runtime_surface_present": true,
+  "schema_version": "1.0",
+  "supersedes": [
+    "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_research_loop/worker3_review_latest.md",
+    "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_research_loop/worker3_refinement_addendum_latest.md"
+  ],
+  "verification": {
+    "autonomous_workflow_tests_named": "none found via filename search",
+    "py_compile": "success",
+    "pytest": "25 passed in 15.96s",
+    "ruff": "All checks passed!"
+  }
+}

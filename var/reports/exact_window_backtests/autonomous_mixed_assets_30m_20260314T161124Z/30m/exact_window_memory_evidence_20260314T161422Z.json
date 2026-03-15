@@ -1,0 +1,47 @@
+{
+  "budget_bytes": 8589934592,
+  "budget_mib": 8192.0,
+  "error": null,
+  "execution_profile": {
+    "allow_metals": true,
+    "custom_windows": true,
+    "low_ram_profile": true,
+    "requested_symbols": [
+      "BTC/USDT",
+      "ETH/USDT",
+      "BNB/USDT",
+      "SOL/USDT",
+      "TRX/USDT",
+      "XAU/USDT",
+      "XAG/USDT"
+    ],
+    "requested_timeframes": [
+      "30m"
+    ],
+    "requested_timeframes_raw": [
+      "30m"
+    ]
+  },
+  "generated_at": "2026-03-14T16:14:22.934901+00:00",
+  "hard_limit_bytes": 6871947673,
+  "hard_limit_mib": 6553.599999427795,
+  "hard_trigger_count": 0,
+  "label": "exact_window",
+  "peak_rss_bytes": 1665785856,
+  "peak_rss_mib": 1588.6171875,
+  "rss_log_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/autonomous_mixed_assets_30m_20260314T161124Z/30m/exact_window_rss_latest.jsonl",
+  "sample_count": 18,
+  "soft_limit_bytes": 5153960755,
+  "soft_limit_mib": 4915.199999809265,
+  "soft_trigger_count": 0,
+  "status": "completed",
+  "windows": {
+    "actual_max_timestamp": "2026-03-07T10:00:00+00:00",
+    "actual_oos_end_exclusive": "2026-03-07T10:00:00.001000+00:00",
+    "requested_oos_end_exclusive": "2026-03-07T10:00:00.001000+00:00",
+    "train_end_exclusive": "2026-02-05T10:00:00+00:00",
+    "train_start": "2026-01-07T10:00:00+00:00",
+    "val_end_exclusive": "2026-02-18T10:00:00+00:00",
+    "val_start": "2026-02-05T10:00:00+00:00"
+  }
+}

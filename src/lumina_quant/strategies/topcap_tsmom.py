@@ -62,6 +62,13 @@ class TopCapTimeSeriesMomentumStrategy(Strategy):
                 high=0.5,
                 tunable=False,
             ),
+            "take_profit_pct": HyperParam.floating(
+                "take_profit_pct",
+                default=0.0,
+                low=0.0,
+                high=1.0,
+                tunable=False,
+            ),
             "max_longs": HyperParam.integer(
                 "max_longs",
                 default=6,
@@ -90,6 +97,30 @@ class TopCapTimeSeriesMomentumStrategy(Strategy):
                 high=8192,
                 tunable=False,
             ),
+            "benchmark_drawdown_window": HyperParam.integer(
+                "benchmark_drawdown_window",
+                default=0,
+                low=0,
+                high=8192,
+                tunable=False,
+            ),
+            "benchmark_drawdown_limit": HyperParam.floating(
+                "benchmark_drawdown_limit",
+                default=0.0,
+                low=0.0,
+                high=1.0,
+                tunable=False,
+            ),
+            "residualize_btc": HyperParam.boolean(
+                "residualize_btc",
+                default=False,
+                tunable=False,
+            ),
+            "residualize_mean": HyperParam.boolean(
+                "residualize_mean",
+                default=False,
+                tunable=False,
+            ),
             "btc_symbol": HyperParam.string("btc_symbol", default="BTC/USDT", tunable=False),
         }
 
@@ -101,10 +132,15 @@ class TopCapTimeSeriesMomentumStrategy(Strategy):
         rebalance_bars=16,
         signal_threshold=0.04,
         stop_loss_pct=0.08,
+        take_profit_pct=0.0,
         max_longs=6,
         max_shorts=5,
         min_price=0.10,
         btc_regime_ma=48,
+        benchmark_drawdown_window=0,
+        benchmark_drawdown_limit=0.0,
+        residualize_btc=False,
+        residualize_mean=False,
         btc_symbol=None,
     ):
         self.bars = bars
@@ -120,10 +156,15 @@ class TopCapTimeSeriesMomentumStrategy(Strategy):
                 "rebalance_bars": rebalance_bars,
                 "signal_threshold": signal_threshold,
                 "stop_loss_pct": stop_loss_pct,
+                "take_profit_pct": take_profit_pct,
                 "max_longs": max_longs,
                 "max_shorts": max_shorts,
                 "min_price": min_price,
                 "btc_regime_ma": btc_regime_ma,
+                "benchmark_drawdown_window": benchmark_drawdown_window,
+                "benchmark_drawdown_limit": benchmark_drawdown_limit,
+                "residualize_btc": residualize_btc,
+                "residualize_mean": residualize_mean,
                 "btc_symbol": btc_symbol,
             },
             keep_unknown=False,
@@ -133,10 +174,15 @@ class TopCapTimeSeriesMomentumStrategy(Strategy):
         self.rebalance_bars = int(resolved["rebalance_bars"])
         self.signal_threshold = float(resolved["signal_threshold"])
         self.stop_loss_pct = float(resolved["stop_loss_pct"])
+        self.take_profit_pct = float(resolved["take_profit_pct"])
         self.max_longs = int(resolved["max_longs"])
         self.max_shorts = int(resolved["max_shorts"])
         self.min_price = float(resolved["min_price"])
         self.btc_regime_ma = int(resolved["btc_regime_ma"])
+        self.benchmark_drawdown_window = int(resolved["benchmark_drawdown_window"])
+        self.benchmark_drawdown_limit = float(resolved["benchmark_drawdown_limit"])
+        self.residualize_btc = bool(resolved["residualize_btc"])
+        self.residualize_mean = bool(resolved["residualize_mean"])
 
         default_btc = "BTC/USDT" if "BTC/USDT" in self.symbol_list else self.symbol_list[0]
         btc_symbol = resolved["btc_symbol"]
@@ -207,9 +253,22 @@ class TopCapTimeSeriesMomentumStrategy(Strategy):
         return close
 
     def _btc_regime(self):
+        btc_history = self._price_history.get(self.btc_symbol)
+        if (
+            self.benchmark_drawdown_window > 0
+            and self.benchmark_drawdown_limit > 0.0
+            and btc_history is not None
+            and len(btc_history) >= self.benchmark_drawdown_window
+        ):
+            start = len(btc_history) - self.benchmark_drawdown_window
+            peak = max(islice(btc_history, start, None), default=0.0)
+            latest = btc_history[-1] if btc_history else 0.0
+            if peak > 0.0:
+                drawdown = (latest / peak) - 1.0
+                if drawdown <= -self.benchmark_drawdown_limit:
+                    return "RISK_OFF"
         if self.btc_regime_ma <= 0:
             return "BOTH"
-        btc_history = self._price_history.get(self.btc_symbol)
         if btc_history is None or len(btc_history) <= self.btc_regime_ma:
             return "BOTH"
         start = len(btc_history) - self.btc_regime_ma
@@ -219,11 +278,16 @@ class TopCapTimeSeriesMomentumStrategy(Strategy):
     def _emit_signal(self, symbol, event_time, signal_type, momentum, regime):
         close_price = safe_float(self.bars.get_latest_bar_value(symbol, "close"))
         stop_loss = None
+        take_profit = None
         if close_price is not None and close_price > 0.0:
             if signal_type == "LONG":
                 stop_loss = close_price * (1.0 - self.stop_loss_pct)
+                if self.take_profit_pct > 0.0:
+                    take_profit = close_price * (1.0 + self.take_profit_pct)
             elif signal_type == "SHORT":
                 stop_loss = close_price * (1.0 + self.stop_loss_pct)
+                if self.take_profit_pct > 0.0:
+                    take_profit = close_price * (1.0 - self.take_profit_pct)
 
         metadata = {
             "strategy": "TopCapTimeSeriesMomentumStrategy",
@@ -231,6 +295,11 @@ class TopCapTimeSeriesMomentumStrategy(Strategy):
             "regime": regime,
             "lookback_bars": int(self.lookback_bars),
             "signal_threshold": float(self.signal_threshold),
+            "take_profit_pct": float(self.take_profit_pct),
+            "benchmark_drawdown_window": int(self.benchmark_drawdown_window),
+            "benchmark_drawdown_limit": float(self.benchmark_drawdown_limit),
+            "residualize_btc": bool(self.residualize_btc),
+            "residualize_mean": bool(self.residualize_mean),
         }
         self.events.put(
             SignalEvent(
@@ -240,6 +309,7 @@ class TopCapTimeSeriesMomentumStrategy(Strategy):
                 signal_type=signal_type,
                 strength=1.0,
                 stop_loss=stop_loss,
+                take_profit=take_profit,
                 metadata=metadata,
             )
         )
@@ -264,6 +334,16 @@ class TopCapTimeSeriesMomentumStrategy(Strategy):
         if not momentum_rows:
             return {}, {}, "BOTH"
 
+        momentum_map = {symbol: momentum for momentum, symbol in momentum_rows}
+        if self.residualize_btc and self.btc_symbol in momentum_map:
+            btc_momentum = float(momentum_map[self.btc_symbol])
+            for symbol in list(momentum_map):
+                momentum_map[symbol] = float(momentum_map[symbol]) - btc_momentum
+        if self.residualize_mean and momentum_map:
+            mean_momentum = mean(momentum_map.values())
+            for symbol in list(momentum_map):
+                momentum_map[symbol] = float(momentum_map[symbol]) - mean_momentum
+        momentum_rows = [(float(momentum_map[symbol]), symbol) for _, symbol in momentum_rows]
         momentum_rows.sort(key=lambda row: row[0])
         momentum_map = {symbol: momentum for momentum, symbol in momentum_rows}
 

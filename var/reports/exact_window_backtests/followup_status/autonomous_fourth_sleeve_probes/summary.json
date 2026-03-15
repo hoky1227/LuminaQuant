@@ -1,0 +1,550 @@
+{
+  "current_oos": {
+    "total_return": 0.05595997643375439,
+    "cagr": 0.7644493706045741,
+    "sharpe": 3.4471209004535015,
+    "sortino": 12.272011214344426,
+    "calmar": 53.54257718910656,
+    "max_drawdown": 0.014277410814661051,
+    "volatility": 0.1687910826754393
+  },
+  "current_score": 13.472479353457025,
+  "results": [
+    {
+      "slug": "regime_breakout_30m_trend_ls_64_0.72",
+      "params": {
+        "correlation_threshold": 0.35,
+        "max_strategy_cap": 0.5,
+        "max_family_cap": 0.7,
+        "target_vol": 0.06
+      },
+      "score": 12.603811379177346,
+      "delta": -0.8686679742796795,
+      "oos": {
+        "total_return": 0.050532284452287746,
+        "cagr": 0.6721279004221061,
+        "sharpe": 3.3399147634411137,
+        "sortino": 12.132653392050479,
+        "calmar": 46.87683158137706,
+        "max_drawdown": 0.014338168296534892,
+        "volatility": 0.15758053460783877
+      },
+      "weights": [
+        {
+          "candidate_id": "4b050c2ad437c77f",
+          "name": "pair_spread_1h_core_bnbusdt_trxusdt_2.2_0.55",
+          "strategy_class": "PairSpreadZScoreStrategy",
+          "family": "market_neutral",
+          "symbols": [
+            "BNB/USDT",
+            "TRX/USDT"
+          ],
+          "timeframe": "1h",
+          "weight": 0.5,
+          "fit_split": "val",
+          "fit_sharpe": 3.8797484359521275,
+          "fit_return": 0.01606720015631824,
+          "report_split": "oos",
+          "report_sharpe": 4.556884188045461,
+          "report_return": 0.0723750581955176,
+          "oos_sharpe": 4.556884188045461,
+          "oos_return": 0.0723750581955176
+        },
+        {
+          "candidate_id": "feecc2c87fbb8475",
+          "name": "composite_trend_stable_30m_stable_ls_highconv_ls_0.75_0.45_0.20_0.80",
+          "strategy_class": "CompositeTrendStrategy",
+          "family": "trend",
+          "symbols": [
+            "BTC/USDT",
+            "ETH/USDT",
+            "BNB/USDT",
+            "SOL/USDT",
+            "TRX/USDT"
+          ],
+          "timeframe": "30m",
+          "weight": 0.26863717951781974,
+          "fit_split": "val",
+          "fit_sharpe": 4.427750205476359,
+          "fit_return": 0.04987876459743679,
+          "report_split": "oos",
+          "report_sharpe": 2.2953624409038818,
+          "report_return": 0.029547105294839504,
+          "oos_sharpe": 2.2953624409038818,
+          "oos_return": 0.029547105294839504
+        },
+        {
+          "candidate_id": "4c8fdaeabe315563",
+          "name": "topcap_tsmom_1h_balanced_16_4_0.015",
+          "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+          "family": "cross_sectional",
+          "symbols": [
+            "BTC/USDT",
+            "ETH/USDT",
+            "BNB/USDT",
+            "SOL/USDT",
+            "TRX/USDT"
+          ],
+          "timeframe": "1h",
+          "weight": 0.1537644666344128,
+          "fit_split": "val",
+          "fit_sharpe": 1.640883072742277,
+          "fit_return": 0.018372483665204387,
+          "report_split": "oos",
+          "report_sharpe": 1.4641557597854604,
+          "report_return": 0.032378603658792526,
+          "oos_sharpe": 1.4641557597854604,
+          "oos_return": 0.032378603658792526
+        },
+        {
+          "candidate_id": "d547268a3a36e777",
+          "name": "regime_breakout_30m_trend_ls_64_0.72",
+          "strategy_class": "RegimeBreakoutCandidateStrategy",
+          "family": "trend",
+          "symbols": [
+            "BTC/USDT",
+            "ETH/USDT",
+            "BNB/USDT",
+            "SOL/USDT",
+            "TRX/USDT",
+            "XAU/USDT",
+            "XAG/USDT"
+          ],
+          "timeframe": "30m",
+          "weight": 0.07759835384776749,
+          "fit_split": "val",
+          "fit_sharpe": 1.4767965938135987,
+          "fit_return": 0.020039106483141556,
+          "report_split": "oos",
+          "report_sharpe": 1.0698626073964255,
+          "report_return": 0.012730877787368033,
+          "oos_sharpe": 1.0698626073964255,
+          "oos_return": 0.012730877787368033
+        }
+      ],
+      "path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_fourth_sleeve_probes/regime_breakout_30m_trend_ls_64_0.72_run_02/portfolio_optimization_latest.json"
+    },
+    {
+      "slug": "pair_spread_1h_core_ethusdt_solusdt_1.8_0.45",
+      "params": {
+        "correlation_threshold": 0.35,
+        "max_strategy_cap": 0.5,
+        "max_family_cap": 0.7,
+        "target_vol": 0.06
+      },
+      "score": 12.438379959052533,
+      "delta": -1.0340993944044925,
+      "oos": {
+        "total_return": 0.04141236515658919,
+        "cagr": 0.5267920783725972,
+        "sharpe": 3.743731574695107,
+        "sortino": 12.488045212760385,
+        "calmar": 40.47857484519597,
+        "max_drawdown": 0.013014096479118442,
+        "volatility": 0.11478958703696437
+      },
+      "weights": [
+        {
+          "candidate_id": "d32af9536de7612a",
+          "name": "pair_spread_1h_core_ethusdt_solusdt_1.8_0.45",
+          "strategy_class": "PairSpreadZScoreStrategy",
+          "family": "market_neutral",
+          "symbols": [
+            "ETH/USDT",
+            "SOL/USDT"
+          ],
+          "timeframe": "1h",
+          "weight": 0.38841761680119247,
+          "fit_split": "val",
+          "fit_sharpe": 4.195485619338813,
+          "fit_return": 0.030702386090858624,
+          "report_split": "oos",
+          "report_sharpe": 1.6125886900389224,
+          "report_return": 0.016903705925117807,
+          "oos_sharpe": 1.6125886900389224,
+          "oos_return": 0.016903705925117807
+        },
+        {
+          "candidate_id": "4b050c2ad437c77f",
+          "name": "pair_spread_1h_core_bnbusdt_trxusdt_2.2_0.55",
+          "strategy_class": "PairSpreadZScoreStrategy",
+          "family": "market_neutral",
+          "symbols": [
+            "BNB/USDT",
+            "TRX/USDT"
+          ],
+          "timeframe": "1h",
+          "weight": 0.3794180988497096,
+          "fit_split": "val",
+          "fit_sharpe": 3.8797484359521275,
+          "fit_return": 0.01606720015631824,
+          "report_split": "oos",
+          "report_sharpe": 4.556884188045461,
+          "report_return": 0.0723750581955176,
+          "oos_sharpe": 4.556884188045461,
+          "oos_return": 0.0723750581955176
+        },
+        {
+          "candidate_id": "feecc2c87fbb8475",
+          "name": "composite_trend_stable_30m_stable_ls_highconv_ls_0.75_0.45_0.20_0.80",
+          "strategy_class": "CompositeTrendStrategy",
+          "family": "trend",
+          "symbols": [
+            "BTC/USDT",
+            "ETH/USDT",
+            "BNB/USDT",
+            "SOL/USDT",
+            "TRX/USDT"
+          ],
+          "timeframe": "30m",
+          "weight": 0.14765084156380753,
+          "fit_split": "val",
+          "fit_sharpe": 4.427750205476359,
+          "fit_return": 0.04987876459743679,
+          "report_split": "oos",
+          "report_sharpe": 2.2953624409038818,
+          "report_return": 0.029547105294839504,
+          "oos_sharpe": 2.2953624409038818,
+          "oos_return": 0.029547105294839504
+        },
+        {
+          "candidate_id": "4c8fdaeabe315563",
+          "name": "topcap_tsmom_1h_balanced_16_4_0.015",
+          "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+          "family": "cross_sectional",
+          "symbols": [
+            "BTC/USDT",
+            "ETH/USDT",
+            "BNB/USDT",
+            "SOL/USDT",
+            "TRX/USDT"
+          ],
+          "timeframe": "1h",
+          "weight": 0.08451344278529042,
+          "fit_split": "val",
+          "fit_sharpe": 1.640883072742277,
+          "fit_return": 0.018372483665204387,
+          "report_split": "oos",
+          "report_sharpe": 1.4641557597854604,
+          "report_return": 0.032378603658792526,
+          "oos_sharpe": 1.4641557597854604,
+          "oos_return": 0.032378603658792526
+        }
+      ],
+      "path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_fourth_sleeve_probes/pair_spread_1h_core_ethusdt_solusdt_1.8_0.45_run_02/portfolio_optimization_latest.json"
+    },
+    {
+      "slug": "perp_crowding_carry_30m_0.25_0.08",
+      "params": {
+        "correlation_threshold": 0.35,
+        "max_strategy_cap": 0.5,
+        "max_family_cap": 0.7,
+        "target_vol": 0.06
+      },
+      "score": 11.921956618626027,
+      "delta": -1.5505227348309987,
+      "oos": {
+        "total_return": 0.05173246905462037,
+        "cagr": 0.6921575436787641,
+        "sharpe": 3.2529551834853865,
+        "sortino": 11.749226220980828,
+        "calmar": 42.29291696563759,
+        "max_drawdown": 0.01636580291307721,
+        "volatility": 0.16584122354706904
+      },
+      "weights": [
+        {
+          "candidate_id": "4b050c2ad437c77f",
+          "name": "pair_spread_1h_core_bnbusdt_trxusdt_2.2_0.55",
+          "strategy_class": "PairSpreadZScoreStrategy",
+          "family": "market_neutral",
+          "symbols": [
+            "BNB/USDT",
+            "TRX/USDT"
+          ],
+          "timeframe": "1h",
+          "weight": 0.5,
+          "fit_split": "val",
+          "fit_sharpe": 3.8797484359521275,
+          "fit_return": 0.01606720015631824,
+          "report_split": "oos",
+          "report_sharpe": 4.556884188045461,
+          "report_return": 0.0723750581955176,
+          "oos_sharpe": 4.556884188045461,
+          "oos_return": 0.0723750581955176
+        },
+        {
+          "candidate_id": "feecc2c87fbb8475",
+          "name": "composite_trend_stable_30m_stable_ls_highconv_ls_0.75_0.45_0.20_0.80",
+          "strategy_class": "CompositeTrendStrategy",
+          "family": "trend",
+          "symbols": [
+            "BTC/USDT",
+            "ETH/USDT",
+            "BNB/USDT",
+            "SOL/USDT",
+            "TRX/USDT"
+          ],
+          "timeframe": "30m",
+          "weight": 0.3159682096745288,
+          "fit_split": "val",
+          "fit_sharpe": 4.427750205476359,
+          "fit_return": 0.04987876459743679,
+          "report_split": "oos",
+          "report_sharpe": 2.2953624409038818,
+          "report_return": 0.029547105294839504,
+          "oos_sharpe": 2.2953624409038818,
+          "oos_return": 0.029547105294839504
+        },
+        {
+          "candidate_id": "4c8fdaeabe315563",
+          "name": "topcap_tsmom_1h_balanced_16_4_0.015",
+          "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+          "family": "cross_sectional",
+          "symbols": [
+            "BTC/USDT",
+            "ETH/USDT",
+            "BNB/USDT",
+            "SOL/USDT",
+            "TRX/USDT"
+          ],
+          "timeframe": "1h",
+          "weight": 0.18085613957546567,
+          "fit_split": "val",
+          "fit_sharpe": 1.640883072742277,
+          "fit_return": 0.018372483665204387,
+          "report_split": "oos",
+          "report_sharpe": 1.4641557597854604,
+          "report_return": 0.032378603658792526,
+          "oos_sharpe": 1.4641557597854604,
+          "oos_return": 0.032378603658792526
+        },
+        {
+          "candidate_id": "8d38ed92285d68ec",
+          "name": "perp_crowding_carry_30m_0.25_0.08",
+          "strategy_class": "PerpCrowdingCarryStrategy",
+          "family": "carry",
+          "symbols": [
+            "BTC/USDT",
+            "ETH/USDT",
+            "BNB/USDT",
+            "SOL/USDT",
+            "TRX/USDT"
+          ],
+          "timeframe": "30m",
+          "weight": 0.0031756507500055476,
+          "fit_split": "val",
+          "fit_sharpe": 0.0,
+          "fit_return": 0.0,
+          "report_split": "oos",
+          "report_sharpe": 3.4377814212618882,
+          "report_return": 0.0005736192668273077,
+          "oos_sharpe": 3.4377814212618882,
+          "oos_return": 0.0005736192668273077
+        }
+      ],
+      "path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_fourth_sleeve_probes/perp_crowding_carry_30m_0.25_0.08_run_02/portfolio_optimization_latest.json"
+    },
+    {
+      "slug": "rolling_breakout_30m_guarded_ls_64_0.002",
+      "params": {
+        "correlation_threshold": 0.35,
+        "max_strategy_cap": 0.5,
+        "max_family_cap": 0.7,
+        "target_vol": 0.06
+      },
+      "score": 11.903498614035293,
+      "delta": -1.5689807394217326,
+      "oos": {
+        "total_return": 0.051829427310355225,
+        "cagr": 0.693785091962901,
+        "sharpe": 3.2493926615716116,
+        "sortino": 11.741192492461074,
+        "calmar": 42.169609437532245,
+        "max_drawdown": 0.016452253203592893,
+        "volatility": 0.16634349858680117
+      },
+      "weights": [
+        {
+          "candidate_id": "4b050c2ad437c77f",
+          "name": "pair_spread_1h_core_bnbusdt_trxusdt_2.2_0.55",
+          "strategy_class": "PairSpreadZScoreStrategy",
+          "family": "market_neutral",
+          "symbols": [
+            "BNB/USDT",
+            "TRX/USDT"
+          ],
+          "timeframe": "1h",
+          "weight": 0.5,
+          "fit_split": "val",
+          "fit_sharpe": 3.8797484359521275,
+          "fit_return": 0.01606720015631824,
+          "report_split": "oos",
+          "report_sharpe": 4.556884188045461,
+          "report_return": 0.0723750581955176,
+          "oos_sharpe": 4.556884188045461,
+          "oos_return": 0.0723750581955176
+        },
+        {
+          "candidate_id": "feecc2c87fbb8475",
+          "name": "composite_trend_stable_30m_stable_ls_highconv_ls_0.75_0.45_0.20_0.80",
+          "strategy_class": "CompositeTrendStrategy",
+          "family": "trend",
+          "symbols": [
+            "BTC/USDT",
+            "ETH/USDT",
+            "BNB/USDT",
+            "SOL/USDT",
+            "TRX/USDT"
+          ],
+          "timeframe": "30m",
+          "weight": 0.317987846360101,
+          "fit_split": "val",
+          "fit_sharpe": 4.427750205476359,
+          "fit_return": 0.04987876459743679,
+          "report_split": "oos",
+          "report_sharpe": 2.2953624409038818,
+          "report_return": 0.029547105294839504,
+          "oos_sharpe": 2.2953624409038818,
+          "oos_return": 0.029547105294839504
+        },
+        {
+          "candidate_id": "4c8fdaeabe315563",
+          "name": "topcap_tsmom_1h_balanced_16_4_0.015",
+          "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+          "family": "cross_sectional",
+          "symbols": [
+            "BTC/USDT",
+            "ETH/USDT",
+            "BNB/USDT",
+            "SOL/USDT",
+            "TRX/USDT"
+          ],
+          "timeframe": "1h",
+          "weight": 0.182012153639899,
+          "fit_split": "val",
+          "fit_sharpe": 1.640883072742277,
+          "fit_return": 0.018372483665204387,
+          "report_split": "oos",
+          "report_sharpe": 1.4641557597854604,
+          "report_return": 0.032378603658792526,
+          "oos_sharpe": 1.4641557597854604,
+          "oos_return": 0.032378603658792526
+        }
+      ],
+      "path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_fourth_sleeve_probes/rolling_breakout_30m_guarded_ls_64_0.002_run_02/portfolio_optimization_latest.json"
+    },
+    {
+      "slug": "regime_breakout_1h_trend_ls_48_0.70",
+      "params": {
+        "correlation_threshold": 0.35,
+        "max_strategy_cap": 0.5,
+        "max_family_cap": 0.7,
+        "target_vol": 0.06
+      },
+      "score": 10.13188806632508,
+      "delta": -3.3405912871319448,
+      "oos": {
+        "total_return": 0.05631366122077064,
+        "cagr": 0.7706222643672882,
+        "sharpe": 3.045079692337286,
+        "sortino": 9.825325478375213,
+        "calmar": 33.227865807590156,
+        "max_drawdown": 0.023192048169138113,
+        "volatility": 0.19361405831160264
+      },
+      "weights": [
+        {
+          "candidate_id": "4b050c2ad437c77f",
+          "name": "pair_spread_1h_core_bnbusdt_trxusdt_2.2_0.55",
+          "strategy_class": "PairSpreadZScoreStrategy",
+          "family": "market_neutral",
+          "symbols": [
+            "BNB/USDT",
+            "TRX/USDT"
+          ],
+          "timeframe": "1h",
+          "weight": 0.5,
+          "fit_split": "val",
+          "fit_sharpe": 3.8797484359521275,
+          "fit_return": 0.01606720015631824,
+          "report_split": "oos",
+          "report_sharpe": 4.556884188045461,
+          "report_return": 0.0723750581955176,
+          "oos_sharpe": 4.556884188045461,
+          "oos_return": 0.0723750581955176
+        },
+        {
+          "candidate_id": "feecc2c87fbb8475",
+          "name": "composite_trend_stable_30m_stable_ls_highconv_ls_0.75_0.45_0.20_0.80",
+          "strategy_class": "CompositeTrendStrategy",
+          "family": "trend",
+          "symbols": [
+            "BTC/USDT",
+            "ETH/USDT",
+            "BNB/USDT",
+            "SOL/USDT",
+            "TRX/USDT"
+          ],
+          "timeframe": "30m",
+          "weight": 0.2701321803047909,
+          "fit_split": "val",
+          "fit_sharpe": 4.427750205476359,
+          "fit_return": 0.04987876459743679,
+          "report_split": "oos",
+          "report_sharpe": 2.2953624409038818,
+          "report_return": 0.029547105294839504,
+          "oos_sharpe": 2.2953624409038818,
+          "oos_return": 0.029547105294839504
+        },
+        {
+          "candidate_id": "4c8fdaeabe315563",
+          "name": "topcap_tsmom_1h_balanced_16_4_0.015",
+          "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+          "family": "cross_sectional",
+          "symbols": [
+            "BTC/USDT",
+            "ETH/USDT",
+            "BNB/USDT",
+            "SOL/USDT",
+            "TRX/USDT"
+          ],
+          "timeframe": "1h",
+          "weight": 0.1546201858577878,
+          "fit_split": "val",
+          "fit_sharpe": 1.640883072742277,
+          "fit_return": 0.018372483665204387,
+          "report_split": "oos",
+          "report_sharpe": 1.4641557597854604,
+          "report_return": 0.032378603658792526,
+          "oos_sharpe": 1.4641557597854604,
+          "oos_return": 0.032378603658792526
+        },
+        {
+          "candidate_id": "deb70de97b53b507",
+          "name": "regime_breakout_1h_trend_ls_48_0.70",
+          "strategy_class": "RegimeBreakoutCandidateStrategy",
+          "family": "trend",
+          "symbols": [
+            "BTC/USDT",
+            "ETH/USDT",
+            "BNB/USDT",
+            "SOL/USDT",
+            "TRX/USDT"
+          ],
+          "timeframe": "1h",
+          "weight": 0.07524763383742127,
+          "fit_split": "val",
+          "fit_sharpe": 3.538834691452231,
+          "fit_return": 0.08606681665810556,
+          "report_split": "oos",
+          "report_sharpe": 2.0090595076426387,
+          "report_return": 0.08078017551551175,
+          "oos_sharpe": 2.0090595076426387,
+          "oos_return": 0.08078017551551175
+        }
+      ],
+      "path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_fourth_sleeve_probes/regime_breakout_1h_trend_ls_48_0.70_run_02/portfolio_optimization_latest.json"
+    }
+  ]
+}

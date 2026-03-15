@@ -15,6 +15,7 @@ COMMAND_MODULES = {
     "dashboard": "dashboard",
     "data": "data",
     "exact_window": "exact_window",
+    "autonomous_research": "autonomous_research",
 }
 
 
@@ -52,6 +53,8 @@ def main(argv: list[str] | None = None) -> int:
         "dashboard": COMMAND_MODULES["dashboard"],
         "data": COMMAND_MODULES["data"],
         "exact-window": COMMAND_MODULES["exact_window"],
+        "autonomous-research": COMMAND_MODULES["autonomous_research"],
+        "autonomous_research": COMMAND_MODULES["autonomous_research"],
     }
 
     parser = argparse.ArgumentParser(

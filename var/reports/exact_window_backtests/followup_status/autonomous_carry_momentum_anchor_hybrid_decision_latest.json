@@ -1,0 +1,212 @@
+{
+  "artifact_kind": "autonomous_carry_momentum_anchor_decision",
+  "best_search": {
+    "best_metric": [
+      3.147223763887322,
+      3.092796628789857,
+      0.0254805616159397,
+      0.010334901073452807,
+      0.27999999999999997
+    ],
+    "best_params": {
+      "correlation_threshold": 0.35,
+      "cost_penalty": 0.0,
+      "max_family_cap": 0.45,
+      "max_strategy_cap": 0.3,
+      "target_vol": 0.06
+    },
+    "best_requested_params": {
+      "correlation_threshold": 0.35,
+      "cost_penalty": 0.0,
+      "max_family_cap": 0.45,
+      "max_strategy_cap": 0.3,
+      "target_vol": 0.06
+    },
+    "bundle_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_carry_momentum_anchor_hybrid_latest.json",
+    "generated_at": "2026-03-15T05:29:12.130759+00:00",
+    "objective": "val_sharpe + (12 * val_return) - (4 * val_max_drawdown) - (0.75 * hhi) - (0.15 * turnover)",
+    "output_json_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_carry_momentum_anchor_hybrid_opt/portfolio_optimization_latest.json",
+    "runs": 384
+  },
+  "candidate_key": "autonomous_carry_momentum_anchor_hybrid_opt",
+  "challenger": {
+    "oos": {
+      "cagr": 0.5174905323967609,
+      "calmar": 23.078860549453633,
+      "max_drawdown": 0.022422707190759117,
+      "sharpe": 2.6871067100581105,
+      "sortino": 9.764606849962435,
+      "total_return": 0.04080230566127896,
+      "volatility": 0.15982704280717464
+    },
+    "train": {
+      "cagr": 0.008030579688577122,
+      "calmar": 0.09825088887365384,
+      "max_drawdown": 0.08173544057096604,
+      "sharpe": 0.13430419851570924,
+      "sortino": 0.25716365599748636,
+      "total_return": 0.008693488428764828,
+      "volatility": 0.08842606596746613
+    },
+    "val": {
+      "cagr": 0.22640417319714845,
+      "calmar": 21.906757654285766,
+      "max_drawdown": 0.010334901073452807,
+      "sharpe": 3.092796628789857,
+      "sortino": 4.917608626535617,
+      "total_return": 0.0254805616159397,
+      "volatility": 0.06670705501828826
+    },
+    "weights": [
+      {
+        "candidate_id": "feecc2c87fbb8475",
+        "family": "trend",
+        "fit_return": 0.04987876459743679,
+        "fit_sharpe": 4.427750205476359,
+        "fit_split": "val",
+        "name": "composite_trend_stable_30m_stable_ls_highconv_ls_0.75_0.45_0.20_0.80",
+        "oos_return": 0.029547105294839504,
+        "oos_sharpe": 2.2953624409038818,
+        "report_return": 0.029547105294839504,
+        "report_sharpe": 2.2953624409038818,
+        "report_split": "oos",
+        "strategy_class": "CompositeTrendStrategy",
+        "symbols": [
+          "BTC/USDT",
+          "ETH/USDT",
+          "BNB/USDT",
+          "SOL/USDT",
+          "TRX/USDT"
+        ],
+        "timeframe": "30m",
+        "weight": 0.3
+      },
+      {
+        "candidate_id": "4c8fdaeabe315563",
+        "family": "cross_sectional",
+        "fit_return": 0.018372483665204387,
+        "fit_sharpe": 1.640883072742277,
+        "fit_split": "val",
+        "name": "topcap_tsmom_1h_balanced_16_4_0.015",
+        "oos_return": 0.032378603658792526,
+        "oos_sharpe": 1.4641557597854604,
+        "report_return": 0.032378603658792526,
+        "report_sharpe": 1.4641557597854604,
+        "report_split": "oos",
+        "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+        "symbols": [
+          "BTC/USDT",
+          "ETH/USDT",
+          "BNB/USDT",
+          "SOL/USDT",
+          "TRX/USDT"
+        ],
+        "timeframe": "1h",
+        "weight": 0.3
+      },
+      {
+        "candidate_id": "4b050c2ad437c77f",
+        "family": "market_neutral",
+        "fit_return": 0.01606720015631824,
+        "fit_sharpe": 3.8797484359521275,
+        "fit_split": "val",
+        "name": "pair_spread_1h_core_bnbusdt_trxusdt_2.2_0.55",
+        "oos_return": 0.0723750581955176,
+        "oos_sharpe": 4.556884188045461,
+        "report_return": 0.0723750581955176,
+        "report_sharpe": 4.556884188045461,
+        "report_split": "oos",
+        "strategy_class": "PairSpreadZScoreStrategy",
+        "symbols": [
+          "BNB/USDT",
+          "TRX/USDT"
+        ],
+        "timeframe": "1h",
+        "weight": 0.3
+      },
+      {
+        "candidate_id": "8d38ed92285d68ec",
+        "family": "carry",
+        "fit_return": 0.0,
+        "fit_sharpe": 0.0,
+        "fit_split": "val",
+        "name": "perp_crowding_carry_30m_0.25_0.08",
+        "oos_return": 0.0005736192668273077,
+        "oos_sharpe": 3.4377814212618882,
+        "report_return": 0.0005736192668273077,
+        "report_sharpe": 3.4377814212618882,
+        "report_split": "oos",
+        "strategy_class": "PerpCrowdingCarryStrategy",
+        "symbols": [
+          "BTC/USDT",
+          "ETH/USDT",
+          "BNB/USDT",
+          "SOL/USDT",
+          "TRX/USDT"
+        ],
+        "timeframe": "30m",
+        "weight": 0.09999999999999998
+      }
+    ]
+  },
+  "decision_reason": "locked-OOS return, Sharpe, and max-drawdown all worsened versus the incumbent despite a small validation-return lift",
+  "deltas": {
+    "oos_max_drawdown_delta": 0.008145296376098066,
+    "oos_sharpe_delta": -0.760014190395391,
+    "oos_total_return_delta": -0.015157670772475429,
+    "val_sharpe_delta": -1.5683887724467502,
+    "val_total_return_delta": 0.00030967148272198486
+  },
+  "generated_at": "2026-03-15T05:30:10.149234+00:00",
+  "incumbent": {
+    "oos": {
+      "cagr": 0.7644493706045741,
+      "calmar": 53.54257718910656,
+      "max_drawdown": 0.014277410814661051,
+      "sharpe": 3.4471209004535015,
+      "sortino": 12.272011214344426,
+      "total_return": 0.05595997643375439,
+      "volatility": 0.1687910826754393
+    },
+    "train": {
+      "cagr": 0.031128987733148206,
+      "calmar": 0.4387372048542752,
+      "max_drawdown": 0.07095132892476619,
+      "sharpe": 0.40169098218880034,
+      "sortino": 0.6684884761882702,
+      "total_return": 0.031128987733148206,
+      "volatility": 0.08531609458298543
+    },
+    "val": {
+      "cagr": 0.34003864659038885,
+      "calmar": 43.35649610335891,
+      "max_drawdown": 0.007842853485663603,
+      "sharpe": 4.661185401236607,
+      "sortino": 7.569957740388168,
+      "total_return": 0.025170890133217716,
+      "volatility": 0.06323456277167129
+    }
+  },
+  "label": "Autonomous carry+momentum anchor hybrid challenger",
+  "notes": [
+    "Carry sleeve reached 10% weight in the best anchored search configuration.",
+    "Best configuration used correlation_threshold=0.35, cost_penalty=0.0, max_strategy_cap=0.3, max_family_cap=0.45, target_vol=0.06.",
+    "Validation total return improved slightly, but the challenger failed the locked-OOS gate on return, Sharpe, and max drawdown."
+  ],
+  "recommended_action": "retain incumbent; queue residual/crash-aware follow-up lanes",
+  "research_links": [
+    "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4686988",
+    "https://www.nber.org/papers/w10480"
+  ],
+  "schema_version": "1.0",
+  "selection_basis": "autonomous_web_grounded_carry_momentum_anchor_hybrid",
+  "source_artifacts": {
+    "bundle": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_carry_momentum_anchor_hybrid_latest.json",
+    "challenger": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_carry_momentum_anchor_hybrid_opt/portfolio_optimization_latest.json",
+    "comparison": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_carry_momentum_anchor_hybrid_comparison_latest.json",
+    "incumbent": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_one_shot_current_opt/portfolio_optimization_latest.json",
+    "memory_evidence": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_carry_momentum_anchor_hybrid_search/_memory_guard/portfolio_four_sleeve_search_rss_latest.jsonl",
+    "search_summary": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_carry_momentum_anchor_hybrid_search/best_search_summary.json"
+  },
+  "status": "discard"
+}

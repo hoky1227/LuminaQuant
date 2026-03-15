@@ -34,6 +34,7 @@ PORTFOLIO_CURRENT_OPTIMIZATION = (
 )
 
 PORTFOLIO_FOLLOWUP_HEAVY_LOCK_PATH = FOLLOWUP_ROOT / "portfolio_followup_heavy_run.lock"
+PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES = 8 * 1024 * 1024 * 1024
 MEMORY_GUARD_DIRNAME = "_memory_guard"
 
 
@@ -88,12 +89,15 @@ def resolve_incumbent_bundle_path(path: str | Path | None = None) -> Path:
     return PORTFOLIO_ONE_SHOT_INCUMBENT_BUNDLE.resolve()
 
 
-def memory_policy_payload() -> dict[str, Any]:
+def memory_policy_payload(*, budget_bytes: int | None = None) -> dict[str, Any]:
     """Return the canonical memory-budget policy for portfolio follow-up lanes."""
     policy = asdict(DEFAULT_EXECUTION_MEMORY_POLICY)
     policy["total_memory_cap_bytes"] = DEFAULT_EXECUTION_MEMORY_POLICY.total_memory_cap_bytes
     policy["rss_limit_gib"] = DEFAULT_EXECUTION_MEMORY_POLICY.rss_limit_gib
     policy["heavy_lock_path"] = str(PORTFOLIO_FOLLOWUP_HEAVY_LOCK_PATH.resolve())
+    if budget_bytes is not None:
+        policy["explicit_budget_bytes"] = int(budget_bytes)
+        policy["explicit_budget_gib"] = float(int(budget_bytes) / (1024**3))
     return policy
 
 
@@ -128,7 +132,7 @@ class PortfolioMemoryGuard:
             "run_name": self.run_name,
             "label": self.label,
             "output_dir": str(self.output_dir),
-            "memory_policy": memory_policy_payload(),
+            "memory_policy": memory_policy_payload(budget_bytes=self.guard.budget_bytes),
             "context": dict(context or {}),
             **self.guard.finalize(status=status, error=error),
         }
@@ -147,8 +151,19 @@ def acquire_portfolio_memory_guard(
     output_dir: str | Path,
     input_path: str | Path | None = None,
     metadata: dict[str, Any] | None = None,
+    budget_bytes: int | None = None,
+    memory_budget_bytes: int | None = None,
+    fixed_budget_bytes: int | None = None,
 ) -> PortfolioMemoryGuard:
     """Acquire the shared heavy-run lock and RSS logger for a portfolio lane."""
+    resolved_budget_bytes = next(
+        (
+            int(value)
+            for value in (budget_bytes, memory_budget_bytes, fixed_budget_bytes)
+            if value is not None
+        ),
+        None,
+    )
     resolved_output_dir = Path(output_dir).resolve()
     memory_dir = resolved_output_dir / MEMORY_GUARD_DIRNAME
     memory_dir.mkdir(parents=True, exist_ok=True)
@@ -164,7 +179,7 @@ def acquire_portfolio_memory_guard(
     )
     rss_log_path = memory_dir / f"{run_name}_rss_latest.jsonl"
     summary_path = memory_dir / f"{run_name}_memory_latest.json"
-    guard = RSSGuard(log_path=rss_log_path, label=label)
+    guard = RSSGuard(log_path=rss_log_path, label=label, budget_bytes=resolved_budget_bytes)
     return PortfolioMemoryGuard(
         run_name=run_name,
         label=label,
@@ -182,6 +197,7 @@ __all__ = [
     "OOS_START",
     "OOS_START_DATE",
     "PORTFOLIO_CURRENT_OPTIMIZATION",
+    "PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES",
     "PORTFOLIO_FOLLOWUP_HEAVY_LOCK_PATH",
     "PORTFOLIO_ONE_SHOT_CURRENT_BUNDLE",
     "PORTFOLIO_ONE_SHOT_INCUMBENT_BUNDLE",

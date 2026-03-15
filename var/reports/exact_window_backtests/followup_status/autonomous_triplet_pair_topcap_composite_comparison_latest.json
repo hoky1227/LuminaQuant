@@ -1,0 +1,104 @@
+{
+  "generated_at": "2026-03-15T04:15:50.128329+00:00",
+  "artifact_kind": "autonomous_triplet_pair_topcap_composite_comparison",
+  "selection_basis": "autonomous_triplet_probe_best_search",
+  "challenger_metadata": {
+    "candidate_key": "autonomous_triplet_pair_topcap_composite_opt",
+    "label": "Autonomous triplet pair+topcap+composite challenger",
+    "source_artifact_kind": "autonomous_probe.triplet_pair_topcap_composite",
+    "selection_basis": "autonomous_triplet_probe_best_search",
+    "notes": [
+      "Best three-sleeve probe after grid-searching optimizer constraints around the rolled-over pair+topcap incumbent.",
+      "Best params: {'correlation_threshold': 0.35, 'target_vol': 0.06, 'max_strategy_cap': 0.6, 'max_family_cap': 0.7}"
+    ]
+  },
+  "anchored_four_sleeve_tuned": {
+    "path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_triplet_pair_topcap_composite_opt/portfolio_optimization_latest.json",
+    "val": {
+      "total_return": 0.025170890133217716,
+      "cagr": 0.34003864659038885,
+      "sharpe": 4.661185401236607,
+      "sortino": 7.569957740388168,
+      "calmar": 43.35649610335891,
+      "max_drawdown": 0.007842853485663603,
+      "volatility": 0.06323456277167129
+    },
+    "oos": {
+      "total_return": 0.05595997643375439,
+      "cagr": 0.7644493706045741,
+      "sharpe": 3.4471209004535015,
+      "sortino": 12.272011214344426,
+      "calmar": 53.54257718910656,
+      "max_drawdown": 0.014277410814661051,
+      "volatility": 0.1687910826754393
+    },
+    "weights": [
+      {
+        "candidate_id": "4b050c2ad437c77f",
+        "name": "pair_spread_1h_core_bnbusdt_trxusdt_2.2_0.55",
+        "strategy_class": "PairSpreadZScoreStrategy",
+        "family": "market_neutral",
+        "symbols": [
+          "BNB/USDT",
+          "TRX/USDT"
+        ],
+        "timeframe": "1h",
+        "weight": 0.6,
+        "fit_split": "val",
+        "fit_sharpe": 3.8797484359521275,
+        "fit_return": 0.01606720015631824,
+        "report_split": "oos",
+        "report_sharpe": 4.556884188045461,
+        "report_return": 0.0723750581955176,
+        "oos_sharpe": 4.556884188045461,
+        "oos_return": 0.0723750581955176
+      },
+      {
+        "candidate_id": "feecc2c87fbb8475",
+        "name": "composite_trend_stable_30m_stable_ls_highconv_ls_0.75_0.45_0.20_0.80",
+        "strategy_class": "CompositeTrendStrategy",
+        "family": "trend",
+        "symbols": [
+          "BTC/USDT",
+          "ETH/USDT",
+          "BNB/USDT",
+          "SOL/USDT",
+          "TRX/USDT"
+        ],
+        "timeframe": "30m",
+        "weight": 0.2543902770880808,
+        "fit_split": "val",
+        "fit_sharpe": 4.427750205476359,
+        "fit_return": 0.04987876459743679,
+        "report_split": "oos",
+        "report_sharpe": 2.2953624409038818,
+        "report_return": 0.029547105294839504,
+        "oos_sharpe": 2.2953624409038818,
+        "oos_return": 0.029547105294839504
+      },
+      {
+        "candidate_id": "4c8fdaeabe315563",
+        "name": "topcap_tsmom_1h_balanced_16_4_0.015",
+        "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+        "family": "cross_sectional",
+        "symbols": [
+          "BTC/USDT",
+          "ETH/USDT",
+          "BNB/USDT",
+          "SOL/USDT",
+          "TRX/USDT"
+        ],
+        "timeframe": "1h",
+        "weight": 0.1456097229119192,
+        "fit_split": "val",
+        "fit_sharpe": 1.640883072742277,
+        "fit_return": 0.018372483665204387,
+        "report_split": "oos",
+        "report_sharpe": 1.4641557597854604,
+        "report_return": 0.032378603658792526,
+        "oos_sharpe": 1.4641557597854604,
+        "oos_return": 0.032378603658792526
+      }
+    ]
+  }
+}

@@ -20,6 +20,7 @@ DEFAULT_TUNED_COMPARISON = FOLLOWUP_ROOT / "portfolio_comparison_latest.json"
 DEFAULT_DYNAMIC_COMPARISON = FOLLOWUP_ROOT / "portfolio_dynamic_comparison_latest.json"
 DEFAULT_OVERLAY_COMPARISON = FOLLOWUP_ROOT / "portfolio_overlay_comparison_latest.json"
 DEFAULT_BACKBONE_TRIPLET = FOLLOWUP_ROOT / "portfolio_backbone_triplet_search_latest.json"
+DEFAULT_ANCHORED_COMPARISON = FOLLOWUP_ROOT / "portfolio_four_sleeve_comparison_latest.json"
 DEFAULT_OUTPUT_JSON = FOLLOWUP_ROOT / "portfolio_max_performance_decision_latest.json"
 DEFAULT_OUTPUT_MD = FOLLOWUP_ROOT / "portfolio_max_performance_decision_latest.md"
 SPLIT_CONTRACT_PATH = ROOT / "src" / "lumina_quant" / "portfolio_split_contract.py"
@@ -167,6 +168,15 @@ def _artifact_entry(
     }
 
 
+def _normalized_notes(value: Any) -> list[str]:
+    if isinstance(value, str):
+        token = value.strip()
+        return [token] if token else []
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return []
+
+
 def _challenger_reason(entry: dict[str, Any]) -> str:
     if entry.get("promotable"):
         if _safe_float(entry.get("oos_total_return_delta"), 0.0) > 0.0:
@@ -253,6 +263,10 @@ def build_portfolio_max_performance_decision(
     dynamic_comparison_path: Path | str = DEFAULT_DYNAMIC_COMPARISON,
     overlay_comparison_path: Path | str = DEFAULT_OVERLAY_COMPARISON,
     backbone_triplet_path: Path | str = DEFAULT_BACKBONE_TRIPLET,
+    anchored_comparison_path: Path | str = DEFAULT_ANCHORED_COMPARISON,
+    anchored_tuned_comparison_path: Path | str | None = None,
+    portfolio_four_sleeve_comparison_path: Path | str | None = None,
+    four_sleeve_comparison_path: Path | str | None = None,
 ) -> dict[str, Any]:
     incumbent_bundle = _load_json(Path(incumbent_bundle_path))
     incumbent_portfolio = _load_json(Path(incumbent_portfolio_path))
@@ -366,6 +380,65 @@ def build_portfolio_max_performance_decision(
     else:
         missing_artifacts.append(str(overlay_path.resolve()))
 
+    anchored_candidates = [
+        anchored_comparison_path,
+        anchored_tuned_comparison_path,
+        portfolio_four_sleeve_comparison_path,
+        four_sleeve_comparison_path,
+    ]
+    anchored_path = next(
+        (Path(candidate) for candidate in anchored_candidates if candidate and Path(candidate).exists()),
+        None,
+    )
+    if anchored_path is not None:
+        anchored_comparison = _load_json(anchored_path)
+        supporting_artifacts["portfolio_four_sleeve_comparison"] = str(anchored_path.resolve())
+        anchored_section = dict(
+            anchored_comparison.get("anchored_four_sleeve_tuned")
+            or anchored_comparison.get("portfolio_four_sleeve_anchored_tuned")
+            or anchored_comparison.get("portfolio_four_sleeve_tuned")
+            or {}
+        )
+        if anchored_section:
+            rolling_gate = dict(anchored_comparison.get("rolling_gate") or {})
+            metadata = dict(anchored_comparison.get("challenger_metadata") or {})
+            for key in ("candidate_key", "label", "source_artifact_kind", "selection_basis", "notes"):
+                if key not in metadata and anchored_section.get(key) is not None:
+                    metadata[key] = anchored_section.get(key)
+            candidate_key = str(metadata.get("candidate_key") or "anchored_four_sleeve_tuned")
+            label = str(metadata.get("label") or "Anchored four-sleeve tuned challenger")
+            source_artifact_kind = str(
+                metadata.get("source_artifact_kind")
+                or "portfolio_four_sleeve_comparison.anchored_four_sleeve_tuned"
+            )
+            selection_basis = str(
+                metadata.get("selection_basis")
+                or anchored_comparison.get("selection_basis")
+                or "incumbent_anchor_rolling_gate"
+            )
+            notes = _normalized_notes(metadata.get("notes"))
+            if not notes:
+                notes = ["Incumbent-aware four-sleeve challenger with RollingBreakout gate."]
+            if rolling_gate:
+                notes.append(
+                    "Rolling gate: "
+                    f"selection_basis={rolling_gate.get('selection_basis')} "
+                    f"survives_train_val={rolling_gate.get('survives_train_val')}"
+                )
+            entries.append(
+                _artifact_entry(
+                    candidate_key=candidate_key,
+                    label=label,
+                    artifact_path=Path(anchored_section.get("path") or anchored_path),
+                    payload=anchored_section,
+                    source_artifact_kind=source_artifact_kind,
+                    selection_basis=selection_basis,
+                    notes=notes,
+                )
+            )
+    else:
+        missing_artifacts.append(str(Path(anchored_comparison_path).resolve()))
+
     decorated, incumbent = _decorate_vs_incumbent(entries)
     challengers = [dict(entry) for entry in decorated[1:]]
     promotable = [entry for entry in challengers if bool(entry.get("promotable"))]
@@ -457,6 +530,10 @@ def write_portfolio_max_performance_decision(
     dynamic_comparison_path: Path | str = DEFAULT_DYNAMIC_COMPARISON,
     overlay_comparison_path: Path | str = DEFAULT_OVERLAY_COMPARISON,
     backbone_triplet_path: Path | str = DEFAULT_BACKBONE_TRIPLET,
+    anchored_comparison_path: Path | str = DEFAULT_ANCHORED_COMPARISON,
+    anchored_tuned_comparison_path: Path | str | None = None,
+    portfolio_four_sleeve_comparison_path: Path | str | None = None,
+    four_sleeve_comparison_path: Path | str | None = None,
     output_json_path: Path | str = DEFAULT_OUTPUT_JSON,
     output_md_path: Path | str = DEFAULT_OUTPUT_MD,
 ) -> dict[str, Any]:
@@ -467,6 +544,10 @@ def write_portfolio_max_performance_decision(
         dynamic_comparison_path=dynamic_comparison_path,
         overlay_comparison_path=overlay_comparison_path,
         backbone_triplet_path=backbone_triplet_path,
+        anchored_comparison_path=anchored_comparison_path,
+        anchored_tuned_comparison_path=anchored_tuned_comparison_path,
+        portfolio_four_sleeve_comparison_path=portfolio_four_sleeve_comparison_path,
+        four_sleeve_comparison_path=four_sleeve_comparison_path,
     )
     json_path = Path(output_json_path)
     md_path = Path(output_md_path)
@@ -519,6 +600,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dynamic-comparison", default=str(DEFAULT_DYNAMIC_COMPARISON))
     parser.add_argument("--overlay-comparison", default=str(DEFAULT_OVERLAY_COMPARISON))
     parser.add_argument("--backbone-triplet", default=str(DEFAULT_BACKBONE_TRIPLET))
+    parser.add_argument("--anchored-comparison", default=str(DEFAULT_ANCHORED_COMPARISON))
     parser.add_argument("--output-json", default=str(DEFAULT_OUTPUT_JSON))
     parser.add_argument("--output-md", default=str(DEFAULT_OUTPUT_MD))
     return parser
@@ -533,6 +615,7 @@ def main(argv: list[str] | None = None) -> int:
         dynamic_comparison_path=Path(args.dynamic_comparison).resolve(),
         overlay_comparison_path=Path(args.overlay_comparison).resolve(),
         backbone_triplet_path=Path(args.backbone_triplet).resolve(),
+        anchored_comparison_path=Path(args.anchored_comparison).resolve(),
         output_json_path=Path(args.output_json).resolve(),
         output_md_path=Path(args.output_md).resolve(),
     )

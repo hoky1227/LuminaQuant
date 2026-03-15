@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -166,6 +167,59 @@ def test_active_weighting_respects_max_weight() -> None:
         correlation_penalty=0.0,
     )
     assert weights.get("a", 0.0) <= 0.4000001
+
+
+def test_write_dynamic_comparison_refreshes_current_one_shot_snapshot(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    comparison = tmp_path / "comparison.json"
+    comparison.write_text(
+        json.dumps(
+            {
+                "comparison_scope": ["equal_weight_diagnostic"],
+                "deltas": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    current_bundle = tmp_path / "current_bundle.json"
+    current_bundle.write_text(
+        json.dumps({"candidates": [{"name": "new-incumbent"}]}),
+        encoding="utf-8",
+    )
+    current_portfolio = tmp_path / "current_portfolio.json"
+    current_portfolio.write_text(
+        json.dumps(
+            {
+                "weights": [{"candidate_id": "probe", "name": "new-incumbent", "weight": 1.0}],
+                "portfolio_metrics": {
+                    "val": {"total_return": 0.01, "sharpe": 1.1},
+                    "oos": {"total_return": 0.05, "sharpe": 2.0},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(MODULE, "COMPARISON_INPUT", comparison)
+    monkeypatch.setattr(MODULE, "FOLLOWUP_ROOT", tmp_path)
+    monkeypatch.setattr(MODULE, "PORTFOLIO_ONE_SHOT_CURRENT_BUNDLE", current_bundle)
+    monkeypatch.setattr(MODULE, "PORTFOLIO_CURRENT_OPTIMIZATION", current_portfolio)
+
+    result = MODULE.write_dynamic_comparison(
+        dynamic_payload={
+            "split_metrics": {"val": {}, "oos": {"total_return": 0.04, "sharpe": 1.5}},
+            "final_allocation": [],
+            "best_params": {},
+        }
+    )
+    written = json.loads(Path(result["json_path"]).read_text(encoding="utf-8"))
+    assert written["current_one_shot_optimized"]["path"] == str(current_portfolio.resolve())
+    assert written["current_one_shot_optimized"]["bundle_path"] == str(current_bundle.resolve())
+    assert written["current_one_shot_optimized"]["oos"]["total_return"] == 0.05
+    assert "current_one_shot_optimized" in written["comparison_scope"]
+    assert abs(written["deltas"]["dynamic_vs_current_one_shot_oos_return"] + 0.01) < 1e-12
 
 
 def test_regime_multiplier_can_disable_rolling_breakout_when_gate_fails() -> None:

@@ -1,0 +1,18 @@
+{
+  "saved_at_utc": "20260314T161736Z",
+  "branch": "private-main",
+  "context_snapshot_path": "/home/hoky/Quants-agent/LuminaQuant/.omx/context/autonomous-portfolio-research-loop-resume-20260314T161736Z.md",
+  "reboot_resume_plan_path": "/home/hoky/Quants-agent/LuminaQuant/.omx/plans/reboot-resume-autonomous-portfolio-research-20260314T161736Z.md",
+  "resume_markdown_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_research_loop/reboot_resume_latest.md",
+  "next_heavy_followup": "autonomous_mixed_assets_30m_20260314T161124Z",
+  "next_heavy_summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/autonomous_mixed_assets_30m_20260314T161124Z/30m/exact_window_suite_summary_latest.json",
+  "current_keep_candidate_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_cross_sectional_1h_stability_pair_topcap_opt/portfolio_optimization_latest.json",
+  "ledger_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_research_loop/experiments.tsv",
+  "state_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_research_loop/research_state_latest.json",
+  "first_resume_command": "cd /home/hoky/Quants-agent/LuminaQuant && uv run lq autonomous-research --max-archive-crashes 2",
+  "notes": [
+    "Continue from the completed 30m mixed-assets batch before launching a new heavy run.",
+    "Do not introduce a second scheduler; reuse exact-window registry and existing heavy locks.",
+    "Keep the 1h pair+topcap result as research keep only unless a stricter follow-up clears the current promotion gate."
+  ]
+}

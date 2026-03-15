@@ -11,6 +11,8 @@ from __future__ import annotations
 import math
 from collections import deque
 from dataclasses import dataclass
+from itertools import islice
+from statistics import mean
 
 import numpy as np
 from lumina_quant.core.events import SignalEvent
@@ -67,6 +69,18 @@ class CompositeTrendStrategy(Strategy):
                 low=0.0,
                 high=1.0,
             ),
+            "benchmark_regime_ma": HyperParam.integer(
+                "benchmark_regime_ma",
+                default=0,
+                low=0,
+                high=8192,
+                tunable=False,
+            ),
+            "benchmark_symbol": HyperParam.string(
+                "benchmark_symbol",
+                default="BTC/USDT",
+                tunable=False,
+            ),
             "allow_short": HyperParam.boolean("allow_short", default=True),
             # Backwards-compatible legacy knobs retained for saved param payloads.
             "short_window": HyperParam.integer("short_window", default=20, low=2, high=8192, tunable=False),
@@ -113,6 +127,8 @@ class CompositeTrendStrategy(Strategy):
         max_hold_bars: int = 640,
         crowding_reduce_threshold: float = 0.55,
         crowding_block_threshold: float = 0.85,
+        benchmark_regime_ma: int = 0,
+        benchmark_symbol: str = "BTC/USDT",
         allow_short: bool = True,
         **legacy: object,
     ):
@@ -140,6 +156,8 @@ class CompositeTrendStrategy(Strategy):
                 "max_hold_bars": max_hold_bars,
                 "crowding_reduce_threshold": crowding_reduce_threshold,
                 "crowding_block_threshold": crowding_block_threshold,
+                "benchmark_regime_ma": benchmark_regime_ma,
+                "benchmark_symbol": benchmark_symbol,
                 "allow_short": allow_short,
             },
             keep_unknown=True,
@@ -160,7 +178,11 @@ class CompositeTrendStrategy(Strategy):
         self.max_hold_bars = int(resolved["max_hold_bars"])
         self.crowding_reduce_threshold = float(resolved["crowding_reduce_threshold"])
         self.crowding_block_threshold = float(resolved["crowding_block_threshold"])
+        self.benchmark_regime_ma = int(resolved["benchmark_regime_ma"])
         self.allow_short = bool(resolved["allow_short"])
+        default_benchmark = "BTC/USDT" if "BTC/USDT" in self.symbol_list else (self.symbol_list[0] if self.symbol_list else "")
+        benchmark_symbol_value = str(resolved["benchmark_symbol"] or default_benchmark)
+        self.benchmark_symbol = benchmark_symbol_value if benchmark_symbol_value in self.symbol_list else default_benchmark
 
         maxlen = max(256, self.vol_window + 64, self.atr_window + 64)
         self._state = {
@@ -299,6 +321,16 @@ class CompositeTrendStrategy(Strategy):
             strength *= 0.5
         return float(max(0.05, strength))
 
+    def _benchmark_risk_on(self) -> bool | None:
+        if self.benchmark_regime_ma <= 0 or not self.benchmark_symbol:
+            return None
+        benchmark = self._state.get(self.benchmark_symbol)
+        if benchmark is None or len(benchmark.closes) < self.benchmark_regime_ma:
+            return None
+        start = len(benchmark.closes) - self.benchmark_regime_ma
+        avg = mean(islice(benchmark.closes, start, None))
+        return bool(benchmark.closes[-1] >= avg)
+
     def _emit(
         self,
         symbol: str,
@@ -362,6 +394,8 @@ class CompositeTrendStrategy(Strategy):
         gate = bool(factor.get("gate", False))
         item.last_score = score
         item.last_gate = gate
+        benchmark_risk_on = self._benchmark_risk_on()
+        long_gate = gate and benchmark_risk_on is not False
 
         sigma = self._rolling_volatility(item.closes, self.vol_window)
         atr_abs = max(1e-8, self._atr_abs(item.highs, item.lows, item.closes, self.atr_window))
@@ -379,6 +413,9 @@ class CompositeTrendStrategy(Strategy):
             "volatility_ratio": factor.get("volatility_ratio"),
             "choppiness": factor.get("choppiness"),
             "crowding_score": crowding,
+            "benchmark_symbol": self.benchmark_symbol,
+            "benchmark_regime_ma": int(self.benchmark_regime_ma),
+            "benchmark_risk_on": benchmark_risk_on,
             "bars_held": int(item.bars_held),
         }
 
@@ -387,7 +424,7 @@ class CompositeTrendStrategy(Strategy):
             next_stop = float(close) - (self.trail_atr_mult * atr_abs)
             item.trailing_stop = max(float(item.trailing_stop or next_stop), next_stop)
             should_exit = (
-                (not gate)
+                (not long_gate)
                 or (score <= self.exit_score_cross)
                 or (float(close) <= float(item.trailing_stop or -math.inf))
                 or (item.bars_held >= self.max_hold_bars)
@@ -431,7 +468,7 @@ class CompositeTrendStrategy(Strategy):
             return
 
         # Entry logic.
-        if gate and score >= self.long_threshold:
+        if long_gate and score >= self.long_threshold:
             stop = float(close) - (self.atr_stop_mult * atr_abs)
             take = float(close) + (self.atr_stop_mult * atr_abs * 1.8)
             self._emit(

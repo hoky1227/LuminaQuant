@@ -1,0 +1,16 @@
+{
+  "dynamic": {
+    "acquire_budget_bytes": null,
+    "output_json": "/tmp/tmpa6avagta/dynamic/causal_dynamic_portfolio_20260314T141359Z.json",
+    "payload_memory_policy_explicit_budget_bytes": null,
+    "payload_memory_summary_explicit_budget_bytes": null,
+    "status": "fail"
+  },
+  "overlay": {
+    "acquire_budget_bytes": null,
+    "output_json": "/tmp/tmpa6avagta/overlay/causal_overlay_portfolio_20260314T141359Z.json",
+    "payload_memory_policy_explicit_budget_bytes": null,
+    "payload_memory_summary_explicit_budget_bytes": null,
+    "status": "fail"
+  }
+}

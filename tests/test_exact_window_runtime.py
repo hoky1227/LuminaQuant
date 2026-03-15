@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 from pathlib import Path
 
@@ -7,6 +8,7 @@ import pytest
 
 from lumina_quant.core.memory_budget import DEFAULT_EXECUTION_MEMORY_POLICY
 from lumina_quant.eval import exact_window_runtime as runtime
+from lumina_quant import portfolio_split_contract as portfolio_contract
 
 
 def test_rss_guard_logs_samples_and_raises_on_hard_limit(tmp_path: Path, monkeypatch):
@@ -98,3 +100,44 @@ def test_rss_guard_uses_canonical_policy_fractions_by_default(tmp_path: Path):
     assert guard.hard_limit_bytes == int(
         1_000 * DEFAULT_EXECUTION_MEMORY_POLICY.exact_window_hard_fraction
     )
+
+
+def test_acquire_portfolio_memory_guard_propagates_explicit_budget(tmp_path: Path, monkeypatch):
+    captured: dict[str, object] = {}
+
+    class DummyLock:
+        def release(self) -> None:
+            return None
+
+    class DummyGuard:
+        def __init__(self, **kwargs) -> None:
+            captured.update(kwargs)
+            self.budget_bytes = kwargs.get("budget_bytes")
+
+    monkeypatch.setattr(
+        portfolio_contract,
+        "HeavyRunLock",
+        type(
+            "DummyHeavyRunLock",
+            (),
+            {"acquire": staticmethod(lambda **kwargs: DummyLock())},
+        ),
+    )
+    monkeypatch.setattr(portfolio_contract, "RSSGuard", DummyGuard)
+
+    budget_bytes = 8 * 1024 * 1024 * 1024
+    params = inspect.signature(portfolio_contract.acquire_portfolio_memory_guard).parameters
+    candidate_kwargs = {
+        "run_name": "portfolio_four_sleeve_search",
+        "output_dir": tmp_path / "search",
+        "input_path": tmp_path / "bundle.json",
+        "budget_bytes": budget_bytes,
+        "memory_budget_bytes": budget_bytes,
+        "fixed_budget_bytes": budget_bytes,
+    }
+    guard = portfolio_contract.acquire_portfolio_memory_guard(
+        **{name: value for name, value in candidate_kwargs.items() if name in params}
+    )
+
+    assert captured.get("budget_bytes") == budget_bytes
+    assert getattr(guard.guard, "budget_bytes", None) == budget_bytes

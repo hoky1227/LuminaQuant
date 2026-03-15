@@ -1,0 +1,2295 @@
+{
+  "candidate_count": 51,
+  "candidates": [
+    {
+      "candidate_id": "cafbbf06d6fdac1b",
+      "family": "trend",
+      "metadata": {
+        "allow_short": true,
+        "article_pipeline_family_ids": [
+          "regime-conditioned-composite-trend"
+        ],
+        "family": "trend",
+        "hypothesis_origin": "article_research_pipeline",
+        "regime": "ls",
+        "retune_profile": "full_retune_core_guarded",
+        "timeframe": "30m"
+      },
+      "name": "composite_trend_30m_retune_core_guarded_ls_0.60_0.45_0.25_0.90",
+      "notes": "Manual guarded core composite variant.",
+      "params": {
+        "allow_short": true,
+        "atr_stop_mult": 2.0,
+        "chop_max": 60.0,
+        "crowding_block_threshold": 0.7,
+        "crowding_reduce_threshold": 0.5,
+        "exit_score_cross": 0.03,
+        "long_threshold": 0.6,
+        "max_hold_bars": 960,
+        "max_signal_strength": 1.35,
+        "risk_target_vol": 0.0038,
+        "short_threshold": 0.45,
+        "te_min": 0.25,
+        "trail_atr_mult": 3.0,
+        "vol_window": 144,
+        "vr_min": 0.9
+      },
+      "strategy": "CompositeTrendStrategy",
+      "strategy_class": "CompositeTrendStrategy",
+      "strategy_timeframe": "30m",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "trend",
+        "trend-following",
+        "momentum",
+        "oos-stability",
+        "article_pipeline",
+        "article_family:regime-conditioned-composite-trend"
+      ],
+      "timeframe": "30m"
+    },
+    {
+      "candidate_id": "e453b4888094d7f3",
+      "family": "trend",
+      "metadata": {
+        "allow_short": true,
+        "article_pipeline_family_ids": [
+          "regime-conditioned-composite-trend"
+        ],
+        "family": "trend",
+        "hypothesis_origin": "article_research_pipeline",
+        "regime": "ls",
+        "retune_profile": "full_retune_core_relaxed",
+        "timeframe": "30m"
+      },
+      "name": "composite_trend_30m_retune_core_relaxed_ls_0.60_0.40_0.15_0.75",
+      "notes": "Manual relaxed core composite variant.",
+      "params": {
+        "allow_short": true,
+        "atr_stop_mult": 2.0,
+        "chop_max": 60.0,
+        "crowding_block_threshold": 0.78,
+        "crowding_reduce_threshold": 0.5,
+        "exit_score_cross": 0.03,
+        "long_threshold": 0.6,
+        "max_hold_bars": 960,
+        "max_signal_strength": 1.35,
+        "risk_target_vol": 0.004,
+        "short_threshold": 0.4,
+        "te_min": 0.15,
+        "trail_atr_mult": 3.0,
+        "vol_window": 144,
+        "vr_min": 0.75
+      },
+      "strategy": "CompositeTrendStrategy",
+      "strategy_class": "CompositeTrendStrategy",
+      "strategy_timeframe": "30m",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "trend",
+        "trend-following",
+        "momentum",
+        "oos-stability",
+        "article_pipeline",
+        "article_family:regime-conditioned-composite-trend"
+      ],
+      "timeframe": "30m"
+    },
+    {
+      "candidate_id": "bdbe51c29550012f",
+      "family": "trend",
+      "metadata": {
+        "allow_short": true,
+        "article_pipeline_family_ids": [
+          "regime-conditioned-composite-trend"
+        ],
+        "family": "trend",
+        "hypothesis_origin": "article_research_pipeline",
+        "regime": "ls",
+        "retune_profile": "full_retune_highconv_guarded",
+        "timeframe": "30m"
+      },
+      "name": "composite_trend_30m_retune_highconv_guarded_ls_0.75_0.40_0.20_0.90",
+      "notes": "Manual guarded high-conv composite variant.",
+      "params": {
+        "allow_short": true,
+        "atr_stop_mult": 2.0,
+        "chop_max": 60.0,
+        "crowding_block_threshold": 0.72,
+        "crowding_reduce_threshold": 0.5,
+        "exit_score_cross": 0.03,
+        "long_threshold": 0.75,
+        "max_hold_bars": 960,
+        "max_signal_strength": 1.2,
+        "risk_target_vol": 0.0036,
+        "short_threshold": 0.4,
+        "te_min": 0.2,
+        "trail_atr_mult": 3.1,
+        "vol_window": 144,
+        "vr_min": 0.9
+      },
+      "strategy": "CompositeTrendStrategy",
+      "strategy_class": "CompositeTrendStrategy",
+      "strategy_timeframe": "30m",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "trend",
+        "trend-following",
+        "momentum",
+        "oos-stability",
+        "article_pipeline",
+        "article_family:regime-conditioned-composite-trend"
+      ],
+      "timeframe": "30m"
+    },
+    {
+      "candidate_id": "7af5976ce32efb4d",
+      "family": "trend",
+      "metadata": {
+        "allow_short": true,
+        "article_pipeline_family_ids": [
+          "regime-conditioned-composite-trend"
+        ],
+        "family": "trend",
+        "hypothesis_origin": "article_research_pipeline",
+        "regime": "ls",
+        "retune_profile": "full_retune_softexit",
+        "timeframe": "30m"
+      },
+      "name": "composite_trend_30m_retune_highconv_softexit_ls_0.75_0.45_0.15_0.80",
+      "notes": "Manual softer exit composite variant.",
+      "params": {
+        "allow_short": true,
+        "atr_stop_mult": 2.0,
+        "chop_max": 60.0,
+        "crowding_block_threshold": 0.78,
+        "crowding_reduce_threshold": 0.5,
+        "exit_score_cross": 0.02,
+        "long_threshold": 0.75,
+        "max_hold_bars": 960,
+        "max_signal_strength": 1.2,
+        "risk_target_vol": 0.0036,
+        "short_threshold": 0.45,
+        "te_min": 0.15,
+        "trail_atr_mult": 3.1,
+        "vol_window": 144,
+        "vr_min": 0.8
+      },
+      "strategy": "CompositeTrendStrategy",
+      "strategy_class": "CompositeTrendStrategy",
+      "strategy_timeframe": "30m",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "trend",
+        "trend-following",
+        "momentum",
+        "oos-stability",
+        "article_pipeline",
+        "article_family:regime-conditioned-composite-trend"
+      ],
+      "timeframe": "30m"
+    },
+    {
+      "candidate_id": "ee9057ae6ed2b6e6",
+      "family": "trend",
+      "metadata": {
+        "allow_short": true,
+        "article_pipeline_family_ids": [
+          "regime-conditioned-composite-trend"
+        ],
+        "family": "trend",
+        "hypothesis_origin": "article_research_pipeline",
+        "regime": "ls",
+        "retune_profile": "full_retune_hold768",
+        "timeframe": "30m"
+      },
+      "name": "composite_trend_30m_retune_hold768_ls_0.75_0.45_0.20_0.85",
+      "notes": "Manual shorter-hold composite variant.",
+      "params": {
+        "allow_short": true,
+        "atr_stop_mult": 2.0,
+        "chop_max": 60.0,
+        "crowding_block_threshold": 0.78,
+        "crowding_reduce_threshold": 0.5,
+        "exit_score_cross": 0.03,
+        "long_threshold": 0.75,
+        "max_hold_bars": 768,
+        "max_signal_strength": 1.2,
+        "risk_target_vol": 0.0036,
+        "short_threshold": 0.45,
+        "te_min": 0.2,
+        "trail_atr_mult": 3.1,
+        "vol_window": 144,
+        "vr_min": 0.85
+      },
+      "strategy": "CompositeTrendStrategy",
+      "strategy_class": "CompositeTrendStrategy",
+      "strategy_timeframe": "30m",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "trend",
+        "trend-following",
+        "momentum",
+        "oos-stability",
+        "article_pipeline",
+        "article_family:regime-conditioned-composite-trend"
+      ],
+      "timeframe": "30m"
+    },
+    {
+      "candidate_id": "174079f0901af1f7",
+      "family": "trend",
+      "metadata": {
+        "allow_short": true,
+        "article_pipeline_family_ids": [
+          "regime-conditioned-composite-trend"
+        ],
+        "family": "trend",
+        "hypothesis_origin": "article_research_pipeline",
+        "regime": "ls",
+        "retune_profile": "full_retune_midconv",
+        "timeframe": "30m"
+      },
+      "name": "composite_trend_30m_retune_midconv_ls_0.70_0.45_0.20_0.80",
+      "notes": "Manual full-retune mid-conv composite variant.",
+      "params": {
+        "allow_short": true,
+        "atr_stop_mult": 2.0,
+        "chop_max": 60.0,
+        "crowding_block_threshold": 0.78,
+        "crowding_reduce_threshold": 0.5,
+        "exit_score_cross": 0.03,
+        "long_threshold": 0.7,
+        "max_hold_bars": 960,
+        "max_signal_strength": 1.2,
+        "risk_target_vol": 0.0036,
+        "short_threshold": 0.45,
+        "te_min": 0.2,
+        "trail_atr_mult": 3.1,
+        "vol_window": 144,
+        "vr_min": 0.8
+      },
+      "strategy": "CompositeTrendStrategy",
+      "strategy_class": "CompositeTrendStrategy",
+      "strategy_timeframe": "30m",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "trend",
+        "trend-following",
+        "momentum",
+        "oos-stability",
+        "article_pipeline",
+        "article_family:regime-conditioned-composite-trend"
+      ],
+      "timeframe": "30m"
+    },
+    {
+      "candidate_id": "0df2c8b8498ba604",
+      "family": "trend",
+      "metadata": {
+        "allow_short": true,
+        "article_pipeline_family_ids": [
+          "regime-conditioned-composite-trend"
+        ],
+        "family": "trend",
+        "hypothesis_origin": "article_research_pipeline",
+        "regime": "ls",
+        "retune_profile": "stable_ls_core",
+        "timeframe": "30m"
+      },
+      "name": "composite_trend_stable_30m_stable_ls_core_ls_0.60_0.45_0.20_0.80",
+      "notes": "Primary RG_PVTM trend sleeve with bounded 30m/1h OOS-stability retune (stable_ls_core, long/short).",
+      "params": {
+        "allow_short": true,
+        "atr_stop_mult": 2.0,
+        "chop_max": 60.0,
+        "crowding_block_threshold": 0.78,
+        "crowding_reduce_threshold": 0.5,
+        "exit_score_cross": 0.03,
+        "long_threshold": 0.6,
+        "max_hold_bars": 960,
+        "max_signal_strength": 1.35,
+        "risk_target_vol": 0.0038,
+        "short_threshold": 0.45,
+        "te_min": 0.2,
+        "trail_atr_mult": 3.0,
+        "vol_window": 144,
+        "vr_min": 0.8
+      },
+      "strategy": "CompositeTrendStrategy",
+      "strategy_class": "CompositeTrendStrategy",
+      "strategy_timeframe": "30m",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "trend",
+        "trend-following",
+        "momentum",
+        "oos-stability",
+        "article_pipeline",
+        "article_family:regime-conditioned-composite-trend"
+      ],
+      "timeframe": "30m"
+    },
+    {
+      "candidate_id": "feecc2c87fbb8475",
+      "family": "trend",
+      "metadata": {
+        "allow_short": true,
+        "article_pipeline_family_ids": [
+          "regime-conditioned-composite-trend"
+        ],
+        "family": "trend",
+        "hypothesis_origin": "article_research_pipeline",
+        "regime": "ls",
+        "retune_profile": "stable_ls_highconv",
+        "timeframe": "30m"
+      },
+      "name": "composite_trend_stable_30m_stable_ls_highconv_ls_0.75_0.45_0.20_0.80",
+      "notes": "Primary RG_PVTM trend sleeve with bounded 30m/1h OOS-stability retune (stable_ls_highconv, long/short).",
+      "params": {
+        "allow_short": true,
+        "atr_stop_mult": 2.0,
+        "chop_max": 60.0,
+        "crowding_block_threshold": 0.78,
+        "crowding_reduce_threshold": 0.5,
+        "exit_score_cross": 0.03,
+        "long_threshold": 0.75,
+        "max_hold_bars": 960,
+        "max_signal_strength": 1.2,
+        "risk_target_vol": 0.0036,
+        "short_threshold": 0.45,
+        "te_min": 0.2,
+        "trail_atr_mult": 3.1,
+        "vol_window": 144,
+        "vr_min": 0.8
+      },
+      "strategy": "CompositeTrendStrategy",
+      "strategy_class": "CompositeTrendStrategy",
+      "strategy_timeframe": "30m",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "trend",
+        "trend-following",
+        "momentum",
+        "oos-stability",
+        "article_pipeline",
+        "article_family:regime-conditioned-composite-trend"
+      ],
+      "timeframe": "30m"
+    },
+    {
+      "candidate_id": "e20c9407de903d5c",
+      "family": "trend",
+      "metadata": {
+        "allow_short": true,
+        "article_pipeline_family_ids": [
+          "regime-conditioned-composite-trend"
+        ],
+        "family": "trend",
+        "hypothesis_origin": "article_research_pipeline",
+        "regime": "ls",
+        "retune_profile": "stable_ls_tefilter",
+        "timeframe": "30m"
+      },
+      "name": "composite_trend_stable_30m_stable_ls_tefilter_ls_0.60_0.45_0.25_0.80",
+      "notes": "Primary RG_PVTM trend sleeve with bounded 30m/1h OOS-stability retune (stable_ls_tefilter, long/short).",
+      "params": {
+        "allow_short": true,
+        "atr_stop_mult": 2.1,
+        "chop_max": 58.0,
+        "crowding_block_threshold": 0.75,
+        "crowding_reduce_threshold": 0.48,
+        "exit_score_cross": 0.04,
+        "long_threshold": 0.6,
+        "max_hold_bars": 960,
+        "max_signal_strength": 1.15,
+        "risk_target_vol": 0.0035,
+        "short_threshold": 0.45,
+        "te_min": 0.25,
+        "trail_atr_mult": 3.2,
+        "vol_window": 160,
+        "vr_min": 0.8
+      },
+      "strategy": "CompositeTrendStrategy",
+      "strategy_class": "CompositeTrendStrategy",
+      "strategy_timeframe": "30m",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "trend",
+        "trend-following",
+        "momentum",
+        "oos-stability",
+        "article_pipeline",
+        "article_family:regime-conditioned-composite-trend"
+      ],
+      "timeframe": "30m"
+    },
+    {
+      "candidate_id": "regime_breakout_1h_control_ls_48_070_48_0.70",
+      "family": "trend",
+      "metadata": {
+        "cost_rate": 0.0005,
+        "probe_variant": "control_ls_48_070",
+        "source": "2026-03-11-regime-breakout-track-b-probe",
+        "timeframe": "1h"
+      },
+      "name": "regime_breakout_1h_control_ls_48_070_48_0.70",
+      "notes": "RegimeBreakout 1h probe variant control_ls_48_070.",
+      "params": {
+        "allow_short": true,
+        "lookback_window": 48,
+        "max_volatility_ratio": 1.8,
+        "momentum_floor": 0.003,
+        "range_entry_threshold": 0.7,
+        "slope_entry_threshold": 0.001,
+        "slope_window": 21,
+        "stop_loss_pct": 0.025,
+        "volatility_fast_window": 12,
+        "volatility_slow_window": 48
+      },
+      "strategy": "RegimeBreakoutCandidateStrategy",
+      "strategy_class": "RegimeBreakoutCandidateStrategy",
+      "strategy_timeframe": "1h",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "probe",
+        "trend",
+        "breakout",
+        "regime",
+        "round1"
+      ],
+      "timeframe": "1h"
+    },
+    {
+      "candidate_id": "regime_breakout_1h_long_only_strict_48_0.74",
+      "family": "trend",
+      "metadata": {
+        "cost_rate": 0.0005,
+        "probe_variant": "long_only_strict",
+        "source": "2026-03-11-regime-breakout-track-b-probe",
+        "timeframe": "1h"
+      },
+      "name": "regime_breakout_1h_long_only_strict_48_0.74",
+      "notes": "RegimeBreakout 1h probe variant long_only_strict.",
+      "params": {
+        "allow_short": false,
+        "lookback_window": 48,
+        "max_volatility_ratio": 1.6,
+        "momentum_floor": 0.003,
+        "range_entry_threshold": 0.74,
+        "slope_entry_threshold": 0.001,
+        "slope_window": 21,
+        "stop_loss_pct": 0.02,
+        "volatility_fast_window": 12,
+        "volatility_slow_window": 48
+      },
+      "strategy": "RegimeBreakoutCandidateStrategy",
+      "strategy_class": "RegimeBreakoutCandidateStrategy",
+      "strategy_timeframe": "1h",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "probe",
+        "trend",
+        "breakout",
+        "regime",
+        "round1"
+      ],
+      "timeframe": "1h"
+    },
+    {
+      "candidate_id": "regime_breakout_1h_long_window_long_only_60_0.78",
+      "family": "trend",
+      "metadata": {
+        "cost_rate": 0.0005,
+        "probe_variant": "long_window_long_only",
+        "source": "2026-03-11-regime-breakout-track-b-probe",
+        "timeframe": "1h"
+      },
+      "name": "regime_breakout_1h_long_window_long_only_60_0.78",
+      "notes": "RegimeBreakout 1h probe variant long_window_long_only.",
+      "params": {
+        "allow_short": false,
+        "lookback_window": 60,
+        "max_volatility_ratio": 1.5,
+        "momentum_floor": 0.004,
+        "range_entry_threshold": 0.78,
+        "slope_entry_threshold": 0.0015,
+        "slope_window": 24,
+        "stop_loss_pct": 0.015,
+        "volatility_fast_window": 14,
+        "volatility_slow_window": 60
+      },
+      "strategy": "RegimeBreakoutCandidateStrategy",
+      "strategy_class": "RegimeBreakoutCandidateStrategy",
+      "strategy_timeframe": "1h",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "probe",
+        "trend",
+        "breakout",
+        "regime",
+        "round1"
+      ],
+      "timeframe": "1h"
+    },
+    {
+      "candidate_id": "regime_breakout_1h_long_window_ls_60_0.74",
+      "family": "trend",
+      "metadata": {
+        "cost_rate": 0.0005,
+        "probe_variant": "long_window_ls",
+        "source": "2026-03-11-regime-breakout-track-b-probe",
+        "timeframe": "1h"
+      },
+      "name": "regime_breakout_1h_long_window_ls_60_0.74",
+      "notes": "RegimeBreakout 1h probe variant long_window_ls.",
+      "params": {
+        "allow_short": true,
+        "lookback_window": 60,
+        "max_volatility_ratio": 1.6,
+        "momentum_floor": 0.004,
+        "range_entry_threshold": 0.74,
+        "slope_entry_threshold": 0.0015,
+        "slope_window": 24,
+        "stop_loss_pct": 0.02,
+        "volatility_fast_window": 14,
+        "volatility_slow_window": 60
+      },
+      "strategy": "RegimeBreakoutCandidateStrategy",
+      "strategy_class": "RegimeBreakoutCandidateStrategy",
+      "strategy_timeframe": "1h",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "probe",
+        "trend",
+        "breakout",
+        "regime",
+        "round1"
+      ],
+      "timeframe": "1h"
+    },
+    {
+      "candidate_id": "regime_breakout_1h_tight_range_ls_48_0.76",
+      "family": "trend",
+      "metadata": {
+        "cost_rate": 0.0005,
+        "probe_variant": "tight_range_ls",
+        "source": "2026-03-11-regime-breakout-track-b-probe",
+        "timeframe": "1h"
+      },
+      "name": "regime_breakout_1h_tight_range_ls_48_0.76",
+      "notes": "RegimeBreakout 1h probe variant tight_range_ls.",
+      "params": {
+        "allow_short": true,
+        "lookback_window": 48,
+        "max_volatility_ratio": 1.8,
+        "momentum_floor": 0.003,
+        "range_entry_threshold": 0.76,
+        "slope_entry_threshold": 0.001,
+        "slope_window": 21,
+        "stop_loss_pct": 0.025,
+        "volatility_fast_window": 12,
+        "volatility_slow_window": 48
+      },
+      "strategy": "RegimeBreakoutCandidateStrategy",
+      "strategy_class": "RegimeBreakoutCandidateStrategy",
+      "strategy_timeframe": "1h",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "probe",
+        "trend",
+        "breakout",
+        "regime",
+        "round1"
+      ],
+      "timeframe": "1h"
+    },
+    {
+      "candidate_id": "regime_breakout_1h_tight_vol_ls_48_0.74",
+      "family": "trend",
+      "metadata": {
+        "cost_rate": 0.0005,
+        "probe_variant": "tight_vol_ls",
+        "source": "2026-03-11-regime-breakout-track-b-probe",
+        "timeframe": "1h"
+      },
+      "name": "regime_breakout_1h_tight_vol_ls_48_0.74",
+      "notes": "RegimeBreakout 1h probe variant tight_vol_ls.",
+      "params": {
+        "allow_short": true,
+        "lookback_window": 48,
+        "max_volatility_ratio": 1.6,
+        "momentum_floor": 0.003,
+        "range_entry_threshold": 0.74,
+        "slope_entry_threshold": 0.001,
+        "slope_window": 21,
+        "stop_loss_pct": 0.02,
+        "volatility_fast_window": 12,
+        "volatility_slow_window": 48
+      },
+      "strategy": "RegimeBreakoutCandidateStrategy",
+      "strategy_class": "RegimeBreakoutCandidateStrategy",
+      "strategy_timeframe": "1h",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "probe",
+        "trend",
+        "breakout",
+        "regime",
+        "round1"
+      ],
+      "timeframe": "1h"
+    },
+    {
+      "candidate_id": "regime_breakout_1h_tight_vol_stop_ls_48_0.78",
+      "family": "trend",
+      "metadata": {
+        "cost_rate": 0.0005,
+        "probe_variant": "tight_vol_stop_ls",
+        "source": "2026-03-11-regime-breakout-track-b-probe",
+        "timeframe": "1h"
+      },
+      "name": "regime_breakout_1h_tight_vol_stop_ls_48_0.78",
+      "notes": "RegimeBreakout 1h probe variant tight_vol_stop_ls.",
+      "params": {
+        "allow_short": true,
+        "lookback_window": 48,
+        "max_volatility_ratio": 1.5,
+        "momentum_floor": 0.004,
+        "range_entry_threshold": 0.78,
+        "slope_entry_threshold": 0.0015,
+        "slope_window": 21,
+        "stop_loss_pct": 0.015,
+        "volatility_fast_window": 12,
+        "volatility_slow_window": 48
+      },
+      "strategy": "RegimeBreakoutCandidateStrategy",
+      "strategy_class": "RegimeBreakoutCandidateStrategy",
+      "strategy_timeframe": "1h",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "probe",
+        "trend",
+        "breakout",
+        "regime",
+        "round1"
+      ],
+      "timeframe": "1h"
+    },
+    {
+      "candidate_id": "regime_breakout_1h_tightest_ls_72_0.80",
+      "family": "trend",
+      "metadata": {
+        "cost_rate": 0.0005,
+        "probe_variant": "tightest_ls",
+        "source": "2026-03-11-regime-breakout-track-b-probe",
+        "timeframe": "1h"
+      },
+      "name": "regime_breakout_1h_tightest_ls_72_0.80",
+      "notes": "RegimeBreakout 1h probe variant tightest_ls.",
+      "params": {
+        "allow_short": true,
+        "lookback_window": 72,
+        "max_volatility_ratio": 1.45,
+        "momentum_floor": 0.005,
+        "range_entry_threshold": 0.8,
+        "slope_entry_threshold": 0.002,
+        "slope_window": 28,
+        "stop_loss_pct": 0.015,
+        "volatility_fast_window": 16,
+        "volatility_slow_window": 72
+      },
+      "strategy": "RegimeBreakoutCandidateStrategy",
+      "strategy_class": "RegimeBreakoutCandidateStrategy",
+      "strategy_timeframe": "1h",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "probe",
+        "trend",
+        "breakout",
+        "regime",
+        "round1"
+      ],
+      "timeframe": "1h"
+    },
+    {
+      "candidate_id": "d7100b5d31e93ad0",
+      "family": "trend",
+      "metadata": {
+        "allow_short": false,
+        "article_pipeline_family_ids": [
+          "regime-breakout-thrust"
+        ],
+        "family": "trend",
+        "hypothesis_origin": "article_research_pipeline",
+        "retune_profile": "trend_guarded",
+        "timeframe": "1h"
+      },
+      "name": "regime_breakout_1h_trend_guarded_36_0.65",
+      "notes": "Regime-gated breakout candidate with trend and volatility filters for 1h (trend_guarded).",
+      "params": {
+        "allow_short": false,
+        "lookback_window": 36,
+        "max_volatility_ratio": 1.9,
+        "momentum_floor": 0.002,
+        "range_entry_threshold": 0.65,
+        "slope_entry_threshold": 0.0008,
+        "slope_window": 18,
+        "stop_loss_pct": 0.02,
+        "volatility_fast_window": 10,
+        "volatility_slow_window": 40
+      },
+      "strategy": "RegimeBreakoutCandidateStrategy",
+      "strategy_class": "RegimeBreakoutCandidateStrategy",
+      "strategy_timeframe": "1h",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "trend",
+        "breakout",
+        "regime",
+        "single_asset",
+        "article_pipeline",
+        "article_family:regime-breakout-thrust"
+      ],
+      "timeframe": "1h"
+    },
+    {
+      "candidate_id": "deb70de97b53b507",
+      "family": "trend",
+      "metadata": {
+        "allow_short": true,
+        "article_pipeline_family_ids": [
+          "regime-breakout-thrust"
+        ],
+        "family": "trend",
+        "hypothesis_origin": "article_research_pipeline",
+        "retune_profile": "trend_ls",
+        "timeframe": "1h"
+      },
+      "name": "regime_breakout_1h_trend_ls_48_0.70",
+      "notes": "Regime-gated breakout candidate with trend and volatility filters for 1h (trend_ls).",
+      "params": {
+        "allow_short": true,
+        "lookback_window": 48,
+        "max_volatility_ratio": 1.8,
+        "momentum_floor": 0.003,
+        "range_entry_threshold": 0.7,
+        "slope_entry_threshold": 0.001,
+        "slope_window": 21,
+        "stop_loss_pct": 0.025,
+        "volatility_fast_window": 12,
+        "volatility_slow_window": 48
+      },
+      "strategy": "RegimeBreakoutCandidateStrategy",
+      "strategy_class": "RegimeBreakoutCandidateStrategy",
+      "strategy_timeframe": "1h",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "trend",
+        "breakout",
+        "regime",
+        "single_asset",
+        "article_pipeline",
+        "article_family:regime-breakout-thrust"
+      ],
+      "timeframe": "1h"
+    },
+    {
+      "candidate_id": "31c211b2e613c328",
+      "family": "trend",
+      "metadata": {
+        "allow_short": true,
+        "article_pipeline_family_ids": [
+          "regime-breakout-thrust"
+        ],
+        "family": "trend",
+        "hypothesis_origin": "article_research_pipeline",
+        "retune_profile": "full_retune_guarded_64_lowbuf",
+        "timeframe": "30m"
+      },
+      "name": "rolling_breakout_30m_guarded_ls_64_0.0015",
+      "notes": "Manual lower-buffer rolling-breakout variant.",
+      "params": {
+        "allow_short": true,
+        "atr_stop_multiplier": 2.6,
+        "atr_window": 21,
+        "breakout_buffer": 0.0015,
+        "lookback_bars": 64,
+        "stop_loss_pct": 0.03
+      },
+      "strategy": "RollingBreakoutStrategy",
+      "strategy_class": "RollingBreakoutStrategy",
+      "strategy_timeframe": "30m",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "trend",
+        "breakout",
+        "single_asset",
+        "atr",
+        "article_pipeline",
+        "article_family:regime-breakout-thrust"
+      ],
+      "timeframe": "30m"
+    },
+    {
+      "candidate_id": "a79680513062c403",
+      "family": "trend",
+      "metadata": {
+        "allow_short": true,
+        "article_pipeline_family_ids": [
+          "regime-breakout-thrust"
+        ],
+        "family": "trend",
+        "hypothesis_origin": "article_research_pipeline",
+        "retune_profile": "guarded_ls",
+        "timeframe": "30m"
+      },
+      "name": "rolling_breakout_30m_guarded_ls_64_0.002",
+      "notes": "Single-asset channel breakout with ATR-aware protective stops for 30m (guarded_ls).",
+      "params": {
+        "allow_short": true,
+        "atr_stop_multiplier": 2.8,
+        "atr_window": 21,
+        "breakout_buffer": 0.002,
+        "lookback_bars": 64,
+        "stop_loss_pct": 0.03
+      },
+      "strategy": "RollingBreakoutStrategy",
+      "strategy_class": "RollingBreakoutStrategy",
+      "strategy_timeframe": "30m",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "trend",
+        "breakout",
+        "single_asset",
+        "atr",
+        "article_pipeline",
+        "article_family:regime-breakout-thrust"
+      ],
+      "timeframe": "30m"
+    },
+    {
+      "candidate_id": "e0a303cb7469a36f",
+      "family": "trend",
+      "metadata": {
+        "allow_short": true,
+        "article_pipeline_family_ids": [
+          "regime-breakout-thrust"
+        ],
+        "family": "trend",
+        "hypothesis_origin": "article_research_pipeline",
+        "retune_profile": "full_retune_guarded_72",
+        "timeframe": "30m"
+      },
+      "name": "rolling_breakout_30m_guarded_ls_72_0.0015",
+      "notes": "Manual guarded rolling-breakout variant.",
+      "params": {
+        "allow_short": true,
+        "atr_stop_multiplier": 2.8,
+        "atr_window": 21,
+        "breakout_buffer": 0.0015,
+        "lookback_bars": 72,
+        "stop_loss_pct": 0.03
+      },
+      "strategy": "RollingBreakoutStrategy",
+      "strategy_class": "RollingBreakoutStrategy",
+      "strategy_timeframe": "30m",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "trend",
+        "breakout",
+        "single_asset",
+        "atr",
+        "article_pipeline",
+        "article_family:regime-breakout-thrust"
+      ],
+      "timeframe": "30m"
+    },
+    {
+      "candidate_id": "f1cf3a6ae600124a",
+      "family": "trend",
+      "metadata": {
+        "allow_short": true,
+        "article_pipeline_family_ids": [
+          "regime-breakout-thrust"
+        ],
+        "family": "trend",
+        "hypothesis_origin": "article_research_pipeline",
+        "retune_profile": "full_retune_guarded_80",
+        "timeframe": "30m"
+      },
+      "name": "rolling_breakout_30m_guarded_ls_80_0.0020",
+      "notes": "Manual longer-lookback rolling-breakout variant.",
+      "params": {
+        "allow_short": true,
+        "atr_stop_multiplier": 3.0,
+        "atr_window": 21,
+        "breakout_buffer": 0.002,
+        "lookback_bars": 80,
+        "stop_loss_pct": 0.03
+      },
+      "strategy": "RollingBreakoutStrategy",
+      "strategy_class": "RollingBreakoutStrategy",
+      "strategy_timeframe": "30m",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "trend",
+        "breakout",
+        "single_asset",
+        "atr",
+        "article_pipeline",
+        "article_family:regime-breakout-thrust"
+      ],
+      "timeframe": "30m"
+    },
+    {
+      "candidate_id": "b1422578878d63b5",
+      "family": "trend",
+      "metadata": {
+        "allow_short": false,
+        "article_pipeline_family_ids": [
+          "regime-breakout-thrust"
+        ],
+        "family": "trend",
+        "hypothesis_origin": "article_research_pipeline",
+        "retune_profile": "loose_lo",
+        "timeframe": "30m"
+      },
+      "name": "rolling_breakout_30m_loose_lo_48_0.001",
+      "notes": "Single-asset channel breakout with ATR-aware protective stops for 30m (loose_lo).",
+      "params": {
+        "allow_short": false,
+        "atr_stop_multiplier": 2.2,
+        "atr_window": 14,
+        "breakout_buffer": 0.001,
+        "lookback_bars": 48,
+        "stop_loss_pct": 0.025
+      },
+      "strategy": "RollingBreakoutStrategy",
+      "strategy_class": "RollingBreakoutStrategy",
+      "strategy_timeframe": "30m",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "trend",
+        "breakout",
+        "single_asset",
+        "atr",
+        "article_pipeline",
+        "article_family:regime-breakout-thrust"
+      ],
+      "timeframe": "30m"
+    },
+    {
+      "candidate_id": "a9001e883dfddff9",
+      "family": "trend",
+      "metadata": {
+        "allow_short": true,
+        "article_pipeline_family_ids": [
+          "regime-breakout-thrust"
+        ],
+        "family": "trend",
+        "hypothesis_origin": "article_research_pipeline",
+        "retune_profile": "full_retune_tight_lo",
+        "timeframe": "30m"
+      },
+      "name": "rolling_breakout_30m_tight_lo_64_0.0030",
+      "notes": "Manual tight long-only rolling-breakout variant.",
+      "params": {
+        "allow_short": false,
+        "atr_stop_multiplier": 2.8,
+        "atr_window": 21,
+        "breakout_buffer": 0.003,
+        "lookback_bars": 64,
+        "stop_loss_pct": 0.025
+      },
+      "strategy": "RollingBreakoutStrategy",
+      "strategy_class": "RollingBreakoutStrategy",
+      "strategy_timeframe": "30m",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "trend",
+        "breakout",
+        "single_asset",
+        "atr",
+        "article_pipeline",
+        "article_family:regime-breakout-thrust"
+      ],
+      "timeframe": "30m"
+    },
+    {
+      "candidate_id": "4c8fdaeabe315563",
+      "family": "cross_sectional",
+      "metadata": {
+        "article_pipeline_family_ids": [
+          "topcap-rotation-relative-momentum"
+        ],
+        "family": "cross_sectional",
+        "hypothesis_origin": "article_research_pipeline",
+        "retune_profile": "balanced",
+        "symbol_scope": "crypto",
+        "timeframe": "1h"
+      },
+      "name": "topcap_tsmom_1h_balanced_16_4_0.015",
+      "notes": "Top-cap long/short relative-momentum rotation with BTC regime gating for 1h (balanced).",
+      "params": {
+        "btc_regime_ma": 48,
+        "btc_symbol": "BTC/USDT",
+        "lookback_bars": 16,
+        "max_longs": 2,
+        "max_shorts": 2,
+        "min_price": 0.1,
+        "rebalance_bars": 4,
+        "signal_threshold": 0.015,
+        "stop_loss_pct": 0.08
+      },
+      "strategy": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_timeframe": "1h",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "cross_sectional",
+        "relative_momentum",
+        "topcap",
+        "crypto",
+        "article_pipeline",
+        "article_family:topcap-rotation-relative-momentum"
+      ],
+      "timeframe": "1h"
+    },
+    {
+      "candidate_id": "topcap_tsmom_1h_bridge18_4_018_18_4_0.018",
+      "family": "cross_sectional",
+      "metadata": {
+        "cost_rate": 0.0005,
+        "cross_sectional": true,
+        "probe_variant": "bridge18_4_018",
+        "source": "2026-03-11-topcap-track-a-probe-round2",
+        "symbol_scope": "crypto",
+        "timeframe": "1h"
+      },
+      "name": "topcap_tsmom_1h_bridge18_4_018_18_4_0.018",
+      "notes": "TopCap 1h round2 probe variant bridge18_4_018.",
+      "params": {
+        "btc_regime_ma": 36,
+        "btc_symbol": "BTC/USDT",
+        "lookback_bars": 18,
+        "max_longs": 2,
+        "max_shorts": 1,
+        "min_price": 0.1,
+        "rebalance_bars": 4,
+        "signal_threshold": 0.018,
+        "stop_loss_pct": 0.08
+      },
+      "strategy": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_timeframe": "1h",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "probe",
+        "topcap",
+        "cross_sectional",
+        "relative_momentum",
+        "round2"
+      ],
+      "timeframe": "1h"
+    },
+    {
+      "candidate_id": "topcap_tsmom_1h_bridge18_6_018_18_6_0.018",
+      "family": "cross_sectional",
+      "metadata": {
+        "cost_rate": 0.0005,
+        "cross_sectional": true,
+        "probe_variant": "bridge18_6_018",
+        "source": "2026-03-11-topcap-track-a-probe-round2",
+        "symbol_scope": "crypto",
+        "timeframe": "1h"
+      },
+      "name": "topcap_tsmom_1h_bridge18_6_018_18_6_0.018",
+      "notes": "TopCap 1h round2 probe variant bridge18_6_018.",
+      "params": {
+        "btc_regime_ma": 36,
+        "btc_symbol": "BTC/USDT",
+        "lookback_bars": 18,
+        "max_longs": 2,
+        "max_shorts": 1,
+        "min_price": 0.1,
+        "rebalance_bars": 6,
+        "signal_threshold": 0.018,
+        "stop_loss_pct": 0.08
+      },
+      "strategy": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_timeframe": "1h",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "probe",
+        "topcap",
+        "cross_sectional",
+        "relative_momentum",
+        "round2"
+      ],
+      "timeframe": "1h"
+    },
+    {
+      "candidate_id": "topcap_tsmom_1h_bridge20_4_018_ma48_20_4_0.018",
+      "family": "cross_sectional",
+      "metadata": {
+        "cost_rate": 0.0005,
+        "cross_sectional": true,
+        "probe_variant": "bridge20_4_018_ma48",
+        "source": "2026-03-11-topcap-track-a-probe-round2",
+        "symbol_scope": "crypto",
+        "timeframe": "1h"
+      },
+      "name": "topcap_tsmom_1h_bridge20_4_018_ma48_20_4_0.018",
+      "notes": "TopCap 1h round2 probe variant bridge20_4_018_ma48.",
+      "params": {
+        "btc_regime_ma": 48,
+        "btc_symbol": "BTC/USDT",
+        "lookback_bars": 20,
+        "max_longs": 2,
+        "max_shorts": 1,
+        "min_price": 0.1,
+        "rebalance_bars": 4,
+        "signal_threshold": 0.018,
+        "stop_loss_pct": 0.08
+      },
+      "strategy": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_timeframe": "1h",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "probe",
+        "topcap",
+        "cross_sectional",
+        "relative_momentum",
+        "round2"
+      ],
+      "timeframe": "1h"
+    },
+    {
+      "candidate_id": "topcap_tsmom_1h_bridge20_6_020_ma48_20_6_0.020",
+      "family": "cross_sectional",
+      "metadata": {
+        "cost_rate": 0.0005,
+        "cross_sectional": true,
+        "probe_variant": "bridge20_6_020_ma48",
+        "source": "2026-03-11-topcap-track-a-probe-round2",
+        "symbol_scope": "crypto",
+        "timeframe": "1h"
+      },
+      "name": "topcap_tsmom_1h_bridge20_6_020_ma48_20_6_0.020",
+      "notes": "TopCap 1h round2 probe variant bridge20_6_020_ma48.",
+      "params": {
+        "btc_regime_ma": 48,
+        "btc_symbol": "BTC/USDT",
+        "lookback_bars": 20,
+        "max_longs": 2,
+        "max_shorts": 1,
+        "min_price": 0.1,
+        "rebalance_bars": 6,
+        "signal_threshold": 0.02,
+        "stop_loss_pct": 0.08
+      },
+      "strategy": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_timeframe": "1h",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "probe",
+        "topcap",
+        "cross_sectional",
+        "relative_momentum",
+        "round2"
+      ],
+      "timeframe": "1h"
+    },
+    {
+      "candidate_id": "topcap_tsmom_1h_confirm_20_4_018_20_4_0.018",
+      "family": "cross_sectional",
+      "metadata": {
+        "cost_rate": 0.0005,
+        "cross_sectional": true,
+        "probe_variant": "confirm_20_4_018",
+        "source": "2026-03-11-topcap-track-a-probe",
+        "symbol_scope": "crypto",
+        "timeframe": "1h"
+      },
+      "name": "topcap_tsmom_1h_confirm_20_4_018_20_4_0.018",
+      "notes": "TopCap 1h probe variant confirm_20_4_018.",
+      "params": {
+        "btc_regime_ma": 72,
+        "btc_symbol": "BTC/USDT",
+        "lookback_bars": 20,
+        "max_longs": 2,
+        "max_shorts": 1,
+        "min_price": 0.1,
+        "rebalance_bars": 4,
+        "signal_threshold": 0.018,
+        "stop_loss_pct": 0.08
+      },
+      "strategy": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_timeframe": "1h",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "probe",
+        "topcap",
+        "cross_sectional",
+        "relative_momentum"
+      ],
+      "timeframe": "1h"
+    },
+    {
+      "candidate_id": "topcap_tsmom_1h_confirm_20_6_020_20_6_0.020",
+      "family": "cross_sectional",
+      "metadata": {
+        "cost_rate": 0.0005,
+        "cross_sectional": true,
+        "probe_variant": "confirm_20_6_020",
+        "source": "2026-03-11-topcap-track-a-probe",
+        "symbol_scope": "crypto",
+        "timeframe": "1h"
+      },
+      "name": "topcap_tsmom_1h_confirm_20_6_020_20_6_0.020",
+      "notes": "TopCap 1h probe variant confirm_20_6_020.",
+      "params": {
+        "btc_regime_ma": 72,
+        "btc_symbol": "BTC/USDT",
+        "lookback_bars": 20,
+        "max_longs": 2,
+        "max_shorts": 1,
+        "min_price": 0.1,
+        "rebalance_bars": 6,
+        "signal_threshold": 0.02,
+        "stop_loss_pct": 0.08
+      },
+      "strategy": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_timeframe": "1h",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "probe",
+        "topcap",
+        "cross_sectional",
+        "relative_momentum"
+      ],
+      "timeframe": "1h"
+    },
+    {
+      "candidate_id": "topcap_tsmom_1h_control_balanced_16_4_0.015",
+      "family": "cross_sectional",
+      "metadata": {
+        "cost_rate": 0.0005,
+        "cross_sectional": true,
+        "probe_variant": "control_balanced",
+        "source": "2026-03-11-topcap-track-a-probe",
+        "symbol_scope": "crypto",
+        "timeframe": "1h"
+      },
+      "name": "topcap_tsmom_1h_control_balanced_16_4_0.015",
+      "notes": "TopCap 1h probe variant control_balanced.",
+      "params": {
+        "btc_regime_ma": 48,
+        "btc_symbol": "BTC/USDT",
+        "lookback_bars": 16,
+        "max_longs": 2,
+        "max_shorts": 2,
+        "min_price": 0.1,
+        "rebalance_bars": 4,
+        "signal_threshold": 0.015,
+        "stop_loss_pct": 0.08
+      },
+      "strategy": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_timeframe": "1h",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "probe",
+        "topcap",
+        "cross_sectional",
+        "relative_momentum"
+      ],
+      "timeframe": "1h"
+    },
+    {
+      "candidate_id": "9a24887d739bf4b0",
+      "family": "cross_sectional",
+      "metadata": {
+        "article_pipeline_family_ids": [
+          "topcap-rotation-relative-momentum"
+        ],
+        "family": "cross_sectional",
+        "hypothesis_origin": "article_research_pipeline",
+        "retune_profile": "defensive",
+        "symbol_scope": "crypto",
+        "timeframe": "1h"
+      },
+      "name": "topcap_tsmom_1h_defensive_24_6_0.020",
+      "notes": "Top-cap long/short relative-momentum rotation with BTC regime gating for 1h (defensive).",
+      "params": {
+        "btc_regime_ma": 64,
+        "btc_symbol": "BTC/USDT",
+        "lookback_bars": 24,
+        "max_longs": 2,
+        "max_shorts": 1,
+        "min_price": 0.1,
+        "rebalance_bars": 6,
+        "signal_threshold": 0.02,
+        "stop_loss_pct": 0.07
+      },
+      "strategy": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_timeframe": "1h",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "cross_sectional",
+        "relative_momentum",
+        "topcap",
+        "crypto",
+        "article_pipeline",
+        "article_family:topcap-rotation-relative-momentum"
+      ],
+      "timeframe": "1h"
+    },
+    {
+      "candidate_id": "topcap_tsmom_1h_fast36_control_16_4_0.015",
+      "family": "cross_sectional",
+      "metadata": {
+        "cost_rate": 0.0005,
+        "cross_sectional": true,
+        "probe_variant": "fast36_control",
+        "source": "2026-03-11-topcap-track-a-probe-round2",
+        "symbol_scope": "crypto",
+        "timeframe": "1h"
+      },
+      "name": "topcap_tsmom_1h_fast36_control_16_4_0.015",
+      "notes": "TopCap 1h round2 probe variant fast36_control.",
+      "params": {
+        "btc_regime_ma": 36,
+        "btc_symbol": "BTC/USDT",
+        "lookback_bars": 16,
+        "max_longs": 2,
+        "max_shorts": 1,
+        "min_price": 0.1,
+        "rebalance_bars": 4,
+        "signal_threshold": 0.015,
+        "stop_loss_pct": 0.08
+      },
+      "strategy": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_timeframe": "1h",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "probe",
+        "topcap",
+        "cross_sectional",
+        "relative_momentum",
+        "round2"
+      ],
+      "timeframe": "1h"
+    },
+    {
+      "candidate_id": "topcap_tsmom_1h_fast36_slow_16_6_0.015",
+      "family": "cross_sectional",
+      "metadata": {
+        "cost_rate": 0.0005,
+        "cross_sectional": true,
+        "probe_variant": "fast36_slow",
+        "source": "2026-03-11-topcap-track-a-probe-round2",
+        "symbol_scope": "crypto",
+        "timeframe": "1h"
+      },
+      "name": "topcap_tsmom_1h_fast36_slow_16_6_0.015",
+      "notes": "TopCap 1h round2 probe variant fast36_slow.",
+      "params": {
+        "btc_regime_ma": 36,
+        "btc_symbol": "BTC/USDT",
+        "lookback_bars": 16,
+        "max_longs": 2,
+        "max_shorts": 1,
+        "min_price": 0.1,
+        "rebalance_bars": 6,
+        "signal_threshold": 0.015,
+        "stop_loss_pct": 0.08
+      },
+      "strategy": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_timeframe": "1h",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "probe",
+        "topcap",
+        "cross_sectional",
+        "relative_momentum",
+        "round2"
+      ],
+      "timeframe": "1h"
+    },
+    {
+      "candidate_id": "topcap_tsmom_1h_fast36_slow_tight_16_6_0.020",
+      "family": "cross_sectional",
+      "metadata": {
+        "cost_rate": 0.0005,
+        "cross_sectional": true,
+        "probe_variant": "fast36_slow_tight",
+        "source": "2026-03-11-topcap-track-a-probe-round2",
+        "symbol_scope": "crypto",
+        "timeframe": "1h"
+      },
+      "name": "topcap_tsmom_1h_fast36_slow_tight_16_6_0.020",
+      "notes": "TopCap 1h round2 probe variant fast36_slow_tight.",
+      "params": {
+        "btc_regime_ma": 36,
+        "btc_symbol": "BTC/USDT",
+        "lookback_bars": 16,
+        "max_longs": 2,
+        "max_shorts": 1,
+        "min_price": 0.1,
+        "rebalance_bars": 6,
+        "signal_threshold": 0.02,
+        "stop_loss_pct": 0.08
+      },
+      "strategy": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_timeframe": "1h",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "probe",
+        "topcap",
+        "cross_sectional",
+        "relative_momentum",
+        "round2"
+      ],
+      "timeframe": "1h"
+    },
+    {
+      "candidate_id": "topcap_tsmom_1h_fast36_tighter_16_4_0.020",
+      "family": "cross_sectional",
+      "metadata": {
+        "cost_rate": 0.0005,
+        "cross_sectional": true,
+        "probe_variant": "fast36_tighter",
+        "source": "2026-03-11-topcap-track-a-probe-round2",
+        "symbol_scope": "crypto",
+        "timeframe": "1h"
+      },
+      "name": "topcap_tsmom_1h_fast36_tighter_16_4_0.020",
+      "notes": "TopCap 1h round2 probe variant fast36_tighter.",
+      "params": {
+        "btc_regime_ma": 36,
+        "btc_symbol": "BTC/USDT",
+        "lookback_bars": 16,
+        "max_longs": 2,
+        "max_shorts": 1,
+        "min_price": 0.1,
+        "rebalance_bars": 4,
+        "signal_threshold": 0.02,
+        "stop_loss_pct": 0.08
+      },
+      "strategy": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_timeframe": "1h",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "probe",
+        "topcap",
+        "cross_sectional",
+        "relative_momentum",
+        "round2"
+      ],
+      "timeframe": "1h"
+    },
+    {
+      "candidate_id": "topcap_tsmom_1h_fast_regime_36_16_4_0.015",
+      "family": "cross_sectional",
+      "metadata": {
+        "cost_rate": 0.0005,
+        "cross_sectional": true,
+        "probe_variant": "fast_regime_36",
+        "source": "2026-03-11-topcap-track-a-probe",
+        "symbol_scope": "crypto",
+        "timeframe": "1h"
+      },
+      "name": "topcap_tsmom_1h_fast_regime_36_16_4_0.015",
+      "notes": "TopCap 1h probe variant fast_regime_36.",
+      "params": {
+        "btc_regime_ma": 36,
+        "btc_symbol": "BTC/USDT",
+        "lookback_bars": 16,
+        "max_longs": 2,
+        "max_shorts": 1,
+        "min_price": 0.1,
+        "rebalance_bars": 4,
+        "signal_threshold": 0.015,
+        "stop_loss_pct": 0.08
+      },
+      "strategy": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_timeframe": "1h",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "probe",
+        "topcap",
+        "cross_sectional",
+        "relative_momentum"
+      ],
+      "timeframe": "1h"
+    },
+    {
+      "candidate_id": "topcap_tsmom_1h_long_bias_2_1_16_4_0.015",
+      "family": "cross_sectional",
+      "metadata": {
+        "cost_rate": 0.0005,
+        "cross_sectional": true,
+        "probe_variant": "long_bias_2_1",
+        "source": "2026-03-11-topcap-track-a-probe",
+        "symbol_scope": "crypto",
+        "timeframe": "1h"
+      },
+      "name": "topcap_tsmom_1h_long_bias_2_1_16_4_0.015",
+      "notes": "TopCap 1h probe variant long_bias_2_1.",
+      "params": {
+        "btc_regime_ma": 48,
+        "btc_symbol": "BTC/USDT",
+        "lookback_bars": 16,
+        "max_longs": 2,
+        "max_shorts": 1,
+        "min_price": 0.1,
+        "rebalance_bars": 4,
+        "signal_threshold": 0.015,
+        "stop_loss_pct": 0.08
+      },
+      "strategy": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_timeframe": "1h",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "probe",
+        "topcap",
+        "cross_sectional",
+        "relative_momentum"
+      ],
+      "timeframe": "1h"
+    },
+    {
+      "candidate_id": "topcap_tsmom_1h_longonly_bridge18_2_018_18_4_0.018",
+      "family": "cross_sectional",
+      "metadata": {
+        "cost_rate": 0.0005,
+        "cross_sectional": true,
+        "probe_variant": "longonly_bridge18_2_018",
+        "source": "2026-03-11-topcap-track-a-probe-round3-long-only",
+        "symbol_scope": "crypto",
+        "timeframe": "1h"
+      },
+      "name": "topcap_tsmom_1h_longonly_bridge18_2_018_18_4_0.018",
+      "notes": "TopCap 1h round3 long-only probe variant longonly_bridge18_2_018.",
+      "params": {
+        "btc_regime_ma": 36,
+        "btc_symbol": "BTC/USDT",
+        "lookback_bars": 18,
+        "max_longs": 2,
+        "max_shorts": 0,
+        "min_price": 0.1,
+        "rebalance_bars": 4,
+        "signal_threshold": 0.018,
+        "stop_loss_pct": 0.08
+      },
+      "strategy": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_timeframe": "1h",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "probe",
+        "topcap",
+        "cross_sectional",
+        "relative_momentum",
+        "long_only",
+        "round3"
+      ],
+      "timeframe": "1h"
+    },
+    {
+      "candidate_id": "topcap_tsmom_1h_longonly_bridge18_slow_2_018_18_6_0.018",
+      "family": "cross_sectional",
+      "metadata": {
+        "cost_rate": 0.0005,
+        "cross_sectional": true,
+        "probe_variant": "longonly_bridge18_slow_2_018",
+        "source": "2026-03-11-topcap-track-a-probe-round3-long-only",
+        "symbol_scope": "crypto",
+        "timeframe": "1h"
+      },
+      "name": "topcap_tsmom_1h_longonly_bridge18_slow_2_018_18_6_0.018",
+      "notes": "TopCap 1h round3 long-only probe variant longonly_bridge18_slow_2_018.",
+      "params": {
+        "btc_regime_ma": 36,
+        "btc_symbol": "BTC/USDT",
+        "lookback_bars": 18,
+        "max_longs": 2,
+        "max_shorts": 0,
+        "min_price": 0.1,
+        "rebalance_bars": 6,
+        "signal_threshold": 0.018,
+        "stop_loss_pct": 0.08
+      },
+      "strategy": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_timeframe": "1h",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "probe",
+        "topcap",
+        "cross_sectional",
+        "relative_momentum",
+        "long_only",
+        "round3"
+      ],
+      "timeframe": "1h"
+    },
+    {
+      "candidate_id": "topcap_tsmom_1h_longonly_bridge20_2_018_ma48_20_4_0.018",
+      "family": "cross_sectional",
+      "metadata": {
+        "cost_rate": 0.0005,
+        "cross_sectional": true,
+        "probe_variant": "longonly_bridge20_2_018_ma48",
+        "source": "2026-03-11-topcap-track-a-probe-round3-long-only",
+        "symbol_scope": "crypto",
+        "timeframe": "1h"
+      },
+      "name": "topcap_tsmom_1h_longonly_bridge20_2_018_ma48_20_4_0.018",
+      "notes": "TopCap 1h round3 long-only probe variant longonly_bridge20_2_018_ma48.",
+      "params": {
+        "btc_regime_ma": 48,
+        "btc_symbol": "BTC/USDT",
+        "lookback_bars": 20,
+        "max_longs": 2,
+        "max_shorts": 0,
+        "min_price": 0.1,
+        "rebalance_bars": 4,
+        "signal_threshold": 0.018,
+        "stop_loss_pct": 0.08
+      },
+      "strategy": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_timeframe": "1h",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "probe",
+        "topcap",
+        "cross_sectional",
+        "relative_momentum",
+        "long_only",
+        "round3"
+      ],
+      "timeframe": "1h"
+    },
+    {
+      "candidate_id": "topcap_tsmom_1h_longonly_bridge20_slow_2_020_ma48_20_6_0.020",
+      "family": "cross_sectional",
+      "metadata": {
+        "cost_rate": 0.0005,
+        "cross_sectional": true,
+        "probe_variant": "longonly_bridge20_slow_2_020_ma48",
+        "source": "2026-03-11-topcap-track-a-probe-round3-long-only",
+        "symbol_scope": "crypto",
+        "timeframe": "1h"
+      },
+      "name": "topcap_tsmom_1h_longonly_bridge20_slow_2_020_ma48_20_6_0.020",
+      "notes": "TopCap 1h round3 long-only probe variant longonly_bridge20_slow_2_020_ma48.",
+      "params": {
+        "btc_regime_ma": 48,
+        "btc_symbol": "BTC/USDT",
+        "lookback_bars": 20,
+        "max_longs": 2,
+        "max_shorts": 0,
+        "min_price": 0.1,
+        "rebalance_bars": 6,
+        "signal_threshold": 0.02,
+        "stop_loss_pct": 0.08
+      },
+      "strategy": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_timeframe": "1h",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "probe",
+        "topcap",
+        "cross_sectional",
+        "relative_momentum",
+        "long_only",
+        "round3"
+      ],
+      "timeframe": "1h"
+    },
+    {
+      "candidate_id": "topcap_tsmom_1h_longonly_fast36_2_015_16_4_0.015",
+      "family": "cross_sectional",
+      "metadata": {
+        "cost_rate": 0.0005,
+        "cross_sectional": true,
+        "probe_variant": "longonly_fast36_2_015",
+        "source": "2026-03-11-topcap-track-a-probe-round3-long-only",
+        "symbol_scope": "crypto",
+        "timeframe": "1h"
+      },
+      "name": "topcap_tsmom_1h_longonly_fast36_2_015_16_4_0.015",
+      "notes": "TopCap 1h round3 long-only probe variant longonly_fast36_2_015.",
+      "params": {
+        "btc_regime_ma": 36,
+        "btc_symbol": "BTC/USDT",
+        "lookback_bars": 16,
+        "max_longs": 2,
+        "max_shorts": 0,
+        "min_price": 0.1,
+        "rebalance_bars": 4,
+        "signal_threshold": 0.015,
+        "stop_loss_pct": 0.08
+      },
+      "strategy": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_timeframe": "1h",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "probe",
+        "topcap",
+        "cross_sectional",
+        "relative_momentum",
+        "long_only",
+        "round3"
+      ],
+      "timeframe": "1h"
+    },
+    {
+      "candidate_id": "topcap_tsmom_1h_longonly_fast36_2_020_16_4_0.020",
+      "family": "cross_sectional",
+      "metadata": {
+        "cost_rate": 0.0005,
+        "cross_sectional": true,
+        "probe_variant": "longonly_fast36_2_020",
+        "source": "2026-03-11-topcap-track-a-probe-round3-long-only",
+        "symbol_scope": "crypto",
+        "timeframe": "1h"
+      },
+      "name": "topcap_tsmom_1h_longonly_fast36_2_020_16_4_0.020",
+      "notes": "TopCap 1h round3 long-only probe variant longonly_fast36_2_020.",
+      "params": {
+        "btc_regime_ma": 36,
+        "btc_symbol": "BTC/USDT",
+        "lookback_bars": 16,
+        "max_longs": 2,
+        "max_shorts": 0,
+        "min_price": 0.1,
+        "rebalance_bars": 4,
+        "signal_threshold": 0.02,
+        "stop_loss_pct": 0.08
+      },
+      "strategy": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_timeframe": "1h",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "probe",
+        "topcap",
+        "cross_sectional",
+        "relative_momentum",
+        "long_only",
+        "round3"
+      ],
+      "timeframe": "1h"
+    },
+    {
+      "candidate_id": "topcap_tsmom_1h_longonly_fast36_slow_2_020_16_6_0.020",
+      "family": "cross_sectional",
+      "metadata": {
+        "cost_rate": 0.0005,
+        "cross_sectional": true,
+        "probe_variant": "longonly_fast36_slow_2_020",
+        "source": "2026-03-11-topcap-track-a-probe-round3-long-only",
+        "symbol_scope": "crypto",
+        "timeframe": "1h"
+      },
+      "name": "topcap_tsmom_1h_longonly_fast36_slow_2_020_16_6_0.020",
+      "notes": "TopCap 1h round3 long-only probe variant longonly_fast36_slow_2_020.",
+      "params": {
+        "btc_regime_ma": 36,
+        "btc_symbol": "BTC/USDT",
+        "lookback_bars": 16,
+        "max_longs": 2,
+        "max_shorts": 0,
+        "min_price": 0.1,
+        "rebalance_bars": 6,
+        "signal_threshold": 0.02,
+        "stop_loss_pct": 0.08
+      },
+      "strategy": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_timeframe": "1h",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "probe",
+        "topcap",
+        "cross_sectional",
+        "relative_momentum",
+        "long_only",
+        "round3"
+      ],
+      "timeframe": "1h"
+    },
+    {
+      "candidate_id": "topcap_tsmom_1h_longonly_fast36_slow_3_020_16_6_0.020",
+      "family": "cross_sectional",
+      "metadata": {
+        "cost_rate": 0.0005,
+        "cross_sectional": true,
+        "probe_variant": "longonly_fast36_slow_3_020",
+        "source": "2026-03-11-topcap-track-a-probe-round3-long-only",
+        "symbol_scope": "crypto",
+        "timeframe": "1h"
+      },
+      "name": "topcap_tsmom_1h_longonly_fast36_slow_3_020_16_6_0.020",
+      "notes": "TopCap 1h round3 long-only probe variant longonly_fast36_slow_3_020.",
+      "params": {
+        "btc_regime_ma": 36,
+        "btc_symbol": "BTC/USDT",
+        "lookback_bars": 16,
+        "max_longs": 3,
+        "max_shorts": 0,
+        "min_price": 0.1,
+        "rebalance_bars": 6,
+        "signal_threshold": 0.02,
+        "stop_loss_pct": 0.08
+      },
+      "strategy": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_timeframe": "1h",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "probe",
+        "topcap",
+        "cross_sectional",
+        "relative_momentum",
+        "long_only",
+        "round3"
+      ],
+      "timeframe": "1h"
+    },
+    {
+      "candidate_id": "topcap_tsmom_1h_persistence_24_6_020_24_6_0.020",
+      "family": "cross_sectional",
+      "metadata": {
+        "cost_rate": 0.0005,
+        "cross_sectional": true,
+        "probe_variant": "persistence_24_6_020",
+        "source": "2026-03-11-topcap-track-a-probe",
+        "symbol_scope": "crypto",
+        "timeframe": "1h"
+      },
+      "name": "topcap_tsmom_1h_persistence_24_6_020_24_6_0.020",
+      "notes": "TopCap 1h probe variant persistence_24_6_020.",
+      "params": {
+        "btc_regime_ma": 96,
+        "btc_symbol": "BTC/USDT",
+        "lookback_bars": 24,
+        "max_longs": 2,
+        "max_shorts": 1,
+        "min_price": 0.1,
+        "rebalance_bars": 6,
+        "signal_threshold": 0.02,
+        "stop_loss_pct": 0.08
+      },
+      "strategy": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_timeframe": "1h",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "probe",
+        "topcap",
+        "cross_sectional",
+        "relative_momentum"
+      ],
+      "timeframe": "1h"
+    },
+    {
+      "candidate_id": "topcap_tsmom_1h_slow_rebalance_16_6_0.015",
+      "family": "cross_sectional",
+      "metadata": {
+        "cost_rate": 0.0005,
+        "cross_sectional": true,
+        "probe_variant": "slow_rebalance",
+        "source": "2026-03-11-topcap-track-a-probe",
+        "symbol_scope": "crypto",
+        "timeframe": "1h"
+      },
+      "name": "topcap_tsmom_1h_slow_rebalance_16_6_0.015",
+      "notes": "TopCap 1h probe variant slow_rebalance.",
+      "params": {
+        "btc_regime_ma": 48,
+        "btc_symbol": "BTC/USDT",
+        "lookback_bars": 16,
+        "max_longs": 2,
+        "max_shorts": 1,
+        "min_price": 0.1,
+        "rebalance_bars": 6,
+        "signal_threshold": 0.015,
+        "stop_loss_pct": 0.08
+      },
+      "strategy": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_timeframe": "1h",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "probe",
+        "topcap",
+        "cross_sectional",
+        "relative_momentum"
+      ],
+      "timeframe": "1h"
+    },
+    {
+      "candidate_id": "topcap_tsmom_1h_wider_longs_3_1_20_4_0.015",
+      "family": "cross_sectional",
+      "metadata": {
+        "cost_rate": 0.0005,
+        "cross_sectional": true,
+        "probe_variant": "wider_longs_3_1",
+        "source": "2026-03-11-topcap-track-a-probe",
+        "symbol_scope": "crypto",
+        "timeframe": "1h"
+      },
+      "name": "topcap_tsmom_1h_wider_longs_3_1_20_4_0.015",
+      "notes": "TopCap 1h probe variant wider_longs_3_1.",
+      "params": {
+        "btc_regime_ma": 48,
+        "btc_symbol": "BTC/USDT",
+        "lookback_bars": 20,
+        "max_longs": 3,
+        "max_shorts": 1,
+        "min_price": 0.1,
+        "rebalance_bars": 4,
+        "signal_threshold": 0.015,
+        "stop_loss_pct": 0.08
+      },
+      "strategy": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+      "strategy_timeframe": "1h",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "tags": [
+        "probe",
+        "topcap",
+        "cross_sectional",
+        "relative_momentum"
+      ],
+      "timeframe": "1h"
+    }
+  ],
+  "generated_at": 1773494217.0361624
+}

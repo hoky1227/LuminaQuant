@@ -242,6 +242,36 @@ def test_pair_candidate_builder_includes_4h_and_1d_rows():
     assert len({int(row.params["lookback_window"]) for row in daily_rows}) >= 2
 
 
+def test_pair_candidate_builder_adds_1h_pair_state_variants():
+    rows = build_binance_futures_candidates(
+        timeframes=["1h"],
+        symbols=[
+            "BTC/USDT",
+            "ETH/USDT",
+            "BNB/USDT",
+            "SOL/USDT",
+            "TRX/USDT",
+        ],
+    )
+    pair_rows = [row for row in rows if row.strategy_class == "PairSpreadZScoreStrategy"]
+    by_name = {row.name: row for row in pair_rows}
+
+    vwap_row = by_name["pair_spread_1h_state_vwap_bnbusdt_trxusdt_2.2_0.55"]
+    assert vwap_row.params["vwap_window"] == 72
+    assert vwap_row.params["min_volume_ratio"] == 0.20
+    assert "pair_state" in vwap_row.tags
+
+    volconv_row = by_name["pair_spread_1h_state_volconv_bnbusdt_trxusdt_2.2_0.55"]
+    assert volconv_row.params["vol_lag_bars"] == 2
+    assert volconv_row.params["min_vol_convergence"] == 0.60
+    assert "pair_state" in volconv_row.tags
+
+    atr_row = by_name["pair_spread_1h_state_atr_bnbusdt_trxusdt_2.2_0.55"]
+    assert atr_row.params["atr_window"] == 14
+    assert atr_row.params["atr_max_pct"] == 0.04
+    assert "pair_state" in atr_row.tags
+
+
 def test_composite_trend_candidate_builder_uses_explicit_30m_1h_stability_slice():
     rows = build_binance_futures_candidates(
         timeframes=["30m", "1h", "4h", "1d"],
@@ -256,7 +286,7 @@ def test_composite_trend_candidate_builder_uses_explicit_30m_1h_stability_slice(
     )
     trend_rows = [row for row in rows if row.strategy_class == "CompositeTrendStrategy"]
 
-    assert len(trend_rows) == 6
+    assert len(trend_rows) == 9
     assert {row.timeframe for row in trend_rows} == {"30m", "1h"}
     assert all("composite_trend_stable_" in row.name for row in trend_rows)
     assert all("exit_score_cross" in row.params for row in trend_rows)
@@ -266,6 +296,22 @@ def test_composite_trend_candidate_builder_uses_explicit_30m_1h_stability_slice(
     assert one_hour_rows
     assert all(row.params["allow_short"] is False for row in one_hour_rows)
     assert all(float(row.params["crowding_block_threshold"]) <= 0.70 for row in one_hour_rows)
+
+    crashguard_row = next(row for row in trend_rows if row.name == "composite_trend_stable_30m_stable_ls_crashguard_ls_0.75_0.45_0.20_0.82")
+    assert crashguard_row.params["benchmark_regime_ma"] == 96
+    assert crashguard_row.params["benchmark_symbol"] == "BTC/USDT"
+    assert crashguard_row.metadata["benchmark_regime_ma"] == 96
+    assert "crash_aware" in crashguard_row.tags
+
+    exec_trail_row = next(row for row in trend_rows if row.name == "composite_trend_stable_30m_stable_ls_exec_trail_ls_0.75_0.45_0.20_0.80")
+    assert exec_trail_row.params["trail_atr_mult"] == 2.4
+    assert exec_trail_row.params["atr_stop_mult"] == 1.8
+    assert "execution_risk" in exec_trail_row.tags
+
+    exec_shorthold_row = next(row for row in trend_rows if row.name == "composite_trend_stable_30m_stable_ls_exec_shorthold_ls_0.75_0.45_0.20_0.80")
+    assert exec_shorthold_row.params["max_hold_bars"] == 640
+    assert exec_shorthold_row.params["exit_score_cross"] == 0.04
+    assert "execution_risk" in exec_shorthold_row.tags
 
 
 def test_pair_spread_default_pair_prefers_xpt_xpd_when_available():
@@ -376,6 +422,47 @@ def test_candidate_library_adds_article_pipeline_provenance_tags_and_metadata():
     topcap_row = by_name["topcap_tsmom_1h_balanced_16_4_0.015"]
     assert topcap_row.metadata["article_pipeline_family_ids"] == ["topcap-rotation-relative-momentum"]
     assert "article_family:topcap-rotation-relative-momentum" in topcap_row.tags
+
+    residual_topcap_row = by_name["topcap_tsmom_1h_resid_btc_16_4_0.010"]
+    assert residual_topcap_row.params["residualize_btc"] is True
+    assert residual_topcap_row.metadata["residualize_btc"] is True
+    assert "residual_momentum" in residual_topcap_row.tags
+
+    factor_neutral_topcap_row = by_name["topcap_tsmom_1h_resid_beta_neutral_24_4_0.008"]
+    assert factor_neutral_topcap_row.params["residualize_btc"] is True
+    assert factor_neutral_topcap_row.params["residualize_mean"] is True
+    assert factor_neutral_topcap_row.metadata["residualize_mean"] is True
+    assert "factor_neutral" in factor_neutral_topcap_row.tags
+
+    crashguard_topcap_row = by_name["topcap_tsmom_1h_crashguard_16_4_0.015"]
+    assert crashguard_topcap_row.params["benchmark_drawdown_window"] == 48
+    assert crashguard_topcap_row.params["benchmark_drawdown_limit"] == 0.08
+    assert crashguard_topcap_row.metadata["benchmark_drawdown_window"] == 48
+    assert "crash_aware" in crashguard_topcap_row.tags
+
+    tightstop_topcap_row = by_name["topcap_tsmom_1h_exec_tightstop_16_4_0.015"]
+    assert tightstop_topcap_row.params["stop_loss_pct"] == 0.05
+    assert "execution_risk" in tightstop_topcap_row.tags
+
+    fastrebalance_topcap_row = by_name["topcap_tsmom_1h_exec_fastrebalance_16_2_0.012"]
+    assert fastrebalance_topcap_row.params["rebalance_bars"] == 2
+    assert fastrebalance_topcap_row.params["signal_threshold"] == 0.012
+    assert "execution_risk" in fastrebalance_topcap_row.tags
+
+    takeprofit_topcap_row = by_name["topcap_tsmom_1h_exec_takeprofit_16_4_0.015"]
+    assert takeprofit_topcap_row.params["take_profit_pct"] == 0.10
+    assert "take_profit" in takeprofit_topcap_row.tags
+
+    tightstop_tp_topcap_row = by_name["topcap_tsmom_1h_exec_tightstop_tp_16_4_0.015"]
+    assert tightstop_tp_topcap_row.params["stop_loss_pct"] == 0.05
+    assert tightstop_tp_topcap_row.params["take_profit_pct"] == 0.10
+    assert "execution_risk" in tightstop_tp_topcap_row.tags
+    assert "take_profit" in tightstop_tp_topcap_row.tags
+
+    fastrebalance_tp_topcap_row = by_name["topcap_tsmom_1h_exec_fastrebalance_tp_16_2_0.012"]
+    assert fastrebalance_tp_topcap_row.params["rebalance_bars"] == 2
+    assert fastrebalance_tp_topcap_row.params["take_profit_pct"] == 0.08
+    assert "take_profit" in fastrebalance_tp_topcap_row.tags
 
 
 def test_candidate_library_generates_lag_convergence_for_xpt_xpd_pairs():

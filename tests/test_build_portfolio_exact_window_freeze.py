@@ -220,6 +220,106 @@ def _selected_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return [dict(row) for row in rows if isinstance(row, dict)]
 
 
+def _selected_ids(payload: dict[str, Any]) -> set[str]:
+    return {str(row.get("candidate_id") or row.get("name") or "") for row in _selected_rows(payload)}
+
+
+def _rolling_admission_blocked(payload: dict[str, Any]) -> bool:
+    payload = _unwrap_payload(payload)
+    selection = payload.get("selection")
+    selection_meta = selection if isinstance(selection, dict) else {}
+    metadata = payload.get("metadata")
+    metadata_dict = metadata if isinstance(metadata, dict) else {}
+    for container in (payload, selection_meta, metadata_dict):
+        value = container.get("rolling_admission_blocked")
+        if isinstance(value, bool):
+            return value
+    return False
+
+
+def _base_incumbent_grouped_rows() -> dict[str, list[dict[str, Any]]]:
+    return {
+        "composite_trend_30m": [
+            _row(
+                candidate_id="composite-anchor",
+                name="composite_trend_30m_anchor",
+                family="trend",
+                strategy_class="CompositeTrendStrategy",
+                timeframe="30m",
+                symbols=["BTC/USDT"],
+                train_sharpe=1.0,
+                train_deflated_sharpe=0.5,
+                train_return=0.02,
+                val_sharpe=1.4,
+                val_deflated_sharpe=0.7,
+                val_return=0.04,
+                val_pbo=0.08,
+                val_turnover=0.09,
+                oos_sharpe=0.4,
+                oos_return=0.02,
+            )
+        ],
+        "topcap_tsmom_1h": [
+            _row(
+                candidate_id="topcap-anchor",
+                name="topcap_tsmom_1h_anchor",
+                family="cross_sectional",
+                strategy_class="TopCapTimeSeriesMomentumStrategy",
+                timeframe="1h",
+                symbols=["BTC/USDT", "ETH/USDT", "BNB/USDT"],
+                train_sharpe=1.2,
+                train_deflated_sharpe=0.6,
+                train_return=0.03,
+                val_sharpe=1.5,
+                val_deflated_sharpe=0.7,
+                val_return=0.04,
+                val_pbo=0.09,
+                val_turnover=0.08,
+                oos_sharpe=0.6,
+                oos_return=0.025,
+            )
+        ],
+        "regime_breakout_1h": [
+            _row(
+                candidate_id="regime-anchor",
+                name="regime_breakout_1h_anchor",
+                family="trend",
+                strategy_class="RegimeBreakoutCandidateStrategy",
+                timeframe="1h",
+                symbols=["BTC/USDT", "ETH/USDT"],
+                train_sharpe=1.1,
+                train_deflated_sharpe=0.55,
+                train_return=0.025,
+                val_sharpe=1.45,
+                val_deflated_sharpe=0.68,
+                val_return=0.038,
+                val_pbo=0.10,
+                val_turnover=0.07,
+                oos_sharpe=0.55,
+                oos_return=0.022,
+            )
+        ],
+    }
+
+
+def _write_incumbent_bundle(tmp_path: Path, rows: list[dict[str, Any]]) -> tuple[Path, dict[str, Any]]:
+    bundle_path = tmp_path / "portfolio_one_shot_incumbent_bundle_latest.json"
+    weighted_rows = []
+    total = max(1, len(rows))
+    for row in rows:
+        weighted = dict(row)
+        weighted["portfolio_weight"] = 1.0 / float(total)
+        weighted_rows.append(weighted)
+    payload = {
+        "artifact_kind": "portfolio_one_shot_incumbent_bundle",
+        "selection_basis": "incumbent_saved_one_shot_weights",
+        "candidates": weighted_rows,
+        "selected_team": weighted_rows,
+    }
+    bundle_path.write_text(json.dumps(payload), encoding="utf-8")
+    return bundle_path, payload
+
+
 def test_build_portfolio_exact_window_freeze_prefers_validation_only_and_excludes_pair_spread(tmp_path: Path):
     grouped_rows = {
         "composite_trend_30m": [
@@ -590,3 +690,272 @@ def test_write_portfolio_exact_window_freeze_falls_back_when_equal_weight_stream
     assert equal_weight.get("normalization_method") == "summary_only_missing_component_streams"
     assert equal_weight.get("combined_streams") == {}
     assert equal_weight.get("split_windows") == {}
+
+
+def test_incumbent_anchor_mode_keeps_anchor_when_challenger_misses_guard(tmp_path: Path):
+    grouped_rows = _base_incumbent_grouped_rows()
+    anchor = _row(
+        candidate_id="composite-anchor",
+        name="composite_trend_30m_anchor",
+        family="trend",
+        strategy_class="CompositeTrendStrategy",
+        timeframe="30m",
+        symbols=["BTC/USDT"],
+        train_sharpe=1.1,
+        train_deflated_sharpe=0.7,
+        train_return=0.03,
+        val_sharpe=1.4,
+        val_deflated_sharpe=0.75,
+        val_return=0.032,
+        val_pbo=0.10,
+        val_turnover=0.08,
+        oos_sharpe=0.3,
+        oos_return=0.01,
+    )
+    challenger = _row(
+        candidate_id="composite-high-pbo",
+        name="composite_trend_30m_high_pbo",
+        family="trend",
+        strategy_class="CompositeTrendStrategy",
+        timeframe="30m",
+        symbols=["BTC/USDT"],
+        train_sharpe=1.2,
+        train_deflated_sharpe=0.72,
+        train_return=0.031,
+        val_sharpe=1.65,
+        val_deflated_sharpe=0.70,
+        val_return=0.042,
+        val_pbo=0.16,
+        val_turnover=0.05,
+        oos_sharpe=0.35,
+        oos_return=0.012,
+    )
+    grouped_rows["composite_trend_30m"] = [anchor, challenger]
+    incumbent_bundle_path, incumbent_bundle_payload = _write_incumbent_bundle(
+        tmp_path,
+        [
+            anchor,
+            grouped_rows["topcap_tsmom_1h"][0],
+            grouped_rows["regime_breakout_1h"][0],
+        ],
+    )
+
+    payload = _call_build(
+        tmp_path,
+        grouped_rows,
+        extra_kwargs={
+            "selection_mode": "incumbent_anchor_rolling_gate",
+            "incumbent_bundle_path": incumbent_bundle_path,
+            "incumbent_bundle_payload": incumbent_bundle_payload,
+            "anchor_bundle_path": incumbent_bundle_path,
+            "anchor_bundle_payload": incumbent_bundle_payload,
+        },
+    )
+
+    selected_ids = _selected_ids(payload)
+    assert "composite-anchor" in selected_ids
+    assert "composite-high-pbo" not in selected_ids
+    selection_basis = _selection_basis(payload).lower()
+    assert "incumbent" in selection_basis and "anchor" in selection_basis
+
+
+def test_incumbent_anchor_mode_promotes_local_challenger_when_thresholds_met(tmp_path: Path):
+    grouped_rows = _base_incumbent_grouped_rows()
+    anchor = _row(
+        candidate_id="composite-anchor",
+        name="composite_trend_30m_anchor",
+        family="trend",
+        strategy_class="CompositeTrendStrategy",
+        timeframe="30m",
+        symbols=["BTC/USDT"],
+        train_sharpe=0.10,
+        train_deflated_sharpe=0.05,
+        train_return=0.01,
+        val_sharpe=1.50,
+        val_deflated_sharpe=0.70,
+        val_return=0.03,
+        val_pbo=0.10,
+        val_turnover=0.10,
+        oos_sharpe=0.25,
+        oos_return=0.01,
+    )
+    challenger = _row(
+        candidate_id="composite-train-strong",
+        name="composite_trend_30m_train_strong",
+        family="trend",
+        strategy_class="CompositeTrendStrategy",
+        timeframe="30m",
+        symbols=["BTC/USDT"],
+        train_sharpe=2.0,
+        train_deflated_sharpe=1.0,
+        train_return=0.03,
+        val_sharpe=1.45,
+        val_deflated_sharpe=0.69,
+        val_return=0.029,
+        val_pbo=0.08,
+        val_turnover=0.08,
+        oos_sharpe=0.30,
+        oos_return=0.011,
+    )
+    grouped_rows["composite_trend_30m"] = [anchor, challenger]
+    incumbent_bundle_path, incumbent_bundle_payload = _write_incumbent_bundle(
+        tmp_path,
+        [
+            anchor,
+            grouped_rows["topcap_tsmom_1h"][0],
+            grouped_rows["regime_breakout_1h"][0],
+        ],
+    )
+
+    payload = _call_build(
+        tmp_path,
+        grouped_rows,
+        extra_kwargs={
+            "selection_mode": "incumbent_anchor_rolling_gate",
+            "incumbent_bundle_path": incumbent_bundle_path,
+            "incumbent_bundle_payload": incumbent_bundle_payload,
+            "anchor_bundle_path": incumbent_bundle_path,
+            "anchor_bundle_payload": incumbent_bundle_payload,
+        },
+    )
+
+    selected_ids = _selected_ids(payload)
+    assert "composite-train-strong" in selected_ids
+    assert "composite-anchor" not in selected_ids
+    selection_basis = _selection_basis(payload).lower()
+    assert "incumbent" in selection_basis and "anchor" in selection_basis
+
+
+def test_incumbent_anchor_mode_admits_fourth_sleeve_only_when_gate_passes(tmp_path: Path):
+    grouped_rows = _base_incumbent_grouped_rows()
+    rolling_row = _row(
+        candidate_id="rolling-train-val-survivor",
+        name="rolling_breakout_30m_guarded_ls_64_0.002",
+        family="trend",
+        strategy_class="RollingBreakoutStrategy",
+        timeframe="30m",
+        symbols=["BTC/USDT"],
+        train_sharpe=0.4,
+        train_deflated_sharpe=0.1,
+        train_return=-0.04,
+        val_sharpe=1.3,
+        val_deflated_sharpe=0.2,
+        val_return=0.02,
+        val_pbo=0.20,
+        val_turnover=0.12,
+        oos_sharpe=-1.5,
+        oos_return=-0.03,
+    )
+    grouped_rows["rolling_breakout_30m"] = [rolling_row]
+    incumbent_bundle_path, incumbent_bundle_payload = _write_incumbent_bundle(
+        tmp_path,
+        [
+            grouped_rows["composite_trend_30m"][0],
+            grouped_rows["topcap_tsmom_1h"][0],
+            grouped_rows["regime_breakout_1h"][0],
+        ],
+    )
+    rolling_gate_payload = {
+        "selection_basis": "train_val_only",
+        "survives_train_val": True,
+        "survives": True,
+        "recommended_action": "activate_conditionally",
+        "selected_rule": {
+            "rule_id": "btc_above_ma192",
+            "survives_train_val": True,
+        },
+        "gated_candidate_row": {
+            "candidate_id": "rolling-train-val-survivor",
+            "metadata": {
+                "activation_rule_id": "btc_above_ma192",
+                "activation_rule_survives": True,
+            },
+            "return_streams": {
+                "train": _stream(1_735_689_600_000.0, [0.0, 0.001]),
+                "val": _stream(1_767_225_600_000.0, [0.002, 0.003]),
+                "oos": _stream(1_769_904_000_000.0, [0.0, 0.0]),
+            },
+        },
+    }
+
+    payload = _call_build(
+        tmp_path,
+        grouped_rows,
+        extra_kwargs={
+            "selection_mode": "incumbent_anchor_rolling_gate",
+            "incumbent_bundle_path": incumbent_bundle_path,
+            "incumbent_bundle_payload": incumbent_bundle_payload,
+            "rolling_gate_payload": rolling_gate_payload,
+            "rolling_breakout_gate_payload": rolling_gate_payload,
+            "gate_payload": rolling_gate_payload,
+        },
+    )
+
+    selected = _selected_rows(payload)
+    selected_ids = _selected_ids(payload)
+    assert len(selected) == 4
+    assert "rolling-train-val-survivor" in selected_ids
+    selection_basis = _selection_basis(payload).lower()
+    assert "incumbent" in selection_basis and "anchor" in selection_basis
+    rolling_row = next(row for row in selected if str(row.get("candidate_id")) == "rolling-train-val-survivor")
+    metadata = dict(rolling_row.get("metadata") or {})
+    assert metadata.get("activation_rule_survives") is True
+    assert _rolling_admission_blocked(payload) is False
+
+
+def test_incumbent_anchor_mode_blocks_fourth_sleeve_when_gate_fails(tmp_path: Path):
+    grouped_rows = _base_incumbent_grouped_rows()
+    grouped_rows["rolling_breakout_30m"] = [
+        _row(
+            candidate_id="rolling-blocked",
+            name="rolling_breakout_30m_guarded_ls_64_0.002",
+            family="trend",
+            strategy_class="RollingBreakoutStrategy",
+            timeframe="30m",
+            symbols=["BTC/USDT"],
+            train_sharpe=0.5,
+            train_deflated_sharpe=0.2,
+            train_return=-0.02,
+            val_sharpe=1.4,
+            val_deflated_sharpe=0.3,
+            val_return=0.018,
+            val_pbo=0.18,
+            val_turnover=0.11,
+            oos_sharpe=-2.0,
+            oos_return=-0.04,
+        )
+    ]
+    incumbent_bundle_path, incumbent_bundle_payload = _write_incumbent_bundle(
+        tmp_path,
+        [
+            grouped_rows["composite_trend_30m"][0],
+            grouped_rows["topcap_tsmom_1h"][0],
+            grouped_rows["regime_breakout_1h"][0],
+        ],
+    )
+    rolling_gate_payload = {
+        "selection_basis": "train_val_only",
+        "survives_train_val": False,
+        "survives": False,
+        "recommended_action": "do_not_activate",
+        "selected_rule": {
+            "rule_id": "btc_above_ma192",
+            "survives_train_val": False,
+        },
+    }
+
+    payload = _call_build(
+        tmp_path,
+        grouped_rows,
+        extra_kwargs={
+            "selection_mode": "incumbent_anchor_rolling_gate",
+            "incumbent_bundle_path": incumbent_bundle_path,
+            "incumbent_bundle_payload": incumbent_bundle_payload,
+            "rolling_gate_payload": rolling_gate_payload,
+            "rolling_breakout_gate_payload": rolling_gate_payload,
+            "gate_payload": rolling_gate_payload,
+        },
+    )
+
+    assert _selected_ids(payload) == {"composite-anchor", "topcap-anchor", "regime-anchor"}
+    assert _rolling_admission_blocked(payload) is True

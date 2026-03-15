@@ -193,6 +193,63 @@ def test_composite_trend_respects_long_only_retune_and_exposure_damping():
     assert np.max(np.abs(exposure_long_only)) < 0.05
 
 
+def test_composite_trend_benchmark_gate_blocks_longs_in_benchmark_crash_state():
+    length = 180
+    symbols = ["BTC/USDT", "ETH/USDT"]
+    aligned = {"datetime": _minute_datetimes(length)}
+
+    btc_close = np.linspace(160.0, 100.0, length, dtype=float)
+    eth_close = np.concatenate(
+        [
+            np.linspace(100.0, 104.0, 60, dtype=float),
+            np.linspace(104.0, 145.0, length - 60, dtype=float),
+        ]
+    )
+    for symbol, close in {"BTC/USDT": btc_close, "ETH/USDT": eth_close}.items():
+        aligned[f"{symbol}:open"] = close - 0.2
+        aligned[f"{symbol}:high"] = close + 0.6
+        aligned[f"{symbol}:low"] = close - 0.6
+        aligned[f"{symbol}:close"] = close
+        aligned[f"{symbol}:volume"] = np.linspace(2_000.0, 4_000.0, length, dtype=float)
+
+    base_params = {
+        "long_threshold": 0.10,
+        "short_threshold": 0.10,
+        "exit_score_cross": 0.03,
+        "te_min": 0.0,
+        "vr_min": 0.0,
+        "risk_target_vol": 0.0025,
+        "max_signal_strength": 0.60,
+        "allow_short": False,
+    }
+    ungated = {"strategy_class": "CompositeTrendStrategy", "params": dict(base_params)}
+    gated = {
+        "strategy_class": "CompositeTrendStrategy",
+        "params": {
+            **dict(base_params),
+            "benchmark_regime_ma": 48,
+            "benchmark_symbol": "BTC/USDT",
+        },
+    }
+
+    _, _, exposure, _ = research_runner._strategy_signal(
+        ungated,
+        aligned=aligned,
+        symbols=symbols,
+    )
+    _, _, gated_exposure, gated_meta = research_runner._strategy_signal(
+        gated,
+        aligned=aligned,
+        symbols=symbols,
+    )
+
+    assert np.max(exposure) > 0.05
+    assert np.allclose(gated_exposure, 0.0)
+    assert gated_meta.get("crash_aware_gate") is True
+    assert gated_meta.get("benchmark_symbol") == "BTC/USDT"
+    assert gated_meta.get("benchmark_regime_ma") == 48
+
+
 def test_lag_convergence_strategy_signal_trades_xpt_xpd_pair():
     length = 120
     x_close = np.full(length, 100.0, dtype=float)
@@ -408,6 +465,247 @@ def test_topcap_tsmom_strategy_signal_supports_zero_short_budget():
     assert meta.get("cross_sectional") is True
     assert np.any(exposure > 0.0)
     assert np.all(exposure >= 0.0)
+    assert np.any(turnover > 0.0)
+
+
+def test_topcap_tsmom_strategy_signal_respects_stop_loss_between_rebalances():
+    length = 80
+    symbols = ["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "TRX/USDT"]
+    aligned = {"datetime": _minute_datetimes(length)}
+    for symbol in symbols:
+        base = 100.0
+        close = np.full(length, base, dtype=float)
+        if symbol == "BTC/USDT":
+            close[12:] = np.linspace(base, base * 1.04, length - 12, dtype=float)
+        elif symbol == "ETH/USDT":
+            close[:24] = np.linspace(base, base * 1.18, 24, dtype=float)
+            close[24:32] = np.linspace(base * 1.18, base * 0.92, 8, dtype=float)
+            close[32:] = np.linspace(base * 0.92, base * 0.95, length - 32, dtype=float)
+        elif symbol == "BNB/USDT":
+            close[12:] = np.linspace(base, base * 1.22, length - 12, dtype=float)
+        else:
+            close[12:] = np.linspace(base, base * 0.92, length - 12, dtype=float)
+        aligned[f"{symbol}:open"] = close
+        aligned[f"{symbol}:high"] = close + 0.2
+        aligned[f"{symbol}:low"] = close - 0.2
+        aligned[f"{symbol}:close"] = close
+        aligned[f"{symbol}:volume"] = np.full(length, 150.0, dtype=float)
+
+    base_candidate = {
+        "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+        "params": {
+            "lookback_bars": 8,
+            "rebalance_bars": 8,
+            "signal_threshold": 0.01,
+            "stop_loss_pct": 0.20,
+            "max_longs": 2,
+            "max_shorts": 2,
+            "min_price": 0.1,
+            "btc_regime_ma": 0,
+            "btc_symbol": "BTC/USDT",
+        },
+    }
+    tightstop_candidate = {
+        "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+        "params": {
+            **dict(base_candidate["params"]),
+            "stop_loss_pct": 0.03,
+        },
+    }
+
+    _, _, base_exposure, _ = research_runner._strategy_signal(
+        base_candidate,
+        aligned=aligned,
+        symbols=symbols,
+    )
+    _, _, tight_exposure, _ = research_runner._strategy_signal(
+        tightstop_candidate,
+        aligned=aligned,
+        symbols=symbols,
+    )
+
+    assert np.sum(np.abs(tight_exposure[24:32])) < np.sum(np.abs(base_exposure[24:32]))
+    assert np.max(np.abs(base_exposure[24:32])) > 0.0
+    assert np.min(np.abs(tight_exposure[24:32])) == 0.0
+
+
+def test_topcap_tsmom_strategy_signal_respects_take_profit_between_rebalances():
+    length = 80
+    symbols = ["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "TRX/USDT"]
+    aligned = {"datetime": _minute_datetimes(length)}
+    for symbol in symbols:
+        base = 100.0
+        close = np.full(length, base, dtype=float)
+        if symbol == "BTC/USDT":
+            close[12:] = np.linspace(base, base * 1.04, length - 12, dtype=float)
+        elif symbol == "ETH/USDT":
+            close[:28] = np.linspace(base, base * 1.24, 28, dtype=float)
+            close[28:] = np.linspace(base * 1.24, base * 1.25, length - 28, dtype=float)
+        elif symbol == "BNB/USDT":
+            close[12:] = np.linspace(base, base * 1.20, length - 12, dtype=float)
+        else:
+            close[12:] = np.linspace(base, base * 0.92, length - 12, dtype=float)
+        aligned[f"{symbol}:open"] = close
+        aligned[f"{symbol}:high"] = close + 0.2
+        aligned[f"{symbol}:low"] = close - 0.2
+        aligned[f"{symbol}:close"] = close
+        aligned[f"{symbol}:volume"] = np.full(length, 150.0, dtype=float)
+
+    base_candidate = {
+        "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+        "params": {
+            "lookback_bars": 8,
+            "rebalance_bars": 8,
+            "signal_threshold": 0.01,
+            "stop_loss_pct": 0.08,
+            "max_longs": 2,
+            "max_shorts": 2,
+            "min_price": 0.1,
+            "btc_regime_ma": 0,
+            "btc_symbol": "BTC/USDT",
+        },
+    }
+    tp_candidate = {
+        "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+        "params": {
+            **dict(base_candidate["params"]),
+            "take_profit_pct": 0.05,
+        },
+    }
+
+    _, _, base_exposure, _ = research_runner._strategy_signal(
+        base_candidate,
+        aligned=aligned,
+        symbols=symbols,
+    )
+    _, _, tp_exposure, meta = research_runner._strategy_signal(
+        tp_candidate,
+        aligned=aligned,
+        symbols=symbols,
+    )
+
+    assert meta.get("take_profit_pct") == 0.05
+    assert np.sum(np.abs(tp_exposure[20:24])) < np.sum(np.abs(base_exposure[20:24]))
+    assert np.sum(np.abs(tp_exposure[41:47])) < np.sum(np.abs(base_exposure[41:47]))
+
+
+def test_topcap_tsmom_strategy_signal_can_residualize_common_btc_factor():
+    length = 120
+    symbols = ["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "TRX/USDT"]
+    aligned = {"datetime": _minute_datetimes(length)}
+    for idx, symbol in enumerate(symbols):
+        base = 100.0 + (idx * 10.0)
+        close = np.full(length, base, dtype=float)
+        close[20:] = np.linspace(base, base * 1.25, length - 20, dtype=float)
+        aligned[f"{symbol}:open"] = close
+        aligned[f"{symbol}:high"] = close + 0.2
+        aligned[f"{symbol}:low"] = close - 0.2
+        aligned[f"{symbol}:close"] = close
+        aligned[f"{symbol}:volume"] = np.full(length, 150.0, dtype=float)
+
+    candidate = {
+        "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+        "params": {
+            "lookback_bars": 8,
+            "rebalance_bars": 2,
+            "signal_threshold": 0.01,
+            "stop_loss_pct": 0.08,
+            "max_longs": 2,
+            "max_shorts": 2,
+            "min_price": 0.1,
+            "btc_regime_ma": 0,
+            "btc_symbol": "BTC/USDT",
+            "residualize_btc": True,
+            "residualize_mean": True,
+        },
+    }
+
+    _, turnover, exposure, meta = research_runner._strategy_signal(
+        candidate,
+        aligned=aligned,
+        symbols=symbols,
+    )
+
+    assert exposure.shape == (length,)
+    assert meta.get("cross_sectional") is True
+    assert meta.get("residualized_cross_sectional") is True
+    assert meta.get("residualize_btc") is True
+    assert meta.get("residualize_mean") is True
+    assert np.allclose(exposure, 0.0)
+    assert np.allclose(turnover, 0.0)
+
+
+def test_topcap_tsmom_strategy_signal_can_apply_benchmark_drawdown_gate():
+    length = 120
+    symbols = ["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "TRX/USDT"]
+    aligned = {"datetime": _minute_datetimes(length)}
+    for symbol in symbols:
+        base = 100.0
+        if symbol == "BTC/USDT":
+            close = np.concatenate(
+                [
+                    np.linspace(base, base * 1.08, 36, dtype=float),
+                    np.linspace(base * 1.08, base * 0.68, length - 36, dtype=float),
+                ]
+            )
+        elif symbol in {"ETH/USDT", "BNB/USDT", "SOL/USDT"}:
+            close = np.linspace(base, base * 1.25, length, dtype=float)
+        else:
+            close = np.linspace(base, base * 0.95, length, dtype=float)
+        aligned[f"{symbol}:open"] = close
+        aligned[f"{symbol}:high"] = close + 0.2
+        aligned[f"{symbol}:low"] = close - 0.2
+        aligned[f"{symbol}:close"] = close
+        aligned[f"{symbol}:volume"] = np.full(length, 150.0, dtype=float)
+
+    candidate = {
+        "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+        "params": {
+            "lookback_bars": 8,
+            "rebalance_bars": 2,
+            "signal_threshold": 0.01,
+            "stop_loss_pct": 0.08,
+            "max_longs": 2,
+            "max_shorts": 2,
+            "min_price": 0.1,
+            "btc_regime_ma": 0,
+            "btc_symbol": "BTC/USDT",
+            "benchmark_drawdown_window": 24,
+            "benchmark_drawdown_limit": 0.08,
+        },
+    }
+    base_candidate = {
+        "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+        "params": {
+            "lookback_bars": 8,
+            "rebalance_bars": 2,
+            "signal_threshold": 0.01,
+            "stop_loss_pct": 0.08,
+            "max_longs": 2,
+            "max_shorts": 2,
+            "min_price": 0.1,
+            "btc_regime_ma": 0,
+            "btc_symbol": "BTC/USDT",
+        },
+    }
+
+    _, _, base_exposure, _ = research_runner._strategy_signal(
+        base_candidate,
+        aligned=aligned,
+        symbols=symbols,
+    )
+    _, turnover, exposure, meta = research_runner._strategy_signal(
+        candidate,
+        aligned=aligned,
+        symbols=symbols,
+    )
+
+    assert exposure.shape == (length,)
+    assert meta.get("crash_aware_gate") is True
+    assert meta.get("benchmark_drawdown_window") == 24
+    assert meta.get("benchmark_drawdown_limit") == 0.08
+    assert np.max(base_exposure[-10:]) > 0.0
+    assert np.max(exposure[-10:]) <= 1e-9
     assert np.any(turnover > 0.0)
 
 

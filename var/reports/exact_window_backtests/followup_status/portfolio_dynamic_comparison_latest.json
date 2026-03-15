@@ -1,61 +1,14 @@
 {
   "artifact_kind": "portfolio_comparison",
   "causal_dynamic_portfolio": {
-    "best_params": {
-      "cash_when_no_active": true,
-      "correlation_penalty": 0.0,
-      "lookback_days": 20,
-      "max_family_weight": 0.55,
-      "max_trailing_drawdown": 0.1,
-      "max_weight": 0.5,
-      "min_trailing_return": 0.0,
-      "min_trailing_sharpe": 0.0,
-      "rebalance_days": 3,
-      "regime_strength": 0.5,
-      "use_regime_features": true
-    },
+    "best_params": {},
     "oos": {
-      "cagr": 0.13781667344586013,
-      "calmar": 5.985883861822879,
-      "max_drawdown": 0.023023612991363795,
-      "sharpe": 1.1764008956920013,
-      "sortino": 3.130311250245071,
-      "total_return": 0.012457484650929773,
-      "volatility": 0.11517336627567139
+      "sharpe": 1.5,
+      "total_return": 0.04
     },
     "path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_dynamic_online_current/causal_dynamic_portfolio_latest.json",
-    "val": {
-      "cagr": 0.330145942071572,
-      "calmar": 85.83724680328498,
-      "max_drawdown": 0.0038461851278638326,
-      "sharpe": 5.768397370095939,
-      "sortino": 8.098610586819186,
-      "total_return": 0.024525928052964163,
-      "volatility": 0.04968276243254591
-    },
-    "weights": [
-      {
-        "candidate_id": "feecc2c87fbb8475",
-        "name": "composite_trend_stable_30m_stable_ls_highconv_ls_0.75_0.45_0.20_0.80",
-        "strategy_class": "CompositeTrendStrategy",
-        "timeframe": "30m",
-        "weight": 0.5
-      },
-      {
-        "candidate_id": "4c8fdaeabe315563",
-        "name": "topcap_tsmom_1h_balanced_16_4_0.015",
-        "strategy_class": "TopCapTimeSeriesMomentumStrategy",
-        "timeframe": "1h",
-        "weight": 0.11536161641283528
-      },
-      {
-        "candidate_id": "deb70de97b53b507",
-        "name": "regime_breakout_1h_trend_ls_48_0.70",
-        "strategy_class": "RegimeBreakoutCandidateStrategy",
-        "timeframe": "1h",
-        "weight": 0.02577553550527848
-      }
-    ]
+    "val": {},
+    "weights": []
   },
   "comparison_scope": [
     "equal_weight_diagnostic",
@@ -64,52 +17,27 @@
     "causal_dynamic_portfolio"
   ],
   "current_one_shot_optimized": {
-    "bundle_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_one_shot_current_bundle_latest.json",
-    "legacy_reference_path": "/home/hoky/Quants-agent/LuminaQuant/reports/portfolio_optimization_latest.json",
+    "bundle_path": "/tmp/pytest-of-hoky/pytest-6/test_write_dynamic_comparison_0/current_bundle.json",
     "oos": {
-      "cagr": 0.6289327837877341,
-      "calmar": 10.713604745238294,
-      "max_drawdown": 0.05870412421806637,
-      "sharpe": 1.7067110916177235,
-      "sortino": 4.340534394917453,
-      "total_return": 0.04789913406446966,
-      "volatility": 0.31322550443768743
+      "sharpe": 2.0,
+      "total_return": 0.05
     },
-    "path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_one_shot_current_opt/portfolio_optimization_latest.json",
-    "search_summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_one_shot_search/best_search_summary.json",
+    "path": "/tmp/pytest-of-hoky/pytest-6/test_write_dynamic_comparison_0/current_portfolio.json",
     "val": {
-      "cagr": 0.77977446831369,
-      "calmar": 26.466070466415825,
-      "max_drawdown": 0.02946317509821439,
-      "sharpe": 3.0028163085596984,
-      "sortino": 6.19759686323781,
-      "total_return": 0.050180317234329586,
-      "volatility": 0.19841887691699528
+      "sharpe": 1.1,
+      "total_return": 0.01
     },
     "weights": [
       {
-        "name": "composite_trend_stable_30m_stable_ls_highconv_ls_0.75_0.45_0.20_0.80",
-        "strategy_class": "CompositeTrendStrategy",
-        "timeframe": "30m",
-        "weight": 0.35
-      },
-      {
-        "name": "topcap_tsmom_1h_balanced_16_4_0.015",
-        "strategy_class": "TopCapTimeSeriesMomentumStrategy",
-        "timeframe": "1h",
-        "weight": 0.35
-      },
-      {
-        "name": "regime_breakout_1h_trend_ls_48_0.70",
-        "strategy_class": "RegimeBreakoutCandidateStrategy",
-        "timeframe": "1h",
-        "weight": 0.30000000000000004
+        "candidate_id": "probe",
+        "name": "new-incumbent",
+        "weight": 1.0
       }
     ]
   },
   "deltas": {
-    "dynamic_vs_current_one_shot_oos_return": -0.03544164941353989,
-    "dynamic_vs_current_one_shot_oos_sharpe": -0.5303101959257221,
+    "dynamic_vs_current_one_shot_oos_return": -0.010000000000000002,
+    "dynamic_vs_current_one_shot_oos_sharpe": -0.5,
     "tuned_vs_current_one_shot_oos_return": -0.021639550784894768,
     "tuned_vs_current_one_shot_oos_sharpe": -1.496858213393502,
     "tuned_vs_equal_weight_oos_return": -0.03251319335915204,

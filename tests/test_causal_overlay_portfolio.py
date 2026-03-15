@@ -71,3 +71,53 @@ def test_write_overlay_comparison_adds_scope(tmp_path: Path, monkeypatch) -> Non
     result = MODULE.write_overlay_comparison(overlay_payload)
     written = json.loads(Path(result["json_path"]).read_text(encoding="utf-8"))
     assert "causal_overlay_portfolio" in written["comparison_scope"]
+
+
+def test_write_overlay_comparison_refreshes_current_one_shot_snapshot(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    comparison = tmp_path / "comparison.json"
+    comparison.write_text(
+        json.dumps(
+            {
+                "comparison_scope": ["equal_weight_diagnostic"],
+                "deltas": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    current_bundle = tmp_path / "current_bundle.json"
+    current_bundle.write_text(json.dumps({"candidates": [{"name": "rolled"}]}), encoding="utf-8")
+    current_portfolio = tmp_path / "current_portfolio.json"
+    current_portfolio.write_text(
+        json.dumps(
+            {
+                "weights": [{"candidate_id": "rolled", "weight": 1.0}],
+                "portfolio_metrics": {
+                    "val": {"total_return": 0.02, "sharpe": 1.4},
+                    "oos": {"total_return": 0.06, "sharpe": 2.2},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(MODULE, "COMPARISON_INPUT", comparison)
+    monkeypatch.setattr(MODULE, "FOLLOWUP_ROOT", tmp_path)
+    monkeypatch.setattr(MODULE, "DEFAULT_OUTPUT_DIR", tmp_path)
+    monkeypatch.setattr(MODULE._helper, "PORTFOLIO_ONE_SHOT_CURRENT_BUNDLE", current_bundle)
+    monkeypatch.setattr(MODULE._helper, "PORTFOLIO_CURRENT_OPTIMIZATION", current_portfolio)
+
+    overlay_payload = {
+        "split_metrics": {"val": {}, "oos": {"total_return": 0.04, "sharpe": 1.2}},
+        "final_allocation": [],
+        "best_params": {},
+    }
+    result = MODULE.write_overlay_comparison(overlay_payload)
+    written = json.loads(Path(result["json_path"]).read_text(encoding="utf-8"))
+    assert written["current_one_shot_optimized"]["path"] == str(current_portfolio.resolve())
+    assert written["current_one_shot_optimized"]["bundle_path"] == str(current_bundle.resolve())
+    assert written["current_one_shot_optimized"]["oos"]["sharpe"] == 2.2
+    assert "current_one_shot_optimized" in written["comparison_scope"]
+    assert abs(written["deltas"]["overlay_vs_current_one_shot_oos_return"] + 0.02) < 1e-12

@@ -1,0 +1,244 @@
+{
+  "artifact_kind": "autonomous_residual_topcap_anchor_decision",
+  "candidate_key": "autonomous_residual_topcap_anchor_opt",
+  "decision_reason": "Residual/factor-neutral topcap improved sleeve-level OOS return but failed at the anchored portfolio level on locked-OOS return, Sharpe, and drawdown; train performance also deteriorated.",
+  "deltas": {
+    "portfolio_oos_max_drawdown_delta_vs_incumbent": 0.0068931013926394336,
+    "portfolio_oos_sharpe_delta_vs_incumbent": -0.5109611551441913,
+    "portfolio_oos_total_return_delta_vs_incumbent": -0.007155681381960655,
+    "topcap_oos_total_return_delta_vs_incumbent_topcap": 0.010662190399803206
+  },
+  "exact_window": {
+    "evaluated_count": 33,
+    "promoted_count": 0,
+    "residual_candidate": {
+      "name": "topcap_tsmom_1h_resid_beta_neutral_24_4_0.008",
+      "oos": {
+        "avg_trade": 0.0003857337531043498,
+        "benchmark_corr": -0.2503192624432508,
+        "cagr": 0.5626312867026697,
+        "calmar": 10.328779509272614,
+        "deflated_sharpe": 0.019415997139171248,
+        "exposure": 0.2800483675937122,
+        "max_drawdown": 0.05447219453155816,
+        "mdd": 0.05447219453155816,
+        "pbo": 0.375,
+        "return": 0.04304079405859573,
+        "rolling_sharpe_min": -20.84059097494903,
+        "sharpe": 1.8978545377939071,
+        "sortino": 2.5496620264798437,
+        "spa_pvalue": 0.305,
+        "stability": -1.493026299473199,
+        "total_return": 0.04304079405859573,
+        "trade_count": 117.0,
+        "trades": 117.0,
+        "turnover": 0.04691656590084643,
+        "volatility": 0.25188898629542333,
+        "win_rate": 0.44256348246674726,
+        "worst_month": 0.013947401053601816
+      },
+      "tags": [
+        "cross_sectional",
+        "relative_momentum",
+        "topcap",
+        "crypto",
+        "residual_momentum",
+        "factor_neutral",
+        "article_pipeline",
+        "article_family:topcap-rotation-relative-momentum"
+      ],
+      "train": {
+        "avg_trade": -0.0002698643651088669,
+        "benchmark_corr": -0.13620219295454114,
+        "cagr": -0.2992426207162625,
+        "calmar": -0.837463538599948,
+        "deflated_sharpe": 1.3760608309876243e-05,
+        "exposure": 0.2540639269406393,
+        "max_drawdown": 0.3573201780420546,
+        "mdd": 0.3573201780420546,
+        "pbo": 0.0,
+        "return": -0.2992426207162625,
+        "rolling_sharpe_min": -30.300983346866193,
+        "sharpe": -1.566754781016939,
+        "sortino": -1.9483127382927385,
+        "spa_pvalue": 1.0,
+        "stability": -1.576994744015609,
+        "total_return": -0.2992426207162625,
+        "trade_count": 1234.0,
+        "trades": 1234.0,
+        "turnover": 0.047397260273972605,
+        "volatility": 0.21254929653266616,
+        "win_rate": 0.4123287671232877,
+        "worst_month": -0.1539894880312177
+      },
+      "val": {
+        "avg_trade": 5.233801592064474e-05,
+        "benchmark_corr": -0.38706398021426563,
+        "cagr": 0.04947184366125357,
+        "calmar": 0.8558746045019631,
+        "deflated_sharpe": 0.005641412648492661,
+        "exposure": 0.20698924731182797,
+        "max_drawdown": 0.05780267740277378,
+        "mdd": 0.05780267740277378,
+        "pbo": 0.625,
+        "return": 0.004109511332427429,
+        "rolling_sharpe_min": -21.16516570744345,
+        "sharpe": 0.3938524535458053,
+        "sortino": 0.487533719768162,
+        "spa_pvalue": 0.52,
+        "stability": -1.5081438461595478,
+        "total_return": 0.004109511332427429,
+        "trade_count": 97.0,
+        "trades": 97.0,
+        "turnover": 0.043010752688172046,
+        "volatility": 0.15177023429081435,
+        "win_rate": 0.36155913978494625,
+        "worst_month": -0.01628769231909566
+      }
+    }
+  },
+  "generated_at": "2026-03-15T07:10:49.810447+00:00",
+  "incumbent": {
+    "oos": {
+      "cagr": 0.7644493706045741,
+      "calmar": 53.54257718910656,
+      "max_drawdown": 0.014277410814661051,
+      "sharpe": 3.4471209004535015,
+      "sortino": 12.272011214344426,
+      "total_return": 0.05595997643375439,
+      "volatility": 0.1687910826754393
+    },
+    "train": {
+      "cagr": 0.031128987733148206,
+      "calmar": 0.4387372048542752,
+      "max_drawdown": 0.07095132892476619,
+      "sharpe": 0.40169098218880034,
+      "sortino": 0.6684884761882702,
+      "total_return": 0.031128987733148206,
+      "volatility": 0.08531609458298543
+    },
+    "val": {
+      "cagr": 0.34003864659038885,
+      "calmar": 43.35649610335891,
+      "max_drawdown": 0.007842853485663603,
+      "sharpe": 4.661185401236607,
+      "sortino": 7.569957740388168,
+      "total_return": 0.025170890133217716,
+      "volatility": 0.06323456277167129
+    }
+  },
+  "label": "Autonomous residual/factor-neutral topcap anchor challenger",
+  "notes": [
+    "Residual beta-neutral variant was the best new topcap sleeve from the 1h residual lane.",
+    "The anchored portfolio optimizer equal-weighted the three-sleeve challenger at one-third each.",
+    "The challenger remained below the incumbent on locked-OOS return, Sharpe, and drawdown despite the sleeve-level topcap improvement."
+  ],
+  "portfolio": {
+    "oos": {
+      "cagr": 0.6436662023326494,
+      "calmar": 30.403903128554735,
+      "max_drawdown": 0.021170512207300485,
+      "sharpe": 2.9361597453093102,
+      "sortino": 8.743937803634527,
+      "total_return": 0.048804295051793734,
+      "volatility": 0.17428241704886177
+    },
+    "train": {
+      "cagr": -0.06863807479828121,
+      "calmar": -0.4867673278769616,
+      "max_drawdown": 0.14100797417453337,
+      "sharpe": -0.6492027906292361,
+      "sortino": -1.172414754323393,
+      "total_return": -0.06863807479828121,
+      "volatility": 0.10162159835573469
+    },
+    "val": {
+      "cagr": 0.31403303783843795,
+      "calmar": 23.491730620524063,
+      "max_drawdown": 0.013367811972272325,
+      "sharpe": 3.3023792048355736,
+      "sortino": 5.707470488671383,
+      "total_return": 0.023465978051811387,
+      "volatility": 0.08375478437848409
+    },
+    "weights": [
+      {
+        "candidate_id": "feecc2c87fbb8475",
+        "family": "trend",
+        "fit_return": 0.04987876459743679,
+        "fit_sharpe": 4.427750205476359,
+        "fit_split": "val",
+        "name": "composite_trend_stable_30m_stable_ls_highconv_ls_0.75_0.45_0.20_0.80",
+        "oos_return": 0.029547105294839504,
+        "oos_sharpe": 2.2953624409038818,
+        "report_return": 0.029547105294839504,
+        "report_sharpe": 2.2953624409038818,
+        "report_split": "oos",
+        "strategy_class": "CompositeTrendStrategy",
+        "symbols": [
+          "BTC/USDT",
+          "ETH/USDT",
+          "BNB/USDT",
+          "SOL/USDT",
+          "TRX/USDT"
+        ],
+        "timeframe": "30m",
+        "weight": 0.3333333333333333
+      },
+      {
+        "candidate_id": "9fa687bd506cd875",
+        "family": "cross_sectional",
+        "fit_return": 0.004109511332427429,
+        "fit_sharpe": 0.3938524535458053,
+        "fit_split": "val",
+        "name": "topcap_tsmom_1h_resid_beta_neutral_24_4_0.008",
+        "oos_return": 0.04304079405859573,
+        "oos_sharpe": 1.8978545377939071,
+        "report_return": 0.04304079405859573,
+        "report_sharpe": 1.8978545377939071,
+        "report_split": "oos",
+        "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+        "symbols": [
+          "BTC/USDT",
+          "ETH/USDT",
+          "BNB/USDT",
+          "SOL/USDT",
+          "TRX/USDT"
+        ],
+        "timeframe": "1h",
+        "weight": 0.3333333333333333
+      },
+      {
+        "candidate_id": "4b050c2ad437c77f",
+        "family": "market_neutral",
+        "fit_return": 0.01606720015631824,
+        "fit_sharpe": 3.8797484359521275,
+        "fit_split": "val",
+        "name": "pair_spread_1h_core_bnbusdt_trxusdt_2.2_0.55",
+        "oos_return": 0.0723750581955176,
+        "oos_sharpe": 4.556884188045461,
+        "report_return": 0.0723750581955176,
+        "report_sharpe": 4.556884188045461,
+        "report_split": "oos",
+        "strategy_class": "PairSpreadZScoreStrategy",
+        "symbols": [
+          "BNB/USDT",
+          "TRX/USDT"
+        ],
+        "timeframe": "1h",
+        "weight": 0.3333333333333333
+      }
+    ]
+  },
+  "recommended_action": "retain incumbent and proceed to crash-aware momentum gate lane",
+  "schema_version": "1.0",
+  "selection_basis": "autonomous_residual_topcap_anchor_replacement",
+  "source_artifacts": {
+    "anchor_bundle": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_residual_topcap_anchor_latest.json",
+    "exact_window_details": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/autonomous_residual_topcap_1h_retry_20260315T0612Z/1h/exact_window_candidate_details_latest.json",
+    "exact_window_summary": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/autonomous_residual_topcap_1h_retry_20260315T0612Z/1h/exact_window_suite_summary_latest.json",
+    "memory_evidence": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/autonomous_residual_topcap_1h_retry_20260315T0612Z/1h/exact_window_memory_evidence_latest.json",
+    "portfolio_opt": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_residual_topcap_anchor_opt/portfolio_optimization_latest.json"
+  },
+  "status": "discard"
+}

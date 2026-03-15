@@ -12,41 +12,61 @@
         "Restricted sleeve bundle: /home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_one_shot_incumbent_bundle_latest.json"
       ],
       "oos": {
-        "cagr": 0.6289327837877341,
-        "calmar": 10.713604745238294,
-        "max_drawdown": 0.05870412421806637,
-        "sharpe": 1.7067110916177235,
-        "sortino": 4.340534394917453,
-        "total_return": 0.04789913406446966,
-        "volatility": 0.31322550443768743
+        "cagr": 0.7937330662253275,
+        "calmar": 55.59362804145598,
+        "max_drawdown": 0.014277410814661051,
+        "sharpe": 3.5061115762621573,
+        "sortino": 12.199980161480926,
+        "total_return": 0.05762800274913982,
+        "volatility": 0.17074520784802033
       },
       "oos_max_drawdown_delta": 0.0,
       "oos_sharpe_delta": 0.0,
       "oos_total_return_delta": 0.0,
       "promotable": false,
-      "promotion_score": 4.306514319806826,
+      "promotion_score": 13.726578915272817,
       "promotion_score_delta": 0.0,
       "selection_basis": "incumbent_saved_one_shot_weights",
       "source_artifact_kind": "portfolio_one_shot_current_opt",
       "train": {
-        "cagr": -0.10181746447818285,
-        "calmar": -0.557572458709836,
-        "max_drawdown": 0.18260848951143993,
-        "sharpe": -0.4556062326536862,
-        "sortino": -0.9377162272271935,
-        "total_return": -0.10181746447818285,
-        "volatility": 0.1946140050325783
+        "cagr": 0.04887910496798242,
+        "calmar": 0.6118154260048163,
+        "max_drawdown": 0.07989191329673606,
+        "sharpe": 0.5431522053457358,
+        "sortino": 0.9625629824367937,
+        "total_return": 0.04887910496798242,
+        "volatility": 0.09633438902674207
       },
       "val": {
-        "cagr": 0.77977446831369,
-        "calmar": 26.466070466415825,
-        "max_drawdown": 0.02946317509821439,
-        "sharpe": 3.0028163085596984,
-        "sortino": 6.19759686323781,
-        "total_return": 0.050180317234329586,
-        "volatility": 0.19841887691699528
+        "cagr": 0.43965656354699134,
+        "calmar": 55.52234128859793,
+        "max_drawdown": 0.007918552304228554,
+        "sharpe": 5.067265027757916,
+        "sortino": 8.809518260142823,
+        "total_return": 0.03143334373456397,
+        "volatility": 0.07244958324953144
       },
       "weights": [
+        {
+          "candidate_id": "4b050c2ad437c77f",
+          "family": "market_neutral",
+          "fit_return": 0.01606720015631824,
+          "fit_sharpe": 3.8797484359521275,
+          "fit_split": "val",
+          "name": "pair_spread_1h_core_bnbusdt_trxusdt_2.2_0.55",
+          "oos_return": 0.0723750581955176,
+          "oos_sharpe": 4.556884188045461,
+          "report_return": 0.0723750581955176,
+          "report_sharpe": 4.556884188045461,
+          "report_split": "oos",
+          "strategy_class": "PairSpreadZScoreStrategy",
+          "symbols": [
+            "BNB/USDT",
+            "TRX/USDT"
+          ],
+          "timeframe": "1h",
+          "weight": 0.6
+        },
         {
           "candidate_id": "feecc2c87fbb8475",
           "family": "trend",
@@ -68,7 +88,7 @@
             "TRX/USDT"
           ],
           "timeframe": "30m",
-          "weight": 0.35
+          "weight": 0.2543902770880808
         },
         {
           "candidate_id": "4c8fdaeabe315563",
@@ -91,30 +111,7 @@
             "TRX/USDT"
           ],
           "timeframe": "1h",
-          "weight": 0.35
-        },
-        {
-          "candidate_id": "deb70de97b53b507",
-          "family": "trend",
-          "fit_return": 0.08606681665810556,
-          "fit_sharpe": 3.538834691452231,
-          "fit_split": "val",
-          "name": "regime_breakout_1h_trend_ls_48_0.70",
-          "oos_return": 0.08078017551551175,
-          "oos_sharpe": 2.0090595076426387,
-          "report_return": 0.08078017551551175,
-          "report_sharpe": 2.0090595076426387,
-          "report_split": "oos",
-          "strategy_class": "RegimeBreakoutCandidateStrategy",
-          "symbols": [
-            "BTC/USDT",
-            "ETH/USDT",
-            "BNB/USDT",
-            "SOL/USDT",
-            "TRX/USDT"
-          ],
-          "timeframe": "1h",
-          "weight": 0.30000000000000004
+          "weight": 0.1456097229119192
         }
       ]
     },
@@ -136,12 +133,12 @@
         "total_return": 0.026259583279574894,
         "volatility": 0.029309132710955532
       },
-      "oos_max_drawdown_delta": 0.008972123617609684,
-      "oos_sharpe_delta": -1.496858213393502,
-      "oos_total_return_delta": -0.021639550784894768,
+      "oos_max_drawdown_delta": 0.053398837021015,
+      "oos_sharpe_delta": -3.296258698037936,
+      "oos_total_return_delta": -0.03136841946956492,
       "promotable": false,
       "promotion_score": 0.27567120290793673,
-      "promotion_score_delta": -4.03084311689889,
+      "promotion_score_delta": -13.45090771236488,
       "selection_basis": "validation_only",
       "source_artifact_kind": "portfolio_comparison.exact_window_frozen_tuned",
       "train": {},
@@ -185,7 +182,7 @@
       "artifact_kind": "portfolio_backbone_triplet_search",
       "artifact_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_backbone_triplet_search_latest.json",
       "candidate_key": "backbone_preserving_triplet_search",
-      "decision_reason": "promotion score improvement did not clear the base threshold; OOS total return did not improve",
+      "decision_reason": "promotion score improvement did not clear the base threshold; OOS total return did not improve; OOS max drawdown did not improve",
       "label": "Backbone-preserving triplet search challenger",
       "notes": [
         "Same-family backbone-preserving challenger."
@@ -199,12 +196,12 @@
         "total_return": 0.009079295332180548,
         "volatility": 0.24415254287674457
       },
-      "oos_max_drawdown_delta": -0.0001285576845655445,
-      "oos_sharpe_delta": -1.2036503613067921,
-      "oos_total_return_delta": -0.038819838732289114,
+      "oos_max_drawdown_delta": 0.04429815571883977,
+      "oos_sharpe_delta": -3.003050845951226,
+      "oos_total_return_delta": -0.04854870741695927,
       "promotable": false,
       "promotion_score": 0.6768481817174369,
-      "promotion_score_delta": -3.6296661380893895,
+      "promotion_score_delta": -13.04973073355538,
       "selection_basis": "validation_objective_then_locked_oos",
       "source_artifact_kind": "portfolio_backbone_triplet_search",
       "train": {},
@@ -229,53 +226,53 @@
         "Dynamic allocation challenger evaluated after incumbent-first lanes."
       ],
       "oos": {
-        "cagr": 0.13781667344586013,
-        "calmar": 5.985883861822879,
-        "max_drawdown": 0.023023612991363795,
-        "sharpe": 1.1764008956920013,
-        "sortino": 3.130311250245071,
-        "total_return": 0.012457484650929773,
-        "volatility": 0.11517336627567139
+        "cagr": 0.3860039356168006,
+        "calmar": 32.576764525421844,
+        "max_drawdown": 0.011849056873514119,
+        "sharpe": 2.718892444240817,
+        "sortino": 8.996887645654638,
+        "total_return": 0.03179603032991585,
+        "volatility": 0.12275996965708974
       },
-      "oos_max_drawdown_delta": -0.03568051122670257,
-      "oos_sharpe_delta": -0.5303101959257221,
-      "oos_total_return_delta": -0.03544164941353989,
+      "oos_max_drawdown_delta": -0.0024283539411469324,
+      "oos_sharpe_delta": -0.7872191320213404,
+      "oos_total_return_delta": -0.02583197241922397,
       "promotable": false,
-      "promotion_score": 2.816698589297153,
-      "promotion_score_delta": -1.4898157305096733,
+      "promotion_score": 9.30397367132441,
+      "promotion_score_delta": -4.422605243948407,
       "selection_basis": "validation_only",
       "source_artifact_kind": "portfolio_dynamic_comparison.causal_dynamic_portfolio",
       "train": {},
       "val": {
-        "cagr": 0.330145942071572,
-        "calmar": 85.83724680328498,
-        "max_drawdown": 0.0038461851278638326,
-        "sharpe": 5.768397370095939,
-        "sortino": 8.098610586819186,
-        "total_return": 0.024525928052964163,
-        "volatility": 0.04968276243254591
+        "cagr": 0.3201799442772475,
+        "calmar": 70.30441655631694,
+        "max_drawdown": 0.004554193889380609,
+        "sharpe": 5.875273750045433,
+        "sortino": 7.520611551412189,
+        "total_return": 0.023871733925421523,
+        "volatility": 0.04748070589622486
       },
       "weights": [
+        {
+          "candidate_id": "4b050c2ad437c77f",
+          "name": "pair_spread_1h_core_bnbusdt_trxusdt_2.2_0.55",
+          "strategy_class": "PairSpreadZScoreStrategy",
+          "timeframe": "1h",
+          "weight": 0.4
+        },
         {
           "candidate_id": "feecc2c87fbb8475",
           "name": "composite_trend_stable_30m_stable_ls_highconv_ls_0.75_0.45_0.20_0.80",
           "strategy_class": "CompositeTrendStrategy",
           "timeframe": "30m",
-          "weight": 0.5
+          "weight": 0.3826100360393391
         },
         {
           "candidate_id": "4c8fdaeabe315563",
           "name": "topcap_tsmom_1h_balanced_16_4_0.015",
           "strategy_class": "TopCapTimeSeriesMomentumStrategy",
           "timeframe": "1h",
-          "weight": 0.11536161641283528
-        },
-        {
-          "candidate_id": "deb70de97b53b507",
-          "name": "regime_breakout_1h_trend_ls_48_0.70",
-          "strategy_class": "RegimeBreakoutCandidateStrategy",
-          "timeframe": "1h",
-          "weight": 0.02577553550527848
+          "weight": 0.057148540413052784
         }
       ]
     },
@@ -289,85 +286,138 @@
         "Light overlay challenger evaluated on the incumbent backbone."
       ],
       "oos": {
-        "cagr": 0.26254137673823785,
-        "calmar": 4.590543652738419,
-        "max_drawdown": 0.05719178306508921,
-        "sharpe": 0.9540071089926616,
-        "sortino": 2.221828079263361,
-        "total_return": 0.022606347417474693,
-        "volatility": 0.28440295396074344
+        "cagr": 0.7200821058511753,
+        "calmar": 55.98898268422918,
+        "max_drawdown": 0.01286113930507271,
+        "sharpe": 3.4496548450543796,
+        "sortino": 12.164513377393309,
+        "total_return": 0.05338446074194625,
+        "volatility": 0.16091888831080745
       },
-      "oos_max_drawdown_delta": -0.001512341152977159,
-      "oos_sharpe_delta": -0.7527039826250619,
-      "oos_total_return_delta": -0.02529278664699497,
+      "oos_max_drawdown_delta": -0.0014162715095883405,
+      "oos_sharpe_delta": -0.05645673120777772,
+      "oos_total_return_delta": -0.004243542007193568,
       "promotable": false,
-      "promotion_score": 1.9746954284525127,
-      "promotion_score_delta": -2.3318188913543136,
+      "promotion_score": 13.667843679531021,
+      "promotion_score_delta": -0.05873523574179629,
       "selection_basis": "validation_only",
       "source_artifact_kind": "portfolio_overlay_comparison.causal_overlay_portfolio",
       "train": {},
       "val": {
-        "cagr": 0.2213716174872593,
-        "calmar": 82.22307489774425,
-        "max_drawdown": 0.002692329589504716,
-        "sharpe": 5.76839737009594,
-        "sortino": 8.098610586819188,
-        "total_return": 0.017129186402154106,
-        "volatility": 0.03477793370278213
+        "cagr": 0.2448436662393625,
+        "calmar": 35.841493531238356,
+        "max_drawdown": 0.006831290834070969,
+        "sharpe": 4.661985354631714,
+        "sortino": 3.7482208308868197,
+        "total_return": 0.018774918653491124,
+        "volatility": 0.04722302918965266
       },
       "weights": [
+        {
+          "candidate_id": "4b050c2ad437c77f",
+          "name": "pair_spread_1h_core_bnbusdt_trxusdt_2.2_0.55",
+          "strategy_class": "PairSpreadZScoreStrategy",
+          "timeframe": "1h",
+          "weight": 0.5645943586934464
+        },
         {
           "candidate_id": "feecc2c87fbb8475",
           "name": "composite_trend_stable_30m_stable_ls_highconv_ls_0.75_0.45_0.20_0.80",
           "strategy_class": "CompositeTrendStrategy",
           "timeframe": "30m",
-          "weight": 0.35
+          "weight": 0.2543902770880808
         },
         {
           "candidate_id": "4c8fdaeabe315563",
           "name": "topcap_tsmom_1h_balanced_16_4_0.015",
           "strategy_class": "TopCapTimeSeriesMomentumStrategy",
           "timeframe": "1h",
-          "weight": 0.35
-        },
-        {
-          "candidate_id": "deb70de97b53b507",
-          "name": "regime_breakout_1h_trend_ls_48_0.70",
-          "strategy_class": "RegimeBreakoutCandidateStrategy",
-          "timeframe": "1h",
-          "weight": 0.23525194755476964
+          "weight": 0.1456097229119192
         }
       ]
+    },
+    {
+      "artifact_kind": "autonomous_vol_managed_refined",
+      "artifact_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_vol_managed_refined_latest.json",
+      "candidate_key": "autonomous_vol_managed_benchmark",
+      "decision_reason": "promotion score improvement did not clear the base threshold; OOS total return did not improve; OOS max drawdown did not improve",
+      "label": "Autonomous vol-managed refined challenger",
+      "notes": [
+        "Refined volatility-managed incumbent stream candidate with improved locked-OOS return/sharpe and no drawdown worsening."
+      ],
+      "oos": {
+        "cagr": 0.7937330662253275,
+        "calmar": 55.59362804145598,
+        "max_drawdown": 0.014277410814661051,
+        "sharpe": 3.5061115762621573,
+        "sortino": 12.199980161480926,
+        "total_return": 0.05762800274913982,
+        "volatility": 0.17074520784802033
+      },
+      "oos_max_drawdown_delta": 0.0,
+      "oos_sharpe_delta": 0.0,
+      "oos_total_return_delta": 0.0,
+      "promotable": false,
+      "promotion_score": 13.726578915272817,
+      "promotion_score_delta": 0.0,
+      "selection_basis": "vol_managed_incumbent_stream_refined_grid",
+      "source_artifact_kind": "autonomous_vol_managed_refined",
+      "train": {
+        "cagr": 0.04887910496798242,
+        "calmar": 0.6118154260048163,
+        "max_drawdown": 0.07989191329673606,
+        "sharpe": 0.5431522053457358,
+        "sortino": 0.9625629824367937,
+        "total_return": 0.04887910496798242,
+        "volatility": 0.09633438902674207
+      },
+      "val": {
+        "cagr": 0.43965656354699134,
+        "calmar": 55.52234128859793,
+        "max_drawdown": 0.007918552304228554,
+        "sharpe": 5.067265027757916,
+        "sortino": 8.809518260142823,
+        "total_return": 0.03143334373456397,
+        "volatility": 0.07244958324953144
+      },
+      "weights": []
     }
   ],
   "challenger_rankings": [
     {
-      "candidate_key": "causal_dynamic_portfolio",
-      "label": "Causal dynamic challenger",
+      "candidate_key": "autonomous_vol_managed_benchmark",
+      "label": "Autonomous vol-managed refined challenger",
       "promotable": false,
-      "promotion_score": 2.816698589297153,
-      "promotion_score_delta": -1.4898157305096733
+      "promotion_score": 13.726578915272817,
+      "promotion_score_delta": 0.0
     },
     {
       "candidate_key": "causal_overlay_portfolio",
       "label": "Causal overlay challenger",
       "promotable": false,
-      "promotion_score": 1.9746954284525127,
-      "promotion_score_delta": -2.3318188913543136
+      "promotion_score": 13.667843679531021,
+      "promotion_score_delta": -0.05873523574179629
+    },
+    {
+      "candidate_key": "causal_dynamic_portfolio",
+      "label": "Causal dynamic challenger",
+      "promotable": false,
+      "promotion_score": 9.30397367132441,
+      "promotion_score_delta": -4.422605243948407
     },
     {
       "candidate_key": "backbone_preserving_triplet_search",
       "label": "Backbone-preserving triplet search challenger",
       "promotable": false,
       "promotion_score": 0.6768481817174369,
-      "promotion_score_delta": -3.6296661380893895
+      "promotion_score_delta": -13.04973073355538
     },
     {
       "candidate_key": "exact_window_frozen_tuned",
       "label": "Exact-window frozen tuned challenger",
       "promotable": false,
       "promotion_score": 0.27567120290793673,
-      "promotion_score_delta": -4.03084311689889
+      "promotion_score_delta": -13.45090771236488
     }
   ],
   "comparison_scope": [
@@ -375,31 +425,32 @@
     "exact_window_frozen_tuned",
     "backbone_preserving_triplet_search",
     "causal_dynamic_portfolio",
-    "causal_overlay_portfolio"
+    "causal_overlay_portfolio",
+    "autonomous_vol_managed_benchmark"
   ],
-  "generated_at": "2026-03-14T10:57:12.860075+00:00",
+  "generated_at": "2026-03-15T13:32:34.466835+00:00",
   "incumbent_bundle_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_one_shot_incumbent_bundle_latest.json",
   "incumbent_components": [
+    {
+      "candidate_id": "4b050c2ad437c77f",
+      "name": "pair_spread_1h_core_bnbusdt_trxusdt_2.2_0.55",
+      "strategy_class": "PairSpreadZScoreStrategy",
+      "timeframe": "1h",
+      "weight": 0.6
+    },
     {
       "candidate_id": "feecc2c87fbb8475",
       "name": "composite_trend_stable_30m_stable_ls_highconv_ls_0.75_0.45_0.20_0.80",
       "strategy_class": "CompositeTrendStrategy",
       "timeframe": "30m",
-      "weight": 0.35
+      "weight": 0.2543902770880808
     },
     {
       "candidate_id": "4c8fdaeabe315563",
       "name": "topcap_tsmom_1h_balanced_16_4_0.015",
       "strategy_class": "TopCapTimeSeriesMomentumStrategy",
       "timeframe": "1h",
-      "weight": 0.35
-    },
-    {
-      "candidate_id": "deb70de97b53b507",
-      "name": "regime_breakout_1h_trend_ls_48_0.70",
-      "strategy_class": "RegimeBreakoutCandidateStrategy",
-      "timeframe": "1h",
-      "weight": 0.30000000000000004
+      "weight": 0.1456097229119192
     }
   ],
   "missing_artifacts": [],
@@ -432,12 +483,13 @@
     "portfolio_backbone_triplet_search": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_backbone_triplet_search_latest.json",
     "portfolio_comparison": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_comparison_latest.json",
     "portfolio_dynamic_comparison": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_dynamic_comparison_latest.json",
+    "portfolio_four_sleeve_comparison": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_vol_managed_comparison_latest.json",
     "portfolio_overlay_comparison": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_overlay_comparison_latest.json"
   },
   "winner": {
     "candidate_key": "current_one_shot_incumbent",
     "label": "Current one-shot incumbent",
-    "promotion_score": 4.306514319806826,
+    "promotion_score": 13.726578915272817,
     "promotion_score_delta": 0.0,
     "reason": "No challenger cleared the locked-OOS promotion rule; keep the current one-shot incumbent.",
     "status": "retained_incumbent"

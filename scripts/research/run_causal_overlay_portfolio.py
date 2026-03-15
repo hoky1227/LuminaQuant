@@ -18,6 +18,7 @@ import numpy as np
 from lumina_quant.eval.exact_window_runtime import RSSLimitExceeded
 from lumina_quant.portfolio_split_contract import (
     FOLLOWUP_ROOT,
+    PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES,
     PORTFOLIO_CURRENT_OPTIMIZATION,
     PORTFOLIO_ONE_SHOT_INCUMBENT_BUNDLE,
     acquire_portfolio_memory_guard,
@@ -327,6 +328,7 @@ def write_overlay_report(
         output_dir=output_dir,
         input_path=resolved_input,
         metadata={"backbone_path": str(backbone_path.resolve())},
+        budget_bytes=PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES,
     )
     status = "completed"
     error: str | None = None
@@ -380,7 +382,7 @@ def write_overlay_report(
         "selection_basis": "validation_only_overlay_search_on_current_one_shot_backbone",
         "objective_profile": "balanced_multi_metric_with_backbone_overlay",
         "split_windows": split_windows(),
-        "memory_policy": memory_policy_payload(),
+        "memory_policy": memory_policy_payload(budget_bytes=PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES),
         "memory_summary": memory_summary,
         "best_params": dict(best["params"]),
         "validation_objective": float(best["objective"]),
@@ -439,6 +441,9 @@ def write_overlay_report(
 def write_overlay_comparison(overlay_payload: dict[str, Any]) -> dict[str, Any]:
     payload = json.loads(COMPARISON_INPUT.read_text(encoding="utf-8"))
     scope = list(payload.get("comparison_scope") or [])
+    payload["current_one_shot_optimized"] = _helper._current_one_shot_comparison_entry()
+    if "current_one_shot_optimized" not in scope:
+        scope.append("current_one_shot_optimized")
     if "causal_overlay_portfolio" not in scope:
         scope.append("causal_overlay_portfolio")
     payload["comparison_scope"] = scope

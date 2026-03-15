@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import importlib.util
 import json
 import sys
@@ -15,6 +16,13 @@ if SPEC is None or SPEC.loader is None:
 MODULE = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
+
+
+def _call_build_decision(**kwargs):
+    params = inspect.signature(MODULE.build_portfolio_max_performance_decision).parameters
+    return MODULE.build_portfolio_max_performance_decision(
+        **{name: value for name, value in kwargs.items() if name in params}
+    )
 
 
 def _bundle_payload() -> dict[str, object]:
@@ -99,6 +107,18 @@ def _comparison_section(
         },
         "weights": [{"candidate_id": "c1", "weight": 1.0}],
     }
+
+
+def _anchored_candidate_entries(payload: dict[str, object]) -> list[dict[str, object]]:
+    out: list[dict[str, object]] = []
+    for entry in list(payload.get("candidates") or []):
+        if not isinstance(entry, dict):
+            continue
+        key = str(entry.get("candidate_key") or "").lower()
+        label = str(entry.get("label") or "").lower()
+        if any(token in key or token in label for token in ("anchored", "four_sleeve", "four-sleeve")):
+            out.append(entry)
+    return out
 
 
 def test_build_portfolio_max_performance_decision_retains_incumbent_when_no_challenger_clears_threshold(
@@ -387,6 +407,164 @@ def test_build_portfolio_max_performance_decision_requires_positive_return_even_
     assert overlay_entry["oos_max_drawdown_delta"] < 0.0
     assert overlay_entry["oos_total_return_delta"] < 0.0
     assert overlay_entry["promotable"] is False
+
+
+def test_build_portfolio_max_performance_decision_includes_anchored_four_sleeve_candidate(
+    tmp_path: Path,
+) -> None:
+    incumbent_bundle = tmp_path / "incumbent_bundle.json"
+    incumbent_portfolio = tmp_path / "incumbent_portfolio.json"
+    tuned = tmp_path / "portfolio_comparison_latest.json"
+    dynamic = tmp_path / "portfolio_dynamic_comparison_latest.json"
+    overlay = tmp_path / "portfolio_overlay_comparison_latest.json"
+    triplet = tmp_path / "portfolio_backbone_triplet_search_latest.json"
+    anchored = tmp_path / "portfolio_four_sleeve_comparison_latest.json"
+
+    incumbent_bundle.write_text(json.dumps(_bundle_payload()), encoding="utf-8")
+    incumbent_portfolio.write_text(
+        json.dumps(
+            _portfolio_payload(
+                total_return=0.05,
+                sharpe=1.60,
+                sortino=2.10,
+                calmar=4.20,
+                max_drawdown=0.065,
+                volatility=0.13,
+            )
+        ),
+        encoding="utf-8",
+    )
+    tuned.write_text(json.dumps({"selection_basis": "validation_only"}), encoding="utf-8")
+    dynamic.write_text(json.dumps({"selection_basis": "validation_only"}), encoding="utf-8")
+    overlay.write_text(json.dumps({"selection_basis": "validation_only"}), encoding="utf-8")
+    triplet.write_text(json.dumps({"artifact_kind": "portfolio_backbone_triplet_search"}), encoding="utf-8")
+
+    anchored_section = _comparison_section(
+        path=tmp_path / "anchored_tuned.json",
+        total_return=0.049,
+        sharpe=1.55,
+        sortino=2.00,
+        calmar=4.00,
+        max_drawdown=0.067,
+        volatility=0.132,
+    )
+    anchored.write_text(
+        json.dumps(
+            {
+                "selection_basis": "incumbent_anchor_rolling_gate",
+                "rolling_gate": {
+                    "selection_basis": "train_val_only",
+                    "survives_train_val": True,
+                    "survives": True,
+                },
+                "portfolio_four_sleeve_tuned": anchored_section,
+                "portfolio_four_sleeve_anchored_tuned": anchored_section,
+                "anchored_four_sleeve_tuned": anchored_section,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = _call_build_decision(
+        incumbent_bundle_path=incumbent_bundle,
+        incumbent_portfolio_path=incumbent_portfolio,
+        tuned_comparison_path=tuned,
+        dynamic_comparison_path=dynamic,
+        overlay_comparison_path=overlay,
+        backbone_triplet_path=triplet,
+        anchored_comparison_path=anchored,
+        anchored_tuned_comparison_path=anchored,
+        portfolio_four_sleeve_comparison_path=anchored,
+        four_sleeve_comparison_path=anchored,
+    )
+
+    anchored_entries = _anchored_candidate_entries(payload)
+    assert anchored_entries, "expected anchored four-sleeve candidate to be included"
+    assert payload["winner"]["candidate_key"] == "current_one_shot_incumbent"
+    assert anchored_entries[0]["promotable"] is False
+
+
+def test_build_portfolio_max_performance_decision_allows_custom_anchored_metadata(
+    tmp_path: Path,
+) -> None:
+    incumbent_bundle = tmp_path / "incumbent_bundle.json"
+    incumbent_portfolio = tmp_path / "incumbent_portfolio.json"
+    tuned = tmp_path / "portfolio_comparison_latest.json"
+    dynamic = tmp_path / "portfolio_dynamic_comparison_latest.json"
+    overlay = tmp_path / "portfolio_overlay_comparison_latest.json"
+    triplet = tmp_path / "portfolio_backbone_triplet_search_latest.json"
+    anchored = tmp_path / "portfolio_four_sleeve_comparison_latest.json"
+
+    incumbent_bundle.write_text(json.dumps(_bundle_payload()), encoding="utf-8")
+    incumbent_portfolio.write_text(
+        json.dumps(
+            _portfolio_payload(
+                total_return=0.05,
+                sharpe=1.50,
+                sortino=2.00,
+                calmar=4.00,
+                max_drawdown=0.07,
+                volatility=0.14,
+            )
+        ),
+        encoding="utf-8",
+    )
+    tuned.write_text(json.dumps({"selection_basis": "validation_only"}), encoding="utf-8")
+    dynamic.write_text(json.dumps({"selection_basis": "validation_only"}), encoding="utf-8")
+    overlay.write_text(json.dumps({"selection_basis": "validation_only"}), encoding="utf-8")
+    triplet.write_text(json.dumps({"artifact_kind": "portfolio_backbone_triplet_search"}), encoding="utf-8")
+
+    anchored_section = _comparison_section(
+        path=tmp_path / "tradecount_probe.json",
+        total_return=0.08,
+        sharpe=2.30,
+        sortino=3.20,
+        calmar=6.10,
+        max_drawdown=0.04,
+        volatility=0.10,
+    )
+    anchored_section["notes"] = ["section-level override should also be accepted"]
+    anchored.write_text(
+        json.dumps(
+            {
+                "selection_basis": "ignored_by_custom_metadata",
+                "challenger_metadata": {
+                    "candidate_key": "autonomous_tradecount_pair_topcap_probe",
+                    "label": "Autonomous tradecount pair+topcap probe",
+                    "source_artifact_kind": "autonomous_probe.tradecount_pair_topcap",
+                    "selection_basis": "autonomous_tradecount_screen_pair_topcap",
+                    "notes": ["Custom autonomous probe challenger."],
+                },
+                "anchored_four_sleeve_tuned": anchored_section,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = _call_build_decision(
+        incumbent_bundle_path=incumbent_bundle,
+        incumbent_portfolio_path=incumbent_portfolio,
+        tuned_comparison_path=tuned,
+        dynamic_comparison_path=dynamic,
+        overlay_comparison_path=overlay,
+        backbone_triplet_path=triplet,
+        anchored_comparison_path=anchored,
+        anchored_tuned_comparison_path=anchored,
+        portfolio_four_sleeve_comparison_path=anchored,
+        four_sleeve_comparison_path=anchored,
+    )
+
+    probe_entry = next(
+        entry
+        for entry in payload["candidates"]
+        if entry["candidate_key"] == "autonomous_tradecount_pair_topcap_probe"
+    )
+    assert probe_entry["label"] == "Autonomous tradecount pair+topcap probe"
+    assert probe_entry["source_artifact_kind"] == "autonomous_probe.tradecount_pair_topcap"
+    assert probe_entry["selection_basis"] == "autonomous_tradecount_screen_pair_topcap"
+    assert "Custom autonomous probe challenger." in probe_entry["notes"]
+    assert payload["winner"]["candidate_key"] == "autonomous_tradecount_pair_topcap_probe"
+    assert payload["winner"]["status"] == "promoted_challenger"
 
 
 def test_write_portfolio_max_performance_decision_writes_latest_files(tmp_path: Path) -> None:
