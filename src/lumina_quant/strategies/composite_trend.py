@@ -53,10 +53,45 @@ class CompositeTrendStrategy(Strategy):
             "vol_window": HyperParam.integer("vol_window", default=120, low=16, high=4000),
             "risk_target_vol": HyperParam.floating("risk_target_vol", default=0.004, low=0.0001, high=0.5),
             "max_signal_strength": HyperParam.floating("max_signal_strength", default=2.0, low=0.1, high=10.0),
+            "min_signal_strength_pre_crowding": HyperParam.floating(
+                "min_signal_strength_pre_crowding",
+                default=0.10,
+                low=0.0,
+                high=10.0,
+                tunable=False,
+            ),
+            "min_signal_strength_post_crowding": HyperParam.floating(
+                "min_signal_strength_post_crowding",
+                default=0.05,
+                low=0.0,
+                high=10.0,
+                tunable=False,
+            ),
             "atr_window": HyperParam.integer("atr_window", default=32, low=4, high=2000),
+            "atr_abs_floor": HyperParam.floating(
+                "atr_abs_floor",
+                default=1e-8,
+                low=0.0,
+                high=1.0,
+                tunable=False,
+            ),
             "atr_stop_mult": HyperParam.floating("atr_stop_mult", default=2.0, low=0.2, high=20.0),
             "trail_atr_mult": HyperParam.floating("trail_atr_mult", default=2.8, low=0.2, high=20.0),
+            "take_profit_atr_mult": HyperParam.floating(
+                "take_profit_atr_mult",
+                default=1.8,
+                low=0.0,
+                high=20.0,
+                tunable=False,
+            ),
             "max_hold_bars": HyperParam.integer("max_hold_bars", default=640, low=1, high=200_000),
+            "min_history_bars": HyperParam.integer(
+                "min_history_bars",
+                default=96,
+                low=1,
+                high=8192,
+                tunable=False,
+            ),
             "crowding_reduce_threshold": HyperParam.floating(
                 "crowding_reduce_threshold",
                 default=0.55,
@@ -121,10 +156,15 @@ class CompositeTrendStrategy(Strategy):
         vol_window: int = 120,
         risk_target_vol: float = 0.004,
         max_signal_strength: float = 2.0,
+        min_signal_strength_pre_crowding: float = 0.10,
+        min_signal_strength_post_crowding: float = 0.05,
         atr_window: int = 32,
+        atr_abs_floor: float = 1e-8,
         atr_stop_mult: float = 2.0,
         trail_atr_mult: float = 2.8,
+        take_profit_atr_mult: float = 1.8,
         max_hold_bars: int = 640,
+        min_history_bars: int = 96,
         crowding_reduce_threshold: float = 0.55,
         crowding_block_threshold: float = 0.85,
         benchmark_regime_ma: int = 0,
@@ -150,10 +190,15 @@ class CompositeTrendStrategy(Strategy):
                 "vol_window": vol_window,
                 "risk_target_vol": risk_target_vol,
                 "max_signal_strength": max_signal_strength,
+                "min_signal_strength_pre_crowding": min_signal_strength_pre_crowding,
+                "min_signal_strength_post_crowding": min_signal_strength_post_crowding,
                 "atr_window": atr_window,
+                "atr_abs_floor": atr_abs_floor,
                 "atr_stop_mult": atr_stop_mult,
                 "trail_atr_mult": trail_atr_mult,
+                "take_profit_atr_mult": take_profit_atr_mult,
                 "max_hold_bars": max_hold_bars,
+                "min_history_bars": min_history_bars,
                 "crowding_reduce_threshold": crowding_reduce_threshold,
                 "crowding_block_threshold": crowding_block_threshold,
                 "benchmark_regime_ma": benchmark_regime_ma,
@@ -172,10 +217,15 @@ class CompositeTrendStrategy(Strategy):
         self.vol_window = int(resolved["vol_window"])
         self.risk_target_vol = float(resolved["risk_target_vol"])
         self.max_signal_strength = float(resolved["max_signal_strength"])
+        self.min_signal_strength_pre_crowding = float(resolved["min_signal_strength_pre_crowding"])
+        self.min_signal_strength_post_crowding = float(resolved["min_signal_strength_post_crowding"])
         self.atr_window = int(resolved["atr_window"])
+        self.atr_abs_floor = float(resolved["atr_abs_floor"])
         self.atr_stop_mult = float(resolved["atr_stop_mult"])
         self.trail_atr_mult = float(resolved["trail_atr_mult"])
+        self.take_profit_atr_mult = float(resolved["take_profit_atr_mult"])
         self.max_hold_bars = int(resolved["max_hold_bars"])
+        self.min_history_bars = int(resolved["min_history_bars"])
         self.crowding_reduce_threshold = float(resolved["crowding_reduce_threshold"])
         self.crowding_block_threshold = float(resolved["crowding_block_threshold"])
         self.benchmark_regime_ma = int(resolved["benchmark_regime_ma"])
@@ -294,7 +344,7 @@ class CompositeTrendStrategy(Strategy):
 
     @staticmethod
     def _atr_abs(highs: deque[float], lows: deque[float], closes: deque[float], window: int) -> float:
-        if len(closes) < max(3, int(window)):
+        if len(closes) < int(window):
             return 0.0
         h = np.asarray(list(highs)[-int(window) :], dtype=float)
         low_arr = np.asarray(list(lows)[-int(window) :], dtype=float)
@@ -316,10 +366,13 @@ class CompositeTrendStrategy(Strategy):
     def _signal_strength(self, sigma: float, crowding_score: float | None) -> float:
         sigma_floor = max(1e-6, float(sigma))
         strength = float(self.risk_target_vol) / sigma_floor
-        strength = min(self.max_signal_strength, max(0.10, strength))
+        strength = min(
+            self.max_signal_strength,
+            max(self.min_signal_strength_pre_crowding, strength),
+        )
         if crowding_score is not None and abs(float(crowding_score)) >= self.crowding_reduce_threshold:
             strength *= 0.5
-        return float(max(0.05, strength))
+        return float(max(self.min_signal_strength_post_crowding, strength))
 
     def _benchmark_risk_on(self) -> bool | None:
         if self.benchmark_regime_ma <= 0 or not self.benchmark_symbol:
@@ -378,7 +431,7 @@ class CompositeTrendStrategy(Strategy):
         item.closes.append(float(close))
         item.volumes.append(float(volume if volume is not None else 0.0))
 
-        if len(item.closes) < 96:
+        if len(item.closes) < self.min_history_bars:
             return
 
         factor = pv_trend_score(
@@ -398,7 +451,7 @@ class CompositeTrendStrategy(Strategy):
         long_gate = gate and benchmark_risk_on is not False
 
         sigma = self._rolling_volatility(item.closes, self.vol_window)
-        atr_abs = max(1e-8, self._atr_abs(item.highs, item.lows, item.closes, self.atr_window))
+        atr_abs = max(self.atr_abs_floor, self._atr_abs(item.highs, item.lows, item.closes, self.atr_window))
         crowding = self._extract_crowding_score(symbol, event)
 
         strength = self._signal_strength(sigma, crowding)
@@ -470,7 +523,7 @@ class CompositeTrendStrategy(Strategy):
         # Entry logic.
         if long_gate and score >= self.long_threshold:
             stop = float(close) - (self.atr_stop_mult * atr_abs)
-            take = float(close) + (self.atr_stop_mult * atr_abs * 1.8)
+            take = float(close) + (self.atr_stop_mult * atr_abs * self.take_profit_atr_mult)
             self._emit(
                 symbol,
                 event_time,
@@ -488,7 +541,7 @@ class CompositeTrendStrategy(Strategy):
 
         if self.allow_short and gate and score <= -self.short_threshold:
             stop = float(close) + (self.atr_stop_mult * atr_abs)
-            take = float(close) - (self.atr_stop_mult * atr_abs * 1.8)
+            take = float(close) - (self.atr_stop_mult * atr_abs * self.take_profit_atr_mult)
             self._emit(
                 symbol,
                 event_time,
