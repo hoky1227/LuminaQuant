@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -1102,8 +1103,35 @@ def _with_article_pipeline_provenance(
 
 
 def _has_perp_support_data() -> bool:
-    path = Path("data") / "market_parquet" / "feature_points"
-    return path.exists()
+    candidates: list[Path] = []
+
+    for raw in (
+        getattr(BaseConfig, "MARKET_DATA_PARQUET_PATH", ""),
+        os.getenv("LQ__STORAGE__MARKET_DATA_PARQUET_PATH", ""),
+        os.getenv("LQ_MARKET_PARQUET_PATH", ""),
+        "data/market_parquet",
+    ):
+        token = str(raw or "").strip()
+        if not token:
+            continue
+        path = Path(token).expanduser()
+        if not path.is_absolute():
+            path = (Path.cwd() / path).resolve()
+        candidates.append(path / "feature_points")
+
+    repo_root = Path(__file__).resolve()
+    for parent in repo_root.parents:
+        candidates.append(parent / "data" / "market_parquet" / "feature_points")
+
+    seen: set[Path] = set()
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        if resolved.exists():
+            return True
+    return False
 
 
 def _add_candidate(
