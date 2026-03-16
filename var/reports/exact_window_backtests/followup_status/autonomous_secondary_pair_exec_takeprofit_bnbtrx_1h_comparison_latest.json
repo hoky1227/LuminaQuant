@@ -1,0 +1,284 @@
+{
+  "artifact_kind": "autonomous_secondary_pair_exec_takeprofit_bnbtrx_1h_comparison",
+  "best_sleeve": {
+    "name": "pair_spread_1h_exec_tightstop_tp_bnbusdt_trxusdt_2.6_0.70",
+    "oos": {
+      "avg_trade": 0.021272832870682604,
+      "benchmark_corr": -0.39141683594230753,
+      "cagr": 2.0504684922019956,
+      "calmar": 80.32859629124277,
+      "deflated_sharpe": 0.4541637538428705,
+      "exposure": 0.0,
+      "max_drawdown": 0.025526009252890836,
+      "mdd": 0.025526009252890836,
+      "pbo": 0.5,
+      "return": 0.11103386862018594,
+      "rolling_sharpe_min": -13.698492843950326,
+      "sharpe": 7.48066565636605,
+      "sortino": 6.288546305453319,
+      "spa_pvalue": 0.01,
+      "stability": -1.4914310381675375,
+      "total_return": 0.11103386862018594,
+      "trade_count": 5.0,
+      "trades": 5.0,
+      "turnover": 0.006045949214026602,
+      "volatility": 0.15060995694827037,
+      "win_rate": 0.11608222490931076,
+      "worst_month": 0.017137923664924948
+    },
+    "train": {
+      "avg_trade": -0.0001900014596446064,
+      "benchmark_corr": -0.09963631285888541,
+      "cagr": -0.018201775267783105,
+      "calmar": -0.2478117488664734,
+      "deflated_sharpe": 0.004347971448652621,
+      "exposure": 0.0,
+      "max_drawdown": 0.07345000933587953,
+      "mdd": 0.07345000933587953,
+      "pbo": 0.5,
+      "return": -0.018201775267783105,
+      "rolling_sharpe_min": -24.452756954227713,
+      "sharpe": -0.2187315818009441,
+      "sortino": -0.10556416742699333,
+      "spa_pvalue": 1.0,
+      "stability": -1.518362798138534,
+      "total_return": -0.018201775267783105,
+      "trade_count": 83.0,
+      "trades": 83.0,
+      "turnover": 0.009474885844748858,
+      "volatility": 0.07209805287676234,
+      "win_rate": 0.057534246575342465,
+      "worst_month": -0.03672559627706773
+    },
+    "val": {
+      "avg_trade": 0.004011211684537781,
+      "benchmark_corr": -0.057879556221581877,
+      "cagr": 0.2070755636130024,
+      "calmar": 35.16670003946524,
+      "deflated_sharpe": 0.1694078738506007,
+      "exposure": 0.0,
+      "max_drawdown": 0.00588839906447336,
+      "mdd": 0.00588839906447336,
+      "pbo": 0.75,
+      "return": 0.016112585834443305,
+      "rolling_sharpe_min": -15.631880617395602,
+      "sharpe": 5.0001548038954216,
+      "sortino": 1.8193336291314968,
+      "spa_pvalue": 0.04,
+      "stability": -1.5,
+      "total_return": 0.016112585834443305,
+      "trade_count": 4.0,
+      "trades": 4.0,
+      "turnover": 0.005376344086021506,
+      "volatility": 0.03778185643412929,
+      "win_rate": 0.03494623655913978,
+      "worst_month": 0.0
+    }
+  },
+  "deltas": {
+    "anchor_oos_max_drawdown_delta_vs_incumbent": 0.008796565577987914,
+    "anchor_oos_sharpe_delta_vs_incumbent": -0.10859278416625306,
+    "anchor_oos_total_return_delta_vs_incumbent": 1.8767814667475236e-05,
+    "anchor_val_sharpe_delta_vs_incumbent": -1.2580203786924553,
+    "anchor_val_total_return_delta_vs_incumbent": -0.003119411847024356,
+    "sleeve_oos_sharpe_delta": 2.9237814683205885,
+    "sleeve_oos_total_return_delta": 0.038658810424668344
+  },
+  "generated_at": "2026-03-16T12:45:21.644087+00:00",
+  "incumbent": {
+    "oos": {
+      "cagr": 0.7937330662253275,
+      "calmar": 55.59362804145598,
+      "max_drawdown": 0.014277410814661051,
+      "sharpe": 3.5061115762621573,
+      "sortino": 12.199980161480926,
+      "total_return": 0.05762800274913982,
+      "volatility": 0.17074520784802033
+    },
+    "path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/followup_status/portfolio_one_shot_current_opt/portfolio_optimization_latest.json",
+    "val": {
+      "cagr": 0.43965656354699134,
+      "calmar": 55.52234128859793,
+      "max_drawdown": 0.007918552304228554,
+      "sharpe": 5.067265027757916,
+      "sortino": 8.809518260142823,
+      "total_return": 0.03143334373456397,
+      "volatility": 0.07244958324953144
+    },
+    "weights": [
+      {
+        "candidate_id": "4b050c2ad437c77f",
+        "family": "market_neutral",
+        "fit_return": 0.01606720015631824,
+        "fit_sharpe": 3.8797484359521275,
+        "fit_split": "val",
+        "name": "pair_spread_1h_core_bnbusdt_trxusdt_2.2_0.55",
+        "oos_return": 0.0723750581955176,
+        "oos_sharpe": 4.556884188045461,
+        "report_return": 0.0723750581955176,
+        "report_sharpe": 4.556884188045461,
+        "report_split": "oos",
+        "strategy_class": "PairSpreadZScoreStrategy",
+        "symbols": [
+          "BNB/USDT",
+          "TRX/USDT"
+        ],
+        "timeframe": "1h",
+        "weight": 0.6
+      },
+      {
+        "candidate_id": "feecc2c87fbb8475",
+        "family": "trend",
+        "fit_return": 0.04987876459743679,
+        "fit_sharpe": 4.427750205476359,
+        "fit_split": "val",
+        "name": "composite_trend_stable_30m_stable_ls_highconv_ls_0.75_0.45_0.20_0.80",
+        "oos_return": 0.029547105294839504,
+        "oos_sharpe": 2.2953624409038818,
+        "report_return": 0.029547105294839504,
+        "report_sharpe": 2.2953624409038818,
+        "report_split": "oos",
+        "strategy_class": "CompositeTrendStrategy",
+        "symbols": [
+          "BTC/USDT",
+          "ETH/USDT",
+          "BNB/USDT",
+          "SOL/USDT",
+          "TRX/USDT"
+        ],
+        "timeframe": "30m",
+        "weight": 0.2543902770880808
+      },
+      {
+        "candidate_id": "4c8fdaeabe315563",
+        "family": "cross_sectional",
+        "fit_return": 0.018372483665204387,
+        "fit_sharpe": 1.640883072742277,
+        "fit_split": "val",
+        "name": "topcap_tsmom_1h_balanced_16_4_0.015",
+        "oos_return": 0.032378603658792526,
+        "oos_sharpe": 1.4641557597854604,
+        "report_return": 0.032378603658792526,
+        "report_sharpe": 1.4641557597854604,
+        "report_split": "oos",
+        "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+        "symbols": [
+          "BTC/USDT",
+          "ETH/USDT",
+          "BNB/USDT",
+          "SOL/USDT",
+          "TRX/USDT"
+        ],
+        "timeframe": "1h",
+        "weight": 0.1456097229119192
+      }
+    ]
+  },
+  "refined_anchor": {
+    "oos": {
+      "cagr": 0.7940650369074875,
+      "calmar": 34.41387922891631,
+      "max_drawdown": 0.023073976392648965,
+      "sharpe": 3.3975187920959042,
+      "sortino": 12.587795747235353,
+      "total_return": 0.05764677056380729,
+      "volatility": 0.17653272331436545
+    },
+    "path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/followup_status/autonomous_pair_exec_takeprofit_refined_opt/portfolio_optimization_latest.json",
+    "train": {
+      "cagr": -0.008242206815827435,
+      "calmar": -0.10647314686277427,
+      "max_drawdown": 0.07741113190211457,
+      "sharpe": -0.037699820114395516,
+      "sortino": -0.07351324792097677,
+      "total_return": -0.008242206815827435,
+      "volatility": 0.09666478849275657
+    },
+    "val": {
+      "cagr": 0.38921854349697504,
+      "calmar": 37.19521639060639,
+      "max_drawdown": 0.010464209682492176,
+      "sharpe": 3.8092446490654606,
+      "sortino": 7.795811942041887,
+      "total_return": 0.028313931887539612,
+      "volatility": 0.08730416117436127
+    },
+    "weights": [
+      {
+        "candidate_id": "feecc2c87fbb8475",
+        "family": "trend",
+        "fit_return": 0.04987876459743679,
+        "fit_sharpe": 4.427750205476359,
+        "fit_split": "val",
+        "name": "composite_trend_stable_30m_stable_ls_highconv_ls_0.75_0.45_0.20_0.80",
+        "oos_return": 0.029547105294839504,
+        "oos_sharpe": 2.2953624409038818,
+        "report_return": 0.029547105294839504,
+        "report_sharpe": 2.2953624409038818,
+        "report_split": "oos",
+        "strategy_class": "CompositeTrendStrategy",
+        "symbols": [
+          "BTC/USDT",
+          "ETH/USDT",
+          "BNB/USDT",
+          "SOL/USDT",
+          "TRX/USDT"
+        ],
+        "timeframe": "30m",
+        "weight": 0.3333333333333333
+      },
+      {
+        "candidate_id": "4c8fdaeabe315563",
+        "family": "cross_sectional",
+        "fit_return": 0.018372483665204387,
+        "fit_sharpe": 1.640883072742277,
+        "fit_split": "val",
+        "name": "topcap_tsmom_1h_balanced_16_4_0.015",
+        "oos_return": 0.032378603658792526,
+        "oos_sharpe": 1.4641557597854604,
+        "report_return": 0.032378603658792526,
+        "report_sharpe": 1.4641557597854604,
+        "report_split": "oos",
+        "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+        "symbols": [
+          "BTC/USDT",
+          "ETH/USDT",
+          "BNB/USDT",
+          "SOL/USDT",
+          "TRX/USDT"
+        ],
+        "timeframe": "1h",
+        "weight": 0.3333333333333333
+      },
+      {
+        "candidate_id": "cfba6007e934a2ad",
+        "family": "market_neutral",
+        "fit_return": 0.016112585834443305,
+        "fit_sharpe": 5.0001548038954216,
+        "fit_split": "val",
+        "name": "pair_spread_1h_exec_tightstop_tp_bnbusdt_trxusdt_2.6_0.70",
+        "oos_return": 0.11103386862018594,
+        "oos_sharpe": 7.48066565636605,
+        "report_return": 0.11103386862018594,
+        "report_sharpe": 7.48066565636605,
+        "report_split": "oos",
+        "strategy_class": "PairSpreadZScoreStrategy",
+        "symbols": [
+          "BNB/USDT",
+          "TRX/USDT"
+        ],
+        "timeframe": "1h",
+        "weight": 0.3333333333333333
+      }
+    ]
+  },
+  "schema_version": "1.0",
+  "selection_basis": "secondary_backlog_refinement",
+  "source_artifacts": {
+    "anchor_bundle": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/followup_status/autonomous_pair_exec_takeprofit_anchor_latest.json",
+    "search_memory": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/followup_status/autonomous_pair_exec_takeprofit_refined_search/_memory_guard/portfolio_four_sleeve_search_memory_latest.json",
+    "source_details": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/autonomous_pair_exec_takeprofit_bnbtrx_1h_20260316T0958Z/1h/exact_window_candidate_details_latest.json",
+    "source_memory": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/autonomous_pair_exec_takeprofit_bnbtrx_1h_20260316T0958Z/1h/exact_window_memory_evidence_latest.json",
+    "source_summary": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/autonomous_pair_exec_takeprofit_bnbtrx_1h_20260316T0958Z/1h/exact_window_suite_summary_latest.json"
+  }
+}
