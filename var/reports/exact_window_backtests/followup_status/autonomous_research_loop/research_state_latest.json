@@ -4,7 +4,7 @@
   "experiment_ledger": {
     "counts_by_status": {
       "crash": 5,
-      "discard": 42,
+      "discard": 43,
       "keep": 2
     },
     "path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/followup_status/autonomous_research_loop/experiments.tsv",
@@ -57,11 +57,12 @@
       "portfolio::current_one_shot_incumbent",
       "portfolio::exact_window_frozen_tuned",
       "screen::autonomous_alpha101_formula_1h",
-      "screen::autonomous_leadlag_5m"
+      "screen::autonomous_leadlag_5m",
+      "screen::autonomous_volcomp_vwap_rev_guarded_5m"
     ],
-    "row_count": 49
+    "row_count": 50
   },
-  "generated_at": "2026-03-16T11:09:01.287545+00:00",
+  "generated_at": "2026-03-16T11:19:42.060234+00:00",
   "ideas_backlog": {
     "candidate_count": 583,
     "path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/followup_status/autonomous_research_loop/ideas_backlog_latest.md",
@@ -570,8 +571,8 @@
   },
   "milestone_gate": {
     "branch": "",
-    "generated_at": "2026-03-16T11:10:46.485014+00:00",
-    "git_status_short": "M var/reports/exact_window_backtests/followup_status/autonomous_research_loop/experiments.tsv\n M var/reports/exact_window_backtests/followup_status/autonomous_research_loop/research_state_latest.json",
+    "generated_at": "2026-03-16T11:19:38.497850+00:00",
+    "git_status_short": "M var/reports/exact_window_backtests/followup_status/autonomous_research_loop/experiments.tsv\n M var/reports/exact_window_backtests/followup_status/autonomous_research_loop/research_state_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_research_loop/autonomous_volcomp_vwap_rev_guarded_5m_probe_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_volcomp_vwap_rev_guarded_5m_decision_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_volcomp_vwap_rev_guarded_5m_decision_latest.md",
     "ready": false,
     "reason": "latest portfolio milestone still retains the incumbent",
     "suggested_sync_command": "",
