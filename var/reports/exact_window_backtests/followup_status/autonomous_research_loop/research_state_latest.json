@@ -66,7 +66,7 @@
     ],
     "row_count": 54
   },
-  "generated_at": "2026-03-16T12:37:09.355779+00:00",
+  "generated_at": "2026-03-16T12:40:09.604718+00:00",
   "ideas_backlog": {
     "candidate_count": 583,
     "path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/followup_status/autonomous_research_loop/ideas_backlog_latest.md",
@@ -575,7 +575,7 @@
   },
   "milestone_gate": {
     "branch": "",
-    "generated_at": "2026-03-16T12:37:09.355779+00:00",
+    "generated_at": "2026-03-16T12:40:09.604718+00:00",
     "git_status_short": "",
     "ready": false,
     "reason": "latest portfolio milestone still retains the incumbent",
@@ -590,16 +590,7 @@
     "Prioritize unused in-repo candidates from ideas_backlog_latest.md before adding new complexity.",
     "Only push privately when milestone_gate.ready becomes true under the locked-OOS decision artifact."
   ],
-  "next_secondary_lane": {
-    "duplication_risk": "low-moderate (reuse existing bundle only)",
-    "evidence_quality": "high",
-    "expected_upside": "highest prior promotion-score delta among non-primary candidates; positive train/val/oos evidence",
-    "lane_id": "cross_sectional_1h_pair_topcap_recheck",
-    "memory_cost": "<3 GiB reused exact-window evidence",
-    "rank": 1,
-    "status": "chosen_now",
-    "why_now": "best balance of evidence quality, portfolio upside, and low additional compute"
-  },
+  "next_secondary_lane": null,
   "output_dir": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/followup_status/autonomous_research_loop",
   "pipeline_manifest": {
     "family_count": 11,
@@ -609,51 +600,57 @@
   },
   "report_root": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests",
   "review_notes": {
-    "secondary_queue_refreshed_at": "2026-03-16T12:37:09.355779+00:00"
+    "secondary_queue_refreshed_at": "2026-03-16T12:40:09.604718+00:00",
+    "secondary_queue_summary": "secondary queue drained: one recheck completed_discard, two exact duplicates exhausted, one coverage-blocked deferral"
   },
   "schema_version": "1.0",
   "secondary_queue": [
     {
+      "decision_artifact": "var/reports/exact_window_backtests/followup_status/autonomous_secondary_cross_sectional_1h_pair_topcap_decision_latest.json",
       "duplication_risk": "low-moderate (reuse existing bundle only)",
       "evidence_quality": "high",
       "expected_upside": "highest prior promotion-score delta among non-primary candidates; positive train/val/oos evidence",
       "lane_id": "cross_sectional_1h_pair_topcap_recheck",
       "memory_cost": "<3 GiB reused exact-window evidence",
       "rank": 1,
-      "status": "chosen_now",
-      "why_now": "best balance of evidence quality, portfolio upside, and low additional compute"
+      "status": "completed_discard",
+      "why_now": "rechecked and still below incumbent on locked-OOS return, Sharpe, and max drawdown"
     },
     {
-      "duplication_risk": "moderate-high (recent focused lane already executed)",
+      "decision_artifact": "var/reports/exact_window_backtests/followup_status/autonomous_pair_exec_takeprofit_decision_latest.json",
+      "duplication_risk": "high (same focused lane already executed)",
       "evidence_quality": "high",
       "expected_upside": "closest anchored OOS return to incumbent among recent discards",
       "lane_id": "pair_exec_takeprofit_bnbtrx_1h_refinement",
       "memory_cost": "~2.7 GiB historical exact-window evidence",
       "rank": 2,
-      "status": "standby",
-      "why_now": "strong sleeve improvement but recent discard increases duplication risk"
+      "status": "exhausted_duplicate",
+      "why_now": "exact duplicate of the already-run autonomous_pair_exec_takeprofit_bnbtrx_1h_20260316T0958Z lane; no new differentiating hypothesis"
     },
     {
-      "duplication_risk": "moderate (recent focused lane completed)",
+      "decision_artifact": "var/reports/exact_window_backtests/followup_status/autonomous_lag_convergence_4h_decision_latest.json",
+      "duplication_risk": "high (same focused lane already executed)",
       "evidence_quality": "high",
       "expected_upside": "improved portfolio Sharpe/drawdown in anchored test",
       "lane_id": "lag_convergence_xptxpd_4h_refinement",
       "memory_cost": "<3.3 GiB reused exact-window evidence",
       "rank": 3,
-      "status": "standby",
-      "why_now": "risk-adjusted upside exists, but return still meaningfully below incumbent"
+      "status": "exhausted_duplicate",
+      "why_now": "exact duplicate of the already-run lag_convergence_xptxpd_4h_probe_20260311T122038Z anchored lane; no new differentiating hypothesis"
     },
     {
+      "decision_artifact": "var/reports/exact_window_backtests/followup_status/pair_spread_4h_xpt_xpd_retune_latest.json",
       "duplication_risk": "low",
       "evidence_quality": "blocked_by_coverage",
       "expected_upside": "metals pair diversification if coverage improves",
       "lane_id": "pair_spread_4h_xpt_xpd_retune_when_coverage_matures",
       "memory_cost": "low",
       "rank": 4,
-      "status": "deferred",
-      "why_now": "not executable before 2026-03-31T10:15:00+00:00 due insufficient coverage"
+      "status": "deferred_coverage",
+      "why_now": "not executable before 2026-03-31T10:15:00+00:00 due insufficient coverage window"
     }
   ],
+  "secondary_queue_drained": true,
   "stack_audit": {
     "incumbent_oos_total_return": 0.05762800274913982,
     "incumbent_train_total_return": 0.04887910496798242,

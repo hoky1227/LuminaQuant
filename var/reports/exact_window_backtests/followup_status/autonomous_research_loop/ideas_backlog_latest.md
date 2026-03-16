@@ -45,13 +45,14 @@
 
 ## Secondary queue after primary family exhaustion
 
-- Refreshed at: `2026-03-16T12:37:09.355779+00:00`
+- Refreshed at: `2026-03-16T12:40:09.604718+00:00`
 - Incumbent reference: `portfolio_one_shot_current_opt/portfolio_optimization_latest.json`
 - Review rule: rank by expected portfolio upside, duplication risk, memory cost, and evidence quality.
+- Drain status: no executable secondary lane remains after the current recheck + duplicate/coverage exhaustion pass.
 
-| Rank | Lane | Status | Why it stays in queue |
+| Rank | Lane | Status | Why it remains / why it was exhausted |
 |---:|---|---|---|
-| 1 | `cross_sectional_1h_pair_topcap_recheck` | `chosen_now` | best balance of evidence quality, portfolio upside, and low additional compute |
-| 2 | `pair_exec_takeprofit_bnbtrx_1h_refinement` | `standby` | strong sleeve improvement but recent discard increases duplication risk |
-| 3 | `lag_convergence_xptxpd_4h_refinement` | `standby` | risk-adjusted upside exists, but return still meaningfully below incumbent |
-| 4 | `pair_spread_4h_xpt_xpd_retune_when_coverage_matures` | `deferred` | not executable before 2026-03-31T10:15:00+00:00 due insufficient coverage |
+| 1 | `cross_sectional_1h_pair_topcap_recheck` | `completed_discard` | rechecked and still below incumbent on locked-OOS return, Sharpe, and max drawdown |
+| 2 | `pair_exec_takeprofit_bnbtrx_1h_refinement` | `exhausted_duplicate` | exact duplicate of the already-run autonomous_pair_exec_takeprofit_bnbtrx_1h_20260316T0958Z lane; no new differentiating hypothesis |
+| 3 | `lag_convergence_xptxpd_4h_refinement` | `exhausted_duplicate` | exact duplicate of the already-run lag_convergence_xptxpd_4h_probe_20260311T122038Z anchored lane; no new differentiating hypothesis |
+| 4 | `pair_spread_4h_xpt_xpd_retune_when_coverage_matures` | `deferred_coverage` | not executable before 2026-03-31T10:15:00+00:00 due insufficient coverage window |
