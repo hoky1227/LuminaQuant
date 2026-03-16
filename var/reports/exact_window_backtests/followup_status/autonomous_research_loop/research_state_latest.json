@@ -4,7 +4,7 @@
   "experiment_ledger": {
     "counts_by_status": {
       "crash": 5,
-      "discard": 37,
+      "discard": 41,
       "keep": 2
     },
     "path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/followup_status/autonomous_research_loop/experiments.tsv",
@@ -17,6 +17,7 @@
       "exact-window::article_alpha_probe_20260309T134700Z",
       "exact-window::article_crypto_4h_focus_20260310T114006Z",
       "exact-window::article_focus_30m_4h_20260309T140226Z",
+      "exact-window::autonomous_carry_30m_20260316T1011Z",
       "exact-window::autonomous_composite_exec_30m_20260315T1057Z",
       "exact-window::autonomous_crashguard_composite_30m_20260315T0759Z",
       "exact-window::autonomous_crashguard_topcap_1h_20260315T0711Z",
@@ -24,6 +25,7 @@
       "exact-window::autonomous_daily_1d_20260315T035155Z",
       "exact-window::autonomous_intraday_15m_20260315T032440Z",
       "exact-window::autonomous_intraday_5m_20260314T145221Z",
+      "exact-window::autonomous_leadlag_5m_20260316T1017Z",
       "exact-window::autonomous_mixed_assets_30m_20260314T161124Z",
       "exact-window::autonomous_mixed_assets_4h_20260314T155623Z",
       "exact-window::autonomous_pair_exec_takeprofit_bnbtrx_1h_20260316T0958Z",
@@ -38,6 +40,7 @@
       "exact-window::topcap_crypto_1h_focus_20260310T123813Z",
       "exact-window::xpt_xpd_1d_focus_20260310T115036Z",
       "exact-window::xpt_xpd_4h_focus_20260310T115011Z",
+      "portfolio::autonomous_carry_30m_anchor_opt",
       "portfolio::autonomous_carry_momentum_anchor_hybrid_opt",
       "portfolio::autonomous_cross_sectional_1h_stability_pair_topcap_opt",
       "portfolio::autonomous_cross_sectional_1h_tradecount_pair_topcap_opt",
@@ -52,11 +55,12 @@
       "portfolio::causal_dynamic_portfolio",
       "portfolio::causal_overlay_portfolio",
       "portfolio::current_one_shot_incumbent",
-      "portfolio::exact_window_frozen_tuned"
+      "portfolio::exact_window_frozen_tuned",
+      "screen::autonomous_leadlag_5m"
     ],
-    "row_count": 44
+    "row_count": 48
   },
-  "generated_at": "2026-03-16T10:07:09.691899+00:00",
+  "generated_at": "2026-03-16T10:21:58.365882+00:00",
   "ideas_backlog": {
     "candidate_count": 583,
     "path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/followup_status/autonomous_research_loop/ideas_backlog_latest.md",
@@ -565,8 +569,8 @@
   },
   "milestone_gate": {
     "branch": "",
-    "generated_at": "2026-03-16T10:07:09.691865+00:00",
-    "git_status_short": "M src/lumina_quant/strategy_factory/candidate_library.py\n D var/reports/exact_window_backtests/autonomous_pair_exec_takeprofit_1h_20260316T0940Z/1h/exact_window_memory_evidence_20260316T094006Z.json\n D var/reports/exact_window_backtests/autonomous_pair_exec_takeprofit_1h_20260316T0940Z/1h/exact_window_memory_evidence_20260316T094006Z.md\n D var/reports/exact_window_backtests/autonomous_pair_exec_takeprofit_1h_20260316T0940Z/1h/exact_window_memory_evidence_latest.json\n D var/reports/exact_window_backtests/autonomous_pair_exec_takeprofit_1h_20260316T0940Z/1h/exact_window_memory_evidence_latest.md\n D var/reports/exact_window_backtests/autonomous_pair_exec_takeprofit_1h_20260316T0940Z/1h/exact_window_rss_latest.jsonl\n D var/reports/exact_window_backtests/autonomous_pair_exec_takeprofit_1h_20260316T0940Z/latest.json\n D var/reports/exact_window_backtests/autonomous_pair_exec_takeprofit_1h_20260316T0940Z/manifest.json\n D var/reports/exact_window_backtests/autonomous_pair_exec_takeprofit_1h_20260316T0940Z/progress.csv\n M var/reports/exact_window_backtests/autonomous_pair_exec_takeprofit_1h_20260316T0942Z/1h/exact_window_rss_latest.jsonl\n M var/reports/exact_window_backtests/exact_window_backtest_registry_latest.json\n D var/reports/exact_window_backtests/exact_window_heavy_run.lock\n M var/reports/exact_window_backtests/exact_window_run_registry.jsonl\n M var/reports/exact_window_backtests/followup_status/autonomous_research_loop/experiments.tsv\n M var/reports/exact_window_backtests/followup_status/autonomous_research_loop/ideas_backlog_latest.md\n M var/reports/exact_window_backtests/followup_status/autonomous_research_loop/research_state_latest.json\n M var/reports/exact_window_backtests/followup_status/autonomous_research_loop/stack_audit_latest.md\n M var/reports/exact_window_backtests/latest.json\n M var/reports/exact_window_backtests/pipeline/alpha_research_pipeline_latest.json\n M var/reports/exact_window_backtests/pipeline/alpha_research_pipeline_latest.md\n?? src/lumina_quant/data/__pycache__/__init__.cpython-312.pyc\n?? src/lumina_quant/data/__pycache__/ohlcv.cpython-312.pyc\n?? var/reports/exact_window_backtests/autonomous_pair_exec_takeprofit_1h_20260316T0942Z/1h/exact_window_memory_evidence_20260316T095806Z.json\n?? var/reports/exact_window_backtests/autonomous_pair_exec_takeprofit_1h_20260316T0942Z/1h/exact_window_memory_evidence_20260316T095806Z.md\n?? var/reports/exact_window_backtests/autonomous_pair_exec_takeprofit_1h_20260316T0942Z/1h/exact_window_memory_evidence_latest.json\n?? var/reports/exact_window_backtests/autonomous_pair_exec_takeprofit_1h_20260316T0942Z/1h/exact_window_memory_evidence_latest.md\n?? var/reports/exact_window_backtests/autonomous_pair_exec_takeprofit_bnbtrx_1h_20260316T0958Z/\n?? var/reports/exact_window_backtests/followup_status/autonomous_pair_exec_takeprofit_anchor_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_pair_exec_takeprofit_anchor_opt/\n?? var/reports/exact_window_backtests/followup_status/autonomous_pair_exec_takeprofit_decision_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_pair_exec_takeprofit_decision_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_research_loop/autonomous_pair_exec_takeprofit_probe_latest.md",
+    "generated_at": "2026-03-16T10:21:58.365845+00:00",
+    "git_status_short": "M var/reports/exact_window_backtests/autonomous_carry_30m_20260316T1011Z/30m/exact_window_rss_latest.jsonl\n M var/reports/exact_window_backtests/autonomous_carry_30m_20260316T1011Z/latest.json\n M var/reports/exact_window_backtests/autonomous_carry_30m_20260316T1011Z/manifest.json\n M var/reports/exact_window_backtests/exact_window_backtest_registry_latest.json\n D var/reports/exact_window_backtests/exact_window_heavy_run.lock\n M var/reports/exact_window_backtests/exact_window_run_registry.jsonl\n M var/reports/exact_window_backtests/followup_status/autonomous_research_loop/experiments.tsv\n M var/reports/exact_window_backtests/followup_status/autonomous_research_loop/ideas_backlog_latest.md\n M var/reports/exact_window_backtests/followup_status/autonomous_research_loop/research_state_latest.json\n M var/reports/exact_window_backtests/followup_status/autonomous_research_loop/stack_audit_latest.md\n M var/reports/exact_window_backtests/latest.json\n M var/reports/exact_window_backtests/pipeline/alpha_research_pipeline_latest.json\n M var/reports/exact_window_backtests/pipeline/alpha_research_pipeline_latest.md\n?? var/reports/exact_window_backtests/autonomous_carry_30m_20260316T1011Z/30m/exact_window_candidate_details_20260316T101511Z.json\n?? var/reports/exact_window_backtests/autonomous_carry_30m_20260316T1011Z/30m/exact_window_candidate_details_latest.json\n?? var/reports/exact_window_backtests/autonomous_carry_30m_20260316T1011Z/30m/exact_window_fail_analysis_20260316T101511Z.json\n?? var/reports/exact_window_backtests/autonomous_carry_30m_20260316T1011Z/30m/exact_window_fail_analysis_20260316T101511Z.md\n?? var/reports/exact_window_backtests/autonomous_carry_30m_20260316T1011Z/30m/exact_window_fail_analysis_latest.json\n?? var/reports/exact_window_backtests/autonomous_carry_30m_20260316T1011Z/30m/exact_window_fail_analysis_latest.md\n?? var/reports/exact_window_backtests/autonomous_carry_30m_20260316T1011Z/30m/exact_window_memory_evidence_20260316T101511Z.json\n?? var/reports/exact_window_backtests/autonomous_carry_30m_20260316T1011Z/30m/exact_window_memory_evidence_20260316T101511Z.md\n?? var/reports/exact_window_backtests/autonomous_carry_30m_20260316T1011Z/30m/exact_window_memory_evidence_latest.json\n?? var/reports/exact_window_backtests/autonomous_carry_30m_20260316T1011Z/30m/exact_window_memory_evidence_latest.md\n?? var/reports/exact_window_backtests/autonomous_carry_30m_20260316T1011Z/30m/exact_window_suite_summary_20260316T101511Z.json\n?? var/reports/exact_window_backtests/autonomous_carry_30m_20260316T1011Z/30m/exact_window_suite_summary_20260316T101511Z.md\n?? var/reports/exact_window_backtests/autonomous_carry_30m_20260316T1011Z/30m/exact_window_suite_summary_latest.json\n?? var/reports/exact_window_backtests/autonomous_carry_30m_20260316T1011Z/30m/exact_window_suite_summary_latest.md\n?? var/reports/exact_window_backtests/autonomous_carry_30m_20260316T1011Z/progress.csv\n?? var/reports/exact_window_backtests/autonomous_leadlag_5m_20260316T1017Z/\n?? var/reports/exact_window_backtests/followup_status/autonomous_carry_30m_anchor_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_carry_30m_anchor_opt/\n?? var/reports/exact_window_backtests/followup_status/autonomous_carry_30m_decision_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_carry_30m_decision_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_leadlag_5m_decision_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_leadlag_5m_decision_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_research_loop/autonomous_carry_30m_probe_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_research_loop/autonomous_leadlag_5m_probe_latest.md",
     "ready": false,
     "reason": "latest portfolio milestone still retains the incumbent",
     "suggested_sync_command": "",
