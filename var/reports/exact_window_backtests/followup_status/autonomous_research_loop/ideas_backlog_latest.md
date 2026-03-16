@@ -1,7 +1,7 @@
 # Autonomous Research Ideas Backlog
 
-- Generated at: `2026-03-15T14:27:32.243039+00:00`
-- Candidate universe size: `517`
+- Generated at: `2026-03-16T10:07:09.683383+00:00`
+- Candidate universe size: `583`
 - Backlog timeframes: `5m, 15m, 30m, 1h, 4h, 1d`
 - Incumbent strategy classes: `CompositeTrendStrategy, PairSpreadZScoreStrategy, TopCapTimeSeriesMomentumStrategy`
 

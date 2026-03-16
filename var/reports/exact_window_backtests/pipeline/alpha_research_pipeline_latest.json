@@ -275,7 +275,7 @@
       "thesis": "Trend sleeves remain useful when paired with explicit regime filters and crowding-aware guards."
     }
   ],
-  "generated_at": "2026-03-15T14:27:31.845280+00:00",
+  "generated_at": "2026-03-16T10:07:09.243942+00:00",
   "label": "article-inspired llm alpha research pipeline",
   "metric_checklist": [
     "return",
@@ -306,12 +306,12 @@
     "Prefer saved artifacts over recomputation for dashboards and deployment panels."
   ],
   "recommended_outputs": {
-    "canonical_registry_snapshot": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_backtest_registry_latest.json",
-    "deployment_scenarios": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/deployment_scenarios_latest.json",
-    "pipeline_manifest_json": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/pipeline/alpha_research_pipeline_latest.json",
-    "pipeline_manifest_md": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/pipeline/alpha_research_pipeline_latest.md",
-    "recovered_run_archive": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/backtest_log_archive_latest.json",
-    "signature_registry": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_run_registry.jsonl"
+    "canonical_registry_snapshot": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/exact_window_backtest_registry_latest.json",
+    "deployment_scenarios": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/followup_status/deployment_scenarios_latest.json",
+    "pipeline_manifest_json": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/pipeline/alpha_research_pipeline_latest.json",
+    "pipeline_manifest_md": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/pipeline/alpha_research_pipeline_latest.md",
+    "recovered_run_archive": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/followup_status/backtest_log_archive_latest.json",
+    "signature_registry": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/exact_window_run_registry.jsonl"
   },
   "references": [
     {
@@ -328,7 +328,7 @@
         "A human-tuned research harness can resemble an LLM workflow but still rely on classical alpha-research process.",
         "Small-capital crypto stat-arb at mid/high frequency can be plausible when execution burden is modest."
       ],
-      "path": "/home/hoky/Quants-agent/KakaoTalk_20260309_210834478.jpg",
+      "path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/KakaoTalk_20260309_210834478.jpg",
       "source": "screenshot_commentary"
     },
     {
@@ -336,7 +336,7 @@
         "Skepticism should focus on robustness across regimes, not just a single favorable period.",
         "Drawdown and regime-specific diagnostics are mandatory for evaluating article-inspired claims."
       ],
-      "path": "/home/hoky/Quants-agent/KakaoTalk_20260309_210834478_01.jpg",
+      "path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/KakaoTalk_20260309_210834478_01.jpg",
       "source": "screenshot_followup"
     }
   ],
