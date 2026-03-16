@@ -1,0 +1,252 @@
+{
+  "artifact_kind": "autonomous_alpha101_formula_1h_decision",
+  "best_variant": {
+    "family": "formulaic_alpha",
+    "hard_reject_reasons": {
+      "oos_sharpe": -6.94340078574536
+    },
+    "hurdle_fields": {
+      "oos": {
+        "excess_return": -0.1597972489373718,
+        "pass": false,
+        "score": -23.257065503271495
+      },
+      "train": {
+        "excess_return": -0.5692124948931553,
+        "pass": false,
+        "score": -30.360357566024682
+      },
+      "val": {
+        "excess_return": -0.03866460742344657,
+        "pass": false,
+        "score": -8.427409361073035
+      }
+    },
+    "metadata": {
+      "allow_short": true,
+      "alpha_id": 5,
+      "alpha_param_override_count": 2,
+      "alpha_param_override_keys": [
+        "alpha101.5.const.001",
+        "alpha101.5.const.002"
+      ],
+      "article_pipeline_family_ids": [
+        "formulaic-alpha101-research"
+      ],
+      "cost_rate": 0.0005,
+      "event_driven_proxy": true,
+      "family": "formulaic_alpha",
+      "formulaic_alpha101": true,
+      "hypothesis_origin": "article_research_pipeline",
+      "retune_profile": "a005_vwap_tuned",
+      "signal_sign": 1.0,
+      "timeframe": "1h"
+    },
+    "name": "alpha101_formula_1h_a005_a005_vwap_tuned_dir",
+    "notes": "Single-asset Alpha101 factor sleeve with explicit constant overrides for 1h (a005_vwap_tuned).",
+    "oos": {
+      "avg_trade": -0.0004030265308327391,
+      "benchmark_corr": -0.16294893701936422,
+      "cagr": -0.8418612351949513,
+      "calmar": -4.282548402163054,
+      "deflated_sharpe": 7.943782054375959e-08,
+      "exposure": 0.29987908101571953,
+      "max_drawdown": 0.19657950270211522,
+      "mdd": 0.19657950270211522,
+      "pbo": 0.0,
+      "return": -0.1597972489373718,
+      "rolling_sharpe_min": -34.58190376469198,
+      "sharpe": -6.94340078574536,
+      "sortino": -6.883436823076727,
+      "spa_pvalue": 1.0,
+      "stability": -1.5777178618132217,
+      "total_return": -0.1597972489373718,
+      "trade_count": 424.0,
+      "trades": 424.0,
+      "turnover": 0.18355501813784766,
+      "volatility": 0.2606908902764755,
+      "win_rate": 0.34099153567110035,
+      "worst_month": -0.15543572362644353
+    },
+    "params": {
+      "allow_short": true,
+      "alpha_id": 5,
+      "alpha_param_overrides": {
+        "alpha101.5.const.001": 8.0,
+        "alpha101.5.const.002": 14.0
+      },
+      "entry_z": 1.15,
+      "exit_z": 0.3,
+      "history_window": 144,
+      "rank_window": 24,
+      "score_window": 64,
+      "signal_sign": 1.0,
+      "stop_loss_pct": 0.03
+    },
+    "promoted": false,
+    "strategy_class": "Alpha101FormulaStrategy",
+    "strategy_timeframe": "1h",
+    "symbols": [
+      "BTC/USDT",
+      "ETH/USDT",
+      "BNB/USDT",
+      "SOL/USDT",
+      "TRX/USDT"
+    ],
+    "tags": [
+      "alpha101",
+      "formulaic",
+      "single_asset",
+      "factor",
+      "article_pipeline",
+      "article_family:formulaic-alpha101-research"
+    ],
+    "train": {
+      "avg_trade": -0.0001601875753324327,
+      "benchmark_corr": -0.041781203301843144,
+      "cagr": -0.5692124948931553,
+      "calmar": -0.9424066848131276,
+      "deflated_sharpe": 8.106959548115356e-12,
+      "exposure": 0.29383561643835615,
+      "max_drawdown": 0.6039987874301062,
+      "mdd": 0.6039987874301062,
+      "pbo": 0.0,
+      "return": -0.5692124948931553,
+      "rolling_sharpe_min": -24.437994500070534,
+      "sharpe": -3.6116359615097675,
+      "sortino": -3.8178875234869194,
+      "spa_pvalue": 1.0,
+      "stability": -1.5785619799689241,
+      "total_return": -0.5692124948931553,
+      "trade_count": 5097.0,
+      "trades": 5097.0,
+      "turnover": 0.20776255707762556,
+      "volatility": 0.22606820847140396,
+      "win_rate": 0.3541095890410959,
+      "worst_month": -0.15712395993784822
+    },
+    "val": {
+      "avg_trade": -8.107482779769072e-05,
+      "benchmark_corr": -0.19216419370773125,
+      "cagr": -0.37141193571732456,
+      "calmar": -5.639913803594491,
+      "deflated_sharpe": 0.00023503897151216924,
+      "exposure": 0.2760752688172043,
+      "max_drawdown": 0.06585418654459085,
+      "mdd": 0.06585418654459085,
+      "pbo": 0.0,
+      "return": -0.03866460742344657,
+      "rolling_sharpe_min": -23.506182244871574,
+      "sharpe": -2.5310125616742587,
+      "sortino": -3.436342308748629,
+      "spa_pvalue": 1.0,
+      "stability": -1.5139424114886681,
+      "total_return": -0.03866460742344657,
+      "trade_count": 470.0,
+      "trades": 470.0,
+      "turnover": 0.225,
+      "volatility": 0.17726408890974907,
+      "win_rate": 0.3602150537634409,
+      "worst_month": -0.02788482297733652
+    }
+  },
+  "candidate_key": "autonomous_alpha101_formula_1h_reuse",
+  "decision_reason": "Reused eight prior 1h exact-window batches instead of launching a duplicate heavy run; all four Alpha101 formula variants remained negative on train, validation, and locked OOS, so the family is discarded before any incumbent-anchor portfolio stage.",
+  "deltas": {
+    "best_alpha101_oos_max_drawdown_delta_vs_incumbent": 0.18230209188745417,
+    "best_alpha101_oos_sharpe_delta_vs_incumbent": -10.449512362007518,
+    "best_alpha101_oos_total_return_delta_vs_incumbent": -0.2174252516865116,
+    "best_alpha101_val_sharpe_delta_vs_incumbent": -7.598277589432175,
+    "best_alpha101_val_total_return_delta_vs_incumbent": -0.07009795115801054
+  },
+  "generated_at": "2026-03-16T11:08:47.644190+00:00",
+  "label": "Autonomous 1h Alpha101 formula challenger",
+  "recommended_action": "advance to the next unused backlog lane, with volcomp_vwap_rev_guarded 5m now the highest-priority untested family",
+  "reuse_evidence": {
+    "duplicate_guard_reason": "alpha101 1h metrics were identical across prior exact-window batches, so no new heavy lane was launched",
+    "representative_run_id": "autonomous_topcap_exec_combo_1h_20260315T1335Z",
+    "supporting_run_count": 8,
+    "supporting_runs": [
+      {
+        "details_path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/autonomous_crashguard_topcap_1h_20260315T0711Z/1h/exact_window_candidate_details_latest.json",
+        "oos_sharpe": -6.94340078574536,
+        "oos_total_return": -0.1597972489373718,
+        "run_id": "autonomous_crashguard_topcap_1h_20260315T0711Z",
+        "val_sharpe": -2.5310125616742587,
+        "val_total_return": -0.03866460742344657
+      },
+      {
+        "details_path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/autonomous_cross_sectional_1h_20260314T150019Z/1h/exact_window_candidate_details_latest.json",
+        "oos_sharpe": -6.94340078574536,
+        "oos_total_return": -0.1597972489373718,
+        "run_id": "autonomous_cross_sectional_1h_20260314T150019Z",
+        "val_sharpe": -2.5310125616742587,
+        "val_total_return": -0.03866460742344657
+      },
+      {
+        "details_path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/autonomous_pairstate_1h_20260315T0815Z/1h/exact_window_candidate_details_latest.json",
+        "oos_sharpe": -6.94340078574536,
+        "oos_total_return": -0.1597972489373718,
+        "run_id": "autonomous_pairstate_1h_20260315T0815Z",
+        "val_sharpe": -2.5310125616742587,
+        "val_total_return": -0.03866460742344657
+      },
+      {
+        "details_path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/autonomous_residual_topcap_1h_retry_20260315T0612Z/1h/exact_window_candidate_details_latest.json",
+        "oos_sharpe": -6.94340078574536,
+        "oos_total_return": -0.1597972489373718,
+        "run_id": "autonomous_residual_topcap_1h_retry_20260315T0612Z",
+        "val_sharpe": -2.5310125616742587,
+        "val_total_return": -0.03866460742344657
+      },
+      {
+        "details_path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/autonomous_topcap_exec_1h_20260315T0945Z/1h/exact_window_candidate_details_latest.json",
+        "oos_sharpe": -6.94340078574536,
+        "oos_total_return": -0.1597972489373718,
+        "run_id": "autonomous_topcap_exec_1h_20260315T0945Z",
+        "val_sharpe": -2.5310125616742587,
+        "val_total_return": -0.03866460742344657
+      },
+      {
+        "details_path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/autonomous_topcap_exec_combo_1h_20260315T1335Z/1h/exact_window_candidate_details_latest.json",
+        "oos_sharpe": -6.94340078574536,
+        "oos_total_return": -0.1597972489373718,
+        "run_id": "autonomous_topcap_exec_combo_1h_20260315T1335Z",
+        "val_sharpe": -2.5310125616742587,
+        "val_total_return": -0.03866460742344657
+      },
+      {
+        "details_path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/autonomous_topcap_exec_stopaware_1h_20260315T1113Z/1h/exact_window_candidate_details_latest.json",
+        "oos_sharpe": -6.94340078574536,
+        "oos_total_return": -0.1597972489373718,
+        "run_id": "autonomous_topcap_exec_stopaware_1h_20260315T1113Z",
+        "val_sharpe": -2.5310125616742587,
+        "val_total_return": -0.03866460742344657
+      },
+      {
+        "details_path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/autonomous_topcap_exec_takeprofit_1h_20260315T1220Z/1h/exact_window_candidate_details_latest.json",
+        "oos_sharpe": -6.94340078574536,
+        "oos_total_return": -0.1597972489373718,
+        "run_id": "autonomous_topcap_exec_takeprofit_1h_20260315T1220Z",
+        "val_sharpe": -2.5310125616742587,
+        "val_total_return": -0.03866460742344657
+      }
+    ]
+  },
+  "schema_version": "1.0",
+  "source_artifacts": {
+    "incumbent_portfolio": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/followup_status/portfolio_one_shot_current_opt/portfolio_optimization_latest.json",
+    "representative_manifest": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/autonomous_topcap_exec_combo_1h_20260315T1335Z/manifest.json",
+    "run_details": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/autonomous_topcap_exec_combo_1h_20260315T1335Z/1h/exact_window_candidate_details_latest.json",
+    "run_memory_evidence": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/autonomous_topcap_exec_combo_1h_20260315T1335Z/1h/exact_window_memory_evidence_latest.json",
+    "run_summary": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/autonomous_topcap_exec_combo_1h_20260315T1335Z/1h/exact_window_suite_summary_latest.json"
+  },
+  "status": "discard",
+  "summary": {
+    "alpha101_variant_count": 4,
+    "best_alpha101_variant": "alpha101_formula_1h_a005_a005_vwap_tuned_dir",
+    "peak_rss_mib": 3151.921875,
+    "representative_evaluated_count": 84,
+    "supporting_run_count": 8
+  }
+}
