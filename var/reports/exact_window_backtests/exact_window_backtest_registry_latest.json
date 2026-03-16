@@ -1,6 +1,38 @@
 {
-  "artifact_kind": "exact_window_canonical_registry",
   "entries": [
+    {
+      "allow_metals": false,
+      "batch_id": "1h",
+      "chunk_days": 14,
+      "details_path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/exact_window_candidate_details_latest.json",
+      "error": "No symbol has full coverage from train start through the requested window.",
+      "evaluated_count": 0,
+      "fail_analysis_path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/exact_window_fail_analysis_latest.json",
+      "manifest_path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/autonomous_pair_exec_takeprofit_1h_20260316T0940Z/manifest.json",
+      "memory_evidence_path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/exact_window_memory_evidence_latest.json",
+      "oos_start": null,
+      "peak_rss_mib": 111.65625,
+      "promoted_count": 0,
+      "requested_oos_end_exclusive": null,
+      "requested_symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "requested_timeframes": [
+        "1h"
+      ],
+      "run_id": "autonomous_pair_exec_takeprofit_1h_20260316T0940Z",
+      "run_signature": "74512d78a00514a8ccf260c66743784715dc4b68ab47571ee03b3dfb56329b9a",
+      "status": "failed",
+      "summary_path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/exact_window_suite_summary_latest.json",
+      "train_start": null,
+      "updated_at_utc": "2026-03-16T09:40:06.485374+00:00",
+      "val_start": null,
+      "window_profile": "default"
+    },
     {
       "allow_metals": false,
       "batch_id": "1h",
@@ -777,8 +809,7 @@
       "window_profile": "default"
     }
   ],
-  "entry_count": 23,
-  "generated_at": "2026-03-15T14:27:31.860928+00:00",
-  "provenance": "derived_from_exact_window_run_registry_jsonl",
+  "entry_count": 24,
+  "generated_at": "2026-03-16T09:40:06.485401+00:00",
   "schema_version": "1.0"
 }
