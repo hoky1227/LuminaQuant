@@ -4,7 +4,7 @@
   "experiment_ledger": {
     "counts_by_status": {
       "crash": 5,
-      "discard": 45,
+      "discard": 46,
       "keep": 2
     },
     "path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/followup_status/autonomous_research_loop/experiments.tsv",
@@ -49,6 +49,7 @@
       "portfolio::autonomous_lag_convergence_4h_anchor_opt",
       "portfolio::autonomous_pair_exec_takeprofit_anchor_opt",
       "portfolio::autonomous_portfolio_risk_search",
+      "portfolio::autonomous_regime_breakout_30m_anchor_opt",
       "portfolio::autonomous_residual_topcap_anchor_opt",
       "portfolio::autonomous_rolling_breakout_30m_anchor_opt",
       "portfolio::autonomous_triplet_pair_topcap_composite_opt",
@@ -62,9 +63,9 @@
       "screen::autonomous_leadlag_5m",
       "screen::autonomous_volcomp_vwap_rev_guarded_5m"
     ],
-    "row_count": 52
+    "row_count": 53
   },
-  "generated_at": "2026-03-16T11:50:19.544180+00:00",
+  "generated_at": "2026-03-16T11:56:17.045928+00:00",
   "ideas_backlog": {
     "candidate_count": 583,
     "path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/followup_status/autonomous_research_loop/ideas_backlog_latest.md",
@@ -573,8 +574,8 @@
   },
   "milestone_gate": {
     "branch": "",
-    "generated_at": "2026-03-16T11:50:30.935402+00:00",
-    "git_status_short": "M var/reports/exact_window_backtests/followup_status/autonomous_research_loop/experiments.tsv\n M var/reports/exact_window_backtests/followup_status/autonomous_research_loop/research_state_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_research_loop/autonomous_rolling_breakout_30m_probe_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_rolling_breakout_30m_comparison_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_rolling_breakout_30m_comparison_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_rolling_breakout_30m_decision_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_rolling_breakout_30m_decision_latest.md",
+    "generated_at": "2026-03-16T11:56:40.509208+00:00",
+    "git_status_short": "",
     "ready": false,
     "reason": "latest portfolio milestone still retains the incumbent",
     "suggested_sync_command": "",
