@@ -1,19 +1,24 @@
 {
   "allow_metals": false,
-  "batch_id": "1h",
+  "batch_id": "30m",
   "label": "exact_window",
-  "pid": 6045,
+  "pid": 21723,
   "requested_symbols": [
     "BTC/USDT",
     "ETH/USDT",
+    "XRP/USDT",
     "BNB/USDT",
     "SOL/USDT",
-    "TRX/USDT"
+    "TRX/USDT",
+    "DOGE/USDT",
+    "ADA/USDT",
+    "TON/USDT",
+    "AVAX/USDT"
   ],
   "requested_timeframes": [
-    "1h"
+    "30m"
   ],
-  "run_id": "autonomous_pair_exec_takeprofit_1h_20260316T0942Z",
-  "run_signature": "74512d78a00514a8ccf260c66743784715dc4b68ab47571ee03b3dfb56329b9a",
-  "started_at_utc": "2026-03-16T09:40:43.964254+00:00"
+  "run_id": "autonomous_carry_30m_20260316T1011Z",
+  "run_signature": "b4a5bc4a3b4a49f6fafb6d9fab9cb98cc79dd2b1b62b61f05d662476c5267f87",
+  "started_at_utc": "2026-03-16T10:11:43.390121+00:00"
 }

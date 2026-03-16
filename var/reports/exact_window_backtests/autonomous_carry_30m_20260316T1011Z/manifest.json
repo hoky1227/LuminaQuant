@@ -1,0 +1,51 @@
+{
+  "allow_metals": false,
+  "artifacts": {
+    "heavy_lock_path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/exact_window_heavy_run.lock",
+    "manifest_path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/autonomous_carry_30m_20260316T1011Z/manifest.json",
+    "progress_path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/autonomous_carry_30m_20260316T1011Z/progress.csv",
+    "root_latest_path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/latest.json",
+    "rss_log_path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/autonomous_carry_30m_20260316T1011Z/30m/exact_window_rss_latest.jsonl",
+    "run_latest_path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/autonomous_carry_30m_20260316T1011Z/latest.json"
+  },
+  "batch_dir": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/autonomous_carry_30m_20260316T1011Z/30m",
+  "batch_id": "30m",
+  "candidate_library_hash": "c463623ecf45e97618fda88d821d88d4f2303f1e4956f492ad83fd5d7b9e3e8f",
+  "chunk_days": 14,
+  "clamp_ts": "2026-03-07T10:00:00Z",
+  "code_commit_sha": "a9b4bb4b731214c54c59b197b16fb46a48805d7e",
+  "git_dirty": true,
+  "max_parquet_workers": 1,
+  "oos_start": null,
+  "requested_oos_end_exclusive": null,
+  "requested_symbols": [
+    "BTC/USDT",
+    "ETH/USDT",
+    "XRP/USDT",
+    "BNB/USDT",
+    "SOL/USDT",
+    "TRX/USDT",
+    "DOGE/USDT",
+    "ADA/USDT",
+    "TON/USDT",
+    "AVAX/USDT"
+  ],
+  "requested_timeframes": [
+    "30m"
+  ],
+  "run_id": "autonomous_carry_30m_20260316T1011Z",
+  "run_root": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/autonomous_carry_30m_20260316T1011Z",
+  "run_signature": "b4a5bc4a3b4a49f6fafb6d9fab9cb98cc79dd2b1b62b61f05d662476c5267f87",
+  "schema_version": "1.0",
+  "started_at_utc": "2026-03-16T10:11:43.398307+00:00",
+  "status": "running",
+  "train_start": null,
+  "val_start": null,
+  "window_profile": "default",
+  "windows": {
+    "oos_start": null,
+    "requested_oos_end_exclusive": null,
+    "train_start": null,
+    "val_start": null
+  }
+}

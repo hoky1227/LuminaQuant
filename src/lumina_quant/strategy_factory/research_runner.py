@@ -6,6 +6,7 @@ import hashlib
 import itertools
 import json
 import math
+import os
 import queue
 import random
 from collections.abc import Iterable, Mapping, Sequence
@@ -39,7 +40,6 @@ _PERIODS_PER_YEAR = {
 }
 
 _MIN_BARS = 360
-_CROWDING_SUPPORT_PATH = Path("data") / "market_parquet" / "feature_points"
 _METALS = {"XAU/USDT", "XAG/USDT", "XPT/USDT", "XPD/USDT"}
 _LEADERS = ("BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT")
 _FEATURE_POINT_COLUMNS: tuple[str, ...] = (
@@ -105,6 +105,38 @@ DEFAULT_RESEARCH_SCORING_CONFIG: dict[str, Any] = {
         "sort_missing_selection_score": -1_000_000.0,
     },
 }
+
+
+def _resolve_feature_points_path() -> Path:
+    candidates: list[Path] = []
+
+    for raw in (
+        getattr(BaseConfig, "MARKET_DATA_PARQUET_PATH", ""),
+        os.getenv("LQ__STORAGE__MARKET_DATA_PARQUET_PATH", ""),
+        os.getenv("LQ_MARKET_PARQUET_PATH", ""),
+        "data/market_parquet",
+    ):
+        token = str(raw or "").strip()
+        if not token:
+            continue
+        path = Path(token).expanduser()
+        if not path.is_absolute():
+            path = (Path.cwd() / path).resolve()
+        candidates.append(path / "feature_points")
+
+    repo_root = Path(__file__).resolve()
+    for parent in repo_root.parents:
+        candidates.append(parent / "data" / "market_parquet" / "feature_points")
+
+    seen: set[Path] = set()
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        if resolved.exists():
+            return resolved
+    return candidates[0].resolve() if candidates else (Path.cwd() / "data" / "market_parquet" / "feature_points").resolve()
 
 
 def _resolve_score_config(overrides: Mapping[str, Any] | None) -> dict[str, Any]:
@@ -2162,7 +2194,7 @@ def _strategy_signal(
         exposures[y_idx] = y_pos
 
     elif strategy_class == "PerpCrowdingCarryStrategy":
-        if not _CROWDING_SUPPORT_PATH.exists():
+        if not _resolve_feature_points_path().exists():
             meta["missing_support_data"] = True
             exposures[:] = 0.0
         else:
