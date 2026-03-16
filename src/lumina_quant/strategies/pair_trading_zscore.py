@@ -131,6 +131,13 @@ class PairTradingZScoreStrategy(Strategy):
                 optuna={"type": "float", "low": 0.005, "high": 0.12, "step": 0.005},
                 grid=[0.02, 0.04, 0.08],
             ),
+            "take_profit_pct": HyperParam.floating(
+                "take_profit_pct",
+                default=0.0,
+                low=0.0,
+                high=0.5,
+                tunable=False,
+            ),
             "min_abs_beta": HyperParam.floating(
                 "min_abs_beta",
                 default=0.02,
@@ -230,6 +237,7 @@ class PairTradingZScoreStrategy(Strategy):
         reentry_z_buffer=0.2,
         min_z_turn=0.0,
         stop_loss_pct=0.04,
+        take_profit_pct=0.0,
         min_abs_beta=0.02,
         max_abs_beta=6.0,
         min_volume_window=24,
@@ -270,6 +278,7 @@ class PairTradingZScoreStrategy(Strategy):
                 "reentry_z_buffer": reentry_z_buffer,
                 "min_z_turn": min_z_turn,
                 "stop_loss_pct": stop_loss_pct,
+                "take_profit_pct": take_profit_pct,
                 "min_abs_beta": min_abs_beta,
                 "max_abs_beta": max_abs_beta,
                 "min_volume_window": min_volume_window,
@@ -312,6 +321,7 @@ class PairTradingZScoreStrategy(Strategy):
         self.reentry_z_buffer = float(resolved["reentry_z_buffer"])
         self.min_z_turn = float(resolved["min_z_turn"])
         self.stop_loss_pct = float(resolved["stop_loss_pct"])
+        self.take_profit_pct = float(resolved["take_profit_pct"])
         self.min_abs_beta = float(resolved["min_abs_beta"])
         self.max_abs_beta = max(self.min_abs_beta + 1e-9, float(resolved["max_abs_beta"]))
         self.min_volume_window = int(resolved["min_volume_window"])
@@ -364,6 +374,9 @@ class PairTradingZScoreStrategy(Strategy):
         self._last_zscore = None
         self._last_correlation = None
         self._last_vol_zscore = None
+        self._entry_x_price = None
+        self._entry_y_price = None
+        self._entry_beta = None
 
     def get_state(self):
         return {
@@ -382,6 +395,9 @@ class PairTradingZScoreStrategy(Strategy):
             "last_zscore": self._last_zscore,
             "last_correlation": self._last_correlation,
             "last_vol_zscore": self._last_vol_zscore,
+            "entry_x_price": self._entry_x_price,
+            "entry_y_price": self._entry_y_price,
+            "entry_beta": self._entry_beta,
             "x_close_history": list(self._x_close_history),
             "y_close_history": list(self._y_close_history),
             "x_return_history": list(self._x_return_history),
@@ -445,6 +461,9 @@ class PairTradingZScoreStrategy(Strategy):
 
         vol_z = state.get("last_vol_zscore")
         self._last_vol_zscore = safe_float(vol_z) if vol_z is not None else None
+        self._entry_x_price = safe_float(state.get("entry_x_price"))
+        self._entry_y_price = safe_float(state.get("entry_y_price"))
+        self._entry_beta = safe_float(state.get("entry_beta"))
 
         for key, target in (
             ("x_close_history", self._x_close_history),
@@ -619,6 +638,18 @@ class PairTradingZScoreStrategy(Strategy):
             return price * (1.0 - stop_pct)
         return price * (1.0 + stop_pct)
 
+    def _entry_take_profit_price(self, direction, price, beta):
+        if self.take_profit_pct <= 0.0:
+            return None
+        beta_scale = max(
+            self.beta_stop_scale_min,
+            min(self.beta_stop_scale_max, abs(float(beta))),
+        )
+        take_profit_pct = min(0.50, self.take_profit_pct * beta_scale)
+        if direction == "LONG":
+            return price * (1.0 + take_profit_pct)
+        return price * (1.0 - take_profit_pct)
+
     def _emit_signal(
         self,
         symbol,
@@ -656,6 +687,7 @@ class PairTradingZScoreStrategy(Strategy):
             "symbol_x": self.symbol_x,
             "symbol_y": self.symbol_y,
             "stop_loss_pct": float(self.stop_loss_pct),
+            "take_profit_pct": float(self.take_profit_pct),
             "vol_zscore": self._last_vol_zscore,
             "vol_lag_bars": int(self.vol_lag_bars),
             "vwap_window": int(self.vwap_window),
@@ -668,6 +700,7 @@ class PairTradingZScoreStrategy(Strategy):
                 "LONG",
                 metadata,
                 stop_loss=self._entry_stop_price("LONG", close_x, beta),
+                take_profit=self._entry_take_profit_price("LONG", close_x, beta),
             )
             self._emit_signal(
                 self.symbol_y,
@@ -675,6 +708,7 @@ class PairTradingZScoreStrategy(Strategy):
                 "SHORT",
                 metadata,
                 stop_loss=self._entry_stop_price("SHORT", close_y, beta),
+                take_profit=self._entry_take_profit_price("SHORT", close_y, beta),
             )
         else:
             self._emit_signal(
@@ -683,6 +717,7 @@ class PairTradingZScoreStrategy(Strategy):
                 "SHORT",
                 metadata,
                 stop_loss=self._entry_stop_price("SHORT", close_x, beta),
+                take_profit=self._entry_take_profit_price("SHORT", close_x, beta),
             )
             self._emit_signal(
                 self.symbol_y,
@@ -690,6 +725,7 @@ class PairTradingZScoreStrategy(Strategy):
                 "LONG",
                 metadata,
                 stop_loss=self._entry_stop_price("LONG", close_y, beta),
+                take_profit=self._entry_take_profit_price("LONG", close_y, beta),
             )
 
     def _emit_pair_exit(self, event_time, reason, zscore, beta, corr):
@@ -840,6 +876,9 @@ class PairTradingZScoreStrategy(Strategy):
                     self._emit_pair_entry(pair_time, "SHORT_SPREAD", zscore, beta, corr)
                     self._mode = "SHORT_SPREAD"
                     self._bars_in_position = 0
+                    self._entry_x_price = close_x
+                    self._entry_y_price = close_y
+                    self._entry_beta = float(beta)
                     self._extreme_side = "NONE"
                     LOGGER.info("Pair entry SHORT_SPREAD z=%.4f beta=%.4f", zscore, beta)
             elif self._extreme_side == "LOW":
@@ -851,6 +890,9 @@ class PairTradingZScoreStrategy(Strategy):
                     self._emit_pair_entry(pair_time, "LONG_SPREAD", zscore, beta, corr)
                     self._mode = "LONG_SPREAD"
                     self._bars_in_position = 0
+                    self._entry_x_price = close_x
+                    self._entry_y_price = close_y
+                    self._entry_beta = float(beta)
                     self._extreme_side = "NONE"
                     LOGGER.info("Pair entry LONG_SPREAD z=%.4f beta=%.4f", zscore, beta)
             else:
@@ -859,7 +901,26 @@ class PairTradingZScoreStrategy(Strategy):
 
         self._bars_in_position += 1
         exit_reason = None
-        if abs(zscore) <= self.exit_z:
+        if self._mode == "LONG_SPREAD" and self._entry_beta is not None:
+            stop_x = self._entry_stop_price("LONG", float(self._entry_x_price or close_x), float(self._entry_beta))
+            stop_y = self._entry_stop_price("SHORT", float(self._entry_y_price or close_y), float(self._entry_beta))
+            take_x = self._entry_take_profit_price("LONG", float(self._entry_x_price or close_x), float(self._entry_beta))
+            take_y = self._entry_take_profit_price("SHORT", float(self._entry_y_price or close_y), float(self._entry_beta))
+            if close_x <= stop_x or close_y >= stop_y:
+                exit_reason = "stop_loss"
+            elif (take_x is not None and close_x >= take_x) or (take_y is not None and close_y <= take_y):
+                exit_reason = "take_profit"
+        elif self._mode == "SHORT_SPREAD" and self._entry_beta is not None:
+            stop_x = self._entry_stop_price("SHORT", float(self._entry_x_price or close_x), float(self._entry_beta))
+            stop_y = self._entry_stop_price("LONG", float(self._entry_y_price or close_y), float(self._entry_beta))
+            take_x = self._entry_take_profit_price("SHORT", float(self._entry_x_price or close_x), float(self._entry_beta))
+            take_y = self._entry_take_profit_price("LONG", float(self._entry_y_price or close_y), float(self._entry_beta))
+            if close_x >= stop_x or close_y <= stop_y:
+                exit_reason = "stop_loss"
+            elif (take_x is not None and close_x <= take_x) or (take_y is not None and close_y >= take_y):
+                exit_reason = "take_profit"
+
+        if exit_reason is None and abs(zscore) <= self.exit_z:
             exit_reason = "mean_reversion"
         elif (
             self.min_vol_convergence > 0.0
@@ -893,3 +954,6 @@ class PairTradingZScoreStrategy(Strategy):
         self._bars_in_position = 0
         self._cooldown_left = self.cooldown_bars
         self._extreme_side = "NONE"
+        self._entry_x_price = None
+        self._entry_y_price = None
+        self._entry_beta = None

@@ -46,7 +46,7 @@ def _build_pair_prices(length=320):
     return prices
 
 
-def _run_strategy(prices, split=None):
+def _run_strategy(prices, split=None, param_overrides=None):
     symbol_x = "XAU/USDT"
     symbol_y = "XAG/USDT"
     params = {
@@ -61,6 +61,8 @@ def _run_strategy(prices, split=None):
         "symbol_x": symbol_x,
         "symbol_y": symbol_y,
     }
+    if param_overrides:
+        params.update(param_overrides)
 
     def _feed(strategy, bars, events, rows):
         for ts, x_price, y_price in rows:
@@ -116,6 +118,21 @@ class TestPairTradingZScore(unittest.TestCase):
         full_signals = _run_strategy(prices)
         split_signals = _run_strategy(prices, split=190)
         self.assertEqual(full_signals, split_signals)
+
+    def test_take_profit_can_trigger_pair_exit(self):
+        prices = _build_pair_prices()
+        signals = _run_strategy(
+            prices,
+            param_overrides={
+                "entry_z": 1.3,
+                "reentry_z_buffer": 0.05,
+                "take_profit_pct": 0.01,
+            },
+        )
+
+        self.assertGreater(len(signals), 0)
+        signal_types = [signal_type for _, _, signal_type in signals]
+        self.assertIn("EXIT", signal_types)
 
 
 if __name__ == "__main__":

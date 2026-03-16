@@ -340,6 +340,28 @@ _PAIR_RETUNE_PARAM_SETS_BY_TIMEFRAME: dict[str, tuple[dict[str, float | int | st
             "atr_window": 14,
             "atr_max_pct": 0.04,
         },
+        {
+            "variant": "exec_takeprofit",
+            "lookback_window": 96,
+            "hedge_window": 192,
+            "min_correlation": 0.20,
+            "cooldown_bars": 8,
+            "reentry_z_buffer": 0.25,
+            "max_hold_bars": 168,
+            "stop_loss_pct": 0.030,
+            "take_profit_pct": 0.10,
+        },
+        {
+            "variant": "exec_tightstop_tp",
+            "lookback_window": 96,
+            "hedge_window": 192,
+            "min_correlation": 0.20,
+            "cooldown_bars": 8,
+            "reentry_z_buffer": 0.25,
+            "max_hold_bars": 168,
+            "stop_loss_pct": 0.025,
+            "take_profit_pct": 0.08,
+        },
     ),
     "4h": (
         {
@@ -1631,6 +1653,7 @@ def build_binance_futures_candidates(
                         "atr_max_pct",
                         "beta_stop_scale_min",
                         "beta_stop_scale_max",
+                        "take_profit_pct",
                     ):
                         if optional_key in tuned_spec:
                             params[optional_key] = tuned_spec[optional_key]
@@ -1652,6 +1675,10 @@ def build_binance_futures_candidates(
                         state_notes.append(
                             f"ATR filter {int(tuned_spec['atr_window'])}/{float(tuned_spec.get('atr_max_pct', 1.0)):.2f}"
                         )
+                    if float(tuned_spec.get("take_profit_pct", 0.0) or 0.0) > 0.0:
+                        tags.append("execution_risk")
+                        tags.append("take_profit")
+                        state_notes.append(f"take profit {float(tuned_spec['take_profit_pct']):.1%}")
                     note_suffix = (
                         " " + "; ".join(state_notes) + "."
                         if state_notes
