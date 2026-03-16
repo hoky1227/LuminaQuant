@@ -11,6 +11,11 @@ from typing import Any
 from lumina_quant.core.events import SignalEvent
 from lumina_quant.indicators.common import safe_float, time_key
 from lumina_quant.indicators.formulaic_alpha import compute_alpha101
+from lumina_quant.strategy_defaults import (
+    ALPHA101_ID_UPPER_BOUND,
+    ALPHA101_SCORE_STATE_MIN_HISTORY,
+    ALPHA101_ZSCORE_CAP,
+)
 from lumina_quant.strategy import Strategy
 from lumina_quant.tuning import HyperParam, resolve_params_from_schema
 
@@ -57,7 +62,7 @@ def _latest_zscore(values: deque, *, window: int) -> float | None:
         delta = latest - mean
         if abs(delta) <= 1e-12:
             return 0.0
-        return 6.0 if delta > 0.0 else -6.0
+        return ALPHA101_ZSCORE_CAP if delta > 0.0 else -ALPHA101_ZSCORE_CAP
     return (latest - mean) / std
 
 
@@ -164,7 +169,7 @@ class Alpha101FormulaStrategy(Strategy):
             keep_unknown=True,
         )
 
-        self.alpha_id = max(1, min(101, int(resolved["alpha_id"])))
+        self.alpha_id = max(1, min(ALPHA101_ID_UPPER_BOUND, int(resolved["alpha_id"])))
         self.rank_window = max(4, int(resolved["rank_window"]))
         self.history_window = max(32, int(resolved["history_window"]))
         self.score_window = max(8, int(resolved["score_window"]))
@@ -183,7 +188,7 @@ class Alpha101FormulaStrategy(Strategy):
                 lows=deque(maxlen=history_len),
                 closes=deque(maxlen=history_len),
                 volumes=deque(maxlen=history_len),
-                scores=deque(maxlen=max(self.score_window + 8, 24)),
+                scores=deque(maxlen=max(self.score_window + 8, ALPHA101_SCORE_STATE_MIN_HISTORY)),
             )
             for symbol in self.symbol_list
         }

@@ -10,6 +10,12 @@ import numpy as np
 from lumina_quant.core.events import SignalEvent
 from lumina_quant.indicators.advanced_alpha import cross_leadlag_spillover
 from lumina_quant.indicators.common import safe_float, time_key
+from lumina_quant.strategy_defaults import (
+    LEADLAG_MIN_SIGNAL_STRENGTH,
+    LEADLAG_MIN_SYMBOL_COUNT,
+    LEADLAG_REALIZED_VOL_WINDOW,
+    LEADLAG_WINDOW_DIVISOR,
+)
 from lumina_quant.strategy import Strategy
 from lumina_quant.symbols import canonical_symbol
 from lumina_quant.tuning import HyperParam, resolve_params_from_schema
@@ -198,7 +204,10 @@ class LeadLagSpilloverStrategy(Strategy):
         return event_time, high, low, close
 
     @staticmethod
-    def _realized_vol(closes: deque[float], window: int = 48) -> float:
+    def _realized_vol(
+        closes: deque[float],
+        window: int = LEADLAG_REALIZED_VOL_WINDOW,
+    ) -> float:
         arr = np.asarray(list(closes), dtype=float)
         if arr.size < max(8, int(window)):
             return 0.0
@@ -254,11 +263,11 @@ class LeadLagSpilloverStrategy(Strategy):
         price_map = {
             sym: list(state.closes)
             for sym, state in self._state.items()
-            if sym not in _METALS and len(state.closes) >= max(32, self.window // 3)
+            if sym not in _METALS and len(state.closes) >= max(32, self.window // LEADLAG_WINDOW_DIVISOR)
         }
         if symbol in _METALS:
             return
-        if len(price_map) < 3:
+        if len(price_map) < LEADLAG_MIN_SYMBOL_COUNT:
             return
 
         spill = cross_leadlag_spillover(
@@ -323,7 +332,7 @@ class LeadLagSpilloverStrategy(Strategy):
         if not liquidity_ok or not vol_ok:
             return
 
-        strength = min(2.0, max(0.2, abs(score)))
+        strength = min(2.0, max(LEADLAG_MIN_SIGNAL_STRENGTH, abs(score)))
         if score >= self.entry_score:
             self._emit(
                 symbol,

@@ -8,6 +8,7 @@ from statistics import mean, pstdev
 
 from lumina_quant.core.events import SignalEvent
 from lumina_quant.indicators.common import safe_float
+from lumina_quant.strategy_defaults import MICRO_RANGE_MIN_SAMPLE_COUNT
 from lumina_quant.strategy import Strategy
 from lumina_quant.tuning import HyperParam, resolve_params_from_schema
 
@@ -186,7 +187,7 @@ class MicroRangeExpansion1sStrategy(Strategy):
             for high_px, low_px, close_px in zip(item.highs, item.lows, item.closes, strict=True)
             if close_px > 0.0
         ]
-        if len(ranges) < 5:
+        if len(ranges) < MICRO_RANGE_MIN_SAMPLE_COUNT:
             return
 
         latest_range = ranges[-1]

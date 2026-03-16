@@ -8,6 +8,12 @@ from dataclasses import dataclass
 from lumina_quant.core.events import SignalEvent
 from lumina_quant.indicators.advanced_alpha import volcomp_vwap_pressure
 from lumina_quant.indicators.common import safe_float, time_key
+from lumina_quant.strategy_defaults import (
+    VOLCOMP_MIN_HISTORY_FLOOR,
+    VOLCOMP_MIN_SIGNAL_STRENGTH,
+    VOLCOMP_MIN_STOP_LOSS_PCT,
+    VOLCOMP_TAKE_PROFIT_STOP_RATIO,
+)
 from lumina_quant.strategy import Strategy
 from lumina_quant.tuning import HyperParam, resolve_params_from_schema
 
@@ -245,7 +251,7 @@ class VolatilityCompressionReversionStrategy(Strategy):
         item.volumes.append(float(volume if volume is not None else 0.0))
 
         min_history = max(
-            24,
+            VOLCOMP_MIN_HISTORY_FLOOR,
             int(self.fast_vol_window) + 4,
             int(self.slow_vol_window) + 4,
             max(8, int(self.z_window)),
@@ -287,7 +293,7 @@ class VolatilityCompressionReversionStrategy(Strategy):
             "rare_event_score": factor.get("rare_event_score"),
         }
 
-        stop_loss_pct = max(0.001, float(self.atr_stop_pct))
+        stop_loss_pct = max(VOLCOMP_MIN_STOP_LOSS_PCT, float(self.atr_stop_pct))
 
         if item.mode == "LONG":
             item.bars_held += 1
@@ -325,8 +331,8 @@ class VolatilityCompressionReversionStrategy(Strategy):
         # Reversion direction: positive z => price above VWAP => short.
         if dev_z <= -self.entry_z:
             stop = float(close) * (1.0 - stop_loss_pct)
-            take = float(close) * (1.0 + stop_loss_pct * 0.9)
-            strength = min(2.0, 0.4 + abs(score))
+            take = float(close) * (1.0 + stop_loss_pct * VOLCOMP_TAKE_PROFIT_STOP_RATIO)
+            strength = min(2.0, VOLCOMP_MIN_SIGNAL_STRENGTH + abs(score))
             self._emit(
                 symbol,
                 event_time,
@@ -343,8 +349,8 @@ class VolatilityCompressionReversionStrategy(Strategy):
 
         if self.allow_short and dev_z >= self.entry_z:
             stop = float(close) * (1.0 + stop_loss_pct)
-            take = float(close) * (1.0 - stop_loss_pct * 0.9)
-            strength = min(2.0, 0.4 + abs(score))
+            take = float(close) * (1.0 - stop_loss_pct * VOLCOMP_TAKE_PROFIT_STOP_RATIO)
+            strength = min(2.0, VOLCOMP_MIN_SIGNAL_STRENGTH + abs(score))
             self._emit(
                 symbol,
                 event_time,

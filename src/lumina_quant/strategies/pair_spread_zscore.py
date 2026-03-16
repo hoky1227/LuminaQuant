@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from lumina_quant.strategy_defaults import (
+    PAIR_SPREAD_BOUNDED_RETUNE_BY_TIMEFRAME,
+    PAIR_SPREAD_BOUNDED_RETUNE_DEFAULTS,
+)
 from lumina_quant.strategies.pair_trading_zscore import PairTradingZScoreStrategy
 from lumina_quant.symbols import canonical_symbol
 
@@ -17,51 +21,10 @@ _DEFAULT_PAIR_SET: tuple[tuple[str, str], ...] = (
     ("XPT/USDT", "XPD/USDT"),
 )
 
-_BOUNDED_PAIR_RETUNE_DEFAULTS: dict[str, float | int] = {
-    "lookback_window": 96,
-    "hedge_window": 192,
-    "min_correlation": 0.20,
-    "cooldown_bars": 8,
-    "reentry_z_buffer": 0.25,
-    "max_hold_bars": 240,
-    "stop_loss_pct": 0.03,
-}
-
-_BOUNDED_PAIR_RETUNE_BY_TIMEFRAME: dict[str, dict[str, float | int]] = {
-    "15m": {
-        "lookback_window": 144,
-        "hedge_window": 288,
-        "min_correlation": 0.25,
-        "cooldown_bars": 10,
-        "reentry_z_buffer": 0.35,
-        "max_hold_bars": 192,
-        "stop_loss_pct": 0.025,
-    },
-    "4h": {
-        "lookback_window": 72,
-        "hedge_window": 144,
-        "min_correlation": 0.05,
-        "cooldown_bars": 4,
-        "reentry_z_buffer": 0.15,
-        "max_hold_bars": 96,
-        "stop_loss_pct": 0.025,
-    },
-    "1d": {
-        "lookback_window": 48,
-        "hedge_window": 96,
-        "min_correlation": 0.0,
-        "cooldown_bars": 1,
-        "reentry_z_buffer": 0.10,
-        "max_hold_bars": 28,
-        "stop_loss_pct": 0.020,
-    },
-}
-
-
 def bounded_pair_retune_params(timeframe: str) -> dict[str, float | int]:
     """Return bounded turnover/correlation guardrails for pair-spread candidates."""
-    payload = dict(_BOUNDED_PAIR_RETUNE_DEFAULTS)
-    payload.update(_BOUNDED_PAIR_RETUNE_BY_TIMEFRAME.get(str(timeframe), {}))
+    payload = dict(PAIR_SPREAD_BOUNDED_RETUNE_DEFAULTS)
+    payload.update(PAIR_SPREAD_BOUNDED_RETUNE_BY_TIMEFRAME.get(str(timeframe), {}))
     return payload
 
 

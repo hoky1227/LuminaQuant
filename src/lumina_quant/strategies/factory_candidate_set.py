@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from math import prod
 from typing import Any
 
+from lumina_quant.strategy_defaults import FACTORY_CANDIDATE_SET_MAX_PARAM_ROWS_PER_STRATEGY
 from lumina_quant.symbols import (
     CANONICAL_STRATEGY_TIMEFRAMES,
     canonicalize_symbol_list,
@@ -212,7 +213,7 @@ def build_candidate_set(
     symbols: Iterable[str] | None = None,
     timeframes: Iterable[str] | None = None,
     max_candidates: int = 0,
-    max_param_rows_per_strategy: int = 24,
+    max_param_rows_per_strategy: int = FACTORY_CANDIDATE_SET_MAX_PARAM_ROWS_PER_STRATEGY,
 ) -> list[dict[str, object]]:
     """Build a deterministic strategy candidate set."""
     symbol_list = canonicalize_symbol_list(symbols or DEFAULT_TOP10_PLUS_METALS)

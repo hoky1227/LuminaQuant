@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from lumina_quant.strategy_defaults import PUBLIC_SAMPLE_DECISION_CADENCE_SECONDS
 from lumina_quant.strategy import Strategy
 
 
 class PublicSampleStrategy(Strategy):
     """No-op sample strategy used when private strategies are not published."""
 
-    decision_cadence_seconds = 20
+    decision_cadence_seconds = PUBLIC_SAMPLE_DECISION_CADENCE_SECONDS
     required_timeframes = ("1s",)
     required_lookbacks = {"1s": 1}
 

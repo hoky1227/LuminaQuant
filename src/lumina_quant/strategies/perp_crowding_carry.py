@@ -9,6 +9,7 @@ from typing import Any
 from lumina_quant.core.events import SignalEvent
 from lumina_quant.indicators.advanced_alpha import perp_crowding_score
 from lumina_quant.indicators.common import safe_float, time_key
+from lumina_quant.strategy_defaults import PERP_CROWDING_MIN_SIGNAL_STRENGTH
 from lumina_quant.strategy import Strategy
 from lumina_quant.tuning import HyperParam, resolve_params_from_schema
 
@@ -282,7 +283,7 @@ class PerpCrowdingCarryStrategy(Strategy):
         # 1) Carry-aligned: mildly positive funding + low crowding => LONG
         # 2) Extreme positive funding + rising OI crowding => SHORT fade
         oi_delta_z = float(comps.get("oi_delta_z", 0.0))
-        strength = min(2.0, max(0.2, abs(score)))
+        strength = min(2.0, max(PERP_CROWDING_MIN_SIGNAL_STRENGTH, abs(score)))
 
         carry_long = funding > 0.0 and funding <= self.mild_funding and score >= self.entry_threshold
         crowded_long = funding >= self.extreme_funding and oi_delta_z > 0.0 and score >= self.entry_threshold
