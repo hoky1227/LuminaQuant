@@ -1,0 +1,203 @@
+{
+  "artifact_kind": "autonomous_secondary_cross_sectional_1h_pair_topcap_decision",
+  "best_variant": {
+    "family": "market_neutral",
+    "name": "pair_spread_1h_core_ethusdt_solusdt_1.8_0.45",
+    "notes": "Rolling-beta spread z-score with bounded turnover/correlation guardrails.",
+    "oos": {
+      "avg_trade": 0.0019306861270204471,
+      "benchmark_corr": 0.16735658430750966,
+      "cagr": 0.19429502108967478,
+      "calmar": 9.662603620678697,
+      "deflated_sharpe": 0.015968256737007414,
+      "exposure": 0.0,
+      "max_drawdown": 0.020107936609742416,
+      "mdd": 0.020107936609742416,
+      "pbo": 0.375,
+      "return": 0.016903705925117807,
+      "rolling_sharpe_min": -15.533979419281414,
+      "sharpe": 1.6125886900389224,
+      "sortino": 1.5653144184575578,
+      "spa_pvalue": 0.305,
+      "stability": -1.4966631939209534,
+      "total_return": 0.016903705925117807,
+      "trade_count": 9.0,
+      "trades": 9.0,
+      "turnover": 0.010882708585247884,
+      "volatility": 0.11413771463786622,
+      "win_rate": 0.17291414752116083,
+      "worst_month": 0.006673612158093478
+    },
+    "strategy_class": "PairSpreadZScoreStrategy",
+    "strategy_timeframe": "1h",
+    "symbols": [
+      "ETH/USDT",
+      "SOL/USDT"
+    ],
+    "tags": [
+      "market_neutral",
+      "pair",
+      "spread",
+      "zscore",
+      "article_pipeline",
+      "article_family:sector-dispersion-reversion"
+    ],
+    "train": {
+      "avg_trade": 0.0008070942569282337,
+      "benchmark_corr": -0.017617509573717712,
+      "cagr": 0.09647522806790065,
+      "calmar": 0.48665573066315565,
+      "deflated_sharpe": 0.02372669416754236,
+      "exposure": 0.0,
+      "max_drawdown": 0.19824122472869243,
+      "mdd": 0.19824122472869243,
+      "pbo": 0.375,
+      "return": 0.09647522806790065,
+      "rolling_sharpe_min": -23.84821801471366,
+      "sharpe": 0.6275693988260527,
+      "sortino": 0.5052122346842614,
+      "spa_pvalue": 0.29,
+      "stability": -1.529598312123615,
+      "total_return": 0.09647522806790065,
+      "trade_count": 132.0,
+      "trades": 132.0,
+      "turnover": 0.015068493150684932,
+      "volatility": 0.169760415523473,
+      "win_rate": 0.18938356164383563,
+      "worst_month": -0.059196624247229934
+    },
+    "val": {
+      "avg_trade": 0.002350203800362392,
+      "benchmark_corr": -0.049541550171021353,
+      "cagr": 0.42768960574397696,
+      "calmar": 16.248423805493797,
+      "deflated_sharpe": 0.07639629844001156,
+      "exposure": 0.0,
+      "max_drawdown": 0.02632191348919455,
+      "mdd": 0.02632191348919455,
+      "pbo": 0.5,
+      "return": 0.030702386090858624,
+      "rolling_sharpe_min": -20.34060648024153,
+      "sharpe": 4.195485619338813,
+      "sortino": 3.8493642556200576,
+      "spa_pvalue": 0.105,
+      "stability": -1.5,
+      "total_return": 0.030702386090858624,
+      "trade_count": 13.0,
+      "trades": 13.0,
+      "turnover": 0.01747311827956989,
+      "volatility": 0.08574282935184374,
+      "win_rate": 0.17069892473118278,
+      "worst_month": 0.0
+    }
+  },
+  "candidate_key": "secondary_cross_sectional_1h_pair_topcap_recheck",
+  "candidate_portfolio": {
+    "portfolio_metrics": {
+      "oos": {
+        "cagr": 0.2999222112824118,
+        "calmar": 8.555188446761305,
+        "max_drawdown": 0.035057347146567164,
+        "sharpe": 1.8733583520585342,
+        "sortino": 4.79754311812622,
+        "total_return": 0.02547147160075869,
+        "volatility": 0.14550730184982238
+      },
+      "train": {
+        "cagr": -0.0008173555068567984,
+        "calmar": -0.005828883927214936,
+        "max_drawdown": 0.14022504429031135,
+        "sharpe": 0.06784502752904552,
+        "sortino": 0.11829287628677773,
+        "total_return": -0.0008173555068567984,
+        "volatility": 0.1487232913810957
+      },
+      "val": {
+        "cagr": 0.33673564848475923,
+        "calmar": 17.33458140815034,
+        "max_drawdown": 0.019425657912133576,
+        "sharpe": 3.0389700896246463,
+        "sortino": 8.14654451898467,
+        "total_return": 0.02495603468587304,
+        "volatility": 0.0970332854281442
+      }
+    },
+    "weights": [
+      {
+        "candidate_id": "d32af9536de7612a",
+        "family": "market_neutral",
+        "fit_return": 0.030702386090858624,
+        "fit_sharpe": 4.195485619338813,
+        "fit_split": "val",
+        "name": "pair_spread_1h_core_ethusdt_solusdt_1.8_0.45",
+        "oos_return": 0.016903705925117807,
+        "oos_sharpe": 1.6125886900389224,
+        "report_return": 0.016903705925117807,
+        "report_sharpe": 1.6125886900389224,
+        "report_split": "oos",
+        "strategy_class": "PairSpreadZScoreStrategy",
+        "symbols": [
+          "ETH/USDT",
+          "SOL/USDT"
+        ],
+        "timeframe": "1h",
+        "weight": 0.5
+      },
+      {
+        "candidate_id": "4c8fdaeabe315563",
+        "family": "cross_sectional",
+        "fit_return": 0.018372483665204387,
+        "fit_sharpe": 1.640883072742277,
+        "fit_split": "val",
+        "name": "topcap_tsmom_1h_balanced_16_4_0.015",
+        "oos_return": 0.032378603658792526,
+        "oos_sharpe": 1.4641557597854604,
+        "report_return": 0.032378603658792526,
+        "report_sharpe": 1.4641557597854604,
+        "report_split": "oos",
+        "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+        "symbols": [
+          "BTC/USDT",
+          "ETH/USDT",
+          "BNB/USDT",
+          "SOL/USDT",
+          "TRX/USDT"
+        ],
+        "timeframe": "1h",
+        "weight": 0.5
+      }
+    ]
+  },
+  "decision_reason": "Reused the strongest historical research-keep candidate bundle (cross-sectional 1h pair+topcap) instead of launching a duplicate heavy run. Even though the bundle stayed positive on train, validation, and locked OOS in its original evaluation, it still trails the current rolled-over refined vol-managed incumbent on locked-OOS return, Sharpe, and max drawdown.",
+  "deltas": {
+    "oos_max_drawdown_delta_vs_incumbent": 0.020779936331906113,
+    "oos_sharpe_delta_vs_incumbent": -1.6327532242036231,
+    "oos_total_return_delta_vs_incumbent": -0.03215653114838113,
+    "val_sharpe_delta_vs_incumbent": -2.0282949381332696,
+    "val_total_return_delta_vs_incumbent": -0.006477309048690927
+  },
+  "generated_at": "2026-03-16T12:36:41.357279+00:00",
+  "label": "Autonomous secondary cross-sectional 1h pair+topcap challenger",
+  "performance_block": {
+    "oos_max_drawdown": 0.035057347146567164,
+    "oos_sharpe": 1.8733583520585342,
+    "oos_total_return": 0.02547147160075869,
+    "peak_rss_mib": 2891.09375,
+    "status": "discard"
+  },
+  "recommended_action": "advance to the next ranked secondary candidate: pair_exec_takeprofit_bnbtrx_1h refinement",
+  "reuse_evidence": {
+    "duplicate_guard_reason": "historical cross-sectional keep bundle already exists and current incumbent composition is unchanged, so only a current-incumbent comparison was needed",
+    "representative_run_id": "autonomous_cross_sectional_1h_20260314T150019Z",
+    "supporting_run_count": 1
+  },
+  "schema_version": "1.0",
+  "source_artifacts": {
+    "candidate_portfolio": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/followup_status/autonomous_cross_sectional_1h_stability_pair_topcap_opt/portfolio_optimization_latest.json",
+    "comparison_json": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/followup_status/autonomous_secondary_cross_sectional_1h_pair_topcap_comparison_latest.json",
+    "incumbent_portfolio": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/followup_status/portfolio_one_shot_current_opt/portfolio_optimization_latest.json",
+    "source_memory": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/autonomous_cross_sectional_1h_20260314T150019Z/1h/exact_window_memory_evidence_latest.json",
+    "source_summary": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/autonomous_cross_sectional_1h_20260314T150019Z/1h/exact_window_suite_summary_latest.json"
+  },
+  "status": "discard"
+}

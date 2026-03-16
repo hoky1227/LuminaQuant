@@ -4,7 +4,7 @@
   "experiment_ledger": {
     "counts_by_status": {
       "crash": 5,
-      "discard": 46,
+      "discard": 47,
       "keep": 2
     },
     "path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/followup_status/autonomous_research_loop/experiments.tsv",
@@ -59,13 +59,14 @@
       "portfolio::causal_overlay_portfolio",
       "portfolio::current_one_shot_incumbent",
       "portfolio::exact_window_frozen_tuned",
+      "portfolio::secondary_cross_sectional_1h_pair_topcap_recheck",
       "screen::autonomous_alpha101_formula_1h",
       "screen::autonomous_leadlag_5m",
       "screen::autonomous_volcomp_vwap_rev_guarded_5m"
     ],
-    "row_count": 53
+    "row_count": 54
   },
-  "generated_at": "2026-03-16T11:56:17.045928+00:00",
+  "generated_at": "2026-03-16T12:37:09.355779+00:00",
   "ideas_backlog": {
     "candidate_count": 583,
     "path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/followup_status/autonomous_research_loop/ideas_backlog_latest.md",
@@ -574,7 +575,7 @@
   },
   "milestone_gate": {
     "branch": "",
-    "generated_at": "2026-03-16T11:56:40.509208+00:00",
+    "generated_at": "2026-03-16T12:37:09.355779+00:00",
     "git_status_short": "",
     "ready": false,
     "reason": "latest portfolio milestone still retains the incumbent",
@@ -589,6 +590,16 @@
     "Prioritize unused in-repo candidates from ideas_backlog_latest.md before adding new complexity.",
     "Only push privately when milestone_gate.ready becomes true under the locked-OOS decision artifact."
   ],
+  "next_secondary_lane": {
+    "duplication_risk": "low-moderate (reuse existing bundle only)",
+    "evidence_quality": "high",
+    "expected_upside": "highest prior promotion-score delta among non-primary candidates; positive train/val/oos evidence",
+    "lane_id": "cross_sectional_1h_pair_topcap_recheck",
+    "memory_cost": "<3 GiB reused exact-window evidence",
+    "rank": 1,
+    "status": "chosen_now",
+    "why_now": "best balance of evidence quality, portfolio upside, and low additional compute"
+  },
   "output_dir": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/followup_status/autonomous_research_loop",
   "pipeline_manifest": {
     "family_count": 11,
@@ -597,7 +608,52 @@
     "metric_count": 20
   },
   "report_root": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests",
+  "review_notes": {
+    "secondary_queue_refreshed_at": "2026-03-16T12:37:09.355779+00:00"
+  },
   "schema_version": "1.0",
+  "secondary_queue": [
+    {
+      "duplication_risk": "low-moderate (reuse existing bundle only)",
+      "evidence_quality": "high",
+      "expected_upside": "highest prior promotion-score delta among non-primary candidates; positive train/val/oos evidence",
+      "lane_id": "cross_sectional_1h_pair_topcap_recheck",
+      "memory_cost": "<3 GiB reused exact-window evidence",
+      "rank": 1,
+      "status": "chosen_now",
+      "why_now": "best balance of evidence quality, portfolio upside, and low additional compute"
+    },
+    {
+      "duplication_risk": "moderate-high (recent focused lane already executed)",
+      "evidence_quality": "high",
+      "expected_upside": "closest anchored OOS return to incumbent among recent discards",
+      "lane_id": "pair_exec_takeprofit_bnbtrx_1h_refinement",
+      "memory_cost": "~2.7 GiB historical exact-window evidence",
+      "rank": 2,
+      "status": "standby",
+      "why_now": "strong sleeve improvement but recent discard increases duplication risk"
+    },
+    {
+      "duplication_risk": "moderate (recent focused lane completed)",
+      "evidence_quality": "high",
+      "expected_upside": "improved portfolio Sharpe/drawdown in anchored test",
+      "lane_id": "lag_convergence_xptxpd_4h_refinement",
+      "memory_cost": "<3.3 GiB reused exact-window evidence",
+      "rank": 3,
+      "status": "standby",
+      "why_now": "risk-adjusted upside exists, but return still meaningfully below incumbent"
+    },
+    {
+      "duplication_risk": "low",
+      "evidence_quality": "blocked_by_coverage",
+      "expected_upside": "metals pair diversification if coverage improves",
+      "lane_id": "pair_spread_4h_xpt_xpd_retune_when_coverage_matures",
+      "memory_cost": "low",
+      "rank": 4,
+      "status": "deferred",
+      "why_now": "not executable before 2026-03-31T10:15:00+00:00 due insufficient coverage"
+    }
+  ],
   "stack_audit": {
     "incumbent_oos_total_return": 0.05762800274913982,
     "incumbent_train_total_return": 0.04887910496798242,

@@ -1,6 +1,6 @@
 # Autonomous Research Ideas Backlog
 
-- Generated at: `2026-03-16T10:21:58.355818+00:00`
+- Generated at: `2026-03-16T12:36:47.601233+00:00`
 - Candidate universe size: `583`
 - Backlog timeframes: `5m, 15m, 30m, 1h, 4h, 1d`
 - Incumbent strategy classes: `CompositeTrendStrategy, PairSpreadZScoreStrategy, TopCapTimeSeriesMomentumStrategy`
@@ -42,3 +42,16 @@
 - Reuse `exact_window_run_registry.jsonl` and the canonical registry snapshot before launching a heavy rerun.
 - Keep discarded challengers in the ledger; do not silently carry them forward as production candidates.
 - Treat recovered log archives as crash context only, not as the canonical duplicate-signature index.
+
+## Secondary queue after primary family exhaustion
+
+- Refreshed at: `2026-03-16T12:37:09.355779+00:00`
+- Incumbent reference: `portfolio_one_shot_current_opt/portfolio_optimization_latest.json`
+- Review rule: rank by expected portfolio upside, duplication risk, memory cost, and evidence quality.
+
+| Rank | Lane | Status | Why it stays in queue |
+|---:|---|---|---|
+| 1 | `cross_sectional_1h_pair_topcap_recheck` | `chosen_now` | best balance of evidence quality, portfolio upside, and low additional compute |
+| 2 | `pair_exec_takeprofit_bnbtrx_1h_refinement` | `standby` | strong sleeve improvement but recent discard increases duplication risk |
+| 3 | `lag_convergence_xptxpd_4h_refinement` | `standby` | risk-adjusted upside exists, but return still meaningfully below incumbent |
+| 4 | `pair_spread_4h_xpt_xpd_retune_when_coverage_matures` | `deferred` | not executable before 2026-03-31T10:15:00+00:00 due insufficient coverage |
