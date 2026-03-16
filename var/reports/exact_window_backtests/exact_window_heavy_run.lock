@@ -1,0 +1,19 @@
+{
+  "allow_metals": false,
+  "batch_id": "1h",
+  "label": "exact_window",
+  "pid": 6045,
+  "requested_symbols": [
+    "BTC/USDT",
+    "ETH/USDT",
+    "BNB/USDT",
+    "SOL/USDT",
+    "TRX/USDT"
+  ],
+  "requested_timeframes": [
+    "1h"
+  ],
+  "run_id": "autonomous_pair_exec_takeprofit_1h_20260316T0942Z",
+  "run_signature": "74512d78a00514a8ccf260c66743784715dc4b68ab47571ee03b3dfb56329b9a",
+  "started_at_utc": "2026-03-16T09:40:43.964254+00:00"
+}
