@@ -654,10 +654,8 @@ class ParquetMarketDataRepository:
     ) -> None:
         checkpoint_path = self._raw_checkpoint_path(exchange=exchange, symbol=symbol)
         checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = checkpoint_path.with_suffix(".tmp")
-        tmp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        self._fsync_file(tmp_path)
-        tmp_path.replace(checkpoint_path)
+        checkpoint_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        self._fsync_file(checkpoint_path)
         self._fsync_dir(checkpoint_path.parent)
 
     def append_raw_wal_record(
@@ -716,22 +714,33 @@ class ParquetMarketDataRepository:
             output_path = part_path / "part-0000.parquet"
 
             if output_path.exists():
-                existing = (
-                    pl.read_parquet(output_path)
-                    .select(list(_RAW_AGGTRADES_REQUIRED_COLUMNS))
-                    .with_columns(
-                        [
-                            (
-                                pl.col("timestamp_ms").cast(pl.Utf8)
-                                + pl.lit(":")
-                                + pl.col("agg_trade_id").cast(pl.Utf8)
-                            ).alias("_trade_key"),
-                            (pl.col("timestamp_ms") // 1000).cast(pl.Int64).alias("_ts_sec"),
-                            pl.lit(part_key).alias("_partition_date"),
-                        ]
+                try:
+                    existing = (
+                        pl.read_parquet(output_path)
+                        .select(list(_RAW_AGGTRADES_REQUIRED_COLUMNS))
+                        .with_columns(
+                            [
+                                (
+                                    pl.col("timestamp_ms").cast(pl.Utf8)
+                                    + pl.lit(":")
+                                    + pl.col("agg_trade_id").cast(pl.Utf8)
+                                ).alias("_trade_key"),
+                                (pl.col("timestamp_ms") // 1000).cast(pl.Int64).alias("_ts_sec"),
+                                pl.lit(part_key).alias("_partition_date"),
+                            ]
+                        )
+                        .select(ordered_columns)
                     )
-                    .select(ordered_columns)
-                )
+                except BaseException:
+                    corrupt_path = output_path.with_name(
+                        f"{output_path.stem}.corrupt-{datetime.now(UTC).strftime('%Y%m%dT%H%M%S%fZ')}{output_path.suffix}"
+                    )
+                    output_path.replace(corrupt_path)
+                    self._fsync_dir(output_path.parent)
+                    existing = pl.DataFrame(
+                        {name: [] for name in ordered_columns},
+                        schema={name: partition.schema[name] for name in ordered_columns},
+                    ).select(ordered_columns)
             else:
                 existing = pl.DataFrame(
                     {name: [] for name in ordered_columns},
@@ -747,10 +756,7 @@ class ParquetMarketDataRepository:
             total_rows += int(merged.height)
 
             payload = merged.select(list(_RAW_AGGTRADES_REQUIRED_COLUMNS))
-            tmp_path = output_path.with_suffix(".tmp.parquet")
-            payload.write_parquet(tmp_path, compression="zstd", statistics=True)
-            self._fsync_file(tmp_path)
-            tmp_path.replace(output_path)
+            payload.write_parquet(output_path, compression="zstd", statistics=True)
             self._fsync_dir(output_path.parent)
 
         return int(frame.height)

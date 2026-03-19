@@ -103,12 +103,18 @@ def _fetch_ohlcv_with_retry(
     while True:
         try:
             return exchange.fetch_ohlcv(symbol, timeframe, since=since_ms, limit=limit)
-        except Exception:
+        except Exception as exc:
             attempt += 1
             if attempt > max(0, int(retries)):
                 raise
+            message = str(exc)
+            ceiling = (
+                60.0
+                if "429" in message or "Too Many Requests" in message or "DDoSProtection" in message
+                else 10.0
+            )
             time.sleep(wait)
-            wait = min(wait * 2.0, 10.0)
+            wait = min(wait * 2.0, ceiling)
 
 
 def _fetch_trades_with_retry(

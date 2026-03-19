@@ -285,6 +285,28 @@ uv run lq live --transport ws
 uv run lq dashboard --run
 ```
 
+**Simple local start/stop wrappers (Linux/macOS shell):**
+```bash
+# one controlled paper session (env load + optional refresh/validate/preflight)
+bash scripts/ops/start_live_session.sh --dsn 'postgresql:///luminaquant'
+
+# resilient paper runner (restarts after runtime crashes, but not after graceful stop)
+bash run_bot.sh --dsn 'postgresql:///luminaquant'
+
+# graceful paper stop
+bash scripts/ops/stop_live_session.sh
+
+# install simple shell helpers into ~/.bashrc
+bash scripts/ops/install_shell_aliases.sh
+source ~/.bashrc
+
+# then use:
+lq-paper-on
+lq-paper-off
+lq-real-on
+lq-real-off
+```
+
 Live migration flags (non-HFT incremental rollout):
 ```yaml
 live:
@@ -387,6 +409,11 @@ uv run python -m streamlit run apps/dashboard/app.py --server.headless true
 # Default entrypoint (polling market-data handler)
 uv run lq live
 
+# Easier wrappers
+bash scripts/ops/start_live_session.sh --dsn 'postgresql:///luminaquant'
+bash run_bot.sh --dsn 'postgresql:///luminaquant'
+bash scripts/ops/stop_live_session.sh
+
 # WebSocket market-data entrypoint (lower latency)
 uv run lq live --transport ws
 
@@ -397,6 +424,11 @@ uv run lq live --transport ws
 
 # Real mode requires explicit safety flag:
 # LUMINA_ENABLE_LIVE_REAL=true uv run lq live --enable-live-real
+
+# Easy real-mode helpers
+bash scripts/ops/start_live_session.sh --real --allow-real --dsn 'postgresql:///luminaquant'
+bash run_bot.sh --real --allow-real --dsn 'postgresql:///luminaquant'
+bash scripts/ops/stop_live_session.sh --real
 
 # Graceful stop (recommended in ops): touch a stop file and pass it to runner
 touch /tmp/lq.stop

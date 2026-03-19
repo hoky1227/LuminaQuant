@@ -15,6 +15,13 @@ _SPEC.loader.exec_module(publish_public_pr)
 
 
 def test_sensitive_path_detection_blocks_private_trees():
+    assert publish_public_pr.is_sensitive_path("scripts/publish_public_pr.py")
+    assert publish_public_pr.is_sensitive_path("publish_api.ps1")
+    assert publish_public_pr.is_sensitive_path("publish_api.sh")
+    assert publish_public_pr.is_sensitive_path("tests/test_publish_public_pr.py")
+    assert publish_public_pr.is_sensitive_path("docs/WORKFLOW.md")
+    assert publish_public_pr.is_sensitive_path("docs/WSL_CLONE_PRIVATE_PUBLIC.md")
+    assert publish_public_pr.is_sensitive_path("docs/kr/WORKFLOW.md")
     assert publish_public_pr.is_sensitive_path("lumina_quant/strategies/rsi_strategy.py")
     assert publish_public_pr.is_sensitive_path("strategies/rsi_strategy.py")
     assert publish_public_pr.is_sensitive_path("lumina_quant/indicators/formulaic_alpha.py")
@@ -126,6 +133,35 @@ def test_restore_protected_paths_from_base_drops_private_only_files(tmp_path, mo
     assert not private_only.exists()
     staged = _run_git(repo, "diff", "--cached", "--name-only").stdout.splitlines()
     assert "src/lumina_quant/indicators/advanced_alpha.py" not in staged
+
+
+def test_drop_paths_from_public_removes_existing_public_publish_tooling(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    publish_script = repo / "scripts" / "publish_public_pr.py"
+    publish_script.parent.mkdir(parents=True)
+    publish_script.write_text("print('public copy')\n", encoding="utf-8")
+    workflow_doc = repo / "docs" / "WORKFLOW.md"
+    workflow_doc.parent.mkdir(parents=True, exist_ok=True)
+    workflow_doc.write_text("# internal workflow\n", encoding="utf-8")
+    _run_git(repo, "add", ".")
+    _run_git(repo, "commit", "-m", "base")
+
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(
+        publish_public_pr,
+        "DROP_FROM_PUBLIC_PATHS",
+        ("scripts/publish_public_pr.py", "docs/WORKFLOW.md"),
+    )
+
+    publish_public_pr._drop_paths_from_public()
+
+    assert not publish_script.exists()
+    assert not workflow_doc.exists()
+    staged_deleted = _run_git(repo, "diff", "--cached", "--name-status").stdout.splitlines()
+    assert staged_deleted == ["D\tdocs/WORKFLOW.md", "D\tscripts/publish_public_pr.py"]
 
 
 def test_content_sensitive_detection_blocks_public_path_with_private_reference(tmp_path, monkeypatch):

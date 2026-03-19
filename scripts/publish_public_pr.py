@@ -20,6 +20,16 @@ import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+INTERNAL_PUBLISH_PATHS: tuple[str, ...] = (
+    "publish_api.ps1",
+    "publish_api.sh",
+    "scripts/publish_public_pr.py",
+    "tests/test_publish_public_pr.py",
+    "docs/WORKFLOW.md",
+    "docs/WSL_CLONE_PRIVATE_PUBLIC.md",
+    "docs/kr/WORKFLOW.md",
+)
+
 PROTECTED_PATHS: tuple[str, ...] = (
     "AGENTS.md",
     ".agents",
@@ -99,7 +109,10 @@ PROTECTED_PATHS: tuple[str, ...] = (
     "tests/test_strategy_factory_library.py",
     "tests/test_strategy_support_collection_profiles.py",
     "tests/test_topcap_tsmom_strategy.py",
+    *INTERNAL_PUBLISH_PATHS,
 )
+
+DROP_FROM_PUBLIC_PATHS: tuple[str, ...] = INTERNAL_PUBLISH_PATHS
 
 SENSITIVE_PATH_RE = re.compile(
     r"^src/lumina_quant/strategies/"
@@ -176,6 +189,13 @@ SENSITIVE_PATH_RE = re.compile(
     r"|^tests/test_strategy_factory_library\.py$"
     r"|^tests/test_strategy_support_collection_profiles\.py$"
     r"|^tests/test_topcap_tsmom_strategy\.py$"
+    r"|^publish_api\.ps1$"
+    r"|^publish_api\.sh$"
+    r"|^scripts/publish_public_pr\.py$"
+    r"|^tests/test_publish_public_pr\.py$"
+    r"|^docs/WORKFLOW\.md$"
+    r"|^docs/WSL_CLONE_PRIVATE_PUBLIC\.md$"
+    r"|^docs/kr/WORKFLOW\.md$"
     r"|(^|/)live_?equity\.csv$"
     r"|(^|/)live_?trades\.csv$"
     r"|(^|/)equity\.csv$"
@@ -191,10 +211,7 @@ CONTENT_SCAN_EXTENSIONS: tuple[str, ...] = (
     ".toml",
     ".json",
 )
-CONTENT_SCAN_EXEMPT_PATHS: tuple[str, ...] = (
-    "scripts/publish_public_pr.py",
-    "tests/test_publish_public_pr.py",
-)
+CONTENT_SCAN_EXEMPT_PATHS: tuple[str, ...] = ()
 
 DEFAULT_PR_BODY = """## Summary
 - conflict-free sanitized sync branch from private source
@@ -349,6 +366,11 @@ def _restore_protected_paths_from_base() -> None:
         )
 
 
+def _drop_paths_from_public() -> None:
+    for path in DROP_FROM_PUBLIC_PATHS:
+        _git("rm", "-r", "-f", "--ignore-unmatch", "--", path, check=False)
+
+
 def _default_branch_name(prefix: str) -> str:
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     return f"{prefix}-{stamp}"
@@ -456,6 +478,7 @@ def main() -> int:
         _git("reset")
         _git("add", ".")
         _restore_protected_paths_from_base()
+        _drop_paths_from_public()
 
         staged = _staged_names()
         sensitive = _find_sensitive_paths(staged)

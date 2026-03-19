@@ -335,6 +335,280 @@ def test_mean_reversion_std_strategy_signal_produces_exposure():
     assert np.any(turnover > 0.0)
 
 
+def test_mean_reversion_std_strategy_signal_can_residualize_btc():
+    length = 180
+    btc_close = np.full(length, 100.0, dtype=float)
+    btc_close[80] = 92.0
+    btc_close[81:] = np.linspace(93.0, 101.0, length - 81, dtype=float)
+    eth_close = btc_close.copy()
+    aligned = {
+        "datetime": _minute_datetimes(length),
+        "BTC/USDT:open": btc_close,
+        "BTC/USDT:high": btc_close + 0.2,
+        "BTC/USDT:low": btc_close - 0.2,
+        "BTC/USDT:close": btc_close,
+        "BTC/USDT:volume": np.full(length, 100.0, dtype=float),
+        "ETH/USDT:open": eth_close,
+        "ETH/USDT:high": eth_close + 0.2,
+        "ETH/USDT:low": eth_close - 0.2,
+        "ETH/USDT:close": eth_close,
+        "ETH/USDT:volume": np.full(length, 100.0, dtype=float),
+    }
+    raw_candidate = {
+        "strategy_class": "MeanReversionStdStrategy",
+        "params": {
+            "window": 32,
+            "entry_z": 1.8,
+            "exit_z": 0.4,
+            "stop_loss_pct": 0.03,
+            "allow_short": True,
+        },
+    }
+    residual_candidate = {
+        "strategy_class": "MeanReversionStdStrategy",
+        "params": {
+            "window": 32,
+            "entry_z": 1.8,
+            "exit_z": 0.4,
+            "stop_loss_pct": 0.03,
+            "allow_short": True,
+            "residualize_btc": True,
+            "btc_symbol": "BTC/USDT",
+        },
+    }
+
+    _, raw_turnover, raw_exposure, raw_meta = research_runner._strategy_signal(
+        raw_candidate,
+        aligned=aligned,
+        symbols=["BTC/USDT", "ETH/USDT"],
+    )
+    _, residual_turnover, residual_exposure, residual_meta = research_runner._strategy_signal(
+        residual_candidate,
+        aligned=aligned,
+        symbols=["BTC/USDT", "ETH/USDT"],
+    )
+
+    assert raw_meta == {}
+    assert np.any(np.abs(raw_exposure) > 0.0)
+    assert np.any(raw_turnover > 0.0)
+    assert residual_meta.get("residualized_single_asset") is True
+    assert residual_meta.get("residualize_btc") is True
+    assert residual_meta.get("btc_symbol") == "BTC/USDT"
+    assert np.allclose(residual_exposure, 0.0)
+    assert np.allclose(residual_turnover, 0.0)
+
+
+def test_funding_liquidation_crowding_fade_strategy_signal_produces_exposure():
+    length = 420
+    close = np.linspace(100.0, 118.0, length, dtype=float)
+    close[220:228] *= np.linspace(1.0, 1.03, 8, dtype=float)
+    aligned = {
+        "datetime": _minute_datetimes(length),
+        "BTC/USDT:open": close - 0.1,
+        "BTC/USDT:high": close + 0.2,
+        "BTC/USDT:low": close - 0.2,
+        "BTC/USDT:close": close,
+        "BTC/USDT:volume": np.linspace(1_000.0, 1_500.0, length, dtype=float),
+        "BTC/USDT:funding_rate": np.linspace(0.0001, 0.0015, length, dtype=float),
+        "BTC/USDT:open_interest": 1_000_000.0 * np.exp(np.linspace(0.0, 0.3, length, dtype=float)),
+        "BTC/USDT:liquidation_long_notional": np.linspace(10_000.0, 120_000.0, length, dtype=float),
+        "BTC/USDT:liquidation_short_notional": np.linspace(5_000.0, 20_000.0, length, dtype=float),
+        "BTC/USDT:mark_price": close * 1.001,
+        "BTC/USDT:index_price": close,
+    }
+    candidate = {
+        "strategy_class": "FundingLiquidationCrowdingFadeStrategy",
+        "params": {
+            "window": 96,
+            "crowding_entry": 0.6,
+            "crowding_exit": 0.2,
+            "liquidation_z_min": 0.2,
+            "return_shock_pct": 0.002,
+            "stop_loss_pct": 0.02,
+            "max_hold_bars": 24,
+            "allow_short": True,
+        },
+    }
+
+    _, turnover, exposure, meta = research_runner._strategy_signal(
+        candidate,
+        aligned=aligned,
+        symbols=["BTC/USDT"],
+    )
+
+    assert exposure.shape == (length,)
+    assert np.any(np.abs(exposure) > 0.0)
+    assert np.any(turnover > 0.0)
+    assert "BTC/USDT" in list(meta.get("support_data_symbols") or [])
+
+
+def test_basis_snapback_reversion_strategy_signal_produces_exposure():
+    length = 420
+    close = np.linspace(100.0, 118.0, length, dtype=float)
+    mark = close.copy()
+    index = close.copy()
+    mark[200:212] *= np.linspace(1.0, 1.03, 12, dtype=float)
+    aligned = {
+        "datetime": _minute_datetimes(length),
+        "BTC/USDT:open": close - 0.1,
+        "BTC/USDT:high": close + 0.2,
+        "BTC/USDT:low": close - 0.2,
+        "BTC/USDT:close": close,
+        "BTC/USDT:volume": np.linspace(1_000.0, 1_500.0, length, dtype=float),
+        "BTC/USDT:mark_price": mark,
+        "BTC/USDT:index_price": index,
+    }
+    candidate = {
+        "strategy_class": "BasisSnapbackReversionStrategy",
+        "params": {
+            "window": 48,
+            "entry_z": 0.8,
+            "exit_z": 0.2,
+            "max_hold_bars": 24,
+            "stop_loss_pct": 0.02,
+            "allow_short": True,
+        },
+    }
+
+    _, turnover, exposure, meta = research_runner._strategy_signal(
+        candidate,
+        aligned=aligned,
+        symbols=["BTC/USDT"],
+    )
+
+    assert exposure.shape == (length,)
+    assert np.any(np.abs(exposure) > 0.0)
+    assert np.any(turnover > 0.0)
+    assert meta == {}
+
+
+def test_session_gated_residual_basket_reversion_strategy_signal_produces_exposure():
+    length = 420
+    datetimes = _minute_datetimes(length)
+    btc_close = np.linspace(100.0, 120.0, length, dtype=float)
+    eth_close = np.linspace(100.0, 112.0, length, dtype=float)
+    bnb_close = np.linspace(100.0, 108.0, length, dtype=float)
+    eth_close[200:210] *= np.linspace(0.96, 0.92, 10, dtype=float)
+    bnb_close[200:210] *= np.linspace(1.04, 1.08, 10, dtype=float)
+    aligned = {"datetime": datetimes}
+    for symbol, close in {
+        "BTC/USDT": btc_close,
+        "ETH/USDT": eth_close,
+        "BNB/USDT": bnb_close,
+    }.items():
+        aligned[f"{symbol}:open"] = close
+        aligned[f"{symbol}:high"] = close + 0.2
+        aligned[f"{symbol}:low"] = close - 0.2
+        aligned[f"{symbol}:close"] = close
+        aligned[f"{symbol}:volume"] = np.full(length, 120.0, dtype=float)
+
+    candidate = {
+        "strategy_class": "SessionGatedResidualBasketReversionStrategy",
+        "params": {
+            "residual_window": 32,
+            "entry_z": 0.8,
+            "exit_z": 0.2,
+            "rebalance_bars": 2,
+            "max_longs": 1,
+            "max_shorts": 1,
+            "stop_loss_pct": 0.02,
+            "allow_short": True,
+            "btc_symbol": "BTC/USDT",
+            "session_window_minutes": 180,
+        },
+    }
+
+    _, turnover, exposure, meta = research_runner._strategy_signal(
+        candidate,
+        aligned=aligned,
+        symbols=["BTC/USDT", "ETH/USDT", "BNB/USDT"],
+    )
+
+    assert np.any(np.abs(exposure) > 0.0)
+    assert np.any(turnover > 0.0)
+    assert meta.get("session_gated") is True
+    assert meta.get("residualized_cross_sectional") is True
+
+
+def test_cross_asset_liquidation_contagion_fade_strategy_signal_produces_exposure():
+    length = 420
+    aligned = {"datetime": _minute_datetimes(length)}
+    for symbol in ["BTC/USDT", "ETH/USDT", "BNB/USDT"]:
+        close = np.linspace(100.0, 110.0, length, dtype=float)
+        if symbol == "ETH/USDT":
+            close[220:228] *= np.linspace(1.0, 1.03, 8, dtype=float)
+        aligned[f"{symbol}:open"] = close
+        aligned[f"{symbol}:high"] = close + 0.2
+        aligned[f"{symbol}:low"] = close - 0.2
+        aligned[f"{symbol}:close"] = close
+        aligned[f"{symbol}:volume"] = np.full(length, 100.0, dtype=float)
+        long_liq = np.linspace(10_000.0, 20_000.0, length, dtype=float)
+        short_liq = np.linspace(5_000.0, 10_000.0, length, dtype=float)
+        if symbol != "ETH/USDT":
+            long_liq[220:228] = np.linspace(50_000.0, 140_000.0, 8, dtype=float)
+        aligned[f"{symbol}:liquidation_long_notional"] = long_liq
+        aligned[f"{symbol}:liquidation_short_notional"] = short_liq
+
+    candidate = {
+        "strategy_class": "CrossAssetLiquidationContagionFadeStrategy",
+        "params": {
+            "window": 48,
+            "leader_liq_z_min": 0.4,
+            "return_shock_pct": 0.2,
+            "exit_z": 0.2,
+            "max_hold_bars": 12,
+            "stop_loss_pct": 0.02,
+            "allow_short": True,
+        },
+    }
+
+    _, turnover, exposure, meta = research_runner._strategy_signal(
+        candidate,
+        aligned=aligned,
+        symbols=["BTC/USDT", "ETH/USDT", "BNB/USDT"],
+    )
+
+    assert np.any(np.abs(exposure) > 0.0)
+    assert np.any(turnover > 0.0)
+    assert meta == {}
+
+
+def test_multi_horizon_trend_exhaustion_fade_strategy_signal_produces_exposure():
+    length = 180
+    close = np.linspace(100.0, 120.0, length, dtype=float)
+    close[120:135] *= np.linspace(1.0, 1.12, 15, dtype=float)
+    close[135:] *= np.linspace(1.12, 1.05, length - 135, dtype=float)
+    aligned = {
+        "datetime": _minute_datetimes(length),
+        "BTC/USDT:open": close - 0.1,
+        "BTC/USDT:high": close + 0.2,
+        "BTC/USDT:low": close - 0.2,
+        "BTC/USDT:close": close,
+        "BTC/USDT:volume": np.full(length, 100.0, dtype=float),
+    }
+    candidate = {
+        "strategy_class": "MultiHorizonTrendExhaustionFadeStrategy",
+        "params": {
+            "short_window": 8,
+            "entry_z": 1.2,
+            "exit_z": 0.2,
+            "max_hold_bars": 12,
+            "stop_loss_pct": 0.02,
+            "allow_short": True,
+        },
+    }
+
+    _, turnover, exposure, meta = research_runner._strategy_signal(
+        candidate,
+        aligned=aligned,
+        symbols=["BTC/USDT"],
+    )
+
+    assert np.any(np.abs(exposure) > 0.0)
+    assert np.any(turnover > 0.0)
+    assert meta == {}
+
+
 def test_rolling_breakout_strategy_signal_produces_exposure():
     length = 160
     close = np.linspace(100.0, 112.0, length, dtype=float)

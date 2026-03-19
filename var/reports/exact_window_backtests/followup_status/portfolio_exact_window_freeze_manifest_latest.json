@@ -1,4 +1,5 @@
 {
+  "anchor_decisions": [],
   "artifact_kind": "portfolio_exact_window_freeze_manifest",
   "baseline_support": {
     "equal_weight_diagnostic": {
@@ -129,7 +130,20 @@
     "one_shot_optimized",
     "exact_window_frozen"
   ],
-  "generated_at": "2026-03-14T06:37:57.569769+00:00",
+  "generated_at": "2026-03-19T11:46:29.757482+00:00",
+  "memory_policy": {
+    "disk_budget_gib": 30.0,
+    "exact_window_hard_fraction": 0.8,
+    "exact_window_soft_fraction": 0.6,
+    "heavy_lock_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_followup_heavy_run.lock",
+    "heavy_run_cap_gib": 6.5,
+    "heavy_run_parallelism": 1,
+    "light_worker_parallelism": 2,
+    "rss_limit_fraction": 0.9,
+    "rss_limit_gib": 7.2,
+    "total_memory_cap_bytes": 8589934592,
+    "total_memory_cap_gib": 8.0
+  },
   "notes": [
     "Exact-window sleeve freeze uses the deterministic train/val-only formula; OOS-derived helper fields are excluded from selection.",
     "RollingBreakout is frozen from exact-window candidate-detail rows first, then optionally supplemented by the gate artifact for stream/metadata only.",
@@ -150,9 +164,17 @@
     "excluded": true,
     "review_not_before": "2026-03-31"
   },
+  "rolling_admission_blocked": false,
+  "rolling_gate": {
+    "recommended_action": "activate_conditionally",
+    "selection_basis": "train_val_only",
+    "survives_train_val": true
+  },
   "schema_version": "1.0",
   "selected_rows": [
     {
+      "anchor_decision": null,
+      "anchor_score": 15.58821428037141,
       "candidate_id": "0df2c8b8498ba604",
       "freeze_score": 15.869141532908879,
       "freeze_secondary_score": 0.3147053051948409,
@@ -179,6 +201,8 @@
       "timeframe": "30m"
     },
     {
+      "anchor_decision": null,
+      "anchor_score": 11.129573921227362,
       "candidate_id": "deb70de97b53b507",
       "freeze_score": 11.924962180768192,
       "freeze_secondary_score": -0.40191635468538767,
@@ -205,9 +229,11 @@
       "timeframe": "1h"
     },
     {
+      "anchor_decision": null,
+      "anchor_score": 7.175051210008929,
       "candidate_id": "a79680513062c403",
-      "freeze_score": 13.833756760731788,
-      "freeze_secondary_score": -0.19916750731927468,
+      "freeze_score": 7.357353421827119,
+      "freeze_secondary_score": 0.14224949591812358,
       "name": "rolling_breakout_30m_guarded_ls_64_0.002",
       "selection_basis": "validation_only",
       "split_windows": {
@@ -231,6 +257,8 @@
       "timeframe": "30m"
     },
     {
+      "anchor_decision": null,
+      "anchor_score": 6.944149135206029,
       "candidate_id": "9a24887d739bf4b0",
       "freeze_score": 7.309202284887273,
       "freeze_secondary_score": -0.4077123981173632,

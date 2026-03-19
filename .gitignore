@@ -8,6 +8,9 @@ logs/
 !native/**/*.bat
 !scripts/**/*.bat
 !scripts/ci/architecture_gate_market_window_contract.sh
+!scripts/ops/start_live_session.sh
+!scripts/ops/stop_live_session.sh
+!scripts/ops/install_shell_aliases.sh
 uv.lock
 .python-version
 *.code-workspace

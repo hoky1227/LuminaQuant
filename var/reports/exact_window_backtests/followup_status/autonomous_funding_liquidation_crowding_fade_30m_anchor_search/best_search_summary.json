@@ -1,0 +1,28 @@
+{
+  "best_metric": [
+    3.7841872681662254,
+    3.72976013306876,
+    0.0254805616159397,
+    0.010334901073452807,
+    0.27999999999999997
+  ],
+  "best_params": {
+    "correlation_threshold": 0.35,
+    "cost_penalty": 0.0,
+    "max_family_cap": 0.45,
+    "max_strategy_cap": 0.3,
+    "target_vol": 0.06
+  },
+  "best_requested_params": {
+    "correlation_threshold": 0.35,
+    "cost_penalty": 0.0,
+    "max_family_cap": 0.45,
+    "max_strategy_cap": 0.3,
+    "target_vol": 0.06
+  },
+  "bundle_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_funding_liquidation_crowding_fade_30m_anchor_latest.json",
+  "generated_at": "2026-03-17T13:02:17.087212+00:00",
+  "objective": "val_sharpe + (12 * val_return) - (4 * val_max_drawdown) - (0.75 * hhi) - (0.15 * turnover)",
+  "output_json_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_funding_liquidation_crowding_fade_30m_anchor_opt/portfolio_optimization_latest.json",
+  "runs": 384
+}

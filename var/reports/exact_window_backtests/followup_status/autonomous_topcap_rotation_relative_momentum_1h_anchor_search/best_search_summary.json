@@ -1,0 +1,28 @@
+{
+  "best_metric": [
+    4.19522905140387,
+    4.09846624658193,
+    0.02786612859065074,
+    0.010311986796541328,
+    0.26184372143960477
+  ],
+  "best_params": {
+    "correlation_threshold": 0.35,
+    "cost_penalty": 0.35,
+    "max_family_cap": 0.45,
+    "max_strategy_cap": 0.3,
+    "target_vol": 0.06
+  },
+  "best_requested_params": {
+    "correlation_threshold": 0.35,
+    "cost_penalty": 0.35,
+    "max_family_cap": 0.45,
+    "max_strategy_cap": 0.3,
+    "target_vol": 0.06
+  },
+  "bundle_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_topcap_rotation_relative_momentum_1h_anchor_latest.json",
+  "generated_at": "2026-03-17T11:20:40.567082+00:00",
+  "objective": "val_sharpe + (12 * val_return) - (4 * val_max_drawdown) - (0.75 * hhi) - (0.15 * turnover)",
+  "output_json_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_topcap_rotation_relative_momentum_1h_anchor_opt/portfolio_optimization_latest.json",
+  "runs": 384
+}

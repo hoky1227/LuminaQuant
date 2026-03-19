@@ -1,6 +1,336 @@
 {
-  "artifact_kind": "exact_window_canonical_registry",
   "entries": [
+    {
+      "allow_metals": false,
+      "batch_id": "30m",
+      "chunk_days": 14,
+      "details_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_candidate_details_latest.json",
+      "error": null,
+      "evaluated_count": 31,
+      "fail_analysis_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_fail_analysis_latest.json",
+      "manifest_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/autonomous_round2_trend_exhaustion_30m_20260317T133659Z/manifest.json",
+      "memory_evidence_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_memory_evidence_latest.json",
+      "oos_start": null,
+      "peak_rss_mib": 3552.69140625,
+      "promoted_count": 0,
+      "requested_oos_end_exclusive": null,
+      "requested_symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "requested_timeframes": [
+        "30m"
+      ],
+      "run_id": "autonomous_round2_trend_exhaustion_30m_20260317T133659Z",
+      "run_signature": "cb4199b762532a6d3b339d848b90eb766ae96394ab9b915cc4796420bb818217",
+      "status": "completed",
+      "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_suite_summary_latest.json",
+      "train_start": null,
+      "updated_at_utc": "2026-03-17T13:41:26.642704+00:00",
+      "val_start": null,
+      "window_profile": "default"
+    },
+    {
+      "allow_metals": false,
+      "batch_id": "5m",
+      "chunk_days": 5,
+      "details_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_candidate_details_latest.json",
+      "error": null,
+      "evaluated_count": 12,
+      "fail_analysis_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_fail_analysis_latest.json",
+      "manifest_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/autonomous_round2_session_contagion_5m_20260317T133033Z/manifest.json",
+      "memory_evidence_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_memory_evidence_latest.json",
+      "oos_start": null,
+      "peak_rss_mib": 2831.93359375,
+      "promoted_count": 0,
+      "requested_oos_end_exclusive": null,
+      "requested_symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT"
+      ],
+      "requested_timeframes": [
+        "5m"
+      ],
+      "run_id": "autonomous_round2_session_contagion_5m_20260317T133033Z",
+      "run_signature": "80eb10b186377062cbe72ce2cea9096811f6eabc1fbd20beb00de6bd8ccaf1ab",
+      "status": "completed",
+      "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_suite_summary_latest.json",
+      "train_start": null,
+      "updated_at_utc": "2026-03-17T13:33:36.632614+00:00",
+      "val_start": null,
+      "window_profile": "default"
+    },
+    {
+      "allow_metals": false,
+      "batch_id": "30m",
+      "chunk_days": 14,
+      "details_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_candidate_details_latest.json",
+      "error": null,
+      "evaluated_count": 29,
+      "fail_analysis_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_fail_analysis_latest.json",
+      "manifest_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/autonomous_basis_snapback_30m_20260317T131000Z/manifest.json",
+      "memory_evidence_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_memory_evidence_latest.json",
+      "oos_start": null,
+      "peak_rss_mib": 3560.578125,
+      "promoted_count": 0,
+      "requested_oos_end_exclusive": null,
+      "requested_symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "requested_timeframes": [
+        "30m"
+      ],
+      "run_id": "autonomous_basis_snapback_30m_20260317T131000Z",
+      "run_signature": "2b41a26cf1fab59f02031be804b7f746c3ec8e3551de1218eff2d7670028b1b4",
+      "status": "completed",
+      "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_suite_summary_latest.json",
+      "train_start": null,
+      "updated_at_utc": "2026-03-17T13:14:55.043068+00:00",
+      "val_start": null,
+      "window_profile": "default"
+    },
+    {
+      "allow_metals": false,
+      "batch_id": "30m",
+      "chunk_days": 14,
+      "details_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_candidate_details_latest.json",
+      "error": null,
+      "evaluated_count": 27,
+      "fail_analysis_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_fail_analysis_latest.json",
+      "log_path": null,
+      "manifest_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/autonomous_funding_liq_crowding_fade_30m_20260317T125428Z/manifest.json",
+      "memory_evidence_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_memory_evidence_latest.json",
+      "oos_start": null,
+      "peak_rss_mib": 3594.8046875,
+      "promoted_count": 0,
+      "requested_oos_end_exclusive": null,
+      "requested_symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "requested_timeframes": [
+        "30m"
+      ],
+      "run_id": "autonomous_funding_liq_crowding_fade_30m_20260317T125428Z",
+      "run_signature": "3d0b190e03081f31a80f52a6b0731f1d9a9945d7974f8598a08875965bd1df1d",
+      "status": "completed",
+      "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_suite_summary_latest.json",
+      "train_start": null,
+      "updated_at_utc": "2026-03-17T13:03:22.952522+00:00",
+      "val_start": null,
+      "window_profile": "default"
+    },
+    {
+      "allow_metals": false,
+      "batch_id": "30m",
+      "chunk_days": 14,
+      "details_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_candidate_details_latest.json",
+      "error": null,
+      "evaluated_count": 25,
+      "fail_analysis_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_fail_analysis_latest.json",
+      "log_path": null,
+      "manifest_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/autonomous_breadth_thrust_30m_20260317T121412Z/manifest.json",
+      "memory_evidence_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_memory_evidence_latest.json",
+      "oos_start": null,
+      "peak_rss_mib": 3558.875,
+      "promoted_count": 0,
+      "requested_oos_end_exclusive": null,
+      "requested_symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "requested_timeframes": [
+        "30m"
+      ],
+      "run_id": "autonomous_breadth_thrust_30m_20260317T121412Z",
+      "run_signature": "86aa13bd04f633267f362440523f300900ff426985be2b4c3fb5ad22469845ac",
+      "status": "completed",
+      "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_suite_summary_latest.json",
+      "train_start": null,
+      "updated_at_utc": "2026-03-17T13:03:22.952341+00:00",
+      "val_start": null,
+      "window_profile": "default"
+    },
+    {
+      "allow_metals": false,
+      "batch_id": "15m",
+      "chunk_days": 14,
+      "details_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_candidate_details_latest.json",
+      "error": null,
+      "evaluated_count": 27,
+      "fail_analysis_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_fail_analysis_latest.json",
+      "log_path": null,
+      "manifest_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/autonomous_volvol_residual_15m_20260317T120508Z/manifest.json",
+      "memory_evidence_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_memory_evidence_latest.json",
+      "oos_start": null,
+      "peak_rss_mib": 3139.34375,
+      "promoted_count": 0,
+      "requested_oos_end_exclusive": null,
+      "requested_symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "requested_timeframes": [
+        "15m"
+      ],
+      "run_id": "autonomous_volvol_residual_15m_20260317T120508Z",
+      "run_signature": "66fcfe7dc1bb38895d45148d5656c4727eebaf8555e2b058d5e4639827bff419",
+      "status": "completed",
+      "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_suite_summary_latest.json",
+      "train_start": null,
+      "updated_at_utc": "2026-03-17T13:03:22.952257+00:00",
+      "val_start": null,
+      "window_profile": "default"
+    },
+    {
+      "allow_metals": false,
+      "batch_id": "5m",
+      "chunk_days": 5,
+      "details_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_candidate_details_latest.json",
+      "error": null,
+      "evaluated_count": 8,
+      "fail_analysis_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_fail_analysis_latest.json",
+      "log_path": null,
+      "manifest_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/autonomous_session_liquidity_vacuum_5m_20260317T120018Z/manifest.json",
+      "memory_evidence_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_memory_evidence_latest.json",
+      "oos_start": null,
+      "peak_rss_mib": 2850.82421875,
+      "promoted_count": 0,
+      "requested_oos_end_exclusive": null,
+      "requested_symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT"
+      ],
+      "requested_timeframes": [
+        "5m"
+      ],
+      "run_id": "autonomous_session_liquidity_vacuum_5m_20260317T120018Z",
+      "run_signature": "37564be28cd5691ea1e449040774a8adc2cfc53f926741797a534182a00b5d48",
+      "status": "completed",
+      "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_suite_summary_latest.json",
+      "train_start": null,
+      "updated_at_utc": "2026-03-17T13:03:22.952173+00:00",
+      "val_start": null,
+      "window_profile": "default"
+    },
+    {
+      "allow_metals": false,
+      "batch_id": "15m",
+      "chunk_days": 14,
+      "details_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_candidate_details_latest.json",
+      "error": null,
+      "evaluated_count": 23,
+      "fail_analysis_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_fail_analysis_latest.json",
+      "log_path": null,
+      "manifest_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/autonomous_btc_beta_neutral_zscore_15m_20260317T113800Z/manifest.json",
+      "memory_evidence_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_memory_evidence_latest.json",
+      "oos_start": null,
+      "peak_rss_mib": 3136.55078125,
+      "promoted_count": 0,
+      "requested_oos_end_exclusive": null,
+      "requested_symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "requested_timeframes": [
+        "15m"
+      ],
+      "run_id": "autonomous_btc_beta_neutral_zscore_15m_20260317T113800Z",
+      "run_signature": "9e094576cb4100117ef8f8e304203438c9b82e5c0adea7e9377ca55311338422",
+      "status": "completed",
+      "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_suite_summary_latest.json",
+      "train_start": null,
+      "updated_at_utc": "2026-03-17T13:03:22.952106+00:00",
+      "val_start": null,
+      "window_profile": "default"
+    },
+    {
+      "allow_metals": false,
+      "batch_id": "5m",
+      "chunk_days": 5,
+      "details_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_candidate_details_latest.json",
+      "error": null,
+      "evaluated_count": 6,
+      "fail_analysis_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_fail_analysis_latest.json",
+      "log_path": null,
+      "manifest_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/autonomous_liquidity_shock_5m_20260317T112047Z/manifest.json",
+      "memory_evidence_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_memory_evidence_latest.json",
+      "oos_start": null,
+      "peak_rss_mib": 2808.31640625,
+      "promoted_count": 0,
+      "requested_oos_end_exclusive": null,
+      "requested_symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT"
+      ],
+      "requested_timeframes": [
+        "5m"
+      ],
+      "run_id": "autonomous_liquidity_shock_5m_20260317T112047Z",
+      "run_signature": "7e742e89e364c5f9ac3e37470885c3ca3258c07e6e95a6de6cb0d65603167970",
+      "status": "completed",
+      "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_suite_summary_latest.json",
+      "train_start": null,
+      "updated_at_utc": "2026-03-17T13:03:22.952032+00:00",
+      "val_start": null,
+      "window_profile": "default"
+    },
+    {
+      "allow_metals": false,
+      "batch_id": "30m",
+      "chunk_days": 14,
+      "details_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_candidate_details_latest.json",
+      "error": null,
+      "evaluated_count": 23,
+      "fail_analysis_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_fail_analysis_latest.json",
+      "log_path": null,
+      "manifest_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/autonomous_sector_dispersion_30m_20260317T105432Z/manifest.json",
+      "memory_evidence_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_memory_evidence_latest.json",
+      "oos_start": null,
+      "peak_rss_mib": 3541.1640625,
+      "promoted_count": 0,
+      "requested_oos_end_exclusive": null,
+      "requested_symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT"
+      ],
+      "requested_timeframes": [
+        "30m"
+      ],
+      "run_id": "autonomous_sector_dispersion_30m_20260317T105432Z",
+      "run_signature": "fd7711fdddb945671ee5a50cf551ef6af0f4a646074d51cce59506e5281fa0d4",
+      "status": "completed",
+      "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_suite_summary_latest.json",
+      "train_start": null,
+      "updated_at_utc": "2026-03-17T13:03:22.951963+00:00",
+      "val_start": null,
+      "window_profile": "default"
+    },
     {
       "allow_metals": false,
       "batch_id": "5m",
@@ -36,9 +366,9 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/autonomous_leadlag_5m_20260316T1017Z/5m/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-16T10:21:57.952019+00:00",
+      "updated_at_utc": "2026-03-17T13:03:22.951887+00:00",
       "val_start": null,
-      "window_profile": "default"
+      "window_profile": "archived_log"
     },
     {
       "allow_metals": false,
@@ -75,9 +405,9 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/autonomous_carry_30m_20260316T1011Z/30m/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-16T10:21:57.951943+00:00",
+      "updated_at_utc": "2026-03-17T13:03:22.951848+00:00",
       "val_start": null,
-      "window_profile": "default"
+      "window_profile": "archived_log"
     },
     {
       "allow_metals": false,
@@ -106,9 +436,9 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/autonomous_pair_exec_takeprofit_bnbtrx_1h_20260316T0958Z/1h/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-16T10:21:57.951864+00:00",
+      "updated_at_utc": "2026-03-17T13:03:22.951776+00:00",
       "val_start": null,
-      "window_profile": "default"
+      "window_profile": "archived_log"
     },
     {
       "allow_metals": false,
@@ -140,7 +470,7 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-16T10:21:57.951783+00:00",
+      "updated_at_utc": "2026-03-17T13:03:22.951700+00:00",
       "val_start": null,
       "window_profile": "default"
     },
@@ -174,7 +504,7 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-16T10:21:57.951720+00:00",
+      "updated_at_utc": "2026-03-17T13:03:22.951549+00:00",
       "val_start": null,
       "window_profile": "default"
     },
@@ -208,7 +538,7 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-16T10:21:57.951655+00:00",
+      "updated_at_utc": "2026-03-17T13:03:22.951478+00:00",
       "val_start": null,
       "window_profile": "default"
     },
@@ -242,7 +572,7 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-16T10:21:57.951591+00:00",
+      "updated_at_utc": "2026-03-17T13:03:22.951394+00:00",
       "val_start": null,
       "window_profile": "default"
     },
@@ -276,7 +606,7 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-16T10:21:57.951528+00:00",
+      "updated_at_utc": "2026-03-17T13:03:22.951211+00:00",
       "val_start": null,
       "window_profile": "default"
     },
@@ -310,7 +640,7 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-16T10:21:57.951462+00:00",
+      "updated_at_utc": "2026-03-17T13:03:22.951120+00:00",
       "val_start": null,
       "window_profile": "default"
     },
@@ -344,7 +674,7 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-16T10:21:57.951387+00:00",
+      "updated_at_utc": "2026-03-17T13:03:22.951053+00:00",
       "val_start": null,
       "window_profile": "default"
     },
@@ -378,7 +708,7 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-16T10:21:57.951297+00:00",
+      "updated_at_utc": "2026-03-17T13:03:22.950987+00:00",
       "val_start": null,
       "window_profile": "default"
     },
@@ -412,7 +742,7 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-16T10:21:57.951171+00:00",
+      "updated_at_utc": "2026-03-17T13:03:22.950919+00:00",
       "val_start": null,
       "window_profile": "default"
     },
@@ -446,7 +776,7 @@
       "status": "failed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-16T10:21:57.951098+00:00",
+      "updated_at_utc": "2026-03-17T13:03:22.950853+00:00",
       "val_start": null,
       "window_profile": "default"
     },
@@ -474,7 +804,7 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-16T10:21:57.951028+00:00",
+      "updated_at_utc": "2026-03-17T13:03:22.950788+00:00",
       "val_start": null,
       "window_profile": "default"
     },
@@ -502,7 +832,7 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-16T10:21:57.950937+00:00",
+      "updated_at_utc": "2026-03-17T13:03:22.950723+00:00",
       "val_start": null,
       "window_profile": "default"
     },
@@ -538,7 +868,7 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_suite_summary_latest.json",
       "train_start": "2026-01-07T10:00:00+00:00",
-      "updated_at_utc": "2026-03-16T10:21:57.950789+00:00",
+      "updated_at_utc": "2026-03-17T13:03:22.950654+00:00",
       "val_start": "2026-02-05T10:00:00+00:00",
       "window_profile": "mixed_assets"
     },
@@ -574,7 +904,7 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_suite_summary_latest.json",
       "train_start": "2026-01-07T10:00:00+00:00",
-      "updated_at_utc": "2026-03-16T10:21:57.950720+00:00",
+      "updated_at_utc": "2026-03-17T13:03:22.950585+00:00",
       "val_start": "2026-02-05T10:00:00+00:00",
       "window_profile": "mixed_assets_4h"
     },
@@ -608,7 +938,7 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-16T10:21:57.950644+00:00",
+      "updated_at_utc": "2026-03-17T13:03:22.950513+00:00",
       "val_start": null,
       "window_profile": "default"
     },
@@ -642,7 +972,7 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-16T10:21:57.950578+00:00",
+      "updated_at_utc": "2026-03-17T13:03:22.950445+00:00",
       "val_start": null,
       "window_profile": "default"
     },
@@ -676,7 +1006,7 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-16T10:21:57.950510+00:00",
+      "updated_at_utc": "2026-03-17T13:03:22.950376+00:00",
       "val_start": null,
       "window_profile": "default"
     },
@@ -712,7 +1042,7 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-16T10:21:57.950420+00:00",
+      "updated_at_utc": "2026-03-17T13:03:22.950301+00:00",
       "val_start": null,
       "window_profile": "default"
     },
@@ -743,7 +1073,7 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_suite_summary_latest.json",
       "train_start": "2026-01-30T10:15:00+00:00",
-      "updated_at_utc": "2026-03-16T10:21:57.950310+00:00",
+      "updated_at_utc": "2026-03-17T13:03:22.950229+00:00",
       "val_start": "2026-02-17T10:15:00+00:00",
       "window_profile": "metals_1d"
     },
@@ -774,7 +1104,7 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_suite_summary_latest.json",
       "train_start": "2026-01-30T10:15:00+00:00",
-      "updated_at_utc": "2026-03-16T10:21:57.950156+00:00",
+      "updated_at_utc": "2026-03-17T13:03:22.950154+00:00",
       "val_start": "2026-02-17T10:15:00+00:00",
       "window_profile": "metals_4h"
     },
@@ -807,7 +1137,7 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-16T10:21:57.950081+00:00",
+      "updated_at_utc": "2026-03-17T13:03:22.950066+00:00",
       "val_start": null,
       "window_profile": "default"
     },
@@ -842,7 +1172,7 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-16T10:21:57.950007+00:00",
+      "updated_at_utc": "2026-03-17T13:03:22.949894+00:00",
       "val_start": null,
       "window_profile": "default"
     },
@@ -881,13 +1211,12 @@
       "status": "completed",
       "summary_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_suite_summary_latest.json",
       "train_start": null,
-      "updated_at_utc": "2026-03-16T10:21:57.949927+00:00",
+      "updated_at_utc": "2026-03-17T13:03:22.949806+00:00",
       "val_start": null,
       "window_profile": "default"
     }
   ],
-  "entry_count": 26,
-  "generated_at": "2026-03-16T10:21:57.952033+00:00",
-  "provenance": "derived_from_exact_window_run_registry_jsonl",
+  "entry_count": 36,
+  "generated_at": "2026-03-17T13:41:26.642732+00:00",
   "schema_version": "1.0"
 }

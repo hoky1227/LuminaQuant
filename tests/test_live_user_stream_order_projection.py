@@ -114,5 +114,8 @@ def test_user_stream_projection_updates_state_and_emits_fill_delta():
     assert round(sum(float(item.quantity) for item in fills), 8) == 1.0
     assert any(item.status == "PARTIALLY_FILLED" for item in fills)
     assert any(item.status == "FILLED" for item in fills)
+    assert all((item.metadata or {}).get("fill_price") is not None for item in fills)
+    assert all((item.metadata or {}).get("reference_price") == 100.0 for item in fills)
+    assert all((item.metadata or {}).get("realized_slippage_bps") is not None for item in fills)
     assert any(str(payload.get("state")) == "PARTIAL" for payload in states)
     assert any(str(payload.get("state")) == "FILLED" for payload in states)

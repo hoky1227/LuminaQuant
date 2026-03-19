@@ -1,12 +1,12 @@
 # Autonomous Research Stack Audit
 
-- Generated at: `2026-03-16T10:21:58.343664+00:00`
+- Generated at: `2026-03-17T13:03:23.625733+00:00`
 - Incumbent train total return: 4.89%
 - Incumbent validation total return: 3.14%
 - Incumbent locked-OOS total return: 5.76%
 - Current promotion winner: `Current one-shot incumbent` (retained_incumbent)
 - Exact-window promoted_total: `0` | next_action=`ralplan_team_ralph_required`
-- Heavy lock path: `/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/followup_status/portfolio_followup_heavy_run.lock`
+- Heavy lock path: `/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_followup_heavy_run.lock`
 - Explicit total-memory budget: `8589934592` bytes (8 GiB)
 
 ## Highest-impact instability drivers

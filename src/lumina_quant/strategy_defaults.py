@@ -35,6 +35,15 @@ PAIR_SPREAD_BOUNDED_RETUNE_DEFAULTS: Final[dict[str, float | int]] = {
 }
 
 PAIR_SPREAD_BOUNDED_RETUNE_BY_TIMEFRAME: Final[dict[str, dict[str, float | int]]] = {
+    "30m": {
+        "lookback_window": 120,
+        "hedge_window": 240,
+        "min_correlation": 0.18,
+        "cooldown_bars": 8,
+        "reentry_z_buffer": 0.25,
+        "max_hold_bars": 192,
+        "stop_loss_pct": 0.025,
+    },
     "15m": {
         "lookback_window": 144,
         "hedge_window": 288,

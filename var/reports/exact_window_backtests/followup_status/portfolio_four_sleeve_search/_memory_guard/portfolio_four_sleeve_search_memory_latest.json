@@ -19,7 +19,7 @@
     }
   },
   "error": null,
-  "generated_at": "2026-03-14T12:26:45.576981+00:00",
+  "generated_at": "2026-03-19T11:49:06.126622+00:00",
   "hard_limit_bytes": 6871947673,
   "hard_limit_mib": 6553.599999427795,
   "hard_trigger_count": 0,
@@ -40,8 +40,8 @@
     "total_memory_cap_gib": 8.0
   },
   "output_dir": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_four_sleeve_search",
-  "peak_rss_bytes": 110039040,
-  "peak_rss_mib": 104.94140625,
+  "peak_rss_bytes": 110338048,
+  "peak_rss_mib": 105.2265625,
   "rss_log_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_four_sleeve_search/_memory_guard/portfolio_four_sleeve_search_rss_latest.jsonl",
   "run_name": "portfolio_four_sleeve_search",
   "sample_count": 768,

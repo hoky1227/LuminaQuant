@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from datetime import UTC, datetime
 
 from lumina_quant.data_sync import (
@@ -264,6 +265,7 @@ def collect_binance_aggtrades_raw(
     cursor = int(start_cursor)
     last_timestamp_ms: int | None = None
     last_agg_trade_id: int | None = None
+    throttle_sec = max(0.0, float(base_wait_sec) * 0.25)
 
     try:
         batch_count = 0
@@ -304,6 +306,18 @@ def collect_binance_aggtrades_raw(
             )
             last_timestamp_ms = int(filtered[-1]["timestamp_ms"])
             last_agg_trade_id = int(filtered[-1]["agg_trade_id"])
+            repo.write_raw_checkpoint(
+                exchange=exchange_token,
+                symbol=normalized_symbol,
+                payload={
+                    "symbol": normalized_symbol,
+                    "exchange": exchange_token,
+                    "last_timestamp_ms": int(last_timestamp_ms),
+                    "last_trade_id": int(last_agg_trade_id or 0),
+                    "last_agg_trade_id": int(last_agg_trade_id or 0),
+                    "updated_at_utc": datetime.now(UTC).isoformat(),
+                },
+            )
             repo.append_raw_wal_record(
                 exchange=exchange_token,
                 symbol=normalized_symbol,
@@ -316,6 +330,8 @@ def collect_binance_aggtrades_raw(
                 },
             )
             cursor = int(last_timestamp_ms) + 1
+            if throttle_sec > 0.0 and len(filtered) >= max(1, int(limit)) and cursor <= end_cursor:
+                time.sleep(throttle_sec)
             if len(filtered) < max(1, int(limit)):
                 break
     finally:

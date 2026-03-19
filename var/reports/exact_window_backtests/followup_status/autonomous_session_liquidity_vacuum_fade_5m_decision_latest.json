@@ -1,0 +1,212 @@
+{
+  "anchor_portfolio": {
+    "oos": {
+      "cagr": 0.36019690091849155,
+      "calmar": 25.173173844348398,
+      "max_drawdown": 0.014308759918223779,
+      "sharpe": 2.674804893956267,
+      "sortino": 8.716656909988613,
+      "total_return": 0.029938113277242495,
+      "volatility": 0.11753208073719748
+    },
+    "path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_session_liquidity_vacuum_fade_5m_anchor_opt/portfolio_optimization_latest.json",
+    "train": {
+      "cagr": 0.004921743184571614,
+      "calmar": 0.08336529365509358,
+      "max_drawdown": 0.05903827562743669,
+      "sharpe": 0.10967181710424874,
+      "sortino": 0.2064090903727245,
+      "total_return": 0.004921743184571614,
+      "volatility": 0.062404878595758634
+    },
+    "val": {
+      "cagr": 0.26846592534406577,
+      "calmar": 43.82652538124353,
+      "max_drawdown": 0.006125649318733384,
+      "sharpe": 4.609965030881414,
+      "sortino": 9.032899740903595,
+      "total_return": 0.020402759848211938,
+      "volatility": 0.05188451045849369
+    },
+    "weights": [
+      {
+        "candidate_id": "d70d92dd680f6f98",
+        "family": "mean_reversion",
+        "fit_return": 0.0004181359298645049,
+        "fit_sharpe": 0.3701584151442715,
+        "fit_split": "val",
+        "name": "session_liquidity_vacuum_fade_5m_utc_guarded_lo_64_0.008",
+        "oos_return": -0.013789970527669615,
+        "oos_sharpe": -1.6109689342771647,
+        "report_return": -0.013789970527669615,
+        "report_sharpe": -1.6109689342771647,
+        "report_split": "oos",
+        "strategy_class": "SessionLiquidityVacuumFadeStrategy",
+        "symbols": [
+          "BTC/USDT",
+          "ETH/USDT",
+          "BNB/USDT"
+        ],
+        "timeframe": "5m",
+        "weight": 0.3
+      },
+      {
+        "candidate_id": "4b050c2ad437c77f",
+        "family": "market_neutral",
+        "fit_return": 0.01606720015631824,
+        "fit_sharpe": 3.8797484359521275,
+        "fit_split": "val",
+        "name": "pair_spread_1h_core_bnbusdt_trxusdt_2.2_0.55",
+        "oos_return": 0.0723750581955176,
+        "oos_sharpe": 4.556884188045461,
+        "report_return": 0.0723750581955176,
+        "report_sharpe": 4.556884188045461,
+        "report_split": "oos",
+        "strategy_class": "PairSpreadZScoreStrategy",
+        "symbols": [
+          "BNB/USDT",
+          "TRX/USDT"
+        ],
+        "timeframe": "1h",
+        "weight": 0.3
+      },
+      {
+        "candidate_id": "feecc2c87fbb8475",
+        "family": "trend",
+        "fit_return": 0.04987876459743679,
+        "fit_sharpe": 4.427750205476359,
+        "fit_split": "val",
+        "name": "composite_trend_stable_30m_stable_ls_highconv_ls_0.75_0.45_0.20_0.80",
+        "oos_return": 0.029547105294839504,
+        "oos_sharpe": 2.2953624409038818,
+        "report_return": 0.029547105294839504,
+        "report_sharpe": 2.2953624409038818,
+        "report_split": "oos",
+        "strategy_class": "CompositeTrendStrategy",
+        "symbols": [
+          "BTC/USDT",
+          "ETH/USDT",
+          "BNB/USDT",
+          "SOL/USDT",
+          "TRX/USDT"
+        ],
+        "timeframe": "30m",
+        "weight": 0.2543902770880808
+      },
+      {
+        "candidate_id": "4c8fdaeabe315563",
+        "family": "cross_sectional",
+        "fit_return": 0.018372483665204387,
+        "fit_sharpe": 1.640883072742277,
+        "fit_split": "val",
+        "name": "topcap_tsmom_1h_balanced_16_4_0.015",
+        "oos_return": 0.032378603658792526,
+        "oos_sharpe": 1.4641557597854604,
+        "report_return": 0.032378603658792526,
+        "report_sharpe": 1.4641557597854604,
+        "report_split": "oos",
+        "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+        "symbols": [
+          "BTC/USDT",
+          "ETH/USDT",
+          "BNB/USDT",
+          "SOL/USDT",
+          "TRX/USDT"
+        ],
+        "timeframe": "1h",
+        "weight": 0.14560972291191915
+      }
+    ]
+  },
+  "anchor_search_peak_rss_mib": 42.4453125,
+  "artifact_kind": "autonomous_session_liquidity_vacuum_fade_5m_decision",
+  "candidate_key": "autonomous_session_liquidity_vacuum_fade_5m_anchor_opt",
+  "decision_reason": "Fresh 5m exact-window evidence for session-transition liquidity vacuum fade produced a mildly positive validation probe, but the selected sleeve still flipped negative on locked OOS and the anchored challenger remained below the incumbent on return, Sharpe, and max drawdown.",
+  "deltas": {
+    "anchor_oos_max_drawdown_delta_vs_incumbent": 3.13491035627278e-05,
+    "anchor_oos_sharpe_delta_vs_incumbent": -0.8313066823058901,
+    "anchor_oos_total_return_delta_vs_incumbent": -0.027689889471897322,
+    "probe_oos_sharpe_delta_vs_incumbent": -5.1170805105393224,
+    "probe_oos_total_return_delta_vs_incumbent": -0.07141797327680943,
+    "promotion_score_delta_vs_incumbent": -5.329629685839064
+  },
+  "generated_at": "2026-03-17T12:22:47.409026+00:00",
+  "label": "Autonomous session-transition liquidity vacuum fade 5m challenger",
+  "peak_rss_mib": 2850.82421875,
+  "probe_candidate": {
+    "name": "session_liquidity_vacuum_fade_5m_utc_guarded_lo_64_0.008",
+    "oos": {
+      "avg_trade": -0.0011260970946479518,
+      "benchmark_corr": 0.11477307470165429,
+      "cagr": -0.13692184367173987,
+      "calmar": -4.958797293886689,
+      "deflated_sharpe": 0.006516415426420952,
+      "exposure": 0.002051178587040586,
+      "max_drawdown": 0.02761190578218231,
+      "mdd": 0.02761190578218231,
+      "pbo": 0.0,
+      "return": -0.013789970527669615,
+      "rolling_sharpe_min": -51.029195960805126,
+      "sharpe": -1.6109689342771647,
+      "sortino": -0.12266317186737682,
+      "spa_pvalue": 1.0,
+      "stability": -1.507120543046597,
+      "total_return": -0.013789970527669615,
+      "trade_count": 12.0,
+      "trades": 12.0,
+      "turnover": 0.0006052658125693534,
+      "volatility": 0.08895086269114152,
+      "win_rate": 0.0018157974377080602,
+      "worst_month": -0.014241086093194188
+    },
+    "val": {
+      "avg_trade": 0.00010645994633308936,
+      "benchmark_corr": 0.05954082171261648,
+      "cagr": 0.004934318218048794,
+      "calmar": 1.4792524821189796,
+      "deflated_sharpe": 0.026950126985024803,
+      "exposure": 0.0005973715651135006,
+      "max_drawdown": 0.0033356835818727504,
+      "mdd": 0.0033356835818727504,
+      "pbo": 0.875,
+      "return": 0.0004181359298645049,
+      "rolling_sharpe_min": -40.931032148774975,
+      "sharpe": 0.3701584151442715,
+      "sortino": 0.023931465487490394,
+      "spa_pvalue": 0.465,
+      "stability": -1.5,
+      "total_return": 0.0004181359298645049,
+      "trade_count": 4.0,
+      "trades": 4.0,
+      "turnover": 0.00014934289127837514,
+      "volatility": 0.013545335856143058,
+      "win_rate": 0.0008960573476702509,
+      "worst_month": 0.0
+    }
+  },
+  "probe_peak_rss_mib": 2850.82421875,
+  "recommended_action": "continue through the remaining shortlist items; this session-transition idea did not clear the incumbent",
+  "schema_version": "1.0",
+  "source_artifacts": {
+    "anchor_bundle": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_session_liquidity_vacuum_fade_5m_anchor_latest.json",
+    "anchor_portfolio": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_session_liquidity_vacuum_fade_5m_anchor_opt/portfolio_optimization_latest.json",
+    "anchor_search_memory": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_session_liquidity_vacuum_fade_5m_anchor_search/_memory_guard/portfolio_four_sleeve_search_memory_latest.json",
+    "comparison_json": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_session_liquidity_vacuum_fade_5m_comparison_latest.json",
+    "comparison_md": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_session_liquidity_vacuum_fade_5m_comparison_latest.md",
+    "details_json": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/autonomous_session_liquidity_vacuum_5m_20260317T120018Z/5m/exact_window_candidate_details_latest.json",
+    "exact_window_memory": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/autonomous_session_liquidity_vacuum_5m_20260317T120018Z/5m/exact_window_memory_evidence_latest.json",
+    "incumbent_portfolio": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_one_shot_current_opt/portfolio_optimization_latest.json",
+    "probe_json": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_session_liquidity_vacuum_fade_5m_probe_latest.json",
+    "summary_json": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/autonomous_session_liquidity_vacuum_5m_20260317T120018Z/5m/exact_window_suite_summary_latest.json"
+  },
+  "status": "discard",
+  "summary": {
+    "anchor_selected_weight_count": 4,
+    "evaluated_count": 8,
+    "family_candidate_count": 2,
+    "probe_selected_in_anchor": true,
+    "promoted_count": 0,
+    "representative_variant": "session_liquidity_vacuum_fade_5m_utc_guarded_lo_64_0.008",
+    "run_id": "autonomous_session_liquidity_vacuum_5m_20260317T120018Z"
+  }
+}

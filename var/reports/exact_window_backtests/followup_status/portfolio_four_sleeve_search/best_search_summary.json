@@ -21,7 +21,7 @@
     "target_vol": 0.06
   },
   "bundle_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_four_sleeve_anchored_bundle_latest.json",
-  "generated_at": "2026-03-14T12:26:45.385880+00:00",
+  "generated_at": "2026-03-19T11:49:05.941402+00:00",
   "objective": "val_sharpe + (12 * val_return) - (4 * val_max_drawdown) - (0.75 * hhi) - (0.15 * turnover)",
   "output_json_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_four_sleeve_tuned/portfolio_optimization_latest.json",
   "runs": 384

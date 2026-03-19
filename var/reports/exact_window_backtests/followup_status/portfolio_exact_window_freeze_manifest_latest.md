@@ -1,8 +1,9 @@
 # portfolio exact-window freeze manifest
 
-- generated_at: `2026-03-14T06:37:57.569769+00:00`
+- generated_at: `2026-03-19T11:46:29.757482+00:00`
 - selection_basis: `validation_only`
 - oos_start: `2026-02-01T00:00:00Z`
+- heavy_lock_path: `/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_followup_heavy_run.lock`
 
 ## sources
 - composite_trend_30m: `/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/expansion_crypto_15m_30m_1h_20260310T115853Z/15m-30m-1h/exact_window_candidate_details_20260310T120626Z.json`

@@ -284,6 +284,28 @@ uv run lq live --transport ws
 uv run lq dashboard --run
 ```
 
+**간단한 로컬 시작/중지 래퍼 (Linux/macOS 셸):**
+```bash
+# 제어된 paper 1회 실행 (env 로드 + 선택적 refresh/validate/preflight)
+bash scripts/ops/start_live_session.sh --dsn 'postgresql:///luminaquant'
+
+# 런타임 크래시 시 자동 재시작하는 paper 러너
+bash run_bot.sh --dsn 'postgresql:///luminaquant'
+
+# paper 정상 종료
+bash scripts/ops/stop_live_session.sh
+
+# ~/.bashrc 에 쉬운 셸 함수 설치
+bash scripts/ops/install_shell_aliases.sh
+source ~/.bashrc
+
+# 이후 사용:
+lq-paper-on
+lq-paper-off
+lq-real-on
+lq-real-off
+```
+
 루트 호환 shim은 제거되었습니다. `uv run lq ...`를 단일 공식 엔트리포인트로 사용하세요.
 
 ### 선택적 private 확장 패키지
@@ -427,11 +449,21 @@ uv run python scripts/cleanup_ghost_runs.py \
 # 기본 엔트리포인트 (폴링 기반 시장데이터 핸들러)
 uv run lq live
 
+# 더 쉬운 래퍼
+bash scripts/ops/start_live_session.sh --dsn 'postgresql:///luminaquant'
+bash run_bot.sh --dsn 'postgresql:///luminaquant'
+bash scripts/ops/stop_live_session.sh
+
 # WebSocket 엔트리포인트 (더 낮은 지연)
 uv run lq live --transport ws
 
 # real 모드는 명시적 안전 플래그가 필요
 # LUMINA_ENABLE_LIVE_REAL=true uv run lq live --enable-live-real
+
+# 쉬운 real 모드 래퍼
+bash scripts/ops/start_live_session.sh --real --allow-real --dsn 'postgresql:///luminaquant'
+bash run_bot.sh --real --allow-real --dsn 'postgresql:///luminaquant'
+bash scripts/ops/stop_live_session.sh --real
 
 # 운영 권장: stop-file 기반 정상 종료
 touch /tmp/lq.stop

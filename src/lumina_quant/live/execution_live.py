@@ -320,6 +320,7 @@ class LiveExecutionHandler(ExecutionHandler):
                 order_payload,
                 float(projection.fill_delta),
                 status=str(payload.get("order_status") or "").lower(),
+                submitted_at=entry.get("created_at"),
             )
 
         entry["last_filled"] = float(projection.cumulative_filled)
@@ -492,7 +493,13 @@ class LiveExecutionHandler(ExecutionHandler):
             exchange_state = self._to_state(status, filled_now, total_amount)
             delta = filled_now - float(entry.get("last_filled", 0.0))
             if delta > 0:
-                self._emit_fill_event(order_event, latest, delta, status=status)
+                self._emit_fill_event(
+                    order_event,
+                    latest,
+                    delta,
+                    status=status,
+                    submitted_at=entry.get("created_at"),
+                )
                 entry["last_filled"] = filled_now
                 records.append(
                     self._build_reconciliation_payload(
@@ -610,7 +617,7 @@ class LiveExecutionHandler(ExecutionHandler):
         )
         return float(fill_price * quantity * fee_rate)
 
-    def _emit_fill_event(self, event, order, filled_qty, status):
+    def _emit_fill_event(self, event, order, filled_qty, status, submitted_at=None):
         if filled_qty <= 0:
             return
 
@@ -620,6 +627,26 @@ class LiveExecutionHandler(ExecutionHandler):
             or self.bars.get_latest_bar_value(event.symbol, "close")
             or 0.0
         )
+        reference_price = (
+            getattr(event, "price", None)
+            or self.bars.get_latest_bar_value(event.symbol, "close")
+            or order.get("price")
+            or order.get("average")
+            or 0.0
+        )
+        reference_price = float(reference_price or 0.0)
+        realized_slippage_bps = None
+        if reference_price > 0.0 and float(fill_price or 0.0) > 0.0:
+            if str(getattr(event, "direction", "")).upper() == "BUY":
+                realized_slippage_bps = ((float(fill_price) - reference_price) / reference_price) * 10_000.0
+            else:
+                realized_slippage_bps = ((reference_price - float(fill_price)) / reference_price) * 10_000.0
+        submit_to_fill_ms = None
+        if submitted_at is not None:
+            try:
+                submit_to_fill_ms = max(0, int((time.time() - float(submitted_at)) * 1000.0))
+            except Exception:
+                submit_to_fill_ms = None
         commission = self._estimate_commission(fill_price, filled_qty)
         fill_event = FillEvent(
             timeindex=self.bars.get_latest_bar_datetime(event.symbol),
@@ -633,7 +660,15 @@ class LiveExecutionHandler(ExecutionHandler):
             client_order_id=event.client_order_id,
             position_side=event.position_side,
             status=status.upper(),
-            metadata={"reduce_only": event.reduce_only},
+            metadata={
+                "reduce_only": event.reduce_only,
+                "order_type": getattr(event, "order_type", None),
+                "reference_price": (reference_price if reference_price > 0.0 else None),
+                "decision_price": getattr(event, "price", None),
+                "fill_price": float(fill_price),
+                "realized_slippage_bps": realized_slippage_bps,
+                "submit_to_fill_ms": submit_to_fill_ms,
+            },
         )
         self.events.put(fill_event)
         self.logger.info(
@@ -728,7 +763,13 @@ class LiveExecutionHandler(ExecutionHandler):
         if state == STATE_FILLED:
             if filled_qty <= 0:
                 filled_qty = total_amount
-            self._emit_fill_event(event, order, filled_qty, status="filled")
+            self._emit_fill_event(
+                event,
+                order,
+                filled_qty,
+                status="filled",
+                submitted_at=self.tracked_orders.get(order_id, {}).get("created_at"),
+            )
             self._forget_order(order_id, self.tracked_orders.get(order_id, {}))
         elif state in {STATE_OPEN, STATE_NEW, STATE_ACKED, STATE_PARTIAL}:
             self.logger.info("Order tracked order_id=%s state=%s", order_id, state)
@@ -793,6 +834,7 @@ class LiveExecutionHandler(ExecutionHandler):
                                 latest_after_cancel,
                                 delta_after_cancel,
                                 status=status_after_cancel,
+                                submitted_at=entry.get("created_at"),
                             )
                             entry["last_filled"] = filled_after_cancel
                         terminal_after_cancel = self._to_state(
@@ -837,7 +879,13 @@ class LiveExecutionHandler(ExecutionHandler):
             total_amount = float(latest.get("amount") or order_event.quantity)
             delta = filled_now - float(entry.get("last_filled", 0.0))
             if delta > 0:
-                self._emit_fill_event(order_event, latest, delta, status=status)
+                self._emit_fill_event(
+                    order_event,
+                    latest,
+                    delta,
+                    status=status,
+                    submitted_at=entry.get("created_at"),
+                )
                 entry["last_filled"] = filled_now
 
             entry["state"] = self._to_state(status, filled_now, total_amount)

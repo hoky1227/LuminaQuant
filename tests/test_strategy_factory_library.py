@@ -363,7 +363,7 @@ def test_pair_candidate_builder_adds_mixed_asset_pairs_only_when_symbols_present
 
 def test_candidate_library_adds_article_pipeline_provenance_tags_and_metadata():
     rows = build_binance_futures_candidates(
-        timeframes=["15m", "30m", "1h", "4h"],
+        timeframes=["5m", "15m", "30m", "1h", "4h"],
         symbols=[
             "BTC/USDT",
             "ETH/USDT",
@@ -395,6 +395,62 @@ def test_candidate_library_adds_article_pipeline_provenance_tags_and_metadata():
     assert std_row.metadata["article_pipeline_family_ids"] == ["single-asset-zscore-reversion"]
     assert "article_family:single-asset-zscore-reversion" in std_row.tags
 
+    residual_std_row = by_name["mean_reversion_std_15m_resid_btc_ls_64_2.00"]
+    assert residual_std_row.params["residualize_btc"] is True
+    assert residual_std_row.params["btc_symbol"] == "BTC/USDT"
+    assert residual_std_row.metadata["residualize_btc"] is True
+    assert "btc_beta_neutral" in residual_std_row.tags
+
+    liquidity_row = next(row for row in rows if row.strategy_class == "LiquidityShockReversionStrategy")
+    assert liquidity_row.metadata["article_pipeline_family_ids"] == ["liquidity-shock-reversion"]
+    assert "article_family:liquidity-shock-reversion" in liquidity_row.tags
+
+    session_liquidity_row = next(
+        row for row in rows if row.strategy_class == "SessionLiquidityVacuumFadeStrategy"
+    )
+    assert session_liquidity_row.metadata["article_pipeline_family_ids"] == [
+        "session-transition-liquidity-vacuum-fade"
+    ]
+    assert "article_family:session-transition-liquidity-vacuum-fade" in session_liquidity_row.tags
+
+    funding_crowding_row = next(
+        row for row in rows if row.strategy_class == "FundingLiquidationCrowdingFadeStrategy"
+    )
+    assert funding_crowding_row.metadata["article_pipeline_family_ids"] == [
+        "funding-liquidation-crowding-fade"
+    ]
+    assert "article_family:funding-liquidation-crowding-fade" in funding_crowding_row.tags
+
+    basis_snapback_row = next(
+        row for row in rows if row.strategy_class == "BasisSnapbackReversionStrategy"
+    )
+    assert basis_snapback_row.metadata["article_pipeline_family_ids"] == [
+        "basis-snapback-reversion"
+    ]
+    assert "article_family:basis-snapback-reversion" in basis_snapback_row.tags
+
+    vol_of_vol_row = next(
+        row for row in rows if row.strategy_class == "VolOfVolExhaustionFadeStrategy"
+    )
+    assert vol_of_vol_row.metadata["article_pipeline_family_ids"] == ["vol-of-vol-exhaustion-fade"]
+    assert "article_family:vol-of-vol-exhaustion-fade" in vol_of_vol_row.tags
+
+    session_residual_row = next(
+        row for row in rows if row.strategy_class == "SessionGatedResidualBasketReversionStrategy"
+    )
+    assert session_residual_row.metadata["article_pipeline_family_ids"] == [
+        "session-gated-residual-basket-reversion"
+    ]
+    assert "article_family:session-gated-residual-basket-reversion" in session_residual_row.tags
+
+    contagion_row = next(
+        row for row in rows if row.strategy_class == "CrossAssetLiquidationContagionFadeStrategy"
+    )
+    assert contagion_row.metadata["article_pipeline_family_ids"] == [
+        "cross-asset-liquidation-contagion-fade"
+    ]
+    assert "article_family:cross-asset-liquidation-contagion-fade" in contagion_row.tags
+
     leadlag_row = next(row for row in rows if row.strategy_class == "LeadLagSpilloverStrategy")
     assert leadlag_row.metadata["article_pipeline_family_ids"] == ["lead-lag-regime-spillover"]
     assert "article_family:lead-lag-regime-spillover" in leadlag_row.tags
@@ -402,6 +458,10 @@ def test_candidate_library_adds_article_pipeline_provenance_tags_and_metadata():
     mixed_pair_row = by_name["pair_spread_4h_participation_btcusdt_xauusdt_1.6_0.35"]
     assert mixed_pair_row.metadata["article_pipeline_family_ids"] == ["crypto-metal-residual-pairs"]
     assert "article_family:crypto-metal-residual-pairs" in mixed_pair_row.tags
+
+    sector_30m_row = by_name["pair_spread_30m_sector_btcusdt_trxusdt_2.0_0.50"]
+    assert sector_30m_row.metadata["article_pipeline_family_ids"] == ["sector-dispersion-reversion"]
+    assert "article_family:sector-dispersion-reversion" in sector_30m_row.tags
 
     crypto_pair_row = by_name["pair_spread_1h_core_btcusdt_trxusdt_1.8_0.45"]
     assert crypto_pair_row.metadata["article_pipeline_family_ids"] == ["sector-dispersion-reversion"]
@@ -422,6 +482,22 @@ def test_candidate_library_adds_article_pipeline_provenance_tags_and_metadata():
     topcap_row = by_name["topcap_tsmom_1h_balanced_16_4_0.015"]
     assert topcap_row.metadata["article_pipeline_family_ids"] == ["topcap-rotation-relative-momentum"]
     assert "article_family:topcap-rotation-relative-momentum" in topcap_row.tags
+
+    breadth_row = by_name["breadth_thrust_failure_reversal_30m_balanced_ls_16_0.80"]
+    assert breadth_row.metadata["article_pipeline_family_ids"] == ["breadth-thrust-failure-reversal"]
+    assert "article_family:breadth-thrust-failure-reversal" in breadth_row.tags
+
+    trend_exhaustion_row = by_name["multi_horizon_trend_exhaustion_fade_30m_balanced_ls_16_1.6"]
+    assert trend_exhaustion_row.metadata["article_pipeline_family_ids"] == [
+        "multi-horizon-trend-exhaustion-fade"
+    ]
+    assert "article_family:multi-horizon-trend-exhaustion-fade" in trend_exhaustion_row.tags
+
+    residual_basket_row = by_name["residual_basket_reversion_15m_resid_btc_ls_48_1.80"]
+    assert residual_basket_row.metadata["article_pipeline_family_ids"] == [
+        "cross-sectional-residual-basket-reversion"
+    ]
+    assert "article_family:cross-sectional-residual-basket-reversion" in residual_basket_row.tags
 
     residual_topcap_row = by_name["topcap_tsmom_1h_resid_btc_16_4_0.010"]
     assert residual_topcap_row.params["residualize_btc"] is True

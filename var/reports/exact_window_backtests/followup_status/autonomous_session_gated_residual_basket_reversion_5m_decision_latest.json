@@ -1,0 +1,212 @@
+{
+  "anchor_portfolio": {
+    "oos": {
+      "cagr": 0.38505668761991196,
+      "calmar": 30.63690693357752,
+      "max_drawdown": 0.012568393031801017,
+      "sharpe": 2.845438475179226,
+      "sortino": 12.44811723032853,
+      "total_return": 0.03172839050448606,
+      "volatility": 0.11682563271530529
+    },
+    "path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_session_gated_residual_basket_reversion_5m_anchor_opt/portfolio_optimization_latest.json",
+    "train": {
+      "cagr": -0.029472077050105572,
+      "calmar": -0.34623167999875437,
+      "max_drawdown": 0.08512241586388514,
+      "sharpe": -0.4445464507208465,
+      "sortino": -0.81312358452625,
+      "total_return": -0.029472077050105572,
+      "volatility": 0.06287145770687834
+    },
+    "val": {
+      "cagr": 0.31217148096392977,
+      "calmar": 70.49544835153175,
+      "max_drawdown": 0.004428250167404557,
+      "sharpe": 5.491680313882841,
+      "sortino": 9.522365980774026,
+      "total_return": 0.023342754441814106,
+      "volatility": 0.04970759402893009
+    },
+    "weights": [
+      {
+        "candidate_id": "aae3a439cc321193",
+        "family": "cross_sectional",
+        "fit_return": 0.009967142031092946,
+        "fit_sharpe": 2.6345724614282866,
+        "fit_split": "val",
+        "name": "session_gated_residual_basket_reversion_5m_resid_btc_guarded_lo_80_2.00",
+        "oos_return": -0.008364400988460807,
+        "oos_sharpe": -1.3480727885797361,
+        "report_return": -0.008364400988460807,
+        "report_sharpe": -1.3480727885797361,
+        "report_split": "oos",
+        "strategy_class": "SessionGatedResidualBasketReversionStrategy",
+        "symbols": [
+          "BTC/USDT",
+          "ETH/USDT",
+          "BNB/USDT"
+        ],
+        "timeframe": "5m",
+        "weight": 0.3
+      },
+      {
+        "candidate_id": "4b050c2ad437c77f",
+        "family": "market_neutral",
+        "fit_return": 0.01606720015631824,
+        "fit_sharpe": 3.8797484359521275,
+        "fit_split": "val",
+        "name": "pair_spread_1h_core_bnbusdt_trxusdt_2.2_0.55",
+        "oos_return": 0.0723750581955176,
+        "oos_sharpe": 4.556884188045461,
+        "report_return": 0.0723750581955176,
+        "report_sharpe": 4.556884188045461,
+        "report_split": "oos",
+        "strategy_class": "PairSpreadZScoreStrategy",
+        "symbols": [
+          "BNB/USDT",
+          "TRX/USDT"
+        ],
+        "timeframe": "1h",
+        "weight": 0.3
+      },
+      {
+        "candidate_id": "feecc2c87fbb8475",
+        "family": "trend",
+        "fit_return": 0.04987876459743679,
+        "fit_sharpe": 4.427750205476359,
+        "fit_split": "val",
+        "name": "composite_trend_stable_30m_stable_ls_highconv_ls_0.75_0.45_0.20_0.80",
+        "oos_return": 0.029547105294839504,
+        "oos_sharpe": 2.2953624409038818,
+        "report_return": 0.029547105294839504,
+        "report_sharpe": 2.2953624409038818,
+        "report_split": "oos",
+        "strategy_class": "CompositeTrendStrategy",
+        "symbols": [
+          "BTC/USDT",
+          "ETH/USDT",
+          "BNB/USDT",
+          "SOL/USDT",
+          "TRX/USDT"
+        ],
+        "timeframe": "30m",
+        "weight": 0.2543902770880808
+      },
+      {
+        "candidate_id": "4c8fdaeabe315563",
+        "family": "cross_sectional",
+        "fit_return": 0.018372483665204387,
+        "fit_sharpe": 1.640883072742277,
+        "fit_split": "val",
+        "name": "topcap_tsmom_1h_balanced_16_4_0.015",
+        "oos_return": 0.032378603658792526,
+        "oos_sharpe": 1.4641557597854604,
+        "report_return": 0.032378603658792526,
+        "report_sharpe": 1.4641557597854604,
+        "report_split": "oos",
+        "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+        "symbols": [
+          "BTC/USDT",
+          "ETH/USDT",
+          "BNB/USDT",
+          "SOL/USDT",
+          "TRX/USDT"
+        ],
+        "timeframe": "1h",
+        "weight": 0.1456097229119192
+      }
+    ]
+  },
+  "anchor_search_peak_rss_mib": 42.67578125,
+  "artifact_kind": "autonomous_session_gated_residual_basket_reversion_5m_decision",
+  "candidate_key": "autonomous_session_gated_residual_basket_reversion_5m_anchor_opt",
+  "decision_reason": "Round-2 item 3 improved validation quality versus earlier residual basket work and reduced anchored drawdown below the incumbent, but the selected probe still turned negative on locked OOS and the anchored challenger remained below the incumbent on total return and Sharpe.",
+  "deltas": {
+    "anchor_oos_max_drawdown_delta_vs_incumbent": -0.001709017782860034,
+    "anchor_oos_sharpe_delta_vs_incumbent": -0.6606731010829314,
+    "anchor_oos_total_return_delta_vs_incumbent": -0.025899612244653758,
+    "probe_oos_sharpe_delta_vs_incumbent": -4.854184364841894,
+    "probe_oos_total_return_delta_vs_incumbent": -0.06599240373760062,
+    "promotion_score_delta_vs_incumbent": -3.281217607739677
+  },
+  "generated_at": "2026-03-17T13:44:21.177866+00:00",
+  "label": "Autonomous session-gated residual basket reversion 5m challenger",
+  "peak_rss_mib": 2831.93359375,
+  "probe_candidate": {
+    "name": "session_gated_residual_basket_reversion_5m_resid_btc_guarded_lo_80_2.00",
+    "oos": {
+      "avg_trade": -0.00010517095928813162,
+      "benchmark_corr": 0.2080108785325011,
+      "cagr": -0.08521964667674864,
+      "calmar": -3.1734460005014977,
+      "deflated_sharpe": 0.004323545938116902,
+      "exposure": 0.019099498974410704,
+      "max_drawdown": 0.026853977242178195,
+      "mdd": 0.026853977242178195,
+      "pbo": 0.0,
+      "return": -0.008364400988460807,
+      "rolling_sharpe_min": -79.47281532231014,
+      "sharpe": -1.3480727885797361,
+      "sortino": -0.48221005724227606,
+      "spa_pvalue": 1.0,
+      "stability": -1.5022096111187573,
+      "total_return": -0.008364400988460807,
+      "trade_count": 78.0,
+      "trades": 78.0,
+      "turnover": 0.0028245737919903153,
+      "volatility": 0.06452935759092658,
+      "win_rate": 0.029153636638757186,
+      "worst_month": -0.004419222237514564
+    },
+    "val": {
+      "avg_trade": 0.0001639776980986764,
+      "benchmark_corr": 0.21583841740906085,
+      "cagr": 0.12386548548623444,
+      "calmar": 14.452873953335228,
+      "deflated_sharpe": 0.07045769868535429,
+      "exposure": 0.02889784946236559,
+      "max_drawdown": 0.008570301373011735,
+      "mdd": 0.008570301373011735,
+      "pbo": 0.375,
+      "return": 0.009967142031092946,
+      "rolling_sharpe_min": -73.36261344297311,
+      "sharpe": 2.6345724614282866,
+      "sortino": 1.2145233663331239,
+      "spa_pvalue": 0.23,
+      "stability": -1.5007179631908276,
+      "total_return": 0.009967142031092946,
+      "trade_count": 61.0,
+      "trades": 61.0,
+      "turnover": 0.0023148148148148147,
+      "volatility": 0.04470289437138974,
+      "win_rate": 0.043122759856630825,
+      "worst_month": -0.0014359263816552392
+    }
+  },
+  "probe_peak_rss_mib": 2831.93359375,
+  "recommended_action": "continue to round-2 item 4 or 5; session-gated residual basket did not clear promotion",
+  "schema_version": "1.0",
+  "source_artifacts": {
+    "anchor_bundle": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_session_gated_residual_basket_reversion_5m_anchor_latest.json",
+    "anchor_portfolio": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_session_gated_residual_basket_reversion_5m_anchor_opt/portfolio_optimization_latest.json",
+    "anchor_search_memory": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_session_gated_residual_basket_reversion_5m_anchor_search/_memory_guard/portfolio_four_sleeve_search_memory_latest.json",
+    "comparison_json": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_session_gated_residual_basket_reversion_5m_comparison_latest.json",
+    "comparison_md": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_session_gated_residual_basket_reversion_5m_comparison_latest.md",
+    "details_json": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/autonomous_round2_session_contagion_5m_20260317T133033Z/5m/exact_window_candidate_details_latest.json",
+    "exact_window_memory": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/autonomous_round2_session_contagion_5m_20260317T133033Z/5m/exact_window_memory_evidence_latest.json",
+    "incumbent_portfolio": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_one_shot_current_opt/portfolio_optimization_latest.json",
+    "probe_json": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_session_gated_residual_basket_reversion_5m_probe_latest.json",
+    "summary_json": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/autonomous_round2_session_contagion_5m_20260317T133033Z/5m/exact_window_suite_summary_latest.json"
+  },
+  "status": "discard",
+  "summary": {
+    "anchor_selected_weight_count": 4,
+    "evaluated_count": 12,
+    "family_candidate_count": 2,
+    "probe_selected_in_anchor": true,
+    "promoted_count": 0,
+    "representative_variant": "session_gated_residual_basket_reversion_5m_resid_btc_guarded_lo_80_2.00",
+    "run_id": "autonomous_round2_session_contagion_5m_20260317T133033Z"
+  }
+}

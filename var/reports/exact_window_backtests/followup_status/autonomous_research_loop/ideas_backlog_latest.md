@@ -1,7 +1,7 @@
 # Autonomous Research Ideas Backlog
 
-- Generated at: `2026-03-16T12:36:47.601233+00:00`
-- Candidate universe size: `583`
+- Generated at: `2026-03-17T13:03:23.641460+00:00`
+- Candidate universe size: `607`
 - Backlog timeframes: `5m, 15m, 30m, 1h, 4h, 1d`
 - Incumbent strategy classes: `CompositeTrendStrategy, PairSpreadZScoreStrategy, TopCapTimeSeriesMomentumStrategy`
 
@@ -43,16 +43,21 @@
 - Keep discarded challengers in the ledger; do not silently carry them forward as production candidates.
 - Treat recovered log archives as crash context only, not as the canonical duplicate-signature index.
 
-## Secondary queue after primary family exhaustion
+## Round-2 execution progress
 
-- Refreshed at: `2026-03-16T12:40:09.604718+00:00`
-- Incumbent reference: `portfolio_one_shot_current_opt/portfolio_optimization_latest.json`
-- Review rule: rank by expected portfolio upside, duplication risk, memory cost, and evidence quality.
-- Drain status: no executable secondary lane remains after the current recheck, pair_exec refinement, duplicate exhaustion, and coverage deferral pass.
+- Updated at: `2026-03-17T13:44:21.468676+00:00`
+- Outcome: round-2 items 1-5 are all exhausted without a promotion.
 
-| Rank | Lane | Status | Why it remains / why it was exhausted |
-|---:|---|---|---|
-| 1 | `cross_sectional_1h_pair_topcap_recheck` | `completed_discard` | rechecked and still below incumbent on locked-OOS return, Sharpe, and max drawdown |
-| 2 | `pair_exec_takeprofit_bnbtrx_1h_refinement` | `completed_discard` | refined anchor search reproduced the prior anchored challenger and still missed the incumbent on Sharpe and drawdown |
-| 3 | `lag_convergence_xptxpd_4h_refinement` | `exhausted_duplicate` | exact duplicate of the already-run lag_convergence_xptxpd_4h_probe_20260311T122038Z anchored lane; no new differentiating hypothesis |
-| 4 | `pair_spread_4h_xpt_xpd_retune_when_coverage_matures` | `deferred_coverage` | not executable before 2026-03-31T10:15:00+00:00 due insufficient coverage window |
+| Rank | Lane | Status | OOS Return | Sharpe | Max DD | Peak RSS MiB | Δ Return | Δ Sharpe | Δ Max DD |
+|---:|---|---|---:|---:|---:|---:|---:|---:|---:|
+| 1 | `Funding / liquidation crowding fade 30m` | `discard` | 4.0743% | 2.683 | 2.2423% | 3594.805 | -1.6885% | -0.823 | 0.8145% |
+| 2 | `Basis snapback reversion 30m` | `discard` | 4.0743% | 2.683 | 2.2423% | 3560.578 | -1.6885% | -0.823 | 0.8145% |
+| 3 | `Session-gated residual basket reversion 5m` | `discard` | 3.1728% | 2.845 | 1.2568% | 2831.934 | -2.5900% | -0.661 | -0.1709% |
+| 4 | `Cross-asset liquidation contagion fade 5m` | `discard` | 4.0743% | 2.683 | 2.2423% | 2831.934 | -1.6885% | -0.823 | 0.8145% |
+| 5 | `Multi-horizon trend exhaustion fade 30m` | `discard` | 3.4505% | 3.109 | 1.2627% | 3552.691 | -2.3123% | -0.397 | -0.1651% |
+
+## Round-2 shortlist
+
+- Artifact: `post_refresh_round2_shortlist_latest.md`
+- Current round-2 result: `exhausted_without_improvement`
+- Recommended next move: generate a round-3 shortlist or wait for the deferred retune.

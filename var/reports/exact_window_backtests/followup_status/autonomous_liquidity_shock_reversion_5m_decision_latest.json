@@ -1,0 +1,212 @@
+{
+  "anchor_portfolio": {
+    "oos": {
+      "cagr": 0.407462280240398,
+      "calmar": 41.338212025431595,
+      "max_drawdown": 0.009856794967080917,
+      "sharpe": 3.3631051254203057,
+      "sortino": 11.524107766149028,
+      "total_return": 0.033317209280487425,
+      "volatility": 0.10319600656286836
+    },
+    "path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_liquidity_shock_reversion_5m_anchor_opt/portfolio_optimization_latest.json",
+    "train": {
+      "cagr": -0.009728416783950866,
+      "calmar": -0.14596418049716176,
+      "max_drawdown": 0.06664934335818118,
+      "sharpe": -0.11140791647474768,
+      "sortino": -0.18946866814004543,
+      "total_return": -0.009728416783950866,
+      "volatility": 0.06745309771055542
+    },
+    "val": {
+      "cagr": 0.22480108083474204,
+      "calmar": 36.698326844675584,
+      "max_drawdown": 0.006125649318733384,
+      "sharpe": 4.037597106960679,
+      "sortino": 8.139106309058036,
+      "total_return": 0.01737143763183502,
+      "volatility": 0.05054202796319217
+    },
+    "weights": [
+      {
+        "candidate_id": "cb39c1ed5fa72675",
+        "family": "mean_reversion",
+        "fit_return": -0.00952970058294067,
+        "fit_sharpe": -1.7135194188477665,
+        "fit_split": "val",
+        "name": "liquidity_shock_reversion_5m_thin_lo_72_0.010",
+        "oos_return": -0.0038058692663964777,
+        "oos_sharpe": -0.24498571713392112,
+        "report_return": -0.0038058692663964777,
+        "report_sharpe": -0.24498571713392112,
+        "report_split": "oos",
+        "strategy_class": "LiquidityShockReversionStrategy",
+        "symbols": [
+          "BTC/USDT",
+          "ETH/USDT",
+          "BNB/USDT"
+        ],
+        "timeframe": "5m",
+        "weight": 0.3
+      },
+      {
+        "candidate_id": "4b050c2ad437c77f",
+        "family": "market_neutral",
+        "fit_return": 0.01606720015631824,
+        "fit_sharpe": 3.8797484359521275,
+        "fit_split": "val",
+        "name": "pair_spread_1h_core_bnbusdt_trxusdt_2.2_0.55",
+        "oos_return": 0.0723750581955176,
+        "oos_sharpe": 4.556884188045461,
+        "report_return": 0.0723750581955176,
+        "report_sharpe": 4.556884188045461,
+        "report_split": "oos",
+        "strategy_class": "PairSpreadZScoreStrategy",
+        "symbols": [
+          "BNB/USDT",
+          "TRX/USDT"
+        ],
+        "timeframe": "1h",
+        "weight": 0.3
+      },
+      {
+        "candidate_id": "feecc2c87fbb8475",
+        "family": "trend",
+        "fit_return": 0.04987876459743679,
+        "fit_sharpe": 4.427750205476359,
+        "fit_split": "val",
+        "name": "composite_trend_stable_30m_stable_ls_highconv_ls_0.75_0.45_0.20_0.80",
+        "oos_return": 0.029547105294839504,
+        "oos_sharpe": 2.2953624409038818,
+        "report_return": 0.029547105294839504,
+        "report_sharpe": 2.2953624409038818,
+        "report_split": "oos",
+        "strategy_class": "CompositeTrendStrategy",
+        "symbols": [
+          "BTC/USDT",
+          "ETH/USDT",
+          "BNB/USDT",
+          "SOL/USDT",
+          "TRX/USDT"
+        ],
+        "timeframe": "30m",
+        "weight": 0.2543902770880808
+      },
+      {
+        "candidate_id": "4c8fdaeabe315563",
+        "family": "cross_sectional",
+        "fit_return": 0.018372483665204387,
+        "fit_sharpe": 1.640883072742277,
+        "fit_split": "val",
+        "name": "topcap_tsmom_1h_balanced_16_4_0.015",
+        "oos_return": 0.032378603658792526,
+        "oos_sharpe": 1.4641557597854604,
+        "report_return": 0.032378603658792526,
+        "report_sharpe": 1.4641557597854604,
+        "report_split": "oos",
+        "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+        "symbols": [
+          "BTC/USDT",
+          "ETH/USDT",
+          "BNB/USDT",
+          "SOL/USDT",
+          "TRX/USDT"
+        ],
+        "timeframe": "1h",
+        "weight": 0.1456097229119192
+      }
+    ]
+  },
+  "anchor_search_peak_rss_mib": 42.5859375,
+  "artifact_kind": "autonomous_liquidity_shock_reversion_5m_decision",
+  "candidate_key": "autonomous_liquidity_shock_reversion_5m_anchor_opt",
+  "decision_reason": "Fresh 5m liquidity-shock candidates were evaluated on BTC/ETH/BNB; the best validation-ranked probe (liquidity_shock_reversion_5m_thin_lo_72_0.010) stayed negative on validation and locked OOS. The anchored challenger improved max drawdown to 0.9857% from the incumbent's 1.4277%, but it still lagged on locked-OOS total return (3.3317% vs 5.7628%).",
+  "deltas": {
+    "anchor_oos_max_drawdown_delta_vs_incumbent": -0.004420615847580134,
+    "anchor_oos_sharpe_delta_vs_incumbent": -0.1430064508418516,
+    "anchor_oos_total_return_delta_vs_incumbent": -0.024310793468652392,
+    "probe_oos_sharpe_delta_vs_incumbent": -3.7510972933960782,
+    "probe_oos_total_return_delta_vs_incumbent": -0.061433872015536295,
+    "promotion_score_delta_vs_incumbent": -1.9798669611427933
+  },
+  "generated_at": "2026-03-17T11:27:52.575803+00:00",
+  "label": "Autonomous liquidity-shock 5m challenger",
+  "peak_rss_mib": 2808.31640625,
+  "probe_candidate": {
+    "name": "liquidity_shock_reversion_5m_thin_lo_72_0.010",
+    "oos": {
+      "avg_trade": -4.126407856376838e-05,
+      "benchmark_corr": 0.24596514590260954,
+      "cagr": -0.039628807876605054,
+      "calmar": -0.9038995676394359,
+      "deflated_sharpe": 0.02467561651648642,
+      "exposure": 0.010424022327583306,
+      "max_drawdown": 0.04384204760723254,
+      "mdd": 0.04384204760723254,
+      "pbo": 0.375,
+      "return": -0.0038058692663964777,
+      "rolling_sharpe_min": -52.221904031682854,
+      "sharpe": -0.24498571713392112,
+      "sortino": -0.047924085988480414,
+      "spa_pvalue": 1.0,
+      "stability": -1.5024530782461962,
+      "total_return": -0.0038058692663964777,
+      "trade_count": 73.0,
+      "trades": 73.0,
+      "turnover": 0.0030935808197989165,
+      "volatility": 0.13038705987333457,
+      "win_rate": 0.012407949157671743,
+      "worst_month": -0.004906156492392455
+    },
+    "val": {
+      "avg_trade": -0.0003480821616658546,
+      "benchmark_corr": 0.19990023640625168,
+      "cagr": -0.10661941156407961,
+      "calmar": -5.721254383248478,
+      "deflated_sharpe": 0.007987587178414635,
+      "exposure": 0.004704301075268817,
+      "max_drawdown": 0.018635670505449897,
+      "mdd": 0.018635670505449897,
+      "pbo": 0.125,
+      "return": -0.00952970058294067,
+      "rolling_sharpe_min": -49.4603571129931,
+      "sharpe": -1.7135194188477665,
+      "sortino": -0.21969088946070894,
+      "spa_pvalue": 1.0,
+      "stability": -1.5038390614802797,
+      "total_return": -0.00952970058294067,
+      "trade_count": 27.0,
+      "trades": 27.0,
+      "turnover": 0.0011947431302270013,
+      "volatility": 0.06457845812664757,
+      "win_rate": 0.004032258064516129,
+      "worst_month": -0.007678122960559142
+    }
+  },
+  "probe_peak_rss_mib": 2808.31640625,
+  "recommended_action": "advance to regime-conditioned-composite-trend 30m next; the new liquidity sleeve improved drawdown but still missed the incumbent on locked-OOS return",
+  "schema_version": "1.0",
+  "source_artifacts": {
+    "anchor_bundle": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_liquidity_shock_reversion_5m_anchor_latest.json",
+    "anchor_portfolio": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_liquidity_shock_reversion_5m_anchor_opt/portfolio_optimization_latest.json",
+    "anchor_search_memory": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_liquidity_shock_reversion_5m_anchor_search/_memory_guard/portfolio_four_sleeve_search_memory_latest.json",
+    "comparison_json": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_liquidity_shock_reversion_5m_comparison_latest.json",
+    "comparison_md": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_liquidity_shock_reversion_5m_comparison_latest.md",
+    "details_json": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/autonomous_liquidity_shock_5m_20260317T112047Z/5m/exact_window_candidate_details_latest.json",
+    "exact_window_memory": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/autonomous_liquidity_shock_5m_20260317T112047Z/5m/exact_window_memory_evidence_latest.json",
+    "incumbent_portfolio": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_one_shot_current_opt/portfolio_optimization_latest.json",
+    "probe_json": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_liquidity_shock_reversion_5m_probe_latest.json",
+    "summary_json": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/autonomous_liquidity_shock_5m_20260317T112047Z/5m/exact_window_suite_summary_latest.json"
+  },
+  "status": "discard",
+  "summary": {
+    "anchor_selected_weight_count": 4,
+    "evaluated_count": 6,
+    "family_candidate_count": 2,
+    "probe_selected_in_anchor": true,
+    "promoted_count": 0,
+    "representative_variant": "liquidity_shock_reversion_5m_thin_lo_72_0.010",
+    "run_id": "autonomous_liquidity_shock_5m_20260317T112047Z"
+  }
+}

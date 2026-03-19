@@ -112,6 +112,42 @@ def test_mean_reversion_std_emits_long_signal():
     assert signal.signal_type == "LONG"
 
 
+def test_mean_reversion_std_residualize_btc_blocks_common_factor_signals():
+    symbols = ["BTC/USDT", "ETH/USDT"]
+    rows = [100, 102, 98, 101, 99, 100, 102, 98, 90]
+    start = datetime(2026, 1, 1)
+
+    def _run(*, residualize_btc: bool) -> list[str]:
+        bars = _BarsMock(symbols)
+        events = queue.Queue()
+        strategy = MeanReversionStdStrategy(
+            bars,
+            events,
+            window=8,
+            entry_z=1.0,
+            exit_z=0.3,
+            allow_short=False,
+            residualize_btc=residualize_btc,
+            btc_symbol="BTC/USDT",
+        )
+        for idx, close_price in enumerate(rows):
+            current_dt = start + timedelta(minutes=idx)
+            for symbol in symbols:
+                bars.set_bar(symbol, current_dt, close_price, close_price, close_price, close_price, 10)
+                strategy.calculate_signals(_market_event(symbol, current_dt, close_price, volume=10))
+        signal_types: list[str] = []
+        while not events.empty():
+            signal_types.append(str(events.get_nowait().signal_type))
+        return signal_types
+
+    raw_signal_types = _run(residualize_btc=False)
+    residual_signal_types = _run(residualize_btc=True)
+
+    assert "LONG" in raw_signal_types
+    assert "LONG" not in residual_signal_types
+    assert "SHORT" not in residual_signal_types
+
+
 def test_vwap_reversion_emits_long_signal():
     bars = _BarsMock(["BTC/USDT"])
     events = queue.Queue()

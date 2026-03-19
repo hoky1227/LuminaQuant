@@ -1,0 +1,180 @@
+{
+  "artifact_kind": "final_portfolio_validation_data_refresh",
+  "canonical_source": "binance_raw_aggtrades",
+  "collection_cutoff_utc": "2026-03-19T14:10:18Z",
+  "error": null,
+  "feature_results": [
+    {
+      "after_feature_day_utc": "2026-03-19",
+      "before_feature_day_utc": "2026-03-19",
+      "cutoff_utc": "2026-03-19T14:10:18Z",
+      "first_timestamp_utc": "2026-03-19T00:00:00Z",
+      "last_timestamp_utc": "2026-03-19T14:10:00Z",
+      "resume_start_utc": "2026-03-19T00:00:00Z",
+      "symbol": "BTC/USDT",
+      "upserted_rows": 852
+    },
+    {
+      "after_feature_day_utc": "2026-03-19",
+      "before_feature_day_utc": "2026-03-19",
+      "cutoff_utc": "2026-03-19T14:10:18Z",
+      "first_timestamp_utc": "2026-03-19T00:00:00Z",
+      "last_timestamp_utc": "2026-03-19T14:10:00Z",
+      "resume_start_utc": "2026-03-19T00:00:00Z",
+      "symbol": "ETH/USDT",
+      "upserted_rows": 852
+    },
+    {
+      "after_feature_day_utc": "2026-03-19",
+      "before_feature_day_utc": "2026-03-19",
+      "cutoff_utc": "2026-03-19T14:10:18Z",
+      "first_timestamp_utc": "2026-03-19T00:00:00Z",
+      "last_timestamp_utc": "2026-03-19T14:10:00Z",
+      "resume_start_utc": "2026-03-19T00:00:00Z",
+      "symbol": "BNB/USDT",
+      "upserted_rows": 852
+    },
+    {
+      "after_feature_day_utc": "2026-03-19",
+      "before_feature_day_utc": "2026-03-19",
+      "cutoff_utc": "2026-03-19T14:10:18Z",
+      "first_timestamp_utc": "2026-03-19T00:00:00Z",
+      "last_timestamp_utc": "2026-03-19T14:10:00Z",
+      "resume_start_utc": "2026-03-19T00:00:00Z",
+      "symbol": "SOL/USDT",
+      "upserted_rows": 852
+    },
+    {
+      "after_feature_day_utc": "2026-03-19",
+      "before_feature_day_utc": "2026-03-19",
+      "cutoff_utc": "2026-03-19T14:10:18Z",
+      "first_timestamp_utc": "2026-03-19T00:00:00Z",
+      "last_timestamp_utc": "2026-03-19T14:10:00Z",
+      "resume_start_utc": "2026-03-19T00:00:00Z",
+      "symbol": "TRX/USDT",
+      "upserted_rows": 852
+    }
+  ],
+  "feature_symbols": [
+    "BTC/USDT",
+    "ETH/USDT",
+    "BNB/USDT",
+    "SOL/USDT",
+    "TRX/USDT"
+  ],
+  "generated_at": "2026-03-19T14:10:18.939106+00:00",
+  "memory": {
+    "budget_bytes": 8589934592,
+    "budget_mib": 8192.0,
+    "error": null,
+    "generated_at": "2026-03-19T14:18:22.265198+00:00",
+    "hard_limit_bytes": 8589934592,
+    "hard_limit_mib": 8192.0,
+    "hard_trigger_count": 0,
+    "label": "final_portfolio_validation_data_refresh",
+    "peak_rss_bytes": 2695208960,
+    "peak_rss_mib": 2570.3515625,
+    "rss_log_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/final_portfolio_validation_data_refresh_rss_latest.jsonl",
+    "sample_count": 16,
+    "soft_limit_bytes": 7730941132,
+    "soft_limit_mib": 7372.799999237061,
+    "soft_trigger_count": 0,
+    "status": "completed"
+  },
+  "ohlcv_derivation": "derived_from_raw_aggtrades",
+  "ohlcv_results": [
+    {
+      "after_ohlcv_max_utc": "2026-03-19T14:10:15Z",
+      "after_raw_agg_trade_utc": "2026-03-19T14:10:15.183000Z",
+      "archive_days_considered": 1,
+      "archive_days_downloaded": 0,
+      "archive_raw_rows_fetched": 0,
+      "archive_raw_rows_upserted": 0,
+      "before_ohlcv_max_utc": "2026-03-19T14:00:09Z",
+      "before_raw_agg_trade_utc": "2026-03-19T14:00:09.803000Z",
+      "cutoff_utc": "2026-03-19T14:10:18Z",
+      "derived_ohlcv_rows_upserted": 606,
+      "live_raw_rows_fetched": 3360,
+      "live_raw_rows_upserted": 3360,
+      "resume_start_utc": "2026-03-19T14:00:09Z",
+      "symbol": "BNB/USDT"
+    },
+    {
+      "after_ohlcv_max_utc": "2026-03-19T14:10:15Z",
+      "after_raw_agg_trade_utc": "2026-03-19T14:10:15.950000Z",
+      "archive_days_considered": 1,
+      "archive_days_downloaded": 0,
+      "archive_raw_rows_fetched": 0,
+      "archive_raw_rows_upserted": 0,
+      "before_ohlcv_max_utc": "2026-03-19T14:00:06Z",
+      "before_raw_agg_trade_utc": "2026-03-19T14:00:06.469000Z",
+      "cutoff_utc": "2026-03-19T14:10:18Z",
+      "derived_ohlcv_rows_upserted": 606,
+      "live_raw_rows_fetched": 646,
+      "live_raw_rows_upserted": 646,
+      "resume_start_utc": "2026-03-19T14:00:06Z",
+      "symbol": "TRX/USDT"
+    },
+    {
+      "after_ohlcv_max_utc": "2026-03-19T14:10:17Z",
+      "after_raw_agg_trade_utc": "2026-03-19T14:10:17.936000Z",
+      "archive_days_considered": 1,
+      "archive_days_downloaded": 0,
+      "archive_raw_rows_fetched": 0,
+      "archive_raw_rows_upserted": 0,
+      "before_ohlcv_max_utc": "2026-03-19T14:00:09Z",
+      "before_raw_agg_trade_utc": "2026-03-19T14:00:09.997000Z",
+      "cutoff_utc": "2026-03-19T14:10:18Z",
+      "derived_ohlcv_rows_upserted": 608,
+      "live_raw_rows_fetched": 40536,
+      "live_raw_rows_upserted": 40536,
+      "resume_start_utc": "2026-03-19T14:00:09Z",
+      "symbol": "BTC/USDT"
+    },
+    {
+      "after_ohlcv_max_utc": "2026-03-19T14:10:17Z",
+      "after_raw_agg_trade_utc": "2026-03-19T14:10:17.793000Z",
+      "archive_days_considered": 1,
+      "archive_days_downloaded": 0,
+      "archive_raw_rows_fetched": 0,
+      "archive_raw_rows_upserted": 0,
+      "before_ohlcv_max_utc": "2026-03-19T12:29:40Z",
+      "before_raw_agg_trade_utc": "2026-03-19T12:29:40.848000Z",
+      "cutoff_utc": "2026-03-19T14:10:18Z",
+      "derived_ohlcv_rows_upserted": 6037,
+      "live_raw_rows_fetched": 357082,
+      "live_raw_rows_upserted": 357082,
+      "resume_start_utc": "2026-03-19T12:29:40Z",
+      "symbol": "ETH/USDT"
+    },
+    {
+      "after_ohlcv_max_utc": "2026-03-19T14:10:17Z",
+      "after_raw_agg_trade_utc": "2026-03-19T14:10:17.761000Z",
+      "archive_days_considered": 1,
+      "archive_days_downloaded": 0,
+      "archive_raw_rows_fetched": 0,
+      "archive_raw_rows_upserted": 0,
+      "before_ohlcv_max_utc": "2026-03-19T12:29:40Z",
+      "before_raw_agg_trade_utc": "2026-03-19T12:29:40.377000Z",
+      "cutoff_utc": "2026-03-19T14:10:18Z",
+      "derived_ohlcv_rows_upserted": 6037,
+      "live_raw_rows_fetched": 46251,
+      "live_raw_rows_upserted": 46251,
+      "resume_start_utc": "2026-03-19T12:29:40Z",
+      "symbol": "SOL/USDT"
+    }
+  ],
+  "portfolio_symbols": [
+    "BNB/USDT",
+    "TRX/USDT",
+    "BTC/USDT",
+    "ETH/USDT",
+    "SOL/USDT"
+  ],
+  "status": "completed",
+  "support_inventory": {
+    "csv_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/final_portfolio_validation_support_inventory_latest.csv",
+    "json_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/final_portfolio_validation_support_inventory_latest.json",
+    "symbol_count": 5
+  }
+}

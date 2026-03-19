@@ -1,6 +1,6 @@
 # article-inspired llm alpha research pipeline
 
-- generated_at: `2026-03-16T10:21:57.946368+00:00`
+- generated_at: `2026-03-17T13:03:22.921610+00:00`
 - total_memory_cap_gib: `8.0`
 - heavy_run_cap_gib: `6.5`
 - heavy_run_parallelism: `1`

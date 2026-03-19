@@ -1,0 +1,53 @@
+{
+  "artifact_kind": "portfolio_followup_memory_summary",
+  "budget_bytes": 8589934592,
+  "budget_mib": 8192.0,
+  "context": {
+    "best_metric": [
+      5.62937367803804,
+      5.397871148982835,
+      0.038842964761541365,
+      0.009135503850945303,
+      0.2640947102393469
+    ],
+    "best_params": {
+      "correlation_threshold": 0.35,
+      "cost_penalty": 0.35,
+      "max_family_cap": 0.55,
+      "max_strategy_cap": 0.3,
+      "target_vol": 0.06
+    }
+  },
+  "error": null,
+  "generated_at": "2026-03-17T11:19:10.149193+00:00",
+  "hard_limit_bytes": 6871947673,
+  "hard_limit_mib": 6553.599999427795,
+  "hard_trigger_count": 0,
+  "label": "portfolio_followup::portfolio_four_sleeve_search",
+  "memory_policy": {
+    "disk_budget_gib": 30.0,
+    "exact_window_hard_fraction": 0.8,
+    "exact_window_soft_fraction": 0.6,
+    "explicit_budget_bytes": 8589934592,
+    "explicit_budget_gib": 8.0,
+    "heavy_lock_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_followup_heavy_run.lock",
+    "heavy_run_cap_gib": 6.5,
+    "heavy_run_parallelism": 1,
+    "light_worker_parallelism": 2,
+    "rss_limit_fraction": 0.9,
+    "rss_limit_gib": 7.2,
+    "total_memory_cap_bytes": 8589934592,
+    "total_memory_cap_gib": 8.0
+  },
+  "output_dir": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_regime_conditioned_composite_trend_30m_anchor_search",
+  "peak_rss_bytes": 44675072,
+  "peak_rss_mib": 42.60546875,
+  "rss_log_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_regime_conditioned_composite_trend_30m_anchor_search/_memory_guard/portfolio_four_sleeve_search_rss_latest.jsonl",
+  "run_name": "portfolio_four_sleeve_search",
+  "sample_count": 768,
+  "schema_version": "1.0",
+  "soft_limit_bytes": 5153960755,
+  "soft_limit_mib": 4915.199999809265,
+  "soft_trigger_count": 0,
+  "status": "completed"
+}

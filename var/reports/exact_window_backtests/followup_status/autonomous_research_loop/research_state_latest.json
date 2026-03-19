@@ -1,13 +1,13 @@
 {
   "artifact_kind": "autonomous_portfolio_research_state",
-  "canonical_registry_path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/exact_window_backtest_registry_latest.json",
+  "canonical_registry_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_backtest_registry_latest.json",
   "experiment_ledger": {
     "counts_by_status": {
       "crash": 5,
-      "discard": 47,
+      "discard": 66,
       "keep": 2
     },
-    "path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/followup_status/autonomous_research_loop/experiments.tsv",
+    "path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_research_loop/experiments.tsv",
     "records": [
       "exact-window-crash::bounded_4h_1d_metals_adaptive_20260309T125425Z",
       "exact-window-crash::bounded_4h_1d_metals_adaptive_20260309T130150Z",
@@ -17,59 +17,78 @@
       "exact-window::article_alpha_probe_20260309T134700Z",
       "exact-window::article_crypto_4h_focus_20260310T114006Z",
       "exact-window::article_focus_30m_4h_20260309T140226Z",
+      "exact-window::autonomous_breadth_thrust_30m_20260317T121412Z",
+      "exact-window::autonomous_btc_beta_neutral_zscore_15m_20260317T113800Z",
       "exact-window::autonomous_carry_30m_20260316T1011Z",
       "exact-window::autonomous_composite_exec_30m_20260315T1057Z",
       "exact-window::autonomous_crashguard_composite_30m_20260315T0759Z",
       "exact-window::autonomous_crashguard_topcap_1h_20260315T0711Z",
       "exact-window::autonomous_cross_sectional_1h_20260314T150019Z",
       "exact-window::autonomous_daily_1d_20260315T035155Z",
+      "exact-window::autonomous_funding_liq_crowding_fade_30m_20260317T125428Z",
       "exact-window::autonomous_intraday_15m_20260315T032440Z",
       "exact-window::autonomous_intraday_5m_20260314T145221Z",
       "exact-window::autonomous_leadlag_5m_20260316T1017Z",
+      "exact-window::autonomous_liquidity_shock_5m_20260317T112047Z",
       "exact-window::autonomous_mixed_assets_30m_20260314T161124Z",
       "exact-window::autonomous_mixed_assets_4h_20260314T155623Z",
       "exact-window::autonomous_pair_exec_takeprofit_bnbtrx_1h_20260316T0958Z",
       "exact-window::autonomous_pairstate_1h_20260315T0815Z",
       "exact-window::autonomous_residual_topcap_1h_20260315T0610Z",
       "exact-window::autonomous_residual_topcap_1h_retry_20260315T0612Z",
+      "exact-window::autonomous_sector_dispersion_30m_20260317T105432Z",
+      "exact-window::autonomous_session_liquidity_vacuum_5m_20260317T120018Z",
       "exact-window::autonomous_topcap_exec_1h_20260315T0945Z",
       "exact-window::autonomous_topcap_exec_combo_1h_20260315T1335Z",
       "exact-window::autonomous_topcap_exec_stopaware_1h_20260315T1113Z",
       "exact-window::autonomous_topcap_exec_takeprofit_1h_20260315T1220Z",
+      "exact-window::autonomous_volvol_residual_15m_20260317T120508Z",
       "exact-window::expansion_crypto_15m_30m_1h_20260310T115853Z",
       "exact-window::topcap_crypto_1h_focus_20260310T123813Z",
       "exact-window::xpt_xpd_1d_focus_20260310T115036Z",
       "exact-window::xpt_xpd_4h_focus_20260310T115011Z",
+      "portfolio::autonomous_breadth_thrust_failure_reversal_30m_anchor_opt",
+      "portfolio::autonomous_btc_beta_neutral_single_asset_zscore_15m_anchor_opt",
       "portfolio::autonomous_carry_30m_anchor_opt",
       "portfolio::autonomous_carry_momentum_anchor_hybrid_opt",
       "portfolio::autonomous_cross_sectional_1h_stability_pair_topcap_opt",
       "portfolio::autonomous_cross_sectional_1h_tradecount_pair_topcap_opt",
       "portfolio::autonomous_fractional_kelly_benchmark",
       "portfolio::autonomous_fractional_kelly_blend_10pct",
+      "portfolio::autonomous_funding_liquidation_crowding_fade_30m_anchor_opt",
       "portfolio::autonomous_lag_convergence_4h_anchor_opt",
+      "portfolio::autonomous_liquidity_shock_reversion_5m_anchor_opt",
       "portfolio::autonomous_pair_exec_takeprofit_anchor_opt",
       "portfolio::autonomous_portfolio_risk_search",
       "portfolio::autonomous_regime_breakout_30m_anchor_opt",
+      "portfolio::autonomous_regime_conditioned_composite_trend_30m_anchor_opt",
+      "portfolio::autonomous_residual_basket_reversion_15m_anchor_opt",
       "portfolio::autonomous_residual_topcap_anchor_opt",
       "portfolio::autonomous_rolling_breakout_30m_anchor_opt",
+      "portfolio::autonomous_sector_dispersion_reversion_30m_anchor_opt",
+      "portfolio::autonomous_session_liquidity_vacuum_fade_5m_anchor_opt",
+      "portfolio::autonomous_single_asset_zscore_reversion_15m_anchor_opt",
+      "portfolio::autonomous_topcap_rotation_relative_momentum_1h_anchor_opt",
       "portfolio::autonomous_triplet_pair_topcap_composite_opt",
       "portfolio::autonomous_vol_managed_benchmark",
+      "portfolio::autonomous_vol_of_vol_exhaustion_fade_15m_anchor_opt",
       "portfolio::backbone_preserving_triplet_search",
       "portfolio::causal_dynamic_portfolio",
       "portfolio::causal_overlay_portfolio",
       "portfolio::current_one_shot_incumbent",
       "portfolio::exact_window_frozen_tuned",
       "portfolio::secondary_cross_sectional_1h_pair_topcap_recheck",
+      "portfolio::secondary_pair_exec_takeprofit_bnbtrx_1h_refinement",
       "screen::autonomous_alpha101_formula_1h",
       "screen::autonomous_leadlag_5m",
       "screen::autonomous_volcomp_vwap_rev_guarded_5m"
     ],
-    "row_count": 54
+    "row_count": 73
   },
-  "generated_at": "2026-03-16T12:45:21.644087+00:00",
+  "generated_at": "2026-03-17T13:03:23.657407+00:00",
   "ideas_backlog": {
-    "candidate_count": 583,
-    "path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/followup_status/autonomous_research_loop/ideas_backlog_latest.md",
+    "candidate_count": 607,
+    "path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_research_loop/ideas_backlog_latest.md",
     "priority_candidates": [
       {
         "already_in_incumbent": false,
@@ -568,15 +587,15 @@
       "causal_overlay_portfolio": 8589934592,
       "portfolio_optimizer": 8589934592
     },
-    "heavy_lock_path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/followup_status/portfolio_followup_heavy_run.lock",
-    "registry_only_duplicate_guard": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/exact_window_run_registry.jsonl",
+    "heavy_lock_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_followup_heavy_run.lock",
+    "registry_only_duplicate_guard": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/exact_window_run_registry.jsonl",
     "single_heavy_lane": true,
     "total_budget_bytes": 8589934592
   },
   "milestone_gate": {
-    "branch": "",
-    "generated_at": "2026-03-16T12:45:21.644087+00:00",
-    "git_status_short": "",
+    "branch": "private-main",
+    "generated_at": "2026-03-17T13:03:23.657363+00:00",
+    "git_status_short": "M src/lumina_quant/data/__pycache__/__init__.cpython-313.pyc\n M src/lumina_quant/data/__pycache__/feature_points.cpython-313.pyc\n M src/lumina_quant/data/__pycache__/ohlcv.cpython-313.pyc\n M src/lumina_quant/data/__pycache__/symbols.cpython-313.pyc\n M src/lumina_quant/data/__pycache__/timeframe.cpython-313.pyc\n M src/lumina_quant/strategies/mean_reversion_std.py\n M src/lumina_quant/strategy_defaults.py\n M src/lumina_quant/strategy_factory/candidate_library.py\n M src/lumina_quant/strategy_factory/research_runner.py\n M tests/test_research_runner_feature_support.py\n M tests/test_strategy_catalog_new_strategies.py\n M tests/test_strategy_factory_library.py\n M var/reports/exact_window_backtests/exact_window_backtest_registry_latest.json\n D var/reports/exact_window_backtests/exact_window_heavy_run.lock\n M var/reports/exact_window_backtests/exact_window_run_registry.jsonl\n M var/reports/exact_window_backtests/followup_status/autonomous_research_loop/experiments.tsv\n M var/reports/exact_window_backtests/followup_status/autonomous_research_loop/ideas_backlog_latest.md\n M var/reports/exact_window_backtests/followup_status/autonomous_research_loop/research_state_latest.json\n M var/reports/exact_window_backtests/followup_status/autonomous_research_loop/stack_audit_latest.md\n M var/reports/exact_window_backtests/latest.json\n M var/reports/exact_window_backtests/pipeline/alpha_research_pipeline_latest.json\n M var/reports/exact_window_backtests/pipeline/alpha_research_pipeline_latest.md\n?? var/reports/exact_window_backtests/autonomous_breadth_thrust_30m_20260317T121412Z/\n?? var/reports/exact_window_backtests/autonomous_btc_beta_neutral_zscore_15m_20260317T113800Z/\n?? var/reports/exact_window_backtests/autonomous_funding_liq_crowding_fade_30m_20260317T125428Z/\n?? var/reports/exact_window_backtests/autonomous_liquidity_shock_5m_20260317T112047Z/\n?? var/reports/exact_window_backtests/autonomous_sector_dispersion_30m_20260317T105432Z/\n?? var/reports/exact_window_backtests/autonomous_session_liquidity_vacuum_5m_20260317T120018Z/\n?? var/reports/exact_window_backtests/autonomous_volvol_residual_15m_20260317T120508Z/\n?? var/reports/exact_window_backtests/followup_status/autonomous_breadth_thrust_failure_reversal_30m_anchor_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_breadth_thrust_failure_reversal_30m_anchor_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_breadth_thrust_failure_reversal_30m_anchor_opt/\n?? var/reports/exact_window_backtests/followup_status/autonomous_breadth_thrust_failure_reversal_30m_anchor_search/\n?? var/reports/exact_window_backtests/followup_status/autonomous_breadth_thrust_failure_reversal_30m_comparison_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_breadth_thrust_failure_reversal_30m_comparison_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_breadth_thrust_failure_reversal_30m_decision_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_breadth_thrust_failure_reversal_30m_decision_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_breadth_thrust_failure_reversal_30m_probe_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_breadth_thrust_failure_reversal_30m_probe_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_btc_beta_neutral_single_asset_zscore_15m_anchor_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_btc_beta_neutral_single_asset_zscore_15m_anchor_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_btc_beta_neutral_single_asset_zscore_15m_anchor_opt/\n?? var/reports/exact_window_backtests/followup_status/autonomous_btc_beta_neutral_single_asset_zscore_15m_anchor_search/\n?? var/reports/exact_window_backtests/followup_status/autonomous_btc_beta_neutral_single_asset_zscore_15m_comparison_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_btc_beta_neutral_single_asset_zscore_15m_comparison_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_btc_beta_neutral_single_asset_zscore_15m_decision_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_btc_beta_neutral_single_asset_zscore_15m_decision_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_btc_beta_neutral_single_asset_zscore_15m_probe_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_btc_beta_neutral_single_asset_zscore_15m_probe_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_funding_liquidation_crowding_fade_30m_anchor_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_funding_liquidation_crowding_fade_30m_anchor_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_funding_liquidation_crowding_fade_30m_anchor_opt/\n?? var/reports/exact_window_backtests/followup_status/autonomous_funding_liquidation_crowding_fade_30m_anchor_search/\n?? var/reports/exact_window_backtests/followup_status/autonomous_funding_liquidation_crowding_fade_30m_comparison_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_funding_liquidation_crowding_fade_30m_comparison_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_funding_liquidation_crowding_fade_30m_decision_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_funding_liquidation_crowding_fade_30m_decision_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_funding_liquidation_crowding_fade_30m_probe_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_funding_liquidation_crowding_fade_30m_probe_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_liquidity_shock_reversion_5m_anchor_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_liquidity_shock_reversion_5m_anchor_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_liquidity_shock_reversion_5m_anchor_opt/\n?? var/reports/exact_window_backtests/followup_status/autonomous_liquidity_shock_reversion_5m_anchor_search/\n?? var/reports/exact_window_backtests/followup_status/autonomous_liquidity_shock_reversion_5m_comparison_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_liquidity_shock_reversion_5m_comparison_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_liquidity_shock_reversion_5m_decision_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_liquidity_shock_reversion_5m_decision_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_liquidity_shock_reversion_5m_probe_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_liquidity_shock_reversion_5m_probe_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_regime_conditioned_composite_trend_30m_anchor_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_regime_conditioned_composite_trend_30m_anchor_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_regime_conditioned_composite_trend_30m_anchor_opt/\n?? var/reports/exact_window_backtests/followup_status/autonomous_regime_conditioned_composite_trend_30m_anchor_search/\n?? var/reports/exact_window_backtests/followup_status/autonomous_regime_conditioned_composite_trend_30m_comparison_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_regime_conditioned_composite_trend_30m_comparison_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_regime_conditioned_composite_trend_30m_decision_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_regime_conditioned_composite_trend_30m_decision_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_regime_conditioned_composite_trend_30m_probe_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_regime_conditioned_composite_trend_30m_probe_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_research_loop/conclusion_b_new_hypothesis_refresh_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_research_loop/post_refresh_new_family_shortlist_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_research_loop/post_refresh_pr_summary_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_research_loop/post_refresh_round2_shortlist_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_research_loop/reboot_resume_new_hypothesis_refresh_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_residual_basket_reversion_15m_anchor_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_residual_basket_reversion_15m_anchor_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_residual_basket_reversion_15m_anchor_opt/\n?? var/reports/exact_window_backtests/followup_status/autonomous_residual_basket_reversion_15m_anchor_search/\n?? var/reports/exact_window_backtests/followup_status/autonomous_residual_basket_reversion_15m_comparison_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_residual_basket_reversion_15m_comparison_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_residual_basket_reversion_15m_decision_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_residual_basket_reversion_15m_decision_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_residual_basket_reversion_15m_probe_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_residual_basket_reversion_15m_probe_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_sector_dispersion_reversion_30m_anchor_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_sector_dispersion_reversion_30m_anchor_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_sector_dispersion_reversion_30m_anchor_opt/\n?? var/reports/exact_window_backtests/followup_status/autonomous_sector_dispersion_reversion_30m_anchor_search/\n?? var/reports/exact_window_backtests/followup_status/autonomous_sector_dispersion_reversion_30m_comparison_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_sector_dispersion_reversion_30m_comparison_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_sector_dispersion_reversion_30m_decision_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_sector_dispersion_reversion_30m_decision_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_sector_dispersion_reversion_30m_probe_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_sector_dispersion_reversion_30m_probe_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_session_liquidity_vacuum_fade_5m_anchor_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_session_liquidity_vacuum_fade_5m_anchor_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_session_liquidity_vacuum_fade_5m_anchor_opt/\n?? var/reports/exact_window_backtests/followup_status/autonomous_session_liquidity_vacuum_fade_5m_anchor_search/\n?? var/reports/exact_window_backtests/followup_status/autonomous_session_liquidity_vacuum_fade_5m_comparison_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_session_liquidity_vacuum_fade_5m_comparison_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_session_liquidity_vacuum_fade_5m_decision_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_session_liquidity_vacuum_fade_5m_decision_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_session_liquidity_vacuum_fade_5m_probe_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_session_liquidity_vacuum_fade_5m_probe_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_single_asset_zscore_reversion_15m_anchor_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_single_asset_zscore_reversion_15m_anchor_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_single_asset_zscore_reversion_15m_anchor_opt/\n?? var/reports/exact_window_backtests/followup_status/autonomous_single_asset_zscore_reversion_15m_anchor_search/\n?? var/reports/exact_window_backtests/followup_status/autonomous_single_asset_zscore_reversion_15m_comparison_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_single_asset_zscore_reversion_15m_comparison_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_single_asset_zscore_reversion_15m_decision_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_single_asset_zscore_reversion_15m_decision_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_single_asset_zscore_reversion_15m_probe_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_single_asset_zscore_reversion_15m_probe_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_topcap_rotation_relative_momentum_1h_anchor_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_topcap_rotation_relative_momentum_1h_anchor_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_topcap_rotation_relative_momentum_1h_anchor_opt/\n?? var/reports/exact_window_backtests/followup_status/autonomous_topcap_rotation_relative_momentum_1h_anchor_search/\n?? var/reports/exact_window_backtests/followup_status/autonomous_topcap_rotation_relative_momentum_1h_comparison_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_topcap_rotation_relative_momentum_1h_comparison_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_topcap_rotation_relative_momentum_1h_decision_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_topcap_rotation_relative_momentum_1h_decision_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_topcap_rotation_relative_momentum_1h_probe_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_topcap_rotation_relative_momentum_1h_probe_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_vol_of_vol_exhaustion_fade_15m_anchor_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_vol_of_vol_exhaustion_fade_15m_anchor_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_vol_of_vol_exhaustion_fade_15m_anchor_opt/\n?? var/reports/exact_window_backtests/followup_status/autonomous_vol_of_vol_exhaustion_fade_15m_anchor_search/\n?? var/reports/exact_window_backtests/followup_status/autonomous_vol_of_vol_exhaustion_fade_15m_comparison_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_vol_of_vol_exhaustion_fade_15m_comparison_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_vol_of_vol_exhaustion_fade_15m_decision_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_vol_of_vol_exhaustion_fade_15m_decision_latest.md\n?? var/reports/exact_window_backtests/followup_status/autonomous_vol_of_vol_exhaustion_fade_15m_probe_latest.json\n?? var/reports/exact_window_backtests/followup_status/autonomous_vol_of_vol_exhaustion_fade_15m_probe_latest.md",
     "ready": false,
     "reason": "latest portfolio milestone still retains the incumbent",
     "suggested_sync_command": "",
@@ -585,77 +604,135 @@
     "working_tree_clean": false
   },
   "next_actions": [
+    "Round-2 items 1-5 are exhausted; either generate round-3 ideas or wait for the deferred 2026-03-31 retune.",
+    "Round-2 items 1-2 failed; if continuing, move to Session-gated residual basket reversion 5m.",
+    "Round-2 item 1 failed; if continuing, move to Basis snapback reversion 30m.",
     "Review stack_audit_latest.md before promoting any train-fragile challenger.",
     "Use experiments.tsv as the artifact index; do not introduce a second heavy-run scheduler.",
     "Prioritize unused in-repo candidates from ideas_backlog_latest.md before adding new complexity.",
     "Only push privately when milestone_gate.ready becomes true under the locked-OOS decision artifact."
   ],
-  "next_secondary_lane": null,
-  "output_dir": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/followup_status/autonomous_research_loop",
+  "output_dir": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_research_loop",
   "pipeline_manifest": {
     "family_count": 11,
-    "json_path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/pipeline/alpha_research_pipeline_latest.json",
-    "md_path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/pipeline/alpha_research_pipeline_latest.md",
+    "json_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/pipeline/alpha_research_pipeline_latest.json",
+    "md_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/pipeline/alpha_research_pipeline_latest.md",
     "metric_count": 20
   },
-  "report_root": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests",
-  "review_notes": {
-    "secondary_queue_refreshed_at": "2026-03-16T12:40:09.604718+00:00",
-    "secondary_queue_summary": "secondary queue drained: cross-sectional recheck discard, pair-exec refinement discard, lag-convergence duplicate exhausted, pair-spread coverage deferred"
+  "post_refresh_round2_followup": {
+    "all_round2_items_exhausted": true,
+    "final_recommendation": "round-2 items 1-5 exhausted; generate round-3 shortlist or wait for deferred retune",
+    "queue": [
+      {
+        "decision_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_funding_liquidation_crowding_fade_30m_decision_latest.json",
+        "deltas_vs_incumbent": {
+          "oos_max_drawdown": 0.008145296376098066,
+          "oos_sharpe": -0.8228893856242947,
+          "oos_total_return": -0.016885458456266766
+        },
+        "lane": "Funding / liquidation crowding fade",
+        "metrics": {
+          "oos_max_drawdown": 0.022422707190759117,
+          "oos_sharpe": 2.6832221906378626,
+          "oos_total_return": 0.04074254429287305,
+          "peak_rss_mib": 3594.8046875
+        },
+        "rank": 1,
+        "representative_variant": "funding_liquidation_crowding_fade_30m_balanced_ls_96_0.85",
+        "run_id": "autonomous_funding_liq_crowding_fade_30m_20260317T125428Z",
+        "status": "completed_discard",
+        "timeframe": "30m"
+      },
+      {
+        "decision_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_basis_snapback_reversion_30m_decision_latest.json",
+        "deltas_vs_incumbent": {
+          "oos_max_drawdown": 0.008145296376098066,
+          "oos_sharpe": -0.8228893856242947,
+          "oos_total_return": -0.016885458456266766
+        },
+        "lane": "Basis snapback reversion",
+        "metrics": {
+          "oos_max_drawdown": 0.022422707190759117,
+          "oos_sharpe": 2.6832221906378626,
+          "oos_total_return": 0.04074254429287305,
+          "peak_rss_mib": 3560.578125
+        },
+        "rank": 2,
+        "representative_variant": "basis_snapback_reversion_30m_balanced_ls_96_1.8",
+        "run_id": "autonomous_basis_snapback_30m_20260317T131000Z",
+        "status": "completed_discard",
+        "timeframe": "30m"
+      },
+      {
+        "decision_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_session_gated_residual_basket_reversion_5m_decision_latest.json",
+        "deltas_vs_incumbent": {
+          "oos_max_drawdown": -0.001709017782860034,
+          "oos_sharpe": -0.6606731010829314,
+          "oos_total_return": -0.025899612244653758
+        },
+        "lane": "Session-gated residual basket reversion",
+        "metrics": {
+          "oos_max_drawdown": 0.012568393031801017,
+          "oos_sharpe": 2.845438475179226,
+          "oos_total_return": 0.03172839050448606,
+          "peak_rss_mib": 2831.93359375
+        },
+        "rank": 3,
+        "representative_variant": "session_gated_residual_basket_reversion_5m_resid_btc_guarded_lo_80_2.00",
+        "run_id": "autonomous_round2_session_contagion_5m_20260317T133033Z",
+        "status": "completed_discard",
+        "timeframe": "5m"
+      },
+      {
+        "decision_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_cross_asset_liquidation_contagion_fade_5m_decision_latest.json",
+        "deltas_vs_incumbent": {
+          "oos_max_drawdown": 0.008145296376098066,
+          "oos_sharpe": -0.8228893856242947,
+          "oos_total_return": -0.016885458456266766
+        },
+        "lane": "Cross-asset liquidation contagion fade",
+        "metrics": {
+          "oos_max_drawdown": 0.022422707190759117,
+          "oos_sharpe": 2.6832221906378626,
+          "oos_total_return": 0.04074254429287305,
+          "peak_rss_mib": 2831.93359375
+        },
+        "rank": 4,
+        "representative_variant": "liquidation_contagion_fade_5m_balanced_ls_64_1.2",
+        "run_id": "autonomous_round2_session_contagion_5m_20260317T133033Z",
+        "status": "completed_discard",
+        "timeframe": "5m"
+      },
+      {
+        "decision_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_multi_horizon_trend_exhaustion_fade_30m_decision_latest.json",
+        "deltas_vs_incumbent": {
+          "oos_max_drawdown": -0.0016505594957937353,
+          "oos_sharpe": -0.3970192684171936,
+          "oos_total_return": -0.023122591716134844
+        },
+        "lane": "Multi-horizon trend exhaustion fade",
+        "metrics": {
+          "oos_max_drawdown": 0.012626851318867316,
+          "oos_sharpe": 3.1090923078449637,
+          "oos_total_return": 0.034505411033004973,
+          "peak_rss_mib": 3552.69140625
+        },
+        "rank": 5,
+        "representative_variant": "multi_horizon_trend_exhaustion_fade_30m_guarded_lo_24_2.0",
+        "run_id": "autonomous_round2_trend_exhaustion_30m_20260317T133659Z",
+        "status": "completed_discard",
+        "timeframe": "30m"
+      }
+    ]
   },
+  "post_refresh_round2_shortlist_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_research_loop/post_refresh_round2_shortlist_latest.md",
+  "report_root": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests",
   "schema_version": "1.0",
-  "secondary_queue": [
-    {
-      "decision_artifact": "var/reports/exact_window_backtests/followup_status/autonomous_secondary_cross_sectional_1h_pair_topcap_decision_latest.json",
-      "duplication_risk": "low-moderate (reuse existing bundle only)",
-      "evidence_quality": "high",
-      "expected_upside": "highest prior promotion-score delta among non-primary candidates; positive train/val/oos evidence",
-      "lane_id": "cross_sectional_1h_pair_topcap_recheck",
-      "memory_cost": "<3 GiB reused exact-window evidence",
-      "rank": 1,
-      "status": "completed_discard",
-      "why_now": "rechecked and still below incumbent on locked-OOS return, Sharpe, and max drawdown"
-    },
-    {
-      "decision_artifact": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/followup_status/autonomous_secondary_pair_exec_takeprofit_bnbtrx_1h_decision_latest.json",
-      "duplication_risk": "high (same focused lane already executed)",
-      "evidence_quality": "high",
-      "expected_upside": "closest anchored OOS return to incumbent among recent discards",
-      "lane_id": "pair_exec_takeprofit_bnbtrx_1h_refinement",
-      "memory_cost": "~2.7 GiB historical exact-window evidence",
-      "rank": 2,
-      "status": "completed_discard",
-      "why_now": "refined anchor search reproduced the prior challenger and still missed the incumbent on Sharpe and drawdown"
-    },
-    {
-      "decision_artifact": "var/reports/exact_window_backtests/followup_status/autonomous_lag_convergence_4h_decision_latest.json",
-      "duplication_risk": "high (same focused lane already executed)",
-      "evidence_quality": "high",
-      "expected_upside": "improved portfolio Sharpe/drawdown in anchored test",
-      "lane_id": "lag_convergence_xptxpd_4h_refinement",
-      "memory_cost": "<3.3 GiB reused exact-window evidence",
-      "rank": 3,
-      "status": "exhausted_duplicate",
-      "why_now": "exact duplicate of the already-run lag_convergence_xptxpd_4h_probe_20260311T122038Z anchored lane; no new differentiating hypothesis"
-    },
-    {
-      "decision_artifact": "var/reports/exact_window_backtests/followup_status/pair_spread_4h_xpt_xpd_retune_latest.json",
-      "duplication_risk": "low",
-      "evidence_quality": "blocked_by_coverage",
-      "expected_upside": "metals pair diversification if coverage improves",
-      "lane_id": "pair_spread_4h_xpt_xpd_retune_when_coverage_matures",
-      "memory_cost": "low",
-      "rank": 4,
-      "status": "deferred_coverage",
-      "why_now": "not executable before 2026-03-31T10:15:00+00:00 due insufficient coverage window"
-    }
-  ],
-  "secondary_queue_drained": true,
   "stack_audit": {
     "incumbent_oos_total_return": 0.05762800274913982,
     "incumbent_train_total_return": 0.04887910496798242,
     "incumbent_val_total_return": 0.03143334373456397,
-    "path": "/home/hoky/Quants-agent/LuminaQuant/.omx/team/continue-the-autonomous-portfo/worktrees/worker-1/var/reports/exact_window_backtests/followup_status/autonomous_research_loop/stack_audit_latest.md",
+    "path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/autonomous_research_loop/stack_audit_latest.md",
     "top_negative_contributors": [
       {
         "name": "topcap_tsmom_1h_balanced_16_4_0.015",
