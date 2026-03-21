@@ -4033,254 +4033,145 @@ def _apply_micro_range_expansion_strategy(
         exposures[s_idx] = np.where(active, breakout, 0.0)
 
 
+def _wrap_strategy_handler(
+    func,
+    *,
+    include_n: bool = False,
+    include_meta: bool = False,
+    extra_kwargs: Mapping[str, Any] | None = None,
+):
+    extras = dict(extra_kwargs or {})
+
+    def _handler(
+        params: dict[str, Any],
+        aligned: dict[str, np.ndarray],
+        symbols: Sequence[str],
+        n: int,
+        exposures: np.ndarray,
+        meta: dict[str, Any],
+    ) -> None:
+        kwargs = {
+            "params": params,
+            "aligned": aligned,
+            "symbols": symbols,
+            "exposures": exposures,
+            **extras,
+        }
+        if include_n:
+            kwargs["n"] = n
+        if include_meta:
+            kwargs["meta"] = meta
+        func(**kwargs)
+
+    return _handler
+
+
+_STRATEGY_SIGNAL_DISPATCHER = StrategySignalDispatcher(
+    handlers={
+        "CompositeTrendStrategy": _wrap_strategy_handler(
+            _apply_composite_trend_strategy,
+            include_n=True,
+            include_meta=True,
+        ),
+        "VolCompressionVWAPReversionStrategy": _wrap_strategy_handler(
+            _apply_vol_compression_vwap_reversion_strategy,
+        ),
+        "VolCompressionVwapReversionStrategy": _wrap_strategy_handler(
+            _apply_vol_compression_vwap_reversion_strategy,
+        ),
+        "VolatilityCompressionReversionStrategy": _wrap_strategy_handler(
+            _apply_vol_compression_vwap_reversion_strategy,
+        ),
+        "LeadLagSpilloverStrategy": _wrap_strategy_handler(_apply_leadlag_spillover_strategy),
+        "TopCapTimeSeriesMomentumStrategy": _wrap_strategy_handler(
+            _apply_topcap_tsmom_strategy,
+            include_n=True,
+            include_meta=True,
+        ),
+        "MeanReversionStdStrategy": _wrap_strategy_handler(
+            _apply_mean_reversion_std_strategy,
+            include_meta=True,
+        ),
+        "LiquidityShockReversionStrategy": _wrap_strategy_handler(
+            _apply_liquidity_shock_reversion_strategy,
+        ),
+        "SessionLiquidityVacuumFadeStrategy": _wrap_strategy_handler(
+            _apply_session_liquidity_vacuum_fade_strategy,
+        ),
+        "FundingLiquidationCrowdingFadeStrategy": _wrap_strategy_handler(
+            _apply_funding_liquidation_crowding_fade_strategy,
+            include_meta=True,
+        ),
+        "BasisSnapbackReversionStrategy": _wrap_strategy_handler(
+            _apply_basis_snapback_reversion_strategy,
+            include_meta=True,
+        ),
+        "VolOfVolExhaustionFadeStrategy": _wrap_strategy_handler(
+            _apply_vol_of_vol_exhaustion_fade_strategy,
+        ),
+        "ResidualBasketReversionStrategy": _wrap_strategy_handler(
+            _apply_residual_basket_reversion_strategy,
+            include_meta=True,
+        ),
+        "SessionGatedResidualBasketReversionStrategy": _wrap_strategy_handler(
+            _apply_session_gated_residual_basket_reversion_strategy,
+            include_meta=True,
+        ),
+        "BreadthThrustFailureReversalStrategy": _wrap_strategy_handler(
+            _apply_breadth_thrust_failure_reversal_strategy,
+            include_n=True,
+            include_meta=True,
+        ),
+        "CrossAssetLiquidationContagionFadeStrategy": _wrap_strategy_handler(
+            _apply_cross_asset_liquidation_contagion_fade_strategy,
+        ),
+        "MultiHorizonTrendExhaustionFadeStrategy": _wrap_strategy_handler(
+            _apply_multi_horizon_trend_exhaustion_fade_strategy,
+        ),
+        "VwapReversionStrategy": _wrap_strategy_handler(_apply_vwap_reversion_strategy),
+        "RollingBreakoutStrategy": _wrap_strategy_handler(_apply_rolling_breakout_strategy),
+        "RegimeBreakoutCandidateStrategy": _wrap_strategy_handler(
+            _apply_regime_breakout_candidate_strategy,
+        ),
+        "PairSpreadZScoreStrategy": _wrap_strategy_handler(
+            _apply_pair_spread_strategy,
+            include_n=True,
+            include_meta=True,
+            extra_kwargs={"strategy_class": "PairSpreadZScoreStrategy"},
+        ),
+        "PairTradingZScoreStrategy": _wrap_strategy_handler(
+            _apply_pair_spread_strategy,
+            include_n=True,
+            include_meta=True,
+            extra_kwargs={"strategy_class": "PairTradingZScoreStrategy"},
+        ),
+        "LagConvergenceStrategy": _wrap_strategy_handler(
+            _apply_lag_convergence_strategy,
+            include_n=True,
+        ),
+        "PerpCrowdingCarryStrategy": _wrap_strategy_handler(
+            _apply_perp_crowding_carry_strategy,
+            include_meta=True,
+        ),
+        "MicroRangeExpansion1sStrategy": _wrap_strategy_handler(
+            _apply_micro_range_expansion_strategy,
+        ),
+    },
+    minimum_symbol_counts={
+        "PairSpreadZScoreStrategy": 2,
+        "PairTradingZScoreStrategy": 2,
+        "LagConvergenceStrategy": 2,
+    },
+)
+
+
 def _strategy_signal(
     candidate: dict[str, Any],
     *,
     aligned: dict[str, np.ndarray],
     symbols: Sequence[str],
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict[str, Any]]:
-    strategy_class = str(candidate.get("strategy_class") or candidate.get("strategy") or "")
-    params = dict(candidate.get("params") or {})
-
-    n = len(next(iter(aligned.values()))) if aligned else 0
-    if n <= 0:
-        return np.asarray([], dtype=float), np.asarray([], dtype=float), np.asarray([], dtype=float), {}
-
-    exposures = np.zeros((len(symbols), n), dtype=float)
-    returns = np.zeros((len(symbols), n), dtype=float)
-
-    for s_idx, symbol in enumerate(symbols):
-        close = aligned[f"{symbol}:close"]
-        returns[s_idx] = _returns_from_close(close)
-
-    meta: dict[str, Any] = {}
-
-    if strategy_class == "CompositeTrendStrategy":
-        _apply_composite_trend_strategy(
-            params=params,
-            aligned=aligned,
-            symbols=symbols,
-            n=n,
-            exposures=exposures,
-            meta=meta,
-        )
-
-    elif strategy_class in {
-        "VolCompressionVWAPReversionStrategy",
-        "VolCompressionVwapReversionStrategy",
-        "VolatilityCompressionReversionStrategy",
-    }:
-        _apply_vol_compression_vwap_reversion_strategy(
-            params=params,
-            aligned=aligned,
-            symbols=symbols,
-            exposures=exposures,
-        )
-
-    elif strategy_class == "LeadLagSpilloverStrategy":
-        _apply_leadlag_spillover_strategy(
-            params=params,
-            aligned=aligned,
-            symbols=symbols,
-            exposures=exposures,
-        )
-
-    elif strategy_class == "TopCapTimeSeriesMomentumStrategy":
-        _apply_topcap_tsmom_strategy(
-            params=params,
-            aligned=aligned,
-            symbols=symbols,
-            n=n,
-            exposures=exposures,
-            meta=meta,
-        )
-
-    elif strategy_class == "Alpha101FormulaStrategy":
-        simulated = _simulate_event_driven_strategy_exposures(
-            _load_event_driven_strategy_impl(strategy_class),
-            params=params,
-            aligned=aligned,
-            symbols=symbols,
-        )
-        exposures[:] = simulated
-        meta["event_driven_proxy"] = True
-        meta["formulaic_alpha101"] = True
-        meta["alpha_id"] = int(params.get("alpha_id", 101))
-        meta["alpha_param_override_count"] = len(
-            params.get("alpha_param_overrides")
-            if isinstance(params.get("alpha_param_overrides"), Mapping)
-            else {}
-        )
-
-    elif strategy_class == "MeanReversionStdStrategy":
-        _apply_mean_reversion_std_strategy(
-            params=params,
-            aligned=aligned,
-            symbols=symbols,
-            exposures=exposures,
-            meta=meta,
-        )
-
-    elif strategy_class == "LiquidityShockReversionStrategy":
-        _apply_liquidity_shock_reversion_strategy(
-            params=params,
-            aligned=aligned,
-            symbols=symbols,
-            exposures=exposures,
-        )
-
-    elif strategy_class == "SessionLiquidityVacuumFadeStrategy":
-        _apply_session_liquidity_vacuum_fade_strategy(
-            params=params,
-            aligned=aligned,
-            symbols=symbols,
-            exposures=exposures,
-        )
-
-    elif strategy_class == "FundingLiquidationCrowdingFadeStrategy":
-        _apply_funding_liquidation_crowding_fade_strategy(
-            params=params,
-            aligned=aligned,
-            symbols=symbols,
-            exposures=exposures,
-            meta=meta,
-        )
-
-    elif strategy_class == "BasisSnapbackReversionStrategy":
-        _apply_basis_snapback_reversion_strategy(
-            params=params,
-            aligned=aligned,
-            symbols=symbols,
-            exposures=exposures,
-            meta=meta,
-        )
-
-    elif strategy_class == "VolOfVolExhaustionFadeStrategy":
-        _apply_vol_of_vol_exhaustion_fade_strategy(
-            params=params,
-            aligned=aligned,
-            symbols=symbols,
-            exposures=exposures,
-        )
-
-    elif strategy_class == "ResidualBasketReversionStrategy":
-        _apply_residual_basket_reversion_strategy(
-            params=params,
-            aligned=aligned,
-            symbols=symbols,
-            exposures=exposures,
-            meta=meta,
-        )
-
-    elif strategy_class == "SessionGatedResidualBasketReversionStrategy":
-        _apply_session_gated_residual_basket_reversion_strategy(
-            params=params,
-            aligned=aligned,
-            symbols=symbols,
-            exposures=exposures,
-            meta=meta,
-        )
-
-    elif strategy_class == "BreadthThrustFailureReversalStrategy":
-        _apply_breadth_thrust_failure_reversal_strategy(
-            params=params,
-            aligned=aligned,
-            symbols=symbols,
-            n=n,
-            exposures=exposures,
-            meta=meta,
-        )
-
-    elif strategy_class == "CrossAssetLiquidationContagionFadeStrategy":
-        _apply_cross_asset_liquidation_contagion_fade_strategy(
-            params=params,
-            aligned=aligned,
-            symbols=symbols,
-            exposures=exposures,
-        )
-
-    elif strategy_class == "MultiHorizonTrendExhaustionFadeStrategy":
-        _apply_multi_horizon_trend_exhaustion_fade_strategy(
-            params=params,
-            aligned=aligned,
-            symbols=symbols,
-            exposures=exposures,
-        )
-
-    elif strategy_class == "VwapReversionStrategy":
-        _apply_vwap_reversion_strategy(
-            params=params,
-            aligned=aligned,
-            symbols=symbols,
-            exposures=exposures,
-        )
-
-    elif strategy_class == "RollingBreakoutStrategy":
-        _apply_rolling_breakout_strategy(
-            params=params,
-            aligned=aligned,
-            symbols=symbols,
-            exposures=exposures,
-        )
-
-    elif strategy_class == "RegimeBreakoutCandidateStrategy":
-        _apply_regime_breakout_candidate_strategy(
-            params=params,
-            aligned=aligned,
-            symbols=symbols,
-            exposures=exposures,
-        )
-
-    elif strategy_class in {"PairSpreadZScoreStrategy", "PairTradingZScoreStrategy"} and len(symbols) >= 2:
-        _apply_pair_spread_strategy(
-            strategy_class=strategy_class,
-            params=params,
-            aligned=aligned,
-            symbols=symbols,
-            n=n,
-            exposures=exposures,
-            meta=meta,
-        )
-
-    elif strategy_class == "LagConvergenceStrategy" and len(symbols) >= 2:
-        _apply_lag_convergence_strategy(
-            params=params,
-            aligned=aligned,
-            symbols=symbols,
-            n=n,
-            exposures=exposures,
-        )
-
-    elif strategy_class == "PerpCrowdingCarryStrategy":
-        _apply_perp_crowding_carry_strategy(
-            params=params,
-            aligned=aligned,
-            symbols=symbols,
-            exposures=exposures,
-            meta=meta,
-        )
-
-    elif strategy_class == "MicroRangeExpansion1sStrategy":
-        _apply_micro_range_expansion_strategy(
-            params=params,
-            aligned=aligned,
-            symbols=symbols,
-            exposures=exposures,
-        )
-
-    else:
-        # Generic fallback: momentum sign.
-        for s_idx, symbol in enumerate(symbols):
-            close = aligned[f"{symbol}:close"]
-            ret = _returns_from_close(close)
-            mom = np.nan_to_num(_rolling_z(ret, 64), nan=0.0)
-            exposures[s_idx] = np.where(mom >= 0.4, 1.0, np.where(mom <= -0.4, -1.0, 0.0))
-
-    exposure = np.nanmean(exposures, axis=0)
-    portfolio_ret = np.nanmean(np.roll(exposures, 1, axis=1) * returns, axis=0)
-    turnover = np.nanmean(np.abs(exposures - np.roll(exposures, 1, axis=1)), axis=0)
-
-    return portfolio_ret, turnover, exposure, meta
+    return _STRATEGY_SIGNAL_DISPATCHER.dispatch(candidate, aligned=aligned, symbols=symbols)
 
 
 def _candidate_cost_rate(candidate: dict[str, Any]) -> float:
