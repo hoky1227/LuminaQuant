@@ -12,6 +12,9 @@ from typing import ClassVar
 from lumina_quant.configuration.loader import load_runtime_config, load_yaml_config
 from lumina_quant.configuration.validate import validate_runtime_config
 
+_AUTOSEEDED_DEFAULTS_ENV = "LQ__RUNTIME_AUTOSEEDED_DEFAULTS_JSON"
+_AUTOSEEDED_PREEXISTING_KEYS_ENV = "LQ__RUNTIME_AUTOSEEDED_PREEXISTING_KEYS_JSON"
+
 
 def load_config(config_path: str = "config.yaml") -> dict:
     """Load raw YAML config."""
@@ -151,10 +154,15 @@ def _runtime_env_without_auto_seeded_defaults(
 ) -> dict[str, str]:
     source = os.environ if environ is None else environ
     effective = dict(source)
+    persisted_seeded_defaults, persisted_preexisting_keys = _load_persisted_seed_metadata(source)
+    seeded_defaults = dict(persisted_seeded_defaults)
+    seeded_defaults.update(_SEEDED_RUNTIME_ENV_DEFAULTS)
+    preexisting_keys = set(persisted_preexisting_keys)
+    preexisting_keys.update(key for key in seeded_defaults if key in _ENV_BEFORE_RUNTIME_SEED)
     _strip_auto_seeded_runtime_env_defaults(
         effective,
-        seeded_defaults=_SEEDED_RUNTIME_ENV_DEFAULTS,
-        env_before_seed=_ENV_BEFORE_RUNTIME_SEED,
+        seeded_defaults=seeded_defaults,
+        env_before_seed=preexisting_keys,
     )
     return effective
 
@@ -163,13 +171,61 @@ def _strip_auto_seeded_runtime_env_defaults(
     target: MutableMapping[str, str],
     *,
     seeded_defaults: MutableMapping[str, str] | dict[str, str],
-    env_before_seed: MutableMapping[str, str] | dict[str, str],
+    env_before_seed: MutableMapping[str, str] | dict[str, str] | set[str],
 ) -> None:
+    preexisting_keys = (
+        set(env_before_seed)
+        if isinstance(env_before_seed, set)
+        else set(env_before_seed.keys())
+    )
     for key, value in seeded_defaults.items():
-        if key in env_before_seed:
+        if key in preexisting_keys:
             continue
         if target.get(key) == value:
             target.pop(key, None)
+
+
+def _load_persisted_seed_metadata(
+    source: MutableMapping[str, str] | dict[str, str],
+) -> tuple[dict[str, str], set[str]]:
+    persisted_defaults: dict[str, str] = {}
+    defaults_raw = str(source.get(_AUTOSEEDED_DEFAULTS_ENV, "") or "").strip()
+    if defaults_raw:
+        try:
+            parsed_defaults = json.loads(defaults_raw)
+        except json.JSONDecodeError:
+            parsed_defaults = {}
+        if isinstance(parsed_defaults, dict):
+            persisted_defaults = {str(key): str(value) for key, value in parsed_defaults.items()}
+
+    persisted_preexisting_keys: set[str] = set()
+    preexisting_raw = str(source.get(_AUTOSEEDED_PREEXISTING_KEYS_ENV, "") or "").strip()
+    if preexisting_raw:
+        try:
+            parsed_preexisting = json.loads(preexisting_raw)
+        except json.JSONDecodeError:
+            parsed_preexisting = []
+        if isinstance(parsed_preexisting, list):
+            persisted_preexisting_keys = {
+                str(value) for value in parsed_preexisting if isinstance(value, str)
+            }
+    return persisted_defaults, persisted_preexisting_keys
+
+
+def _persist_seed_metadata(
+    target: MutableMapping[str, str],
+    *,
+    seeded_defaults: dict[str, str],
+    env_before_seed: MutableMapping[str, str] | dict[str, str],
+) -> None:
+    target[_AUTOSEEDED_DEFAULTS_ENV] = json.dumps(seeded_defaults, sort_keys=True)
+    preexisting_keys = sorted(key for key in seeded_defaults if key in env_before_seed)
+    target[_AUTOSEEDED_PREEXISTING_KEYS_ENV] = json.dumps(preexisting_keys)
+
+
+def _clear_persisted_seed_metadata(target: MutableMapping[str, str]) -> None:
+    target.pop(_AUTOSEEDED_DEFAULTS_ENV, None)
+    target.pop(_AUTOSEEDED_PREEXISTING_KEYS_ENV, None)
 
 
 def _refresh_seeded_runtime_env_defaults(
@@ -177,10 +233,15 @@ def _refresh_seeded_runtime_env_defaults(
 ) -> None:
     target = os.environ if environ is None else environ
     next_defaults = _runtime_env_defaults(runtime)
+    persisted_seeded_defaults, persisted_preexisting_keys = _load_persisted_seed_metadata(target)
+    seeded_defaults = dict(persisted_seeded_defaults)
+    seeded_defaults.update(_SEEDED_RUNTIME_ENV_DEFAULTS)
+    preexisting_keys = set(persisted_preexisting_keys)
+    preexisting_keys.update(key for key in seeded_defaults if key in _ENV_BEFORE_RUNTIME_SEED)
     _strip_auto_seeded_runtime_env_defaults(
         target,
-        seeded_defaults=_SEEDED_RUNTIME_ENV_DEFAULTS,
-        env_before_seed=_ENV_BEFORE_RUNTIME_SEED,
+        seeded_defaults=seeded_defaults,
+        env_before_seed=preexisting_keys,
     )
     for key, value in next_defaults.items():
         if key in _ENV_BEFORE_RUNTIME_SEED:
@@ -189,14 +250,24 @@ def _refresh_seeded_runtime_env_defaults(
         target.setdefault(key, value)
     _SEEDED_RUNTIME_ENV_DEFAULTS.clear()
     _SEEDED_RUNTIME_ENV_DEFAULTS.update(next_defaults)
+    _persist_seed_metadata(
+        target,
+        seeded_defaults=next_defaults,
+        env_before_seed=_ENV_BEFORE_RUNTIME_SEED,
+    )
+
+
+def _load_runtime_snapshot(*, environ: MutableMapping[str, str] | None = None):
+    return load_runtime_config(
+        config_path=_current_config_path(),
+        env=_runtime_env_without_auto_seeded_defaults(environ),
+    )
 
 
 def load_current_runtime_config():
-    runtime = load_runtime_config(
-        config_path=_current_config_path(),
-        env=_runtime_env_without_auto_seeded_defaults(),
-    )
-    _refresh_seeded_runtime_env_defaults(runtime)
+    global _RUNTIME
+    runtime = _load_runtime_snapshot()
+    _RUNTIME = runtime
     return runtime
 
 
@@ -205,11 +276,12 @@ def seed_runtime_env_defaults(
     environ: MutableMapping[str, str] | None = None,
 ) -> dict[str, str]:
     """Explicitly seed runtime-derived environment defaults."""
-    runtime = load_runtime_config(
-        config_path=_current_config_path(),
-        env=_runtime_env_without_auto_seeded_defaults(environ),
-    )
+    global _ENV_BEFORE_RUNTIME_SEED, _RUNTIME
+    target = os.environ if environ is None else environ
+    _ENV_BEFORE_RUNTIME_SEED = dict(target)
+    runtime = _load_runtime_snapshot(environ=environ)
     _refresh_seeded_runtime_env_defaults(runtime, environ=environ)
+    _RUNTIME = runtime
     return dict(_SEEDED_RUNTIME_ENV_DEFAULTS)
 
 
@@ -238,15 +310,58 @@ _strip_auto_seeded_runtime_env_defaults(
     seeded_defaults=_PREVIOUS_SEEDED_RUNTIME_ENV_DEFAULTS,
     env_before_seed=_PREVIOUS_ENV_BEFORE_RUNTIME_SEED,
 )
-_CONFIG_PATH = os.getenv("LQ_CONFIG_PATH", "config.yaml")
 _ENV_BEFORE_RUNTIME_SEED = dict(os.environ)
-_RUNTIME = load_runtime_config(config_path=_CONFIG_PATH)
+_RUNTIME = None
 _SEEDED_RUNTIME_ENV_DEFAULTS: dict[str, str] = {}
+_APPLIED_CONFIG_KEYS: dict[type, set[str]] = {}
 
 
 def _apply_config_values(config_cls: type, values: dict[str, object]) -> None:
     for key, value in values.items():
         setattr(config_cls, key, value)
+
+
+def _apply_config_values_with_tracking(config_cls: type, values: dict[str, object]) -> None:
+    _apply_config_values(config_cls, values)
+    _APPLIED_CONFIG_KEYS.setdefault(config_cls, set()).update(values.keys())
+
+
+def _clear_applied_config_values() -> None:
+    for class_name in ("BaseConfig", "BacktestConfig", "LiveConfig", "OptimizationConfig"):
+        config_cls = globals().get(class_name)
+        if config_cls is None:
+            continue
+        for key in list(config_cls.__dict__):
+            if key.isupper():
+                delattr(config_cls, key)
+    for config_cls, keys in _APPLIED_CONFIG_KEYS.items():
+        for key in keys:
+            if key in config_cls.__dict__:
+                delattr(config_cls, key)
+    _APPLIED_CONFIG_KEYS.clear()
+
+
+def reset_runtime_config_cache(*, clear_seeded_defaults: bool = False) -> None:
+    """Clear cached runtime-derived class snapshots so the next access reloads them lazily."""
+    global _RUNTIME
+    _RUNTIME = None
+    _clear_applied_config_values()
+    if clear_seeded_defaults:
+        _SEEDED_RUNTIME_ENV_DEFAULTS.clear()
+        _clear_persisted_seed_metadata(os.environ)
+
+
+def reload_runtime_config(*, environ: MutableMapping[str, str] | None = None):
+    """Refresh runtime-derived class snapshots from the current config/env sources."""
+    global _RUNTIME
+    runtime = _load_runtime_snapshot(environ=environ)
+    _RUNTIME = runtime
+    _clear_applied_config_values()
+    _apply_config_values_with_tracking(BaseConfig, _base_config_values(runtime))
+    _apply_config_values_with_tracking(BacktestConfig, _backtest_config_values(runtime))
+    _apply_config_values_with_tracking(LiveConfig, _live_config_values(runtime))
+    _apply_config_values_with_tracking(OptimizationConfig, _optimization_config_values(runtime))
+    return runtime
 
 
 def _base_config_values(runtime) -> dict[str, object]:
@@ -526,7 +641,20 @@ def _live_config_values(runtime) -> dict[str, object]:
     return values
 
 
-class BaseConfig:
+class _RuntimeConfigMeta(type):
+    """Lazily bootstrap runtime-backed config classes on first attribute access."""
+
+    def __getattr__(cls, name: str):
+        if not name.startswith("_"):
+            reload_runtime_config()
+            try:
+                return type.__getattribute__(cls, name)
+            except AttributeError:
+                pass
+        raise AttributeError(f"{cls.__name__!s} has no attribute {name!r}")
+
+
+class BaseConfig(metaclass=_RuntimeConfigMeta):
     """Shared configuration fields used by backtest and live modules."""
 
 
@@ -633,7 +761,7 @@ class LiveConfig(BaseConfig):
                 )
 
 
-class OptimizationConfig:
+class OptimizationConfig(metaclass=_RuntimeConfigMeta):
     """Optimization configuration access."""
 
 
@@ -651,12 +779,6 @@ def _optimization_config_values(runtime) -> dict[str, object]:
         "VALIDATION_DAYS": int(getattr(optimization, "validation_days", 30)),
         "OOS_DAYS": int(getattr(optimization, "oos_days", 30)),
     }
-
-
-_apply_config_values(BaseConfig, _base_config_values(_RUNTIME))
-_apply_config_values(BacktestConfig, _backtest_config_values(_RUNTIME))
-_apply_config_values(LiveConfig, _live_config_values(_RUNTIME))
-_apply_config_values(OptimizationConfig, _optimization_config_values(_RUNTIME))
 
 
 def export_runtime_dict() -> dict:

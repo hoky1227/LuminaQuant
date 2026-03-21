@@ -30,6 +30,9 @@ def test_live_staleness_keys_are_runtime_loaded_via_config_module(tmp_path, monk
     monkeypatch.setenv("LQ_CONFIG_PATH", str(cfg_path))
     monkeypatch.delenv("LQ__LIVE__MATERIALIZED_STALENESS_THRESHOLD_SECONDS", raising=False)
     monkeypatch.delenv("LQ__LIVE__MATERIALIZED_STALENESS_ALERT_COOLDOWN_SECONDS", raising=False)
+    monkeypatch.delenv("LQ__LIVE__MARKET_DATA_SOURCE", raising=False)
+    monkeypatch.delenv("LQ__RUNTIME_AUTOSEEDED_DEFAULTS_JSON", raising=False)
+    monkeypatch.delenv("LQ__RUNTIME_AUTOSEEDED_PREEXISTING_KEYS_JSON", raising=False)
     import lumina_quant.config as config_module
 
     config_module = importlib.reload(config_module)

@@ -83,6 +83,7 @@ def test_config_module_exposes_explicit_runtime_env_seeding(tmp_path, monkeypatc
 
     config_module = importlib.reload(config_module)
 
+    assert "TIMEFRAME" not in config_module.BaseConfig.__dict__
     assert config_module.BaseConfig.COLLECTOR_PERIODIC_ENABLED is False
     assert config_module.LiveConfig.MARKET_DATA_SOURCE == "external"
     assert config_module.BacktestConfig.CHUNK_DAYS == 9
