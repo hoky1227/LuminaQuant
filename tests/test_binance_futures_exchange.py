@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from lumina_quant.exchanges.binance_futures_client import (
+    BinanceFuturesAPIError,
     BinanceFuturesClientConfig,
     BinanceFuturesRESTClient,
 )
