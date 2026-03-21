@@ -17,13 +17,13 @@ def test_optimize_runtime_settings_reads_env_and_config_at_call_time(monkeypatch
 
     settings = optimize._current_optimize_runtime_settings()
 
-    assert settings["data_mode"] == "legacy"
-    assert settings["base_timeframe"] == "5m"
-    assert settings["auto_collect_db"] is True
-    assert settings["backtest_mode"] == "legacy_batch"
-    assert settings["market_db_path"] == "var/data/runtime_parquet"
-    assert settings["market_db_exchange"] == "kraken"
-    assert settings["market_db_backend"] == "parquet"
-    assert settings["symbol_list"] == ["BTC/USDT", "ETH/USDT"]
-    assert settings["strategy_timeframe"] == "15m"
-    assert settings["max_workers"] == 2
+    assert settings.data_mode == "legacy"
+    assert settings.base_timeframe == "5m"
+    assert settings.auto_collect_db is True
+    assert settings.backtest_mode == "legacy_batch"
+    assert settings.market_db_path == "var/data/runtime_parquet"
+    assert settings.market_db_exchange == "kraken"
+    assert settings.market_db_backend == "parquet"
+    assert settings.symbol_list == ["BTC/USDT", "ETH/USDT"]
+    assert settings.strategy_timeframe == "15m"
+    assert settings.max_workers == 2
