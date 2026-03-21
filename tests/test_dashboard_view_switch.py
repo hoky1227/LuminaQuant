@@ -593,8 +593,11 @@ def test_build_backtest_job_launch_spec_keeps_runner_and_metadata_fields(monkeyp
     )
 
     assert spec.workflow == "backtest"
-    assert spec.script_name == "run_backtest.py"
-    assert spec.script_args == (
+    assert spec.command == (
+        "uv",
+        "run",
+        "lq",
+        "backtest",
         "--data-source",
         "postgres",
         "--market-db-path",
@@ -628,8 +631,8 @@ def test_build_optimize_job_launch_spec_includes_best_params_flag_and_int_metada
     )
 
     assert spec.workflow == "optimize"
-    assert spec.script_name == "optimize.py"
-    assert spec.script_args[-1] == "--save-best-params"
+    assert spec.command[:4] == ("uv", "run", "lq", "optimize")
+    assert spec.command[-1] == "--save-best-params"
     assert spec.requested_mode == "optimize"
     assert spec.strategy == "BreakoutStrategy"
     assert spec.run_id == "run-opt"
@@ -645,15 +648,20 @@ def test_build_live_job_launch_spec_adds_websocket_and_real_mode_controls(monkey
         live_mode="real",
         market_exchange="BINANCE",
         runner_leverage=7,
-        live_runner_kind="WebSocket (run_live_ws.py)",
+        live_runner_kind="WebSocket (uv run lq live --transport ws)",
         live_strategy_name="TrendStrategy",
         live_run_id="run-live",
         stop_file="/tmp/run-live.stop",
     )
 
     assert spec.workflow == "live_ws"
-    assert spec.script_name == "run_live_ws.py"
-    assert spec.script_args == (
+    assert spec.command == (
+        "uv",
+        "run",
+        "lq",
+        "live",
+        "--transport",
+        "ws",
         "--strategy",
         "TrendStrategy",
         "--run-id",
@@ -673,7 +681,10 @@ def test_build_live_job_launch_spec_adds_websocket_and_real_mode_controls(monkey
     assert spec.strategy == "TrendStrategy"
     assert spec.run_id == "run-live"
     assert spec.stop_file == "/tmp/run-live.stop"
-    assert spec.metadata == {"runner_kind": "WebSocket (run_live_ws.py)"}
+    assert spec.metadata == {
+        "runner_kind": "WebSocket (uv run lq live --transport ws)",
+        "transport": "ws",
+    }
 
 
 def test_render_ghost_cleanup_section_records_dry_run_and_preserves_cache(monkeypatch) -> None:
@@ -752,7 +763,7 @@ def test_render_workflow_jobs_section_handles_graceful_stop_and_log_tail(monkeyp
                 "pid": 1234,
                 "run_id": "run-1",
                 "exit_code": None,
-                "command_json": "[\"python\", \"run_live.py\"]",
+                "command_json": "[\"uv\", \"run\", \"lq\", \"live\", \"--transport\", \"poll\"]",
                 "stop_file": "/tmp/job-1.stop",
                 "log_path": "/tmp/job-1.log",
             }
@@ -931,7 +942,7 @@ def test_render_live_runner_settings_surfaces_real_mode_lock(monkeypatch) -> Non
     helper_st = _GhostCleanupStreamlit(
         button_results=[],
         selectbox_results=[
-            "WebSocket (run_live_ws.py)",
+            "WebSocket (uv run lq live --transport ws)",
             "real",
             "TrendStrategy",
         ],
@@ -947,7 +958,7 @@ def test_render_live_runner_settings_surfaces_real_mode_lock(monkeypatch) -> Non
     )
 
     assert selection == module._LiveRunnerSelection(
-        runner_kind="WebSocket (run_live_ws.py)",
+        runner_kind="WebSocket (uv run lq live --transport ws)",
         live_mode="real",
         strategy_name="TrendStrategy",
         real_armed=False,
@@ -990,7 +1001,7 @@ def test_render_managed_run_launch_controls_starts_backtest_job(monkeypatch) -> 
             runner_leverage=3,
         ),
         live_runner_selection=module._LiveRunnerSelection(
-            runner_kind="Polling (run_live.py)",
+            runner_kind="Polling (uv run lq live --transport poll)",
             live_mode="paper",
             strategy_name="RsiStrategy",
             real_armed=True,
@@ -1036,7 +1047,7 @@ def test_render_managed_run_launch_controls_disables_live_when_real_mode_not_arm
             runner_leverage=3,
         ),
         live_runner_selection=module._LiveRunnerSelection(
-            runner_kind="Polling (run_live.py)",
+            runner_kind="Polling (uv run lq live --transport poll)",
             live_mode="real",
             strategy_name="RsiStrategy",
             real_armed=False,
@@ -1061,7 +1072,7 @@ def test_render_report_tab_orchestrates_subsections_and_warnings(monkeypatch) ->
     df_hb = _Frame(empty=True)
     mirror_balance_equity = _Frame(empty=True)
     live_selection = module._LiveRunnerSelection(
-        runner_kind="Polling (run_live.py)",
+        runner_kind="Polling (uv run lq live --transport poll)",
         live_mode="paper",
         strategy_name="TrendStrategy",
         real_armed=True,
