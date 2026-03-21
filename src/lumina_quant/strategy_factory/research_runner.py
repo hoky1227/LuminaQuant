@@ -3166,164 +3166,31 @@ def _strategy_signal(
             exposures[s_idx] = pos
 
     elif strategy_class == "ResidualBasketReversionStrategy":
-        residual_window = max(8, int(params.get("residual_window", 48)))
-        entry_z = float(params.get("entry_z", 1.8))
-        exit_z = max(0.0, float(params.get("exit_z", 0.4)))
-        rebalance_bars = max(1, int(params.get("rebalance_bars", 2)))
-        max_longs = max(0, int(params.get("max_longs", 1)))
-        max_shorts = max(0, int(params.get("max_shorts", 1)))
-        stop_loss_pct = float(params.get("stop_loss_pct", 0.02))
-        allow_short = bool(params.get("allow_short", True))
-        btc_symbol = canonical_symbol(str(params.get("btc_symbol") or "BTC/USDT"))
-        if btc_symbol not in symbols:
-            btc_symbol = canonical_symbol(str(symbols[0]))
-        btc_close = np.asarray(aligned[f"{btc_symbol}:close"], dtype=float)
-        residual_z_map: dict[str, np.ndarray] = {}
-        position_state = np.zeros(len(symbols), dtype=float)
-        entry_price = np.full(len(symbols), np.nan, dtype=float)
-
-        for symbol in symbols:
-            close = np.asarray(aligned[f"{symbol}:close"], dtype=float)
-            if symbol == btc_symbol:
-                residual_z_map[symbol] = np.zeros(close.shape, dtype=float)
-                continue
-            residual_series = _beta_neutral_residual_series(close, btc_close, window=residual_window)
-            residual_z_map[symbol] = np.nan_to_num(_rolling_z(residual_series, residual_window), nan=0.0)
-
-        for idx in range(n):
-            close_map = {
-                symbol: float(np.asarray(aligned[f"{symbol}:close"], dtype=float)[idx])
-                for symbol in symbols
-            }
-            for s_idx, symbol in enumerate(symbols):
-                if position_state[s_idx] == 0.0 or not np.isfinite(entry_price[s_idx]):
-                    continue
-                close_i = close_map[symbol]
-                stop_long = position_state[s_idx] > 0.0 and close_i <= float(entry_price[s_idx]) * (1.0 - stop_loss_pct)
-                stop_short = position_state[s_idx] < 0.0 and close_i >= float(entry_price[s_idx]) * (1.0 + stop_loss_pct)
-                z_i = float(residual_z_map[symbol][idx]) if symbol in residual_z_map else 0.0
-                exit_hit = abs(z_i) <= exit_z
-                if stop_long or stop_short or exit_hit:
-                    position_state[s_idx] = 0.0
-                    entry_price[s_idx] = np.nan
-
-            if idx < residual_window or (idx + 1) % rebalance_bars != 0:
-                exposures[:, idx] = position_state
-                continue
-
-            ranked = [
-                (float(residual_z_map[symbol][idx]), symbol)
-                for symbol in symbols
-                if symbol != btc_symbol
-            ]
-            ranked.sort(key=lambda item: item[0])
-            longs = [symbol for z_i, symbol in ranked if z_i <= -entry_z][:max_longs]
-            shorts = [symbol for z_i, symbol in reversed(ranked) if z_i >= entry_z][:max_shorts]
-            if not allow_short:
-                shorts = []
-            long_set = set(longs)
-            shorts = [symbol for symbol in shorts if symbol not in long_set]
-
-            for s_idx, symbol in enumerate(symbols):
-                next_position = 0.0
-                if symbol in long_set:
-                    next_position = 1.0
-                elif symbol in shorts:
-                    next_position = -1.0
-                if next_position == 0.0:
-                    position_state[s_idx] = 0.0
-                    entry_price[s_idx] = np.nan
-                else:
-                    if position_state[s_idx] != next_position or not np.isfinite(entry_price[s_idx]):
-                        entry_price[s_idx] = close_map[symbol]
-                    position_state[s_idx] = next_position
-            exposures[:, idx] = position_state
-        meta["cross_sectional"] = True
-        meta["residualized_cross_sectional"] = True
-        meta["btc_symbol"] = btc_symbol
+        _apply_residual_basket_reversion_strategy(
+            params=params,
+            aligned=aligned,
+            symbols=symbols,
+            exposures=exposures,
+            meta=meta,
+        )
 
     elif strategy_class == "SessionGatedResidualBasketReversionStrategy":
-        residual_window = max(8, int(params.get("residual_window", 64)))
-        entry_z = float(params.get("entry_z", 1.8))
-        exit_z = max(0.0, float(params.get("exit_z", 0.4)))
-        rebalance_bars = max(1, int(params.get("rebalance_bars", 2)))
-        max_longs = max(0, int(params.get("max_longs", 1)))
-        max_shorts = max(0, int(params.get("max_shorts", 1)))
-        stop_loss_pct = float(params.get("stop_loss_pct", 0.02))
-        allow_short = bool(params.get("allow_short", True))
         session_window_minutes = max(5, int(params.get("session_window_minutes", 30)))
         transition_minutes = np.asarray((0, 480, 780), dtype=int)
         minute_of_day = _minute_of_day(np.asarray(aligned["datetime"]))
-        btc_symbol = canonical_symbol(str(params.get("btc_symbol") or "BTC/USDT"))
-        if btc_symbol not in symbols:
-            btc_symbol = canonical_symbol(str(symbols[0]))
-        btc_close = np.asarray(aligned[f"{btc_symbol}:close"], dtype=float)
-        residual_z_map: dict[str, np.ndarray] = {}
-        position_state = np.zeros(len(symbols), dtype=float)
-        entry_price = np.full(len(symbols), np.nan, dtype=float)
-
-        for symbol in symbols:
-            close = np.asarray(aligned[f"{symbol}:close"], dtype=float)
-            if symbol == btc_symbol:
-                residual_z_map[symbol] = np.zeros(close.shape, dtype=float)
-                continue
-            residual_series = _beta_neutral_residual_series(close, btc_close, window=residual_window)
-            residual_z_map[symbol] = np.nan_to_num(_rolling_z(residual_series, residual_window), nan=0.0)
-
-        for idx in range(n):
-            close_map = {
-                symbol: float(np.asarray(aligned[f"{symbol}:close"], dtype=float)[idx])
-                for symbol in symbols
-            }
-            for s_idx, symbol in enumerate(symbols):
-                if position_state[s_idx] == 0.0 or not np.isfinite(entry_price[s_idx]):
-                    continue
-                close_i = close_map[symbol]
-                stop_long = position_state[s_idx] > 0.0 and close_i <= float(entry_price[s_idx]) * (1.0 - stop_loss_pct)
-                stop_short = position_state[s_idx] < 0.0 and close_i >= float(entry_price[s_idx]) * (1.0 + stop_loss_pct)
-                z_i = float(residual_z_map[symbol][idx]) if symbol in residual_z_map else 0.0
-                exit_hit = abs(z_i) <= exit_z
-                if stop_long or stop_short or exit_hit:
-                    position_state[s_idx] = 0.0
-                    entry_price[s_idx] = np.nan
-
-            minute_i = int(minute_of_day[idx])
-            session_gate = bool(np.any(np.abs(transition_minutes - minute_i) <= session_window_minutes))
-            if idx < residual_window or (idx + 1) % rebalance_bars != 0 or not session_gate:
-                exposures[:, idx] = position_state
-                continue
-
-            ranked = [
-                (float(residual_z_map[symbol][idx]), symbol)
-                for symbol in symbols
-                if symbol != btc_symbol
-            ]
-            ranked.sort(key=lambda item: item[0])
-            longs = [symbol for z_i, symbol in ranked if z_i <= -entry_z][:max_longs]
-            shorts = [symbol for z_i, symbol in reversed(ranked) if z_i >= entry_z][:max_shorts]
-            if not allow_short:
-                shorts = []
-            long_set = set(longs)
-            shorts = [symbol for symbol in shorts if symbol not in long_set]
-
-            for s_idx, symbol in enumerate(symbols):
-                next_position = 0.0
-                if symbol in long_set:
-                    next_position = 1.0
-                elif symbol in shorts:
-                    next_position = -1.0
-                if next_position == 0.0:
-                    position_state[s_idx] = 0.0
-                    entry_price[s_idx] = np.nan
-                else:
-                    if position_state[s_idx] != next_position or not np.isfinite(entry_price[s_idx]):
-                        entry_price[s_idx] = close_map[symbol]
-                    position_state[s_idx] = next_position
-            exposures[:, idx] = position_state
-        meta["cross_sectional"] = True
-        meta["residualized_cross_sectional"] = True
-        meta["btc_symbol"] = btc_symbol
-        meta["session_gated"] = True
+        session_gate = np.any(
+            np.abs(minute_of_day[:, None] - transition_minutes[None, :]) <= session_window_minutes,
+            axis=1,
+        )
+        _apply_residual_basket_reversion_strategy(
+            params=params,
+            aligned=aligned,
+            symbols=symbols,
+            exposures=exposures,
+            meta=meta,
+            entry_gate=session_gate,
+            session_gated=True,
+        )
 
     elif strategy_class == "BreadthThrustFailureReversalStrategy":
         momentum_lookback = max(2, int(params.get("momentum_lookback", 16)))
@@ -3390,111 +3257,12 @@ def _strategy_signal(
         meta["cross_sectional"] = True
 
     elif strategy_class == "CrossAssetLiquidationContagionFadeStrategy":
-        window = max(8, int(params.get("window", 64)))
-        leader_liq_z_min = float(params.get("leader_liq_z_min", 1.2))
-        return_shock_pct = float(params.get("return_shock_pct", 0.006))
-        exit_z = max(0.0, float(params.get("exit_z", 0.3)))
-        max_hold_bars = max(1, int(params.get("max_hold_bars", 12)))
-        stop_loss_pct = float(params.get("stop_loss_pct", 0.02))
-        allow_short = bool(params.get("allow_short", True))
-
-        liq_z_map: dict[str, np.ndarray] = {}
-        return_z_map: dict[str, np.ndarray] = {}
-        close_map_np: dict[str, np.ndarray] = {}
-        valid_symbols: list[str] = []
-        for symbol in symbols:
-            liq_long = aligned.get(f"{symbol}:liquidation_long_notional")
-            liq_short = aligned.get(f"{symbol}:liquidation_short_notional")
-            close = aligned.get(f"{symbol}:close")
-            if liq_long is None or liq_short is None or close is None:
-                continue
-            support = _crowding_support_series(
-                funding_rate=np.zeros(len(close), dtype=float),
-                open_interest=np.ones(len(close), dtype=float),
-                liquidation_long_notional=np.asarray(liq_long, dtype=float),
-                liquidation_short_notional=np.asarray(liq_short, dtype=float),
-                window=window,
-            )
-            liq_z_map[symbol] = np.asarray(support["liquidation_imbalance_z"], dtype=float)
-            close_arr = np.asarray(close, dtype=float)
-            close_map_np[symbol] = close_arr
-            prev_close = np.r_[close_arr[0], close_arr[:-1]]
-            returns = np.divide(
-                close_arr,
-                np.clip(prev_close, 1e-12, np.inf),
-                out=np.ones_like(close_arr),
-                where=np.isfinite(prev_close),
-            ) - 1.0
-            return_z_map[symbol] = np.nan_to_num(_rolling_z(np.nan_to_num(returns, nan=0.0), window), nan=0.0)
-            valid_symbols.append(symbol)
-
-        for s_idx, symbol in enumerate(symbols):
-            if symbol not in valid_symbols:
-                continue
-            close_arr = close_map_np[symbol]
-            pos = np.zeros(close_arr.shape, dtype=float)
-            mode = 0
-            entry_price: float | None = None
-            hold_bars = 0
-            for idx in range(close_arr.size):
-                leader_vals = [
-                    float(liq_z_map[leader][idx])
-                    for leader in valid_symbols
-                    if leader != symbol and np.isfinite(liq_z_map[leader][idx])
-                ]
-                leader_liq = float(np.mean(np.asarray(leader_vals, dtype=float))) if leader_vals else np.nan
-                ret_z = float(return_z_map[symbol][idx]) if np.isfinite(return_z_map[symbol][idx]) else np.nan
-                close_i = float(close_arr[idx])
-                if not np.isfinite(close_i):
-                    continue
-                if mode == 1:
-                    hold_bars += 1
-                    should_exit = (
-                        (np.isfinite(ret_z) and ret_z >= -exit_z)
-                        or (hold_bars >= max_hold_bars)
-                        or (
-                            entry_price is not None
-                            and close_i <= float(entry_price) * (1.0 - stop_loss_pct)
-                        )
-                    )
-                    if should_exit:
-                        mode = 0
-                        entry_price = None
-                        hold_bars = 0
-                    else:
-                        pos[idx] = 1.0
-                        continue
-                elif mode == -1:
-                    hold_bars += 1
-                    should_exit = (
-                        (np.isfinite(ret_z) and ret_z <= exit_z)
-                        or (hold_bars >= max_hold_bars)
-                        or (
-                            entry_price is not None
-                            and close_i >= float(entry_price) * (1.0 + stop_loss_pct)
-                        )
-                    )
-                    if should_exit:
-                        mode = 0
-                        entry_price = None
-                        hold_bars = 0
-                    else:
-                        pos[idx] = -1.0
-                        continue
-
-                if not (np.isfinite(leader_liq) and np.isfinite(ret_z)):
-                    continue
-                if leader_liq >= leader_liq_z_min and ret_z >= return_shock_pct and allow_short:
-                    mode = -1
-                    entry_price = close_i
-                    hold_bars = 0
-                    pos[idx] = -1.0
-                elif leader_liq <= -leader_liq_z_min and ret_z <= -return_shock_pct:
-                    mode = 1
-                    entry_price = close_i
-                    hold_bars = 0
-                    pos[idx] = 1.0
-            exposures[s_idx] = pos
+        _apply_cross_asset_liquidation_contagion_fade_strategy(
+            params=params,
+            aligned=aligned,
+            symbols=symbols,
+            exposures=exposures,
+        )
 
     elif strategy_class == "MultiHorizonTrendExhaustionFadeStrategy":
         short_window = max(4, int(params.get("short_window", 16)))
