@@ -14,6 +14,7 @@ from .pipeline import (
     render_shortlist_markdown,
     write_candidate_manifest,
 )
+from .strategy_signal_dispatch import StrategySignalDispatcher
 from .selection import (
     DEFAULT_ROBUST_SCORE_PARAMS,
     DEFAULT_ROBUST_SCORE_WEIGHTS,
@@ -48,6 +49,7 @@ __all__ = [
     "robust_score_from_metrics",
     "select_diversified_shortlist",
     "strategy_family",
+    "StrategySignalDispatcher",
     "summarize_shortlist",
     "write_candidate_manifest",
 ]
