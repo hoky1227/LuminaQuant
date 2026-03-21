@@ -168,6 +168,12 @@ class _GhostCleanupStreamlit(_HelperStreamlit):
     def info(self, value: str) -> None:
         self.calls.append(("info", value))
 
+    def metric(self, label: str, value: str) -> None:
+        self.calls.append(("metric", label, value))
+
+    def plotly_chart(self, figure: Any, **kwargs: Any) -> None:
+        self.calls.append(("plotly_chart", figure, kwargs))
+
     def text_area(self, label: str, value: str, **kwargs: Any) -> None:
         self.calls.append(("text_area", label, value, kwargs))
 
@@ -684,3 +690,84 @@ def test_render_workflow_jobs_section_handles_graceful_stop_and_log_tail(monkeyp
     assert any(
         call[0] == "text_area" and call[2] == "tail:/tmp/job-1.log:25000" for call in helper_st.calls
     )
+
+
+def test_render_optimization_results_tab_reports_empty_state(monkeypatch) -> None:
+    import numpy as real_np
+    import pandas as real_pd
+
+    module, _, _ = _load_dashboard_app(monkeypatch)
+    helper_st = _GhostCleanupStreamlit(button_results=[])
+
+    monkeypatch.setitem(sys.modules, "numpy", real_np)
+    monkeypatch.setitem(sys.modules, "pandas", real_pd)
+    module.st = helper_st
+    module.pd = real_pd
+
+    module._render_optimization_results_tab(real_pd.DataFrame())
+
+    assert ("subheader", "Optimization Results") in helper_st.calls
+    assert ("info", "No optimization_results rows found in Postgres yet.") in helper_st.calls
+
+
+def test_render_optimization_results_tab_summarizes_best_row_without_scatter(monkeypatch) -> None:
+    import numpy as real_np
+    import pandas as real_pd
+
+    module, _, _ = _load_dashboard_app(monkeypatch)
+    helper_st = _GhostCleanupStreamlit(button_results=[])
+
+    monkeypatch.setitem(sys.modules, "numpy", real_np)
+    monkeypatch.setitem(sys.modules, "pandas", real_pd)
+    module.st = helper_st
+    module.pd = real_pd
+
+    df_optimize = real_pd.DataFrame(
+        [
+            {
+                "created_at": "2026-03-21T00:00:00Z",
+                "run_id": "opt-1",
+                "stage": "train",
+                "sharpe": 1.25,
+                "train_sharpe": None,
+                "robustness_score": 0.7,
+                "cagr": 0.12,
+                "mdd": -0.05,
+                "params": {"lookback": 14},
+                "extra": {"bucket": "top"},
+            }
+        ]
+    )
+
+    module._render_optimization_results_tab(df_optimize)
+
+    assert ("metric", "Rows", "1") in helper_st.calls
+    assert ("metric", "Best Sharpe", "1.2500") in helper_st.calls
+    assert ("metric", "Median Sharpe", "1.2500") in helper_st.calls
+    assert ("metric", "Median Robustness", "0.7000") in helper_st.calls
+    dataframe_calls = [call for call in helper_st.calls if call[0] == "dataframe"]
+    assert len(dataframe_calls) == 1
+    rendered_df = dataframe_calls[0][1]
+    assert list(rendered_df.columns) == [
+        "created_at",
+        "run_id",
+        "stage",
+        "sharpe",
+        "train_sharpe",
+        "robustness_score",
+        "cagr",
+        "mdd",
+        "params_view",
+    ]
+    assert ("caption", "Best row by Sharpe") in helper_st.calls
+    assert (
+        "json",
+        {
+            "run_id": "opt-1",
+            "stage": "train",
+            "sharpe": 1.25,
+            "params": {"lookback": 14},
+            "extra": {"bucket": "top"},
+        },
+    ) in helper_st.calls
+    assert not any(call[0] == "plotly_chart" for call in helper_st.calls)

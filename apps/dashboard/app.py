@@ -3393,6 +3393,117 @@ def _render_workflow_jobs_section(*, db_path, refresh_counter) -> None:
     _render_workflow_job_log_viewer(workflow_jobs)
 
 
+def _render_optimization_results_tab(df_optimize) -> None:
+    st.subheader("Optimization Results")
+    if df_optimize.empty:
+        st.info("No optimization_results rows found in Postgres yet.")
+        return
+
+    opt_run_ids = sorted(df_optimize["run_id"].dropna().astype(str).unique().tolist())
+    opt_stages = sorted(df_optimize["stage"].dropna().astype(str).unique().tolist())
+
+    opt_col_1, opt_col_2 = st.columns(2)
+    selected_opt_run = opt_col_1.selectbox(
+        "Optimization Run ID",
+        ["All", *opt_run_ids],
+        key="opt_run_id_filter",
+    )
+    selected_opt_stage = opt_col_2.selectbox(
+        "Optimization Stage",
+        ["All", *opt_stages],
+        key="opt_stage_filter",
+    )
+
+    opt_filtered = df_optimize.copy()
+    if selected_opt_run != "All":
+        opt_filtered = opt_filtered[opt_filtered["run_id"].astype(str) == selected_opt_run]
+    if selected_opt_stage != "All":
+        opt_filtered = opt_filtered[opt_filtered["stage"].astype(str) == selected_opt_stage]
+
+    if opt_filtered.empty:
+        st.warning("No rows matched the optimization filters.")
+        return
+
+    sharpe_series = pd.to_numeric(opt_filtered["sharpe"], errors="coerce")
+    robust_series = pd.to_numeric(opt_filtered["robustness_score"], errors="coerce")
+    train_series = pd.to_numeric(opt_filtered["train_sharpe"], errors="coerce")
+    top_idx = sharpe_series.idxmax() if sharpe_series.notna().any() else None
+    top_row = opt_filtered.loc[top_idx] if top_idx is not None else None
+
+    optm1, optm2, optm3, optm4 = st.columns(4)
+    optm1.metric("Rows", f"{len(opt_filtered)}")
+    optm2.metric(
+        "Best Sharpe",
+        f"{float(sharpe_series.max()):.4f}" if sharpe_series.notna().any() else "N/A",
+    )
+    optm3.metric(
+        "Median Sharpe",
+        f"{float(sharpe_series.median()):.4f}" if sharpe_series.notna().any() else "N/A",
+    )
+    optm4.metric(
+        "Median Robustness",
+        f"{float(robust_series.median()):.4f}" if robust_series.notna().any() else "N/A",
+    )
+
+    if sharpe_series.notna().any() and train_series.notna().any():
+        fig_opt_scatter = go.Figure()
+        fig_opt_scatter.add_trace(
+            go.Scatter(
+                x=train_series,
+                y=sharpe_series,
+                mode="markers",
+                marker=dict(size=8, color="#2b6cb0", opacity=0.8),
+                text=opt_filtered["stage"].astype(str),
+                hovertemplate=(
+                    "Stage: %{text}<br>"
+                    "Train Sharpe: %{x:.4f}<br>"
+                    "Current Sharpe: %{y:.4f}<extra></extra>"
+                ),
+                name="Candidates",
+            )
+        )
+        fig_opt_scatter.update_layout(
+            title="Optimization Candidate Quality",
+            xaxis_title="Train Sharpe",
+            yaxis_title="Sharpe",
+            template="plotly_white",
+        )
+        st.plotly_chart(fig_opt_scatter, use_container_width=True)
+
+    table_cols = [
+        "created_at",
+        "run_id",
+        "stage",
+        "sharpe",
+        "train_sharpe",
+        "robustness_score",
+        "cagr",
+        "mdd",
+    ]
+    if "params" in opt_filtered.columns:
+        opt_filtered = opt_filtered.copy()
+        opt_filtered["params_view"] = opt_filtered["params"].apply(
+            lambda v: json.dumps(v, ensure_ascii=False)
+        )
+        table_cols.append("params_view")
+    st.dataframe(
+        opt_filtered[table_cols].sort_values("created_at", ascending=False).head(500),
+        use_container_width=True,
+    )
+
+    if top_row is not None:
+        st.caption("Best row by Sharpe")
+        st.json(
+            {
+                "run_id": top_row.get("run_id"),
+                "stage": top_row.get("stage"),
+                "sharpe": float(top_row.get("sharpe", 0.0)),
+                "params": top_row.get("params", {}),
+                "extra": top_row.get("extra", {}),
+            }
+        )
+
+
 def render_main_dashboard() -> None:
     st.sidebar.header("Configuration")
     data_source = st.sidebar.selectbox("Data Source", ["Auto", "Postgres", "CSV"])
@@ -4832,112 +4943,7 @@ def render_main_dashboard() -> None:
             st.info("No market_ohlcv rows available for selected symbol/timeframe/exchange.")
 
     with tab_opt:
-        st.subheader("Optimization Results")
-        if df_optimize.empty:
-            st.info("No optimization_results rows found in Postgres yet.")
-        else:
-            opt_run_ids = sorted(df_optimize["run_id"].dropna().astype(str).unique().tolist())
-            opt_stages = sorted(df_optimize["stage"].dropna().astype(str).unique().tolist())
-
-            opt_col_1, opt_col_2 = st.columns(2)
-            selected_opt_run = opt_col_1.selectbox(
-                "Optimization Run ID",
-                ["All", *opt_run_ids],
-                key="opt_run_id_filter",
-            )
-            selected_opt_stage = opt_col_2.selectbox(
-                "Optimization Stage",
-                ["All", *opt_stages],
-                key="opt_stage_filter",
-            )
-
-            opt_filtered = df_optimize.copy()
-            if selected_opt_run != "All":
-                opt_filtered = opt_filtered[opt_filtered["run_id"].astype(str) == selected_opt_run]
-            if selected_opt_stage != "All":
-                opt_filtered = opt_filtered[opt_filtered["stage"].astype(str) == selected_opt_stage]
-
-            if opt_filtered.empty:
-                st.warning("No rows matched the optimization filters.")
-            else:
-                sharpe_series = pd.to_numeric(opt_filtered["sharpe"], errors="coerce")
-                robust_series = pd.to_numeric(opt_filtered["robustness_score"], errors="coerce")
-                train_series = pd.to_numeric(opt_filtered["train_sharpe"], errors="coerce")
-                top_idx = sharpe_series.idxmax() if sharpe_series.notna().any() else None
-                top_row = opt_filtered.loc[top_idx] if top_idx is not None else None
-
-                optm1, optm2, optm3, optm4 = st.columns(4)
-                optm1.metric("Rows", f"{len(opt_filtered)}")
-                optm2.metric(
-                    "Best Sharpe",
-                    f"{float(sharpe_series.max()):.4f}" if sharpe_series.notna().any() else "N/A",
-                )
-                optm3.metric(
-                    "Median Sharpe",
-                    f"{float(sharpe_series.median()):.4f}" if sharpe_series.notna().any() else "N/A",
-                )
-                optm4.metric(
-                    "Median Robustness",
-                    f"{float(robust_series.median()):.4f}" if robust_series.notna().any() else "N/A",
-                )
-
-                if sharpe_series.notna().any() and train_series.notna().any():
-                    fig_opt_scatter = go.Figure()
-                    fig_opt_scatter.add_trace(
-                        go.Scatter(
-                            x=train_series,
-                            y=sharpe_series,
-                            mode="markers",
-                            marker=dict(size=8, color="#2b6cb0", opacity=0.8),
-                            text=opt_filtered["stage"].astype(str),
-                            hovertemplate=(
-                                "Stage: %{text}<br>"
-                                "Train Sharpe: %{x:.4f}<br>"
-                                "Current Sharpe: %{y:.4f}<extra></extra>"
-                            ),
-                            name="Candidates",
-                        )
-                    )
-                    fig_opt_scatter.update_layout(
-                        title="Optimization Candidate Quality",
-                        xaxis_title="Train Sharpe",
-                        yaxis_title="Sharpe",
-                        template="plotly_white",
-                    )
-                    st.plotly_chart(fig_opt_scatter, use_container_width=True)
-
-                table_cols = [
-                    "created_at",
-                    "run_id",
-                    "stage",
-                    "sharpe",
-                    "train_sharpe",
-                    "robustness_score",
-                    "cagr",
-                    "mdd",
-                ]
-                if "params" in opt_filtered.columns:
-                    opt_filtered = opt_filtered.copy()
-                    opt_filtered["params_view"] = opt_filtered["params"].apply(
-                        lambda v: json.dumps(v, ensure_ascii=False)
-                    )
-                    table_cols.append("params_view")
-                st.dataframe(
-                    opt_filtered[table_cols].sort_values("created_at", ascending=False).head(500),
-                    use_container_width=True,
-                )
-
-                if top_row is not None:
-                    st.caption("Best row by Sharpe")
-                    st.json(
-                        {
-                            "run_id": top_row.get("run_id"),
-                            "stage": top_row.get("stage"),
-                            "sharpe": float(top_row.get("sharpe", 0.0)),
-                            "params": top_row.get("params", {}),
-                            "extra": top_row.get("extra", {}),
-                        }
-                    )
+        _render_optimization_results_tab(df_optimize)
 
     with tab_report:
         st.subheader("No-Code Workflow Control")
