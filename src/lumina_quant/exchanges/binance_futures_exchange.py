@@ -93,22 +93,13 @@ class BinanceFuturesExchange(ExchangeInterface):
         self.load_markets()
 
         position_mode = str(getattr(self.config, "POSITION_MODE", "HEDGE") or "HEDGE").upper()
-        try:
-            self.set_position_mode(position_mode)
-        except BinanceFuturesAPIError:
-            pass
+        self.set_position_mode(position_mode)
 
         margin_mode = str(getattr(self.config, "MARGIN_MODE", "isolated") or "isolated")
         leverage = int(getattr(self.config, "LEVERAGE", 1) or 1)
         for symbol in list(getattr(self.config, "SYMBOLS", []) or []):
-            try:
-                self.set_margin_mode(str(symbol), margin_mode)
-            except BinanceFuturesAPIError:
-                pass
-            try:
-                self.set_leverage(str(symbol), leverage)
-            except BinanceFuturesAPIError:
-                pass
+            self.set_margin_mode(str(symbol), margin_mode)
+            self.set_leverage(str(symbol), leverage)
 
     def close(self) -> None:
         self.rest_client = None
