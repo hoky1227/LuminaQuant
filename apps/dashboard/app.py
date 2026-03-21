@@ -720,6 +720,163 @@ class _ManagedRunLaunchContext:
     runner_leverage: int
 
 
+@dataclass(frozen=True)
+class _DashboardSelectionControls:
+    data_source: str
+    db_path: str
+    market_db_path: str
+    market_exchange: str
+    market_timeframe: str
+    strategy_options: tuple[str, ...]
+    strategy_name: str
+    auto_refresh_enabled: bool
+    refresh_interval_sec: int
+    max_points: int
+    auto_downsample: bool
+    downsample_target_points: int
+    pin_to_running: bool
+    filter_runs_by_strategy: bool
+    run_stale_sec: int
+    period_preset: str
+    custom_start: object | None
+    custom_end: object | None
+
+
+@dataclass(frozen=True)
+class _ExecutionLabControls:
+    runner_initial_capital: float
+    runner_leverage: int
+    runner_symbols: tuple[str, ...]
+    runner_timeframe: str
+    runner_timeout_sec: int
+    runner_data_source: str
+
+
+def _render_dashboard_selection_controls() -> _DashboardSelectionControls:
+    st.sidebar.header("Configuration")
+    data_source = st.sidebar.selectbox("Data Source", ["Auto", "Postgres", "CSV"])
+    db_path = st.sidebar.text_input("Postgres DSN", value=DEFAULT_DB_PATH)
+    market_db_path = st.sidebar.text_input("Market Data Parquet Path", value=DEFAULT_MARKET_DB_PATH)
+    market_exchange = st.sidebar.text_input(
+        "Market Exchange", value=getattr(BaseConfig, "MARKET_DATA_EXCHANGE", "binance")
+    )
+    market_timeframe_requested = st.sidebar.text_input(
+        "Market Timeframe", value=getattr(BaseConfig, "TIMEFRAME", "1m")
+    )
+    market_timeframe, market_timeframe_clamped = _resolve_dashboard_market_timeframe(
+        market_timeframe_requested
+    )
+    if market_timeframe_clamped:
+        st.sidebar.caption("Market chart timeframe clamped to 1m minimum for dashboard performance.")
+
+    strategy_options = tuple(strategy_registry.get_strategy_names())
+    default_strategy_name = "RsiStrategy"
+    default_strategy_index = (
+        strategy_options.index(default_strategy_name) if default_strategy_name in strategy_options else 0
+    )
+    strategy_name = st.sidebar.selectbox(
+        "Select Strategy",
+        list(strategy_options),
+        index=default_strategy_index,
+    )
+    auto_refresh_enabled = st.sidebar.toggle("Auto Refresh", value=True)
+    refresh_interval_sec = st.sidebar.slider(
+        "Refresh Interval (sec)", min_value=1, max_value=120, value=5
+    )
+    max_points = st.sidebar.slider("Max Data Points", min_value=500, max_value=100000, value=2500)
+    auto_downsample = st.sidebar.toggle("Auto Downsample Plots", value=True)
+    downsample_target_points = st.sidebar.slider(
+        "Downsample Target Points",
+        min_value=1000,
+        max_value=50000,
+        value=DEFAULT_DOWNSAMPLE_TARGET_POINTS,
+        step=500,
+        disabled=not auto_downsample,
+    )
+    pin_to_running = st.sidebar.toggle("Pin to RUNNING live run", value=True)
+    filter_runs_by_strategy = st.sidebar.toggle("Filter Run IDs By Strategy", value=True)
+    run_stale_sec = st.sidebar.slider(
+        "RUNNING Stale Threshold (sec)",
+        min_value=30,
+        max_value=3600,
+        value=DEFAULT_RUN_STALE_SEC,
+        step=30,
+    )
+    period_preset = st.sidebar.selectbox(
+        "Chart Period",
+        ["All", "1D", "7D", "30D", "90D", "180D", "365D", "Custom"],
+        index=2,
+    )
+    custom_start = None
+    custom_end = None
+    if period_preset == "Custom":
+        default_custom_end = pd.Timestamp.utcnow().date()
+        default_custom_start = (pd.Timestamp.utcnow() - pd.Timedelta(days=30)).date()
+        custom_start = st.sidebar.date_input("Custom Start", value=default_custom_start)
+        custom_end = st.sidebar.date_input("Custom End", value=default_custom_end)
+
+    return _DashboardSelectionControls(
+        data_source=str(data_source),
+        db_path=str(db_path),
+        market_db_path=str(market_db_path),
+        market_exchange=str(market_exchange),
+        market_timeframe=str(market_timeframe),
+        strategy_options=strategy_options,
+        strategy_name=str(strategy_name),
+        auto_refresh_enabled=bool(auto_refresh_enabled),
+        refresh_interval_sec=int(refresh_interval_sec),
+        max_points=int(max_points),
+        auto_downsample=bool(auto_downsample),
+        downsample_target_points=int(downsample_target_points),
+        pin_to_running=bool(pin_to_running),
+        filter_runs_by_strategy=bool(filter_runs_by_strategy),
+        run_stale_sec=int(run_stale_sec),
+        period_preset=str(period_preset),
+        custom_start=custom_start,
+        custom_end=custom_end,
+    )
+
+
+def _render_execution_lab_controls() -> _ExecutionLabControls:
+    st.sidebar.divider()
+    st.sidebar.subheader("Execution Lab")
+    runner_initial_capital = st.sidebar.number_input(
+        "Initial Equity Override",
+        min_value=100.0,
+        max_value=100000000.0,
+        value=float(BaseConfig.INITIAL_CAPITAL),
+        step=100.0,
+    )
+    runner_leverage = st.sidebar.number_input(
+        "Backtest Leverage Override",
+        min_value=1,
+        max_value=20,
+        value=int(BacktestConfig.LEVERAGE),
+        step=1,
+    )
+    runner_symbols_raw = st.sidebar.text_input(
+        "Symbols (comma-separated)", value=", ".join(list(BaseConfig.SYMBOLS))
+    )
+    runner_symbols = _parse_symbols_csv(runner_symbols_raw)
+    if not runner_symbols:
+        runner_symbols = list(BaseConfig.SYMBOLS)
+
+    runner_timeframe = st.sidebar.text_input("Timeframe Override", value=str(BaseConfig.TIMEFRAME))
+    runner_timeout_sec = st.sidebar.slider(
+        "Runner Timeout (sec)", min_value=30, max_value=3600, value=900, step=30
+    )
+    runner_data_source = st.sidebar.selectbox("Runner Data Source", ["auto", "csv", "db"], index=0)
+
+    return _ExecutionLabControls(
+        runner_initial_capital=float(runner_initial_capital),
+        runner_leverage=int(runner_leverage),
+        runner_symbols=tuple(runner_symbols),
+        runner_timeframe=str(runner_timeframe),
+        runner_timeout_sec=int(runner_timeout_sec),
+        runner_data_source=str(runner_data_source),
+    )
+
+
 def _build_backtest_job_launch_spec(
     *,
     runner_data_source,
@@ -3757,106 +3914,42 @@ def _render_report_tab(
 
 
 def render_main_dashboard() -> None:
-    st.sidebar.header("Configuration")
-    data_source = st.sidebar.selectbox("Data Source", ["Auto", "Postgres", "CSV"])
-    db_path = st.sidebar.text_input("Postgres DSN", value=DEFAULT_DB_PATH)
-    market_db_path = st.sidebar.text_input("Market Data Parquet Path", value=DEFAULT_MARKET_DB_PATH)
-    market_exchange = st.sidebar.text_input(
-        "Market Exchange", value=getattr(BaseConfig, "MARKET_DATA_EXCHANGE", "binance")
-    )
-    market_timeframe_requested = st.sidebar.text_input(
-        "Market Timeframe", value=getattr(BaseConfig, "TIMEFRAME", "1m")
-    )
-    market_timeframe, market_timeframe_clamped = _resolve_dashboard_market_timeframe(
-        market_timeframe_requested
-    )
-    if market_timeframe_clamped:
-        st.sidebar.caption(
-            "Market chart timeframe clamped to 1m minimum for dashboard performance."
-        )
-    strategy_options = strategy_registry.get_strategy_names()
-    default_strategy_name = "RsiStrategy"
-    default_strategy_index = (
-        strategy_options.index(default_strategy_name)
-        if default_strategy_name in strategy_options
-        else 0
-    )
-    strategy_name = st.sidebar.selectbox(
-        "Select Strategy",
-        strategy_options,
-        index=default_strategy_index,
-    )
+    selection_controls = _render_dashboard_selection_controls()
+    data_source = selection_controls.data_source
+    db_path = selection_controls.db_path
+    market_db_path = selection_controls.market_db_path
+    market_exchange = selection_controls.market_exchange
+    market_timeframe = selection_controls.market_timeframe
+    strategy_options = selection_controls.strategy_options
+    strategy_name = selection_controls.strategy_name
+    auto_refresh_enabled = selection_controls.auto_refresh_enabled
+    refresh_interval_sec = selection_controls.refresh_interval_sec
+    max_points = selection_controls.max_points
+    auto_downsample = selection_controls.auto_downsample
+    downsample_target_points = selection_controls.downsample_target_points
+    pin_to_running = selection_controls.pin_to_running
+    filter_runs_by_strategy = selection_controls.filter_runs_by_strategy
+    run_stale_sec = selection_controls.run_stale_sec
+    period_preset = selection_controls.period_preset
+    custom_start = selection_controls.custom_start
+    custom_end = selection_controls.custom_end
 
-    auto_refresh_enabled = st.sidebar.toggle("Auto Refresh", value=True)
-    refresh_interval_sec = st.sidebar.slider(
-        "Refresh Interval (sec)", min_value=1, max_value=120, value=5
+    refresh_counter, refresh_mode = _setup_auto_refresh(
+        auto_refresh_enabled,
+        refresh_interval_sec,
     )
-    max_points = st.sidebar.slider("Max Data Points", min_value=500, max_value=100000, value=2500)
-    auto_downsample = st.sidebar.toggle("Auto Downsample Plots", value=True)
-    downsample_target_points = st.sidebar.slider(
-        "Downsample Target Points",
-        min_value=1000,
-        max_value=50000,
-        value=DEFAULT_DOWNSAMPLE_TARGET_POINTS,
-        step=500,
-        disabled=not auto_downsample,
-    )
-    pin_to_running = st.sidebar.toggle("Pin to RUNNING live run", value=True)
-    filter_runs_by_strategy = st.sidebar.toggle("Filter Run IDs By Strategy", value=True)
-    run_stale_sec = st.sidebar.slider(
-        "RUNNING Stale Threshold (sec)",
-        min_value=30,
-        max_value=3600,
-        value=DEFAULT_RUN_STALE_SEC,
-        step=30,
-    )
-    period_preset = st.sidebar.selectbox(
-        "Chart Period",
-        ["All", "1D", "7D", "30D", "90D", "180D", "365D", "Custom"],
-        index=2,
-    )
-    custom_start = None
-    custom_end = None
-    if period_preset == "Custom":
-        default_custom_end = pd.Timestamp.utcnow().date()
-        default_custom_start = (pd.Timestamp.utcnow() - pd.Timedelta(days=30)).date()
-        custom_start = st.sidebar.date_input("Custom Start", value=default_custom_start)
-        custom_end = st.sidebar.date_input("Custom End", value=default_custom_end)
-
-    refresh_counter, refresh_mode = _setup_auto_refresh(auto_refresh_enabled, refresh_interval_sec)
     params = load_params(strategy_name)
     st.sidebar.caption(
         f"Refresh mode: {refresh_mode} | tick: {refresh_counter} | interval: {_safe_interval_sec(refresh_interval_sec)}s"
     )
 
-    st.sidebar.divider()
-    st.sidebar.subheader("Execution Lab")
-    runner_initial_capital = st.sidebar.number_input(
-        "Initial Equity Override",
-        min_value=100.0,
-        max_value=100000000.0,
-        value=float(BaseConfig.INITIAL_CAPITAL),
-        step=100.0,
-    )
-    runner_leverage = st.sidebar.number_input(
-        "Backtest Leverage Override",
-        min_value=1,
-        max_value=20,
-        value=int(BacktestConfig.LEVERAGE),
-        step=1,
-    )
-    runner_symbols_raw = st.sidebar.text_input(
-        "Symbols (comma-separated)", value=", ".join(list(BaseConfig.SYMBOLS))
-    )
-    runner_symbols = _parse_symbols_csv(runner_symbols_raw)
-    if not runner_symbols:
-        runner_symbols = list(BaseConfig.SYMBOLS)
-
-    runner_timeframe = st.sidebar.text_input("Timeframe Override", value=str(BaseConfig.TIMEFRAME))
-    runner_timeout_sec = st.sidebar.slider(
-        "Runner Timeout (sec)", min_value=30, max_value=3600, value=900, step=30
-    )
-    runner_data_source = st.sidebar.selectbox("Runner Data Source", ["auto", "csv", "db"], index=0)
+    execution_lab_controls = _render_execution_lab_controls()
+    runner_initial_capital = execution_lab_controls.runner_initial_capital
+    runner_leverage = execution_lab_controls.runner_leverage
+    runner_symbols = list(execution_lab_controls.runner_symbols)
+    runner_timeframe = execution_lab_controls.runner_timeframe
+    runner_timeout_sec = execution_lab_controls.runner_timeout_sec
+    runner_data_source = execution_lab_controls.runner_data_source
 
     strategy_params = _merged_strategy_params(strategy_name, params)
     with st.sidebar.expander("Strategy Parameter Overrides", expanded=False):

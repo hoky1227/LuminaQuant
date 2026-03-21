@@ -97,6 +97,68 @@ class _LaunchSpecRecorder:
         return self._job_id
 
 
+class _SidebarControlsFake:
+    def __init__(
+        self,
+        calls: list[tuple[Any, ...]],
+        *,
+        selectbox_results: list[str] | None = None,
+        text_input_results: list[str] | None = None,
+        toggle_results: list[bool] | None = None,
+        slider_results: list[Any] | None = None,
+        number_input_results: list[Any] | None = None,
+        date_input_results: list[Any] | None = None,
+    ) -> None:
+        self._calls = calls
+        self._selectbox_results = list(selectbox_results or [])
+        self._text_input_results = list(text_input_results or [])
+        self._toggle_results = list(toggle_results or [])
+        self._slider_results = list(slider_results or [])
+        self._number_input_results = list(number_input_results or [])
+        self._date_input_results = list(date_input_results or [])
+
+    def header(self, value: str) -> None:
+        self._calls.append(("sidebar.header", value))
+
+    def subheader(self, value: str) -> None:
+        self._calls.append(("sidebar.subheader", value))
+
+    def divider(self) -> None:
+        self._calls.append(("sidebar.divider",))
+
+    def caption(self, value: str) -> None:
+        self._calls.append(("sidebar.caption", value))
+
+    def selectbox(self, label: str, options: list[str], index: int = 0, **kwargs: Any) -> str:
+        self._calls.append(("sidebar.selectbox", label, list(options), index, kwargs))
+        return self._selectbox_results.pop(0) if self._selectbox_results else options[index]
+
+    def text_input(self, label: str, value: str = "", **kwargs: Any) -> str:
+        self._calls.append(("sidebar.text_input", label, value, kwargs))
+        return self._text_input_results.pop(0) if self._text_input_results else value
+
+    def toggle(self, label: str, value: bool = False, **kwargs: Any) -> bool:
+        self._calls.append(("sidebar.toggle", label, value, kwargs))
+        return self._toggle_results.pop(0) if self._toggle_results else value
+
+    def slider(self, label: str, **kwargs: Any) -> Any:
+        self._calls.append(("sidebar.slider", label, kwargs))
+        return self._slider_results.pop(0) if self._slider_results else kwargs.get("value")
+
+    def number_input(self, label: str, **kwargs: Any) -> Any:
+        self._calls.append(("sidebar.number_input", label, kwargs))
+        return self._number_input_results.pop(0) if self._number_input_results else kwargs.get("value")
+
+    def date_input(self, label: str, value: Any = None, **kwargs: Any) -> Any:
+        self._calls.append(("sidebar.date_input", label, value, kwargs))
+        return self._date_input_results.pop(0) if self._date_input_results else value
+
+
+class _SidebarStreamlit:
+    def __init__(self, sidebar: _SidebarControlsFake) -> None:
+        self.sidebar = sidebar
+
+
 class _HelperExpander:
     def __init__(self, calls: list[tuple[Any, ...]], label: str) -> None:
         self._calls = calls
@@ -1111,3 +1173,71 @@ def test_render_report_tab_orchestrates_subsections_and_warnings(monkeypatch) ->
     assert snapshot_kwargs["df_risk"] is df_risk
     assert snapshot_kwargs["df_hb"] is df_hb
     assert snapshot_kwargs["mirror_balance_equity"] is mirror_balance_equity
+
+
+def test_render_dashboard_selection_controls_clamps_timeframe_and_collects_sidebar_values(monkeypatch) -> None:
+    module, _, _ = _load_dashboard_app(monkeypatch)
+    calls: list[tuple[Any, ...]] = []
+    sidebar = _SidebarControlsFake(
+        calls,
+        selectbox_results=["Postgres", "TrendStrategy", "30D"],
+        text_input_results=["postgres://lumina", "/tmp/market", "binanceusdm", "15s"],
+        toggle_results=[False, True, False, True],
+        slider_results=[9, 12000, 1800, 600],
+    )
+    module.st = _SidebarStreamlit(sidebar)
+    monkeypatch.setattr(module.strategy_registry, "get_strategy_names", lambda: ["RsiStrategy", "TrendStrategy"])
+    monkeypatch.setattr(module, "timeframe_to_milliseconds", lambda value: 15_000)
+
+    controls = module._render_dashboard_selection_controls()
+
+    assert controls == module._DashboardSelectionControls(
+        data_source="Postgres",
+        db_path="postgres://lumina",
+        market_db_path="/tmp/market",
+        market_exchange="binanceusdm",
+        market_timeframe="1m",
+        strategy_options=("RsiStrategy", "TrendStrategy"),
+        strategy_name="TrendStrategy",
+        auto_refresh_enabled=False,
+        refresh_interval_sec=9,
+        max_points=12000,
+        auto_downsample=True,
+        downsample_target_points=1800,
+        pin_to_running=False,
+        filter_runs_by_strategy=True,
+        run_stale_sec=600,
+        period_preset="30D",
+        custom_start=None,
+        custom_end=None,
+    )
+    assert (
+        "sidebar.caption",
+        "Market chart timeframe clamped to 1m minimum for dashboard performance.",
+    ) in calls
+
+
+def test_render_execution_lab_controls_parses_symbols_and_keeps_runner_inputs(monkeypatch) -> None:
+    module, _, _ = _load_dashboard_app(monkeypatch)
+    calls: list[tuple[Any, ...]] = []
+    sidebar = _SidebarControlsFake(
+        calls,
+        number_input_results=[2500.0, 5],
+        text_input_results=["ETH/USDT, BTC/USDT", "15m"],
+        slider_results=[1200],
+        selectbox_results=["db"],
+    )
+    module.st = _SidebarStreamlit(sidebar)
+
+    controls = module._render_execution_lab_controls()
+
+    assert controls == module._ExecutionLabControls(
+        runner_initial_capital=2500.0,
+        runner_leverage=5,
+        runner_symbols=("ETH/USDT", "BTC/USDT"),
+        runner_timeframe="15m",
+        runner_timeout_sec=1200,
+        runner_data_source="db",
+    )
+    assert ("sidebar.divider",) in calls
+    assert ("sidebar.subheader", "Execution Lab") in calls
