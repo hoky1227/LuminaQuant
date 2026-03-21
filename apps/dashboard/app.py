@@ -1602,8 +1602,8 @@ def _build_runtime_env_overrides(
     }
 
 
-def _run_python_script(script_name, script_args, env_overrides, timeout_sec):
-    cmd = [sys.executable, script_name, *script_args]
+def _run_python_script(command, env_overrides, timeout_sec):
+    cmd = [str(part) for part in command]
     env = os.environ.copy()
     env.update({k: str(v) for k, v in env_overrides.items()})
     started = time.time()
