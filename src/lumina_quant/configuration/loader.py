@@ -712,109 +712,49 @@ def _normalize_runtime_config(
     runtime.promotion_gate.strategy_profiles = normalized_profiles
 
 
-def build_runtime_config(data: dict[str, Any], env: Mapping[str, str]) -> RuntimeConfig:
-    """Build a strongly typed runtime config from raw dict + environment."""
-    mapped = apply_env_overrides(data, env)
 
-    system_raw = mapped.get("system", {}) if isinstance(mapped.get("system", {}), dict) else {}
-    trading_raw = mapped.get("trading", {}) if isinstance(mapped.get("trading", {}), dict) else {}
-    risk_raw = mapped.get("risk", {}) if isinstance(mapped.get("risk", {}), dict) else {}
-    exec_raw = mapped.get("execution", {}) if isinstance(mapped.get("execution", {}), dict) else {}
-    storage_raw = mapped.get("storage", {}) if isinstance(mapped.get("storage", {}), dict) else {}
-    backtest_raw = (
-        mapped.get("backtest", {}) if isinstance(mapped.get("backtest", {}), dict) else {}
-    )
-    backtest_external_raw = (
-        backtest_raw.get("external", {})
-        if isinstance(backtest_raw.get("external", {}), dict)
-        else {}
-    )
-    live_raw = mapped.get("live", {}) if isinstance(mapped.get("live", {}), dict) else {}
-    optimization_raw = (
-        mapped.get("optimization", {}) if isinstance(mapped.get("optimization", {}), dict) else {}
-    )
-    promotion_raw = (
-        mapped.get("promotion_gate", {})
-        if isinstance(mapped.get("promotion_gate", {}), dict)
-        else {}
-    )
-    market_window_raw = (
-        mapped.get("market_window", {}) if isinstance(mapped.get("market_window", {}), dict) else {}
-    )
-    exchange_raw = (
-        live_raw.get("exchange", {}) if isinstance(live_raw.get("exchange", {}), dict) else {}
-    )
-    live_external_raw = (
-        live_raw.get("external", {}) if isinstance(live_raw.get("external", {}), dict) else {}
-    )
-    live_polymarket_raw = (
-        live_raw.get("polymarket", {})
-        if isinstance(live_raw.get("polymarket", {}), dict)
-        else {}
-    )
-
-    promotion_kwargs = _coerce_dataclass_kwargs(promotion_raw, PromotionGateConfig)
+def _build_runtime_config_tree(
+    *,
+    sections: dict[str, dict[str, Any]],
+    env: Mapping[str, str],
+) -> RuntimeConfig:
+    promotion_kwargs = _coerce_dataclass_kwargs(sections["promotion_gate"], PromotionGateConfig)
     strategy_profiles = promotion_kwargs.pop("strategy_profiles", {})
 
-    live_kwargs = _coerce_dataclass_kwargs(live_raw, LiveRuntimeConfig)
-    for reserved_key in (
-        "exchange",
-        "external",
-        "polymarket",
-        "api_key",
-        "secret_key",
-        "telegram_bot_token",
-        "telegram_chat_id",
-    ):
-        live_kwargs.pop(reserved_key, None)
-
-    live = LiveRuntimeConfig(
-        **live_kwargs,
-        exchange=LiveExchangeConfig(**_coerce_dataclass_kwargs(exchange_raw, LiveExchangeConfig)),
-        external=LiveExternalConfig(
-            **_coerce_dataclass_kwargs(live_external_raw, LiveExternalConfig)
+    return RuntimeConfig(
+        system=SystemConfig(**_coerce_dataclass_kwargs(sections["system"], SystemConfig)),
+        trading=TradingConfig(**_coerce_dataclass_kwargs(sections["trading"], TradingConfig)),
+        risk=RiskConfig(**_coerce_dataclass_kwargs(sections["risk"], RiskConfig)),
+        execution=ExecutionConfig(
+            **_coerce_dataclass_kwargs(sections["execution"], ExecutionConfig)
         ),
-        polymarket=LivePolymarketConfig(
-            **_coerce_dataclass_kwargs(live_polymarket_raw, LivePolymarketConfig)
-        ),
-        api_key=str(
-            env.get("BINANCE_API_KEY")
-            or env.get("EXCHANGE_API_KEY")
-            or live_raw.get("api_key")
-            or ""
-        ),
-        secret_key=str(
-            env.get("BINANCE_SECRET_KEY")
-            or env.get("EXCHANGE_SECRET_KEY")
-            or live_raw.get("secret_key")
-            or ""
-        ),
-        telegram_bot_token=env.get("TELEGRAM_BOT_TOKEN") or live_raw.get("telegram_bot_token"),
-        telegram_chat_id=env.get("TELEGRAM_CHAT_ID") or live_raw.get("telegram_chat_id"),
-    )
-    if not live.mode:
-        live.mode = "paper"
-
-    runtime = RuntimeConfig(
-        system=SystemConfig(**_coerce_dataclass_kwargs(system_raw, SystemConfig)),
-        trading=TradingConfig(**_coerce_dataclass_kwargs(trading_raw, TradingConfig)),
-        risk=RiskConfig(**_coerce_dataclass_kwargs(risk_raw, RiskConfig)),
-        execution=ExecutionConfig(**_coerce_dataclass_kwargs(exec_raw, ExecutionConfig)),
-        storage=StorageConfig(**_coerce_dataclass_kwargs(storage_raw, StorageConfig)),
+        storage=StorageConfig(**_coerce_dataclass_kwargs(sections["storage"], StorageConfig)),
         backtest=BacktestRuntimeConfig(
             **{
-                **_coerce_dataclass_kwargs(backtest_raw, BacktestRuntimeConfig),
+                **_coerce_dataclass_kwargs(sections["backtest"], BacktestRuntimeConfig),
                 "external": BacktestExternalConfig(
-                    **_coerce_dataclass_kwargs(backtest_external_raw, BacktestExternalConfig)
+                    **_coerce_dataclass_kwargs(
+                        sections["backtest_external"],
+                        BacktestExternalConfig,
+                    )
                 ),
             }
         ),
-        live=live,
+        live=_build_live_runtime_config(
+            live_raw=sections["live"],
+            exchange_raw=sections["live_exchange"],
+            live_external_raw=sections["live_external"],
+            live_polymarket_raw=sections["live_polymarket"],
+            env=env,
+        ),
         optimization=OptimizationRuntimeConfig(
-            **_coerce_dataclass_kwargs(optimization_raw, OptimizationRuntimeConfig)
+            **_coerce_dataclass_kwargs(
+                sections["optimization"],
+                OptimizationRuntimeConfig,
+            )
         ),
         market_window=MarketWindowConfig(
-            **_coerce_dataclass_kwargs(market_window_raw, MarketWindowConfig)
+            **_coerce_dataclass_kwargs(sections["market_window"], MarketWindowConfig)
         ),
         promotion_gate=PromotionGateConfig(
             **promotion_kwargs,
@@ -824,394 +764,13 @@ def build_runtime_config(data: dict[str, Any], env: Mapping[str, str]) -> Runtim
         ),
     )
 
-    runtime.storage.market_data_parquet_path = _resolve_storage_path(
-        runtime.storage.market_data_parquet_path
-    )
-    runtime.storage.wal_max_bytes = max(0, _as_int(runtime.storage.wal_max_bytes, 268435456))
-    runtime.storage.wal_compact_on_threshold = _as_bool(
-        runtime.storage.wal_compact_on_threshold, True
-    )
-    runtime.storage.wal_compaction_interval_seconds = max(
-        0,
-        _as_int(runtime.storage.wal_compaction_interval_seconds, 3600),
-    )
-    runtime.storage.collector_periodic_enabled = _as_bool(
-        getattr(runtime.storage, "collector_periodic_enabled", True),
-        True,
-    )
-    runtime.storage.collector_poll_seconds = _as_int(
-        getattr(runtime.storage, "collector_poll_seconds", 2),
-        2,
-    )
-    runtime.storage.collector_bootstrap_lookback_hours = max(
-        1,
-        _as_int(getattr(runtime.storage, "collector_bootstrap_lookback_hours", 24), 24),
-    )
-    runtime.storage.materializer_periodic_enabled = _as_bool(
-        getattr(runtime.storage, "materializer_periodic_enabled", True),
-        True,
-    )
-    runtime.storage.materializer_poll_seconds = _as_int(
-        getattr(runtime.storage, "materializer_poll_seconds", 5),
-        5,
-    )
-    runtime.storage.materializer_base_timeframe = _normalize_timeframe_token(
-        getattr(runtime.storage, "materializer_base_timeframe", "1s"),
-        "1s",
-    )
-    explicit_required = (
-        isinstance(storage_raw, dict) and "materializer_required_timeframes" in storage_raw
-    )
-    raw_required = (
-        storage_raw.get("materializer_required_timeframes")
-        if explicit_required
-        else getattr(runtime.storage, "materializer_required_timeframes", [])
-    )
-    if explicit_required:
-        runtime.storage.materializer_required_timeframes = _normalize_timeframe_list(raw_required)
-    else:
-        runtime.storage.materializer_required_timeframes = (
-            _resolve_materializer_required_timeframes(
-                raw_required,
-                list(StorageConfig().materializer_required_timeframes),
-            )
-        )
 
-    # Safe type coercion for critical numeric fields.
-    runtime.trading.timeframe = _normalize_timeframe_token(runtime.trading.timeframe, "1m")
-    normalized_timeframes: list[str] = []
-    raw_timeframes = getattr(runtime.trading, "timeframes", None)
-    if isinstance(raw_timeframes, (list, tuple, set)):
-        for item in raw_timeframes:
-            token = _normalize_timeframe_token(item, "")
-            if token:
-                normalized_timeframes.append(token)
-    if not normalized_timeframes:
-        normalized_timeframes = [str(runtime.trading.timeframe)]
-    if str(runtime.trading.timeframe) not in normalized_timeframes:
-        normalized_timeframes.insert(0, str(runtime.trading.timeframe))
-    runtime.trading.timeframes = list(dict.fromkeys(normalized_timeframes))
-
-    runtime.trading.initial_capital = _as_float(runtime.trading.initial_capital, 10000.0)
-    runtime.trading.target_allocation = _as_float(runtime.trading.target_allocation, 0.1)
-    runtime.trading.min_trade_qty = _as_float(runtime.trading.min_trade_qty, 0.001)
-    runtime.risk.risk_per_trade = _as_float(runtime.risk.risk_per_trade, 0.005)
-    runtime.risk.max_daily_loss_pct = _as_float(runtime.risk.max_daily_loss_pct, 0.03)
-    runtime.execution.slippage_rate = _as_float(runtime.execution.slippage_rate, 0.0005)
-
-    def _normalize_backend_token(value: Any, *, field_name: str) -> str:
-        token = str(value or "").strip().lower().replace("_", "-")
-        if token in {"", "auto"}:
-            return "auto"
-        if token in {"cpu", "gpu"}:
-            return token
-        if token in {"force-gpu", "forcegpu", "forcedgpu", "forced-gpu"}:
-            return "forced-gpu"
-        raise ValueError(
-            f"{field_name} must be one of: auto, cpu, gpu, forced-gpu. Received: {value!r}"
-        )
-
-    raw_gpu_mode = exec_raw.get("gpu_mode") if isinstance(exec_raw, dict) else None
-    raw_compute_backend = exec_raw.get("compute_backend") if isinstance(exec_raw, dict) else None
-    normalized_gpu_mode = _normalize_backend_token(
-        raw_gpu_mode if str(raw_gpu_mode or "").strip() else runtime.execution.gpu_mode,
-        field_name="execution.gpu_mode",
-    )
-    normalized_compute_backend = _normalize_backend_token(
-        (
-            raw_compute_backend
-            if str(raw_compute_backend or "").strip()
-            else runtime.execution.compute_backend
-        ),
-        field_name="execution.compute_backend",
-    )
-    requested_gpu_mode = (
-        normalized_gpu_mode
-        if str(raw_gpu_mode or "").strip()
-        else (
-            normalized_compute_backend
-            if str(raw_compute_backend or "").strip()
-            else normalized_gpu_mode
-        )
-    )
-    runtime.execution.gpu_mode = requested_gpu_mode
-    runtime.execution.compute_backend = requested_gpu_mode
-    runtime.execution.gpu_vram_gb = max(0.0, _as_float(runtime.execution.gpu_vram_gb, 0.0))
-
-    runtime.live.exchange.driver = _normalize_exchange_driver(
-        runtime.live.exchange.driver,
-        exchange_name=runtime.live.exchange.name,
-    )
-    runtime.live.exchange.leverage = _as_int(runtime.live.exchange.leverage, 3)
-    runtime.backtest.risk_free_mode = str(
-        getattr(runtime.backtest, "risk_free_mode", "us_treasury_constant")
-        or "us_treasury_constant"
-    ).strip().lower()
-    runtime.backtest.risk_free_tenor = str(
-        getattr(runtime.backtest, "risk_free_tenor", "3m") or "3m"
-    ).strip().lower()
-    runtime.backtest.risk_free_annual = _as_float(
-        getattr(runtime.backtest, "risk_free_annual", runtime.backtest.risk_free_rate),
-        runtime.backtest.risk_free_rate,
-    )
-    runtime.backtest.risk_free_series_path = str(
-        getattr(runtime.backtest, "risk_free_series_path", "") or ""
-    ).strip()
-    runtime.backtest.sortino_target_mode = str(
-        getattr(runtime.backtest, "sortino_target_mode", "same_as_rf") or "same_as_rf"
-    ).strip().lower()
-    runtime.backtest.sortino_target_annual = _as_float(
-        getattr(runtime.backtest, "sortino_target_annual", runtime.backtest.risk_free_annual),
-        runtime.backtest.risk_free_annual,
-    )
-    runtime.live.market_data_source = _normalize_live_source(
-        getattr(runtime.live, "market_data_source", "committed")
-    )
-    runtime.live.order_state_source = _normalize_order_state_source(
-        getattr(runtime.live, "order_state_source", "polling")
-    )
-    runtime.live.shadow_live_enabled = _as_bool(
-        getattr(runtime.live, "shadow_live_enabled", False),
-        False,
-    )
-    runtime.live.reconciliation_poll_fallback_enabled = _as_bool(
-        getattr(runtime.live, "reconciliation_poll_fallback_enabled", True),
-        True,
-    )
-    runtime.live.book_ticker_enabled = _as_bool(
-        getattr(runtime.live, "book_ticker_enabled", False),
-        False,
-    )
-    runtime.live.startup_reconciliation_hard_fail = _as_bool(
-        getattr(runtime.live, "startup_reconciliation_hard_fail", False),
-        False,
-    )
-    runtime.live.poll_interval = max(1, _as_int(runtime.live.poll_interval, 20))
-    live_poll_raw = (
-        live_raw.get("live_poll_seconds")
-        if isinstance(live_raw, dict) and "live_poll_seconds" in live_raw
-        else (
-            live_raw.get("poll_seconds")
-            if isinstance(live_raw, dict) and "poll_seconds" in live_raw
-            else (
-                live_raw.get("poll_interval")
-                if isinstance(live_raw, dict) and "poll_interval" in live_raw
-                else runtime.live.poll_interval
-            )
-        )
-    )
-    runtime.live.poll_seconds = max(1, _as_int(live_poll_raw, runtime.live.poll_interval))
-    runtime.live.live_poll_seconds = int(runtime.live.poll_seconds)
-    runtime.live.poll_interval = int(runtime.live.poll_seconds)
-    ingest_window_raw = (
-        live_raw.get("ingest_window_seconds")
-        if isinstance(live_raw, dict) and "ingest_window_seconds" in live_raw
-        else (
-            live_raw.get("window_seconds")
-            if isinstance(live_raw, dict) and "window_seconds" in live_raw
-            else runtime.live.poll_seconds
-        )
-    )
-    runtime.live.window_seconds = max(1, _as_int(ingest_window_raw, runtime.live.poll_seconds))
-    runtime.live.ingest_window_seconds = int(runtime.live.window_seconds)
-    runtime.live.decision_cadence_seconds = max(
-        1,
-        _as_int(runtime.live.decision_cadence_seconds, runtime.live.poll_seconds),
-    )
-    runtime.live.materialized_staleness_threshold_seconds = max(
-        1,
-        _as_int(getattr(runtime.live, "materialized_staleness_threshold_seconds", 45), 45),
-    )
-    runtime.live.materialized_staleness_alert_cooldown_seconds = max(
-        1,
-        _as_int(getattr(runtime.live, "materialized_staleness_alert_cooldown_seconds", 60), 60),
-    )
-    runtime.live.reconciliation_interval_sec = _as_int(runtime.live.reconciliation_interval_sec, 30)
-    runtime.live.external.source_kind = str(
-        getattr(runtime.live.external, "source_kind", "jsonl") or "jsonl"
-    ).strip().lower()
-    runtime.live.external.path = str(getattr(runtime.live.external, "path", "") or "").strip()
-    runtime.live.external.poll_seconds = max(
-        1,
-        _as_int(getattr(runtime.live.external, "poll_seconds", 2), 2),
-    )
-    runtime.live.external.allow_stale_seconds = max(
-        1,
-        _as_int(getattr(runtime.live.external, "allow_stale_seconds", 45), 45),
-    )
-    runtime.live.external.schema = str(
-        getattr(runtime.live.external, "schema", "market_window_v1") or "market_window_v1"
-    ).strip().lower()
-    runtime.live.external.symbol_map = dict(getattr(runtime.live.external, "symbol_map", {}) or {})
-    runtime.live.polymarket.host = str(getattr(runtime.live.polymarket, "host", "") or "").strip()
-    runtime.live.polymarket.gamma_host = str(
-        getattr(runtime.live.polymarket, "gamma_host", "") or ""
-    ).strip()
-    runtime.live.polymarket.data_host = str(
-        getattr(runtime.live.polymarket, "data_host", "") or ""
-    ).strip()
-    runtime.live.polymarket.market_ws_url = str(
-        getattr(runtime.live.polymarket, "market_ws_url", "") or ""
-    ).strip()
-    runtime.live.polymarket.user_ws_url = str(
-        getattr(runtime.live.polymarket, "user_ws_url", "") or ""
-    ).strip()
-    runtime.live.polymarket.chain_id = max(
-        1,
-        _as_int(getattr(runtime.live.polymarket, "chain_id", 137), 137),
-    )
-    runtime.live.polymarket.asset_ids = [
-        str(item).strip()
-        for item in list(getattr(runtime.live.polymarket, "asset_ids", []) or [])
-        if str(item).strip()
-    ]
-    runtime.live.polymarket.allow_real_execution = _as_bool(
-        getattr(runtime.live.polymarket, "allow_real_execution", False),
-        False,
-    )
-
-    runtime.backtest.random_seed = _as_int(runtime.backtest.random_seed, 42)
-    runtime.backtest.leverage = _as_int(runtime.backtest.leverage, 3)
-    runtime.backtest.data_source = str(
-        getattr(runtime.backtest, "data_source", "auto") or "auto"
-    ).strip().lower()
-    runtime.backtest.external.source_kind = str(
-        getattr(runtime.backtest.external, "source_kind", "csv") or "csv"
-    ).strip().lower()
-    runtime.backtest.external.root_path = str(
-        getattr(runtime.backtest.external, "root_path", "") or ""
-    ).strip()
-    runtime.backtest.external.symbol_map = dict(
-        getattr(runtime.backtest.external, "symbol_map", {}) or {}
-    )
-    backtest_poll_raw = (
-        backtest_raw.get("backtest_poll_seconds")
-        if isinstance(backtest_raw, dict) and "backtest_poll_seconds" in backtest_raw
-        else (
-            backtest_raw.get("poll_seconds")
-            if isinstance(backtest_raw, dict) and "poll_seconds" in backtest_raw
-            else runtime.live.poll_seconds
-        )
-    )
-    runtime.backtest.poll_seconds = max(1, _as_int(backtest_poll_raw, runtime.live.poll_seconds))
-    runtime.backtest.backtest_poll_seconds = int(runtime.backtest.poll_seconds)
-    backtest_window_raw = (
-        backtest_raw.get("backtest_window_seconds")
-        if isinstance(backtest_raw, dict) and "backtest_window_seconds" in backtest_raw
-        else (
-            backtest_raw.get("window_seconds")
-            if isinstance(backtest_raw, dict) and "window_seconds" in backtest_raw
-            else runtime.live.window_seconds
-        )
-    )
-    runtime.backtest.window_seconds = max(
-        1, _as_int(backtest_window_raw, runtime.live.window_seconds)
-    )
-    runtime.backtest.backtest_window_seconds = int(runtime.backtest.window_seconds)
-    backtest_decision_raw = (
-        backtest_raw.get("decision_cadence_seconds")
-        if isinstance(backtest_raw, dict) and "decision_cadence_seconds" in backtest_raw
-        else (
-            backtest_raw.get("backtest_decision_seconds")
-            if isinstance(backtest_raw, dict) and "backtest_decision_seconds" in backtest_raw
-            else (
-                backtest_raw.get("decision_seconds")
-                if isinstance(backtest_raw, dict) and "decision_seconds" in backtest_raw
-                else runtime.live.decision_cadence_seconds
-            )
-        )
-    )
-    runtime.backtest.decision_cadence_seconds = max(
-        1,
-        _as_int(backtest_decision_raw, runtime.live.decision_cadence_seconds),
-    )
-    backtest_mode = str(getattr(runtime.backtest, "mode", "windowed") or "windowed").strip().lower()
-    if backtest_mode not in {"windowed", "legacy_batch", "legacy_1s"}:
-        backtest_mode = "windowed"
-    runtime.backtest.mode = backtest_mode
-    runtime.backtest.backtest_decision_seconds = int(runtime.backtest.decision_cadence_seconds)
-    runtime.backtest.chunk_days = max(1, _as_int(runtime.backtest.chunk_days, 2))
-    runtime.backtest.chunk_warmup_bars = max(0, _as_int(runtime.backtest.chunk_warmup_bars, 0))
-    runtime.backtest.skip_ahead_enabled = _as_bool(runtime.backtest.skip_ahead_enabled, True)
-
-    runtime.optimization.walk_forward_folds = _as_int(runtime.optimization.walk_forward_folds, 3)
-    runtime.optimization.overfit_penalty = _as_float(runtime.optimization.overfit_penalty, 0.5)
-    runtime.optimization.max_workers = _as_int(runtime.optimization.max_workers, 4)
-    runtime.optimization.persist_best_params = _as_bool(
-        runtime.optimization.persist_best_params, False
-    )
-    runtime.optimization.validation_days = max(
-        0,
-        _as_int(getattr(runtime.optimization, "validation_days", 30), 30),
-    )
-    runtime.optimization.oos_days = max(
-        1,
-        _as_int(getattr(runtime.optimization, "oos_days", 30), 30),
-    )
-
-    deprecated_live_parity = (
-        live_raw.get("market_window_parity_v2_enabled")
-        if isinstance(live_raw, dict) and "market_window_parity_v2_enabled" in live_raw
-        else None
-    )
-    deprecated_backtest_parity = (
-        backtest_raw.get("market_window_parity_v2_enabled")
-        if isinstance(backtest_raw, dict) and "market_window_parity_v2_enabled" in backtest_raw
-        else None
-    )
-    runtime.live.market_window_parity_v2_enabled = _as_bool_or_none(deprecated_live_parity)
-    runtime.backtest.market_window_parity_v2_enabled = _as_bool_or_none(deprecated_backtest_parity)
-
-    parity_flag_explicit = (
-        isinstance(market_window_raw, dict) and "parity_v2_enabled" in market_window_raw
-    )
-    if parity_flag_explicit:
-        runtime.market_window.parity_v2_enabled = _as_bool(
-            runtime.market_window.parity_v2_enabled, False
-        )
-    else:
-        for candidate in (
-            runtime.live.market_window_parity_v2_enabled,
-            runtime.backtest.market_window_parity_v2_enabled,
-        ):
-            if candidate is not None:
-                runtime.market_window.parity_v2_enabled = bool(candidate)
-                break
-        else:
-            runtime.market_window.parity_v2_enabled = _as_bool(
-                runtime.market_window.parity_v2_enabled,
-                False,
-            )
-    runtime.market_window.metrics_log_path = str(
-        getattr(runtime.market_window, "metrics_log_path", "")
-        or "logs/live/market_window_metrics.ndjson"
-    )
-
-    runtime.promotion_gate.days = _as_int(runtime.promotion_gate.days, 14)
-    runtime.promotion_gate.max_order_rejects = _as_int(runtime.promotion_gate.max_order_rejects, 0)
-    runtime.promotion_gate.max_order_timeouts = _as_int(
-        runtime.promotion_gate.max_order_timeouts, 0
-    )
-    runtime.promotion_gate.max_reconciliation_alerts = _as_int(
-        runtime.promotion_gate.max_reconciliation_alerts,
-        0,
-    )
-    runtime.promotion_gate.max_critical_errors = _as_int(
-        runtime.promotion_gate.max_critical_errors, 0
-    )
-    runtime.promotion_gate.require_alpha_card = _as_bool(
-        runtime.promotion_gate.require_alpha_card, False
-    )
-
-    normalized_profiles: dict[str, dict[str, Any]] = {}
-    for name, profile in dict(runtime.promotion_gate.strategy_profiles or {}).items():
-        if not isinstance(profile, dict):
-            continue
-        key = str(name).strip()
-        if not key:
-            continue
-        normalized_profiles[key] = dict(profile)
-    runtime.promotion_gate.strategy_profiles = normalized_profiles
+def build_runtime_config(data: dict[str, Any], env: Mapping[str, str]) -> RuntimeConfig:
+    """Build a strongly typed runtime config from raw dict + environment."""
+    mapped = apply_env_overrides(data, env)
+    sections = _extract_runtime_sections(mapped)
+    runtime = _build_runtime_config_tree(sections=sections, env=env)
+    _normalize_runtime_config(runtime, sections=sections)
     return runtime
 
 
