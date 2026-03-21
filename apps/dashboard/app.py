@@ -64,18 +64,25 @@ render_exact_window_dashboard = importlib.import_module(
     "apps.dashboard.exact_window_suite"
 ).render_exact_window_dashboard
 
-st.set_page_config(layout="wide", page_title="LuminaQuant Dashboard")
-st.title("LuminaQuant: Full Trading Intelligence")
+_DASHBOARD_VIEW_OPTIONS = ("Main Dashboard", "Exact-Window Suite")
 
-dashboard_view = st.sidebar.radio(
-    "Dashboard View",
-    ["Main Dashboard", "Exact-Window Suite"],
-    index=0,
-)
-if dashboard_view == "Exact-Window Suite":
-    st.caption("Switched from the main dashboard menu into the exact-window research view.")
-    render_exact_window_dashboard(standalone=False)
-    st.stop()
+
+def _render_dashboard_page_shell() -> None:
+    st.set_page_config(layout="wide", page_title="LuminaQuant Dashboard")
+    st.title("LuminaQuant: Full Trading Intelligence")
+
+
+def _route_dashboard_view() -> str:
+    dashboard_view = st.sidebar.radio(
+        "Dashboard View",
+        list(_DASHBOARD_VIEW_OPTIONS),
+        index=0,
+    )
+    if dashboard_view == "Exact-Window Suite":
+        st.caption("Switched from the main dashboard menu into the exact-window research view.")
+        render_exact_window_dashboard(standalone=False)
+        st.stop()
+    return str(dashboard_view)
 
 DEFAULT_DB_PATH = str(
     os.getenv("LQ_POSTGRES_DSN")
@@ -2912,1972 +2919,1983 @@ def save_report_snapshot(payload):
     return json_path, md_path, markdown
 
 
-st.sidebar.header("Configuration")
-data_source = st.sidebar.selectbox("Data Source", ["Auto", "Postgres", "CSV"])
-db_path = st.sidebar.text_input("Postgres DSN", value=DEFAULT_DB_PATH)
-market_db_path = st.sidebar.text_input("Market Data Parquet Path", value=DEFAULT_MARKET_DB_PATH)
-market_exchange = st.sidebar.text_input(
-    "Market Exchange", value=getattr(BaseConfig, "MARKET_DATA_EXCHANGE", "binance")
-)
-market_timeframe_requested = st.sidebar.text_input(
-    "Market Timeframe", value=getattr(BaseConfig, "TIMEFRAME", "1m")
-)
-market_timeframe, market_timeframe_clamped = _resolve_dashboard_market_timeframe(
-    market_timeframe_requested
-)
-if market_timeframe_clamped:
-    st.sidebar.caption(
-        "Market chart timeframe clamped to 1m minimum for dashboard performance."
+def render_main_dashboard() -> None:
+    st.sidebar.header("Configuration")
+    data_source = st.sidebar.selectbox("Data Source", ["Auto", "Postgres", "CSV"])
+    db_path = st.sidebar.text_input("Postgres DSN", value=DEFAULT_DB_PATH)
+    market_db_path = st.sidebar.text_input("Market Data Parquet Path", value=DEFAULT_MARKET_DB_PATH)
+    market_exchange = st.sidebar.text_input(
+        "Market Exchange", value=getattr(BaseConfig, "MARKET_DATA_EXCHANGE", "binance")
     )
-strategy_options = strategy_registry.get_strategy_names()
-default_strategy_name = "RsiStrategy"
-default_strategy_index = (
-    strategy_options.index(default_strategy_name)
-    if default_strategy_name in strategy_options
-    else 0
-)
-strategy_name = st.sidebar.selectbox(
-    "Select Strategy",
-    strategy_options,
-    index=default_strategy_index,
-)
+    market_timeframe_requested = st.sidebar.text_input(
+        "Market Timeframe", value=getattr(BaseConfig, "TIMEFRAME", "1m")
+    )
+    market_timeframe, market_timeframe_clamped = _resolve_dashboard_market_timeframe(
+        market_timeframe_requested
+    )
+    if market_timeframe_clamped:
+        st.sidebar.caption(
+            "Market chart timeframe clamped to 1m minimum for dashboard performance."
+        )
+    strategy_options = strategy_registry.get_strategy_names()
+    default_strategy_name = "RsiStrategy"
+    default_strategy_index = (
+        strategy_options.index(default_strategy_name)
+        if default_strategy_name in strategy_options
+        else 0
+    )
+    strategy_name = st.sidebar.selectbox(
+        "Select Strategy",
+        strategy_options,
+        index=default_strategy_index,
+    )
 
-auto_refresh_enabled = st.sidebar.toggle("Auto Refresh", value=True)
-refresh_interval_sec = st.sidebar.slider(
-    "Refresh Interval (sec)", min_value=1, max_value=120, value=5
-)
-max_points = st.sidebar.slider("Max Data Points", min_value=500, max_value=100000, value=2500)
-auto_downsample = st.sidebar.toggle("Auto Downsample Plots", value=True)
-downsample_target_points = st.sidebar.slider(
-    "Downsample Target Points",
-    min_value=1000,
-    max_value=50000,
-    value=DEFAULT_DOWNSAMPLE_TARGET_POINTS,
-    step=500,
-    disabled=not auto_downsample,
-)
-pin_to_running = st.sidebar.toggle("Pin to RUNNING live run", value=True)
-filter_runs_by_strategy = st.sidebar.toggle("Filter Run IDs By Strategy", value=True)
-run_stale_sec = st.sidebar.slider(
-    "RUNNING Stale Threshold (sec)",
-    min_value=30,
-    max_value=3600,
-    value=DEFAULT_RUN_STALE_SEC,
-    step=30,
-)
-period_preset = st.sidebar.selectbox(
-    "Chart Period",
-    ["All", "1D", "7D", "30D", "90D", "180D", "365D", "Custom"],
-    index=2,
-)
-custom_start = None
-custom_end = None
-if period_preset == "Custom":
-    default_custom_end = pd.Timestamp.utcnow().date()
-    default_custom_start = (pd.Timestamp.utcnow() - pd.Timedelta(days=30)).date()
-    custom_start = st.sidebar.date_input("Custom Start", value=default_custom_start)
-    custom_end = st.sidebar.date_input("Custom End", value=default_custom_end)
+    auto_refresh_enabled = st.sidebar.toggle("Auto Refresh", value=True)
+    refresh_interval_sec = st.sidebar.slider(
+        "Refresh Interval (sec)", min_value=1, max_value=120, value=5
+    )
+    max_points = st.sidebar.slider("Max Data Points", min_value=500, max_value=100000, value=2500)
+    auto_downsample = st.sidebar.toggle("Auto Downsample Plots", value=True)
+    downsample_target_points = st.sidebar.slider(
+        "Downsample Target Points",
+        min_value=1000,
+        max_value=50000,
+        value=DEFAULT_DOWNSAMPLE_TARGET_POINTS,
+        step=500,
+        disabled=not auto_downsample,
+    )
+    pin_to_running = st.sidebar.toggle("Pin to RUNNING live run", value=True)
+    filter_runs_by_strategy = st.sidebar.toggle("Filter Run IDs By Strategy", value=True)
+    run_stale_sec = st.sidebar.slider(
+        "RUNNING Stale Threshold (sec)",
+        min_value=30,
+        max_value=3600,
+        value=DEFAULT_RUN_STALE_SEC,
+        step=30,
+    )
+    period_preset = st.sidebar.selectbox(
+        "Chart Period",
+        ["All", "1D", "7D", "30D", "90D", "180D", "365D", "Custom"],
+        index=2,
+    )
+    custom_start = None
+    custom_end = None
+    if period_preset == "Custom":
+        default_custom_end = pd.Timestamp.utcnow().date()
+        default_custom_start = (pd.Timestamp.utcnow() - pd.Timedelta(days=30)).date()
+        custom_start = st.sidebar.date_input("Custom Start", value=default_custom_start)
+        custom_end = st.sidebar.date_input("Custom End", value=default_custom_end)
 
-refresh_counter, refresh_mode = _setup_auto_refresh(auto_refresh_enabled, refresh_interval_sec)
-params = load_params(strategy_name)
-st.sidebar.caption(
-    f"Refresh mode: {refresh_mode} | tick: {refresh_counter} | interval: {_safe_interval_sec(refresh_interval_sec)}s"
-)
+    refresh_counter, refresh_mode = _setup_auto_refresh(auto_refresh_enabled, refresh_interval_sec)
+    params = load_params(strategy_name)
+    st.sidebar.caption(
+        f"Refresh mode: {refresh_mode} | tick: {refresh_counter} | interval: {_safe_interval_sec(refresh_interval_sec)}s"
+    )
 
-st.sidebar.divider()
-st.sidebar.subheader("Execution Lab")
-runner_initial_capital = st.sidebar.number_input(
-    "Initial Equity Override",
-    min_value=100.0,
-    max_value=100000000.0,
-    value=float(BaseConfig.INITIAL_CAPITAL),
-    step=100.0,
-)
-runner_leverage = st.sidebar.number_input(
-    "Backtest Leverage Override",
-    min_value=1,
-    max_value=20,
-    value=int(BacktestConfig.LEVERAGE),
-    step=1,
-)
-runner_symbols_raw = st.sidebar.text_input(
-    "Symbols (comma-separated)", value=", ".join(list(BaseConfig.SYMBOLS))
-)
-runner_symbols = _parse_symbols_csv(runner_symbols_raw)
-if not runner_symbols:
-    runner_symbols = list(BaseConfig.SYMBOLS)
-
-runner_timeframe = st.sidebar.text_input("Timeframe Override", value=str(BaseConfig.TIMEFRAME))
-runner_timeout_sec = st.sidebar.slider(
-    "Runner Timeout (sec)", min_value=30, max_value=3600, value=900, step=30
-)
-runner_data_source = st.sidebar.selectbox("Runner Data Source", ["auto", "csv", "db"], index=0)
-
-strategy_params = _merged_strategy_params(strategy_name, params)
-with st.sidebar.expander("Strategy Parameter Overrides", expanded=False):
-    if strategy_name == "RsiStrategy":
-        strategy_params["rsi_period"] = int(
-            st.number_input(
-                "rsi_period",
-                min_value=2,
-                max_value=200,
-                value=int(strategy_params.get("rsi_period", 14)),
-                step=1,
-            )
-        )
-        strategy_params["oversold"] = float(
-            st.number_input(
-                "oversold",
-                min_value=1.0,
-                max_value=99.0,
-                value=float(strategy_params.get("oversold", 30.0)),
-                step=0.5,
-            )
-        )
-        strategy_params["overbought"] = float(
-            st.number_input(
-                "overbought",
-                min_value=1.0,
-                max_value=99.0,
-                value=float(strategy_params.get("overbought", 70.0)),
-                step=0.5,
-            )
-        )
-    elif strategy_name == "MovingAverageCrossStrategy":
-        strategy_params["short_window"] = int(
-            st.number_input(
-                "short_window",
-                min_value=2,
-                max_value=500,
-                value=int(strategy_params.get("short_window", 10)),
-                step=1,
-            )
-        )
-        strategy_params["long_window"] = int(
-            st.number_input(
-                "long_window",
-                min_value=3,
-                max_value=1000,
-                value=int(strategy_params.get("long_window", 30)),
-                step=1,
-            )
-        )
-    elif strategy_name == "PairTradingZScoreStrategy":
-        strategy_params["lookback_window"] = int(
-            st.number_input(
-                "lookback_window",
-                min_value=10,
-                max_value=2000,
-                value=int(strategy_params.get("lookback_window", 96)),
-                step=1,
-            )
-        )
-        strategy_params["hedge_window"] = int(
-            st.number_input(
-                "hedge_window",
-                min_value=10,
-                max_value=4000,
-                value=int(strategy_params.get("hedge_window", 192)),
-                step=1,
-            )
-        )
-        strategy_params["entry_z"] = float(
-            st.number_input(
-                "entry_z",
-                min_value=0.1,
-                max_value=10.0,
-                value=float(strategy_params.get("entry_z", 2.0)),
-                step=0.05,
-            )
-        )
-        strategy_params["exit_z"] = float(
-            st.number_input(
-                "exit_z",
-                min_value=0.0,
-                max_value=5.0,
-                value=float(strategy_params.get("exit_z", 0.35)),
-                step=0.05,
-            )
-        )
-        strategy_params["stop_z"] = float(
-            st.number_input(
-                "stop_z",
-                min_value=0.2,
-                max_value=12.0,
-                value=float(strategy_params.get("stop_z", 3.5)),
-                step=0.1,
-            )
-        )
-        strategy_params["min_correlation"] = float(
-            st.number_input(
-                "min_correlation",
-                min_value=-1.0,
-                max_value=1.0,
-                value=float(strategy_params.get("min_correlation", 0.15)),
-                step=0.05,
-            )
-        )
-        strategy_params["max_hold_bars"] = int(
-            st.number_input(
-                "max_hold_bars",
-                min_value=1,
-                max_value=10000,
-                value=int(strategy_params.get("max_hold_bars", 240)),
-                step=1,
-            )
-        )
-        strategy_params["cooldown_bars"] = int(
-            st.number_input(
-                "cooldown_bars",
-                min_value=0,
-                max_value=5000,
-                value=int(strategy_params.get("cooldown_bars", 6)),
-                step=1,
-            )
-        )
-        strategy_params["reentry_z_buffer"] = float(
-            st.number_input(
-                "reentry_z_buffer",
-                min_value=0.0,
-                max_value=5.0,
-                value=float(strategy_params.get("reentry_z_buffer", 0.20)),
-                step=0.01,
-            )
-        )
-        strategy_params["min_z_turn"] = float(
-            st.number_input(
-                "min_z_turn",
-                min_value=0.0,
-                max_value=5.0,
-                value=float(strategy_params.get("min_z_turn", 0.05)),
-                step=0.01,
-            )
-        )
-        strategy_params["stop_loss_pct"] = float(
-            st.number_input(
-                "stop_loss_pct",
-                min_value=0.001,
-                max_value=0.50,
-                value=float(strategy_params.get("stop_loss_pct", 0.04)),
-                step=0.001,
-            )
-        )
-        strategy_params["min_abs_beta"] = float(
-            st.number_input(
-                "min_abs_beta",
-                min_value=0.0,
-                max_value=20.0,
-                value=float(strategy_params.get("min_abs_beta", 0.02)),
-                step=0.01,
-            )
-        )
-        strategy_params["max_abs_beta"] = float(
-            st.number_input(
-                "max_abs_beta",
-                min_value=0.1,
-                max_value=30.0,
-                value=float(strategy_params.get("max_abs_beta", 6.0)),
-                step=0.1,
-            )
-        )
-        strategy_params["min_volume_window"] = int(
-            st.number_input(
-                "min_volume_window",
-                min_value=1,
-                max_value=5000,
-                value=int(strategy_params.get("min_volume_window", 24)),
-                step=1,
-            )
-        )
-        strategy_params["min_volume_ratio"] = float(
-            st.number_input(
-                "min_volume_ratio",
-                min_value=0.0,
-                max_value=5.0,
-                value=float(strategy_params.get("min_volume_ratio", 0.0)),
-                step=0.01,
-            )
-        )
-        strategy_params["use_log_price"] = bool(
-            st.checkbox(
-                "use_log_price",
-                value=bool(strategy_params.get("use_log_price", True)),
-            )
-        )
-
-        default_symbol_x = str(
-            strategy_params.get("symbol_x") or (runner_symbols[0] if runner_symbols else "")
-        )
-        default_symbol_y = str(
-            strategy_params.get("symbol_y")
-            or (runner_symbols[1] if len(runner_symbols) > 1 else default_symbol_x)
-        )
-        strategy_params["symbol_x"] = st.text_input("symbol_x", value=default_symbol_x)
-        strategy_params["symbol_y"] = st.text_input("symbol_y", value=default_symbol_y)
-
-with st.sidebar.expander("Optimization Search Space", expanded=False):
-    default_optuna_cfg = _strategy_default_optuna(strategy_name)
-    default_grid_cfg = _strategy_default_grid(strategy_name)
-    if strategy_name == str(OptimizationConfig.STRATEGY_NAME):
-        default_optuna_cfg = strategy_registry.resolve_optuna_config(
-            strategy_name,
-            OptimizationConfig.OPTUNA_CONFIG if isinstance(OptimizationConfig.OPTUNA_CONFIG, dict) else {},
-        )
-        default_grid_cfg = strategy_registry.resolve_grid_config(
-            strategy_name,
-            OptimizationConfig.GRID_CONFIG if isinstance(OptimizationConfig.GRID_CONFIG, dict) else {},
-        )
-
-    default_optuna_json = json.dumps(default_optuna_cfg, indent=2, ensure_ascii=False)
-    default_grid_json = json.dumps(default_grid_cfg, indent=2, ensure_ascii=False)
-    optuna_json_raw = st.text_area("OPTUNA config JSON", value=default_optuna_json, height=140)
-    grid_json_raw = st.text_area("GRID config JSON", value=default_grid_json, height=140)
-    optimize_folds = st.number_input(
-        "Walk-forward folds",
+    st.sidebar.divider()
+    st.sidebar.subheader("Execution Lab")
+    runner_initial_capital = st.sidebar.number_input(
+        "Initial Equity Override",
+        min_value=100.0,
+        max_value=100000000.0,
+        value=float(BaseConfig.INITIAL_CAPITAL),
+        step=100.0,
+    )
+    runner_leverage = st.sidebar.number_input(
+        "Backtest Leverage Override",
         min_value=1,
         max_value=20,
-        value=int(OptimizationConfig.WALK_FORWARD_FOLDS),
+        value=int(BacktestConfig.LEVERAGE),
         step=1,
     )
-    optimize_trials = st.number_input(
-        "Optuna trials",
-        min_value=1,
-        max_value=5000,
-        value=int(
-            default_optuna_cfg.get("n_trials", OptimizationConfig.OPTUNA_CONFIG.get("n_trials", 20))
-        ),
-        step=1,
+    runner_symbols_raw = st.sidebar.text_input(
+        "Symbols (comma-separated)", value=", ".join(list(BaseConfig.SYMBOLS))
     )
-    optimize_workers = st.number_input(
-        "Optimization workers",
-        min_value=1,
-        max_value=max(1, (os.cpu_count() or 4) * 2),
-        value=int(OptimizationConfig.MAX_WORKERS),
-        step=1,
+    runner_symbols = _parse_symbols_csv(runner_symbols_raw)
+    if not runner_symbols:
+        runner_symbols = list(BaseConfig.SYMBOLS)
+
+    runner_timeframe = st.sidebar.text_input("Timeframe Override", value=str(BaseConfig.TIMEFRAME))
+    runner_timeout_sec = st.sidebar.slider(
+        "Runner Timeout (sec)", min_value=30, max_value=3600, value=900, step=30
     )
-    persist_best_params = st.checkbox(
-        "Persist best params after optimize", value=bool(OptimizationConfig.PERSIST_BEST_PARAMS)
-    )
+    runner_data_source = st.sidebar.selectbox("Runner Data Source", ["auto", "csv", "db"], index=0)
 
-optuna_config_for_runner = strategy_registry.resolve_optuna_config(strategy_name, default_optuna_cfg)
-grid_config_for_runner = strategy_registry.resolve_grid_config(strategy_name, default_grid_cfg)
-opt_space_error = None
-try:
-    parsed_optuna = json.loads(optuna_json_raw)
-    parsed_grid = json.loads(grid_json_raw)
-    if isinstance(parsed_optuna, dict):
-        optuna_config_for_runner = strategy_registry.resolve_optuna_config(
-            strategy_name,
-            parsed_optuna,
-        )
-    else:
-        opt_space_error = "OPTUNA config JSON must be an object."
-    if isinstance(parsed_grid, dict):
-        grid_config_for_runner = strategy_registry.resolve_grid_config(
-            strategy_name,
-            parsed_grid,
-        )
-    else:
-        opt_space_error = "GRID config JSON must be an object."
-except Exception as exc:
-    opt_space_error = f"Optimization JSON parse error: {exc}"
-
-runner_env_overrides = _build_runtime_env_overrides(
-    initial_capital=runner_initial_capital,
-    leverage=runner_leverage,
-    timeframe=runner_timeframe,
-    symbols=runner_symbols,
-    strategy_name=strategy_name,
-    optuna_config=optuna_config_for_runner,
-    grid_config=grid_config_for_runner,
-)
-
-if "runner_last_result" not in st.session_state:
-    st.session_state["runner_last_result"] = None
-
-df_equity = pd.DataFrame()
-df_trades = pd.DataFrame()
-df_orders = pd.DataFrame()
-df_risk = pd.DataFrame()
-df_hb = pd.DataFrame()
-df_order_states = pd.DataFrame()
-df_market = pd.DataFrame()
-df_optimize = pd.DataFrame()
-active_run_id = None
-resolved_source = None
-runs_df = pd.DataFrame()
-
-_ensure_workflow_jobs_schema(db_path)
-_refresh_workflow_jobs(db_path)
-
-use_state = data_source == "Postgres" or (data_source == "Auto" and bool(_resolve_postgres_dsn(db_path)))
-if use_state and _resolve_postgres_dsn(db_path):
-    try:
-        runs_df = load_runs(db_path, refresh_counter=refresh_counter)
-        runs_df = _annotate_run_health(runs_df, stale_after_sec=run_stale_sec)
-        df_optimize = load_optimization_results_state(db_path, refresh_counter=refresh_counter)
-        if not runs_df.empty:
-            run_options = runs_df["run_id"].astype(str).tolist()
-            strategy_run_options = _runs_for_strategy(runs_df, strategy_name)
-            if filter_runs_by_strategy and strategy_run_options:
-                run_options = strategy_run_options
-            elif filter_runs_by_strategy and not strategy_run_options:
-                st.sidebar.info(
-                    "No Postgres runs tagged with selected strategy yet. Showing all runs instead."
-                )
-
-            default_run = _latest_running_run_id(runs_df) if pin_to_running else None
-            if default_run and _equity_rows_for_run(runs_df, default_run) <= 0:
-                default_run = None
-            if default_run and default_run not in run_options:
-                default_run = None
-            if not default_run:
-                if strategy_run_options:
-                    strategy_runs_df = runs_df[runs_df["run_id"].astype(str).isin(run_options)]
-                    default_run = _latest_run_with_equity(strategy_runs_df)
-                else:
-                    default_run = _latest_run_with_equity(runs_df)
-            if not default_run:
-                default_run = run_options[0]
-
-            strategy_changed = st.session_state.get("dashboard_strategy_name") != strategy_name
-            st.session_state["dashboard_strategy_name"] = strategy_name
-
-            if "dashboard_run_id" not in st.session_state:
-                st.session_state["dashboard_run_id"] = default_run
-            if strategy_changed:
-                st.session_state["dashboard_run_id"] = default_run
-            if pin_to_running:
-                st.session_state["dashboard_run_id"] = default_run
-            if st.session_state["dashboard_run_id"] not in run_options:
-                st.session_state["dashboard_run_id"] = default_run
-
-            selected_idx = run_options.index(st.session_state["dashboard_run_id"])
-            active_run_id = st.sidebar.selectbox("Run ID", run_options, index=selected_idx)
-            st.session_state["dashboard_run_id"] = active_run_id
-
-            df_equity = load_equity_state(
-                db_path, active_run_id, refresh_counter=refresh_counter, max_points=max_points
-            )
-            df_trades = load_fills_state(
-                db_path, active_run_id, refresh_counter=refresh_counter, max_points=max_points
-            )
-            df_orders = load_orders_state(
-                db_path, active_run_id, refresh_counter=refresh_counter, max_points=max_points
-            )
-            df_risk = load_risk_events_state(db_path, active_run_id, refresh_counter=refresh_counter)
-            df_hb = load_heartbeats_state(db_path, active_run_id, refresh_counter=refresh_counter)
-            df_order_states = load_order_states_state(
-                db_path, active_run_id, refresh_counter=refresh_counter
-            )
-            resolved_source = "Postgres"
-    except Exception:
-        runs_df = pd.DataFrame()
-        df_optimize = pd.DataFrame()
-
-if resolved_source is None or (df_equity.empty and data_source == "Auto"):
-    fallback_equity = load_equity_csv(refresh_counter=refresh_counter, max_points=max_points)
-    fallback_trades = load_trades_csv(refresh_counter=refresh_counter, max_points=max_points)
-    if not fallback_equity.empty:
-        df_equity = fallback_equity
-        df_trades = fallback_trades
-        active_run_id = None
-        resolved_source = "CSV"
-
-if resolved_source == "CSV" and data_source in {"Auto", "CSV"}:
-    st.warning(
-        "Dashboard is currently rendering CSV fallback data. In this mode, changing strategy updates "
-        "strategy indicators/config controls, but core PnL/equity history remains the same CSV sample until "
-        "a Postgres run with equity rows is available."
-    )
-
-if resolved_source is None:
-    resolved_source = "None"
-
-period_start, period_end = _resolve_period_window(
-    period_preset,
-    custom_start,
-    custom_end,
-    df_equity,
-    dt_col="datetime",
-)
-
-df_equity = _apply_period_filter(df_equity, "datetime", period_start, period_end)
-df_trades = _apply_period_filter(df_trades, "datetime", period_start, period_end)
-df_orders = _apply_period_filter(df_orders, "created_at", period_start, period_end)
-df_risk = _apply_period_filter(df_risk, "event_time", period_start, period_end)
-df_hb = _apply_period_filter(df_hb, "heartbeat_time", period_start, period_end)
-df_order_states = _apply_period_filter(df_order_states, "event_time", period_start, period_end)
-
-if auto_downsample and not df_equity.empty:
-    plot_equity = _downsample_frame(df_equity, downsample_target_points)
-else:
-    plot_equity = df_equity
-
-if auto_downsample and not df_trades.empty:
-    plot_trades = _downsample_frame(df_trades, downsample_target_points)
-else:
-    plot_trades = df_trades
-
-if not runs_df.empty and active_run_id:
-    symbols = _extract_run_symbols(runs_df, active_run_id)
-else:
-    symbols = list(BaseConfig.SYMBOLS)
-market_symbol = st.sidebar.selectbox(
-    "Market Symbol", symbols if symbols else list(BaseConfig.SYMBOLS)
-)
-
-if str(market_db_path).strip():
-    df_market = load_market_ohlcv_state(
-        market_db_path,
-        market_symbol,
-        market_timeframe,
-        market_exchange,
-        refresh_counter=refresh_counter,
-        max_points=max_points,
-    )
-df_market = _apply_period_filter(df_market, "datetime", period_start, period_end)
-if auto_downsample and not df_market.empty:
-    plot_market = _downsample_frame(df_market, downsample_target_points)
-else:
-    plot_market = df_market
-
-trade_analytics = compute_trade_analytics(df_trades)
-summary = build_summary(df_equity, trade_analytics)
-performance = build_performance_metrics(df_equity)
-latest_data_ts, latency_sec = _compute_data_latency_seconds(df_equity)
-mirror_balance_equity = _build_balance_equity_frame(
-    df_equity,
-    trade_analytics,
-    initial_equity=summary.get("initial_equity", 0.0),
-)
-mirror_snapshot = _build_mirror_snapshot(summary, mirror_balance_equity)
-
-st.subheader("PC Mirror Snapshot")
-st.caption("Reference-style KPI strip + equity/balance/drawdown narrative")
-_render_mirror_cards(mirror_snapshot)
-mirror_left, mirror_right = st.columns(2)
-if not mirror_balance_equity.empty:
-    with mirror_left:
-        st.plotly_chart(
-            _build_mirror_equity_curve_figure(mirror_balance_equity),
-            use_container_width=True,
-            key="mirror_equity_curve",
-        )
-    with mirror_right:
-        st.plotly_chart(
-            _build_mirror_balance_equity_figure(mirror_balance_equity, mirror_snapshot),
-            use_container_width=True,
-            key="mirror_balance_equity",
-        )
-else:
-    with mirror_left:
-        st.info("No equity data for mirror-style curve yet.")
-    with mirror_right:
-        st.info("No balance/equity timeline for mirror-style chart yet.")
-
-st.header("Overview")
-st.caption("Performance summary is grouped by Context, Equity, Risk, and Trade Quality.")
-
-ctx1, ctx2, ctx3, ctx4, ctx5, ctx6 = st.columns(6)
-ctx1.metric("Source", resolved_source)
-ctx2.metric("Bars", f"{summary['bars']}")
-ctx3.metric("Fills", f"{summary['fills']}")
-ctx4.metric("Avg Fills/Day", f"{summary['fills_per_day']:.2f}")
-ctx5.metric("Closed PnL", _format_signed_dollar(summary.get("total_net_profit"), digits=2))
-ctx6.metric("Win Rate", f"{summary['win_rate']:.2%}")
-
-st.markdown("**Equity Context**")
-eq1, eq2, eq3, eq4 = st.columns(4)
-eq1.metric("Initial Equity", f"{summary['initial_equity']:.2f}")
-eq2.metric("Final Equity", f"{summary['final_equity']:.2f}")
-eq3.metric("Configured Initial Equity", f"{runner_initial_capital:.2f}")
-eq4.metric("Configured Leverage", f"{int(runner_leverage)}x")
-
-st.markdown("**PnL / Drawdown**")
-mx1, mx2, mx3, mx4 = st.columns(4)
-mx1.metric("Open P/L", _format_signed_dollar(summary.get("open_pnl"), digits=2))
-mx2.metric("Total (C+O)", _format_signed_dollar(summary.get("total_c_plus_o"), digits=2))
-mx3.metric("R/MDD", f"{_safe_float(summary.get('r_mdd'), 0.0):.2f}x")
-mx4.metric(
-    "Equity MDD",
-    (
-        f"${_safe_float(summary.get('equity_drawdown_maximal'), 0.0):,.2f} "
-        f"({_safe_float(summary.get('equity_drawdown_relative_pct'), 0.0):.2%})"
-    ),
-)
-
-if performance:
-    p1, p2, p3, p4, p5, p6 = st.columns(6)
-    p1.metric("Total Return", f"{performance.get('Total Return', 0.0):.2%}")
-    p2.metric("Cumulative Return", f"{performance.get('Cumulative Return', 0.0):.2%}")
-    p3.metric("Sharpe", f"{performance.get('Sharpe Ratio', 0.0):.3f}")
-    p4.metric("Sortino", f"{performance.get('Sortino Ratio', 0.0):.3f}")
-    p5.metric("Max Drawdown", f"{performance.get('Max Drawdown', 0.0):.2%}")
-    p6.metric("Funding (Net)", f"{performance.get('Funding (Net)', 0.0):.4f}")
-
-st.markdown("**Trade Quality**")
-pf1, pf2, pf3, pf4, pf5, pf6 = st.columns(6)
-pf1.metric("Profit Factor", _format_metric_value("Profit Factor", summary.get("profit_factor")))
-pf2.metric("Recovery Factor", f"{_safe_float(summary.get('recovery_factor')):.3f}")
-pf3.metric("Expected Payoff", f"{_safe_float(summary.get('expected_payoff')):.4f}")
-pf4.metric("Profit Trades", str(summary.get("profit_trades_text", "0 (0.00%)")))
-pf5.metric("Loss Trades", str(summary.get("loss_trades_text", "0 (0.00%)")))
-pf6.metric("Payoff Ratio", f"{_safe_float(summary.get('payoff_ratio')):.3f}")
-
-dir1, dir2, dir3, dir4 = st.columns(4)
-dir1.metric("Long Trades (Win %)", str(summary.get("long_trades_win_pct", "0 (0.00%)")))
-dir2.metric("Short Trades (Win %)", str(summary.get("short_trades_win_pct", "0 (0.00%)")))
-dir3.metric("Avg Holding", _format_duration_seconds(summary.get("holding_time_avg_sec", 0.0)))
-dir4.metric(
-    "Avg Profit / Loss",
-    (
-        f"{_safe_float(summary.get('avg_profit_trade'), 0.0):.2f} / "
-        f"{_safe_float(summary.get('avg_loss_trade'), 0.0):.2f}"
-    ),
-)
-
-if latest_data_ts is not None and latency_sec is not None:
-    st.caption(
-        f"Data timestamp: {latest_data_ts} | latency: {latency_sec:.1f}s | "
-        f"period preset: {period_preset} | range: {summary['period_start']} -> {summary['period_end']}"
-    )
-
-if not runs_df.empty and "effective_status" in runs_df.columns:
-    healthy_runs = int((runs_df["effective_status"] == "RUNNING_HEALTHY").sum())
-    stale_runs = int((runs_df["effective_status"] == "RUNNING_STALE").sum())
-    no_telemetry_runs = int((runs_df["effective_status"] == "RUNNING_NO_TELEMETRY").sum())
-    st.caption(
-        f"Live run health -> healthy: {healthy_runs}, stale: {stale_runs}, "
-        f"no-telemetry: {no_telemetry_runs} (threshold={int(run_stale_sec)}s)"
-    )
-
-st.subheader("Strategy Parameters")
-st.json(strategy_params)
-
-tab_overview, tab_exec, tab_risk, tab_market, tab_opt, tab_report, tab_raw = st.tabs(
-    [
-        "Performance & Price",
-        "Execution Analytics",
-        "Risk & Health",
-        "Market Data",
-        "Optimization Insights",
-        "Report Export",
-        "Raw Data",
-    ]
-)
-
-with tab_overview:
-    with st.expander("Metric Definitions", expanded=False):
-        metric_rows = []
-        for metric_name, definition in METRIC_DEFINITIONS.items():
-            metric_rows.append(
-                {
-                    "Metric": metric_name,
-                    "Value": _format_metric_value(
-                        metric_name,
-                        _metric_value(metric_name, performance, summary),
-                    ),
-                    "Definition": definition,
-                }
-            )
-        st.dataframe(pd.DataFrame(metric_rows), use_container_width=True)
-
-    mt5_rows = _build_mt5_summary_rows(summary)
-    if not mt5_rows.empty:
-        st.subheader("MT5-Style Summary Grid")
-        st.dataframe(mt5_rows, use_container_width=True, hide_index=True)
-
-    st.caption(
-        f"Data context: run={active_run_id if active_run_id else 'N/A'} | "
-        f"source={resolved_source} | symbol={market_symbol} | timeframe={market_timeframe} | "
-        f"exchange={market_exchange} | market_db={market_db_path}"
-    )
-
-    if not plot_equity.empty:
-        fig_equity = go.Figure()
-        fig_equity.add_trace(
-            go.Scatter(
-                x=plot_equity["datetime"],
-                y=plot_equity["total"],
-                mode="lines",
-                name="Strategy Equity",
-                line=dict(color="#0db39e", width=2),
-            )
-        )
-        fig_equity.update_layout(
-            title="Equity Curve",
-            xaxis_title="Date",
-            yaxis_title="Equity",
-            template="plotly_white",
-            hovermode="x unified",
-        )
-        st.plotly_chart(fig_equity, use_container_width=True)
-
-        if "benchmark_price" in plot_equity.columns:
-            benchmark_series = pd.to_numeric(plot_equity["benchmark_price"], errors="coerce")
-            if benchmark_series.notna().any():
-                fig_benchmark = go.Figure()
-                fig_benchmark.add_trace(
-                    go.Scatter(
-                        x=plot_equity["datetime"],
-                        y=benchmark_series,
-                        mode="lines",
-                        line=dict(color="#805ad5", width=1.5),
-                        name="Benchmark Price",
-                    )
-                )
-                fig_benchmark.update_layout(
-                    title="Benchmark Price (from Equity Metadata)",
-                    xaxis_title="Date",
-                    yaxis_title="Price",
-                    template="plotly_white",
-                    hovermode="x unified",
-                )
-                st.plotly_chart(fig_benchmark, use_container_width=True)
-
-        if "funding" in plot_equity.columns:
-            funding_series = pd.to_numeric(plot_equity["funding"], errors="coerce")
-            if funding_series.notna().any():
-                fig_funding = go.Figure()
-                fig_funding.add_trace(
-                    go.Scatter(
-                        x=plot_equity["datetime"],
-                        y=funding_series,
-                        mode="lines",
-                        line=dict(color="#dd6b20", width=2),
-                        name="Funding (Net)",
-                    )
-                )
-                fig_funding.update_layout(
-                    title="Funding (Net) Over Time",
-                    xaxis_title="Date",
-                    yaxis_title="Funding",
-                    template="plotly_white",
-                    hovermode="x unified",
-                )
-                st.plotly_chart(fig_funding, use_container_width=True)
-
-        if (
-            performance
-            and len(performance.get("cum_return_series", [])) == len(df_equity.index) - 1
-        ):
-            cum_returns = pd.Series(performance["cum_return_series"])
-            fig_cum_ret = go.Figure()
-            fig_cum_ret.add_trace(
-                go.Scatter(
-                    x=df_equity["datetime"].iloc[1:],
-                    y=cum_returns,
-                    mode="lines",
-                    line=dict(color="#2b6cb0", width=2),
-                    name="Cumulative Return",
+    strategy_params = _merged_strategy_params(strategy_name, params)
+    with st.sidebar.expander("Strategy Parameter Overrides", expanded=False):
+        if strategy_name == "RsiStrategy":
+            strategy_params["rsi_period"] = int(
+                st.number_input(
+                    "rsi_period",
+                    min_value=2,
+                    max_value=200,
+                    value=int(strategy_params.get("rsi_period", 14)),
+                    step=1,
                 )
             )
-            fig_cum_ret.update_layout(
-                title="Cumulative Return",
-                xaxis_title="Date",
-                yaxis_title="Return",
-                template="plotly_white",
-                hovermode="x unified",
-                yaxis_tickformat=".2%",
-            )
-            st.plotly_chart(fig_cum_ret, use_container_width=True)
-
-        roll_max = plot_equity["total"].cummax()
-        drawdown = (plot_equity["total"] - roll_max) / roll_max
-        fig_dd = go.Figure()
-        fig_dd.add_trace(
-            go.Scatter(
-                x=plot_equity["datetime"],
-                y=drawdown,
-                fill="tozeroy",
-                name="Drawdown",
-                line=dict(color="#f05a66"),
-            )
-        )
-        fig_dd.update_layout(title="Drawdown", yaxis_title="Drawdown", template="plotly_white")
-        st.plotly_chart(fig_dd, use_container_width=True)
-
-        monthly_table = _build_monthly_returns_table(df_equity, performance)
-        if not monthly_table.empty:
-            values = monthly_table.to_numpy(dtype=float)
-            text_vals = [
-                [f"{_safe_float(v):.2%}" if np.isfinite(v) else "" for v in row] for row in values
-            ]
-            fig_monthly = go.Figure(
-                data=[
-                    go.Heatmap(
-                        z=values,
-                        x=list(monthly_table.columns),
-                        y=[str(idx) for idx in monthly_table.index],
-                        colorscale="RdBu",
-                        zmid=0.0,
-                        text=text_vals,
-                        texttemplate="%{text}",
-                        hovertemplate="Year %{y} | %{x}: %{z:.2%}<extra></extra>",
-                    )
-                ]
-            )
-            fig_monthly.update_layout(
-                title="Monthly Returns Heatmap",
-                xaxis_title="Month",
-                yaxis_title="Year",
-                template="plotly_white",
-            )
-            st.plotly_chart(fig_monthly, use_container_width=True)
-
-    if not plot_market.empty:
-        fig_price = go.Figure()
-        fig_price.add_trace(
-            go.Candlestick(
-                x=plot_market["datetime"],
-                open=plot_market["open"],
-                high=plot_market["high"],
-                low=plot_market["low"],
-                close=plot_market["close"],
-                name=f"{market_symbol} price",
-            )
-        )
-
-        if not plot_trades.empty:
-            symbol_trades = plot_trades[plot_trades["symbol"] == market_symbol]
-            if not symbol_trades.empty:
-                enriched = compute_trade_analytics(symbol_trades)
-                for direction, color, symbol_shape in [
-                    ("BUY", "#0db39e", "triangle-up"),
-                    ("SELL", "#f05a66", "triangle-down"),
-                ]:
-                    part = enriched[enriched["direction"] == direction]
-                    if part.empty:
-                        continue
-                    custom_cols = [
-                        part["quantity"],
-                        part["position_after"],
-                        part["realized_pnl"],
-                        part["realized_return_pct"],
-                    ]
-                    custom_data = pd.concat(custom_cols, axis=1).to_numpy()
-                    fig_price.add_trace(
-                        go.Scatter(
-                            x=part["datetime"],
-                            y=part["price"],
-                            mode="markers",
-                            name=direction,
-                            marker=dict(symbol=symbol_shape, size=10, color=color),
-                            customdata=custom_data,
-                            hovertemplate=(
-                                "%{x}<br>"
-                                f"{direction} @ %{{y:.4f}}<br>"
-                                "Qty: %{customdata[0]:.4f}<br>"
-                                "Position after: %{customdata[1]:.4f}<br>"
-                                "Realized PnL: %{customdata[2]:.4f}<br>"
-                                "Trade Return: %{customdata[3]:.4f}%<extra></extra>"
-                            ),
-                        )
-                    )
-
-        fig_price.update_layout(
-            title=f"{market_symbol} Price + Buy/Sell Markers",
-            xaxis_title="Date",
-            yaxis_title="Price",
-            template="plotly_white",
-            xaxis_rangeslider_visible=True,
-        )
-        st.plotly_chart(fig_price, use_container_width=True)
-
-with tab_exec:
-    col_a, col_b, col_c, col_d = st.columns(4)
-    col_a.metric("BUY fills", f"{summary['buy_fills']}")
-    col_b.metric("SELL fills", f"{summary['sell_fills']}")
-    col_c.metric("Avg Qty", f"{summary['avg_qty']:.4f}")
-    col_d.metric("Avg Notional", f"{summary['avg_notional']:.2f}")
-
-    col_e, col_f, col_g, col_h = st.columns(4)
-    col_e.metric("Total Commission", f"{summary['total_commission']:.4f}")
-    col_f.metric("Avg Trade Return", f"{summary['avg_trade_return_pct']:.4f}%")
-    col_g.metric("Best Trade PnL", f"{summary['best_trade_pnl']:.4f}")
-    col_h.metric("Worst Trade PnL", f"{summary['worst_trade_pnl']:.4f}")
-
-    col_i, col_j, col_k, col_l = st.columns(4)
-    col_i.metric("Max Win Streak", f"{int(summary['win_streak_max'])}")
-    col_j.metric("Max Loss Streak", f"{int(summary['loss_streak_max'])}")
-    col_k.metric(
-        "Avg Win/Loss Streak", f"{summary['win_streak_avg']:.2f} / {summary['loss_streak_avg']:.2f}"
-    )
-    col_l.metric("Avg Holding Time", _format_duration_seconds(summary["holding_time_avg_sec"]))
-
-    direction_table = pd.DataFrame(
-        [
-            {
-                "Direction": "Long",
-                "Closed Trades": int(summary.get("long_trades", 0)),
-                "Win Rate": f"{_safe_float(summary.get('long_win_rate')):.2%}",
-            },
-            {
-                "Direction": "Short",
-                "Closed Trades": int(summary.get("short_trades", 0)),
-                "Win Rate": f"{_safe_float(summary.get('short_win_rate')):.2%}",
-            },
-        ]
-    )
-    st.dataframe(direction_table, use_container_width=True, hide_index=True)
-
-    if not trade_analytics.empty:
-        closed = (
-            trade_analytics[trade_analytics["closed_qty"] > 0]
-            if "closed_qty" in trade_analytics.columns
-            else trade_analytics[trade_analytics["realized_pnl"] != 0]
-        )
-        if not closed.empty:
-            fig_trade_pnl = go.Figure()
-            fig_trade_pnl.add_trace(
-                go.Bar(
-                    x=closed["datetime"],
-                    y=closed["realized_pnl"],
-                    name="Realized PnL per closing trade",
+            strategy_params["oversold"] = float(
+                st.number_input(
+                    "oversold",
+                    min_value=1.0,
+                    max_value=99.0,
+                    value=float(strategy_params.get("oversold", 30.0)),
+                    step=0.5,
                 )
             )
-            fig_trade_pnl.update_layout(
-                title="Trade-by-Trade Realized PnL", template="plotly_white"
-            )
-            st.plotly_chart(fig_trade_pnl, use_container_width=True)
-
-            fig_cum = go.Figure()
-            fig_cum.add_trace(
-                go.Scatter(
-                    x=closed["datetime"],
-                    y=closed["cum_realized_pnl"],
-                    mode="lines",
-                    name="Cumulative Realized PnL",
+            strategy_params["overbought"] = float(
+                st.number_input(
+                    "overbought",
+                    min_value=1.0,
+                    max_value=99.0,
+                    value=float(strategy_params.get("overbought", 70.0)),
+                    step=0.5,
                 )
             )
-            fig_cum.update_layout(title="Cumulative Realized PnL", template="plotly_white")
-            st.plotly_chart(fig_cum, use_container_width=True)
-
-            decisive = closed[
-                pd.to_numeric(closed["realized_pnl"], errors="coerce").fillna(0.0) != 0.0
-            ]
-            if not decisive.empty:
-                outcomes = list((decisive["realized_pnl"] > 0.0).to_numpy(dtype=bool))
-                streaks = _streak_groups(outcomes)
-                streak_rows = []
-                for flag, length in streaks:
-                    streak_rows.append(
-                        {
-                            "Result": "Win" if flag else "Loss",
-                            "Length": int(length),
-                        }
-                    )
-                if streak_rows:
-                    streak_df = pd.DataFrame(streak_rows)
-                    dist = (
-                        streak_df.groupby(["Length", "Result"], observed=False)
-                        .size()
-                        .reset_index(name="Count")
-                    )
-                    fig_streak = go.Figure()
-                    for label, color in [("Win", "#2f855a"), ("Loss", "#c53030")]:
-                        part = dist[dist["Result"] == label]
-                        if part.empty:
-                            continue
-                        fig_streak.add_trace(
-                            go.Bar(
-                                x=part["Length"],
-                                y=part["Count"],
-                                name=label,
-                                marker_color=color,
-                            )
-                        )
-                    fig_streak.update_layout(
-                        title="Win/Loss Streak Distribution",
-                        xaxis_title="Streak Length",
-                        yaxis_title="Occurrences",
-                        barmode="group",
-                        template="plotly_white",
-                    )
-                    st.plotly_chart(fig_streak, use_container_width=True)
-
-    if not df_orders.empty:
-        status_counts = df_orders["status"].fillna("UNKNOWN").astype(str).value_counts()
-        fig_status = go.Figure(
-            data=[
-                go.Pie(
-                    labels=status_counts.index.tolist(),
-                    values=status_counts.values.tolist(),
-                    hole=0.4,
+        elif strategy_name == "MovingAverageCrossStrategy":
+            strategy_params["short_window"] = int(
+                st.number_input(
+                    "short_window",
+                    min_value=2,
+                    max_value=500,
+                    value=int(strategy_params.get("short_window", 10)),
+                    step=1,
                 )
-            ]
-        )
-        fig_status.update_layout(title="Order Status Distribution")
-        st.plotly_chart(fig_status, use_container_width=True)
-
-with tab_risk:
-    if not df_risk.empty:
-        reason_counts = df_risk["reason"].fillna("UNKNOWN").astype(str).value_counts()
-        fig_risk = go.Figure(
-            data=[go.Bar(x=reason_counts.index.tolist(), y=reason_counts.values.tolist())]
-        )
-        fig_risk.update_layout(title="Risk Event Counts by Reason", template="plotly_white")
-        st.plotly_chart(fig_risk, use_container_width=True)
-    else:
-        st.info("No risk events recorded for selected run/data source.")
-
-    if not df_hb.empty:
-        hb = df_hb.copy()
-        hb = hb.sort_values("heartbeat_time")
-        hb["delta_sec"] = hb["heartbeat_time"].diff().dt.total_seconds()
-        avg_hb = float(hb["delta_sec"].dropna().mean()) if hb["delta_sec"].notna().any() else 0.0
-        st.metric("Avg Heartbeat Interval (sec)", f"{avg_hb:.2f}")
-
-        fig_hb = go.Figure()
-        fig_hb.add_trace(
-            go.Scatter(
-                x=hb["heartbeat_time"],
-                y=hb["delta_sec"],
-                mode="lines+markers",
-                name="Heartbeat interval",
             )
-        )
-        fig_hb.update_layout(title="Heartbeat Interval Trend", template="plotly_white")
-        st.plotly_chart(fig_hb, use_container_width=True)
-    else:
-        st.info("No heartbeats recorded for selected run/data source.")
-
-    if not df_order_states.empty:
-        state_counts = df_order_states["state"].fillna("UNKNOWN").astype(str).value_counts()
-        fig_state = go.Figure(
-            data=[go.Bar(x=state_counts.index.tolist(), y=state_counts.values.tolist())]
-        )
-        fig_state.update_layout(title="Order State Event Counts", template="plotly_white")
-        st.plotly_chart(fig_state, use_container_width=True)
-
-    trace_parts = []
-    if not df_orders.empty and "created_at" in df_orders.columns:
-        t = df_orders[["created_at", "symbol", "side", "status"]].copy()
-        t = t.rename(columns={"created_at": "event_time", "side": "event_detail"})
-        t["event_type"] = "order"
-        trace_parts.append(t)
-    if not df_risk.empty and "event_time" in df_risk.columns:
-        t = df_risk[["event_time", "reason"]].copy()
-        t["symbol"] = ""
-        t["status"] = ""
-        t = t.rename(columns={"reason": "event_detail"})
-        t["event_type"] = "risk"
-        trace_parts.append(t)
-    if not df_hb.empty and "heartbeat_time" in df_hb.columns:
-        t = df_hb[["heartbeat_time", "status"]].copy()
-        t = t.rename(columns={"heartbeat_time": "event_time"})
-        t["symbol"] = ""
-        t["event_detail"] = "heartbeat"
-        t["event_type"] = "heartbeat"
-        trace_parts.append(t)
-    if not df_order_states.empty and "event_time" in df_order_states.columns:
-        t = df_order_states[["event_time", "symbol", "state", "message"]].copy()
-        t = t.rename(columns={"state": "status", "message": "event_detail"})
-        t["event_type"] = "order_state"
-        trace_parts.append(t)
-
-    if trace_parts:
-        trace_df = pd.concat(trace_parts, ignore_index=True)
-        trace_df = trace_df.sort_values("event_time", ascending=False).head(500)
-        st.subheader("Strategy Process Trace")
-        st.dataframe(trace_df, use_container_width=True)
-
-with tab_market:
-    if not plot_market.empty:
-        colm1, colm2, colm3, colm4 = st.columns(4)
-        colm1.metric("Market Bars", f"{len(plot_market)}")
-        colm2.metric("First Price", f"{float(plot_market['close'].iloc[0]):.4f}")
-        colm3.metric("Last Price", f"{float(plot_market['close'].iloc[-1]):.4f}")
-        high_val = float(pd.to_numeric(plot_market["high"], errors="coerce").max())
-        low_val = float(pd.to_numeric(plot_market["low"], errors="coerce").min())
-        colm4.metric("Range", f"{low_val:.4f} - {high_val:.4f}")
-
-        fig_close = go.Figure()
-        fig_close.add_trace(
-            go.Scatter(
-                x=plot_market["datetime"],
-                y=plot_market["close"],
-                mode="lines",
-                name="Close",
+            strategy_params["long_window"] = int(
+                st.number_input(
+                    "long_window",
+                    min_value=3,
+                    max_value=1000,
+                    value=int(strategy_params.get("long_window", 30)),
+                    step=1,
+                )
             )
-        )
-        fig_close.update_layout(
-            title=f"{market_symbol} Close Price ({market_timeframe})",
-            template="plotly_white",
-        )
-        st.plotly_chart(fig_close, use_container_width=True)
+        elif strategy_name == "PairTradingZScoreStrategy":
+            strategy_params["lookback_window"] = int(
+                st.number_input(
+                    "lookback_window",
+                    min_value=10,
+                    max_value=2000,
+                    value=int(strategy_params.get("lookback_window", 96)),
+                    step=1,
+                )
+            )
+            strategy_params["hedge_window"] = int(
+                st.number_input(
+                    "hedge_window",
+                    min_value=10,
+                    max_value=4000,
+                    value=int(strategy_params.get("hedge_window", 192)),
+                    step=1,
+                )
+            )
+            strategy_params["entry_z"] = float(
+                st.number_input(
+                    "entry_z",
+                    min_value=0.1,
+                    max_value=10.0,
+                    value=float(strategy_params.get("entry_z", 2.0)),
+                    step=0.05,
+                )
+            )
+            strategy_params["exit_z"] = float(
+                st.number_input(
+                    "exit_z",
+                    min_value=0.0,
+                    max_value=5.0,
+                    value=float(strategy_params.get("exit_z", 0.35)),
+                    step=0.05,
+                )
+            )
+            strategy_params["stop_z"] = float(
+                st.number_input(
+                    "stop_z",
+                    min_value=0.2,
+                    max_value=12.0,
+                    value=float(strategy_params.get("stop_z", 3.5)),
+                    step=0.1,
+                )
+            )
+            strategy_params["min_correlation"] = float(
+                st.number_input(
+                    "min_correlation",
+                    min_value=-1.0,
+                    max_value=1.0,
+                    value=float(strategy_params.get("min_correlation", 0.15)),
+                    step=0.05,
+                )
+            )
+            strategy_params["max_hold_bars"] = int(
+                st.number_input(
+                    "max_hold_bars",
+                    min_value=1,
+                    max_value=10000,
+                    value=int(strategy_params.get("max_hold_bars", 240)),
+                    step=1,
+                )
+            )
+            strategy_params["cooldown_bars"] = int(
+                st.number_input(
+                    "cooldown_bars",
+                    min_value=0,
+                    max_value=5000,
+                    value=int(strategy_params.get("cooldown_bars", 6)),
+                    step=1,
+                )
+            )
+            strategy_params["reentry_z_buffer"] = float(
+                st.number_input(
+                    "reentry_z_buffer",
+                    min_value=0.0,
+                    max_value=5.0,
+                    value=float(strategy_params.get("reentry_z_buffer", 0.20)),
+                    step=0.01,
+                )
+            )
+            strategy_params["min_z_turn"] = float(
+                st.number_input(
+                    "min_z_turn",
+                    min_value=0.0,
+                    max_value=5.0,
+                    value=float(strategy_params.get("min_z_turn", 0.05)),
+                    step=0.01,
+                )
+            )
+            strategy_params["stop_loss_pct"] = float(
+                st.number_input(
+                    "stop_loss_pct",
+                    min_value=0.001,
+                    max_value=0.50,
+                    value=float(strategy_params.get("stop_loss_pct", 0.04)),
+                    step=0.001,
+                )
+            )
+            strategy_params["min_abs_beta"] = float(
+                st.number_input(
+                    "min_abs_beta",
+                    min_value=0.0,
+                    max_value=20.0,
+                    value=float(strategy_params.get("min_abs_beta", 0.02)),
+                    step=0.01,
+                )
+            )
+            strategy_params["max_abs_beta"] = float(
+                st.number_input(
+                    "max_abs_beta",
+                    min_value=0.1,
+                    max_value=30.0,
+                    value=float(strategy_params.get("max_abs_beta", 6.0)),
+                    step=0.1,
+                )
+            )
+            strategy_params["min_volume_window"] = int(
+                st.number_input(
+                    "min_volume_window",
+                    min_value=1,
+                    max_value=5000,
+                    value=int(strategy_params.get("min_volume_window", 24)),
+                    step=1,
+                )
+            )
+            strategy_params["min_volume_ratio"] = float(
+                st.number_input(
+                    "min_volume_ratio",
+                    min_value=0.0,
+                    max_value=5.0,
+                    value=float(strategy_params.get("min_volume_ratio", 0.0)),
+                    step=0.01,
+                )
+            )
+            strategy_params["use_log_price"] = bool(
+                st.checkbox(
+                    "use_log_price",
+                    value=bool(strategy_params.get("use_log_price", True)),
+                )
+            )
 
-        fig_vol = go.Figure()
-        fig_vol.add_trace(go.Bar(x=plot_market["datetime"], y=plot_market["volume"], name="Volume"))
-        fig_vol.update_layout(title="Market Volume", template="plotly_white")
-        st.plotly_chart(fig_vol, use_container_width=True)
-
-        st.subheader("Strategy Indicator View")
-        if strategy_name == "PairTradingZScoreStrategy":
-            pair_symbol_x = str(
+            default_symbol_x = str(
                 strategy_params.get("symbol_x") or (runner_symbols[0] if runner_symbols else "")
             )
-            pair_symbol_y = str(
+            default_symbol_y = str(
                 strategy_params.get("symbol_y")
-                or (runner_symbols[1] if len(runner_symbols) > 1 else pair_symbol_x)
+                or (runner_symbols[1] if len(runner_symbols) > 1 else default_symbol_x)
             )
-            if pair_symbol_x == pair_symbol_y or not pair_symbol_x:
-                st.warning("Pair strategy needs two different symbols (symbol_x / symbol_y).")
-            else:
-                pair_x_df = pd.DataFrame()
-                pair_y_df = pd.DataFrame()
-                if _resolve_postgres_dsn(db_path):
-                    pair_x_df = load_market_ohlcv_state(
-                        db_path,
-                        pair_symbol_x,
-                        market_timeframe,
-                        market_exchange,
-                        refresh_counter=refresh_counter,
-                        max_points=max_points,
-                    )
-                    pair_y_df = load_market_ohlcv_state(
-                        db_path,
-                        pair_symbol_y,
-                        market_timeframe,
-                        market_exchange,
-                        refresh_counter=refresh_counter,
-                        max_points=max_points,
+            strategy_params["symbol_x"] = st.text_input("symbol_x", value=default_symbol_x)
+            strategy_params["symbol_y"] = st.text_input("symbol_y", value=default_symbol_y)
+
+    with st.sidebar.expander("Optimization Search Space", expanded=False):
+        default_optuna_cfg = _strategy_default_optuna(strategy_name)
+        default_grid_cfg = _strategy_default_grid(strategy_name)
+        if strategy_name == str(OptimizationConfig.STRATEGY_NAME):
+            default_optuna_cfg = strategy_registry.resolve_optuna_config(
+                strategy_name,
+                OptimizationConfig.OPTUNA_CONFIG if isinstance(OptimizationConfig.OPTUNA_CONFIG, dict) else {},
+            )
+            default_grid_cfg = strategy_registry.resolve_grid_config(
+                strategy_name,
+                OptimizationConfig.GRID_CONFIG if isinstance(OptimizationConfig.GRID_CONFIG, dict) else {},
+            )
+
+        default_optuna_json = json.dumps(default_optuna_cfg, indent=2, ensure_ascii=False)
+        default_grid_json = json.dumps(default_grid_cfg, indent=2, ensure_ascii=False)
+        optuna_json_raw = st.text_area("OPTUNA config JSON", value=default_optuna_json, height=140)
+        grid_json_raw = st.text_area("GRID config JSON", value=default_grid_json, height=140)
+        optimize_folds = st.number_input(
+            "Walk-forward folds",
+            min_value=1,
+            max_value=20,
+            value=int(OptimizationConfig.WALK_FORWARD_FOLDS),
+            step=1,
+        )
+        optimize_trials = st.number_input(
+            "Optuna trials",
+            min_value=1,
+            max_value=5000,
+            value=int(
+                default_optuna_cfg.get("n_trials", OptimizationConfig.OPTUNA_CONFIG.get("n_trials", 20))
+            ),
+            step=1,
+        )
+        optimize_workers = st.number_input(
+            "Optimization workers",
+            min_value=1,
+            max_value=max(1, (os.cpu_count() or 4) * 2),
+            value=int(OptimizationConfig.MAX_WORKERS),
+            step=1,
+        )
+        persist_best_params = st.checkbox(
+            "Persist best params after optimize", value=bool(OptimizationConfig.PERSIST_BEST_PARAMS)
+        )
+
+    optuna_config_for_runner = strategy_registry.resolve_optuna_config(strategy_name, default_optuna_cfg)
+    grid_config_for_runner = strategy_registry.resolve_grid_config(strategy_name, default_grid_cfg)
+    opt_space_error = None
+    try:
+        parsed_optuna = json.loads(optuna_json_raw)
+        parsed_grid = json.loads(grid_json_raw)
+        if isinstance(parsed_optuna, dict):
+            optuna_config_for_runner = strategy_registry.resolve_optuna_config(
+                strategy_name,
+                parsed_optuna,
+            )
+        else:
+            opt_space_error = "OPTUNA config JSON must be an object."
+        if isinstance(parsed_grid, dict):
+            grid_config_for_runner = strategy_registry.resolve_grid_config(
+                strategy_name,
+                parsed_grid,
+            )
+        else:
+            opt_space_error = "GRID config JSON must be an object."
+    except Exception as exc:
+        opt_space_error = f"Optimization JSON parse error: {exc}"
+
+    runner_env_overrides = _build_runtime_env_overrides(
+        initial_capital=runner_initial_capital,
+        leverage=runner_leverage,
+        timeframe=runner_timeframe,
+        symbols=runner_symbols,
+        strategy_name=strategy_name,
+        optuna_config=optuna_config_for_runner,
+        grid_config=grid_config_for_runner,
+    )
+
+    if "runner_last_result" not in st.session_state:
+        st.session_state["runner_last_result"] = None
+
+    df_equity = pd.DataFrame()
+    df_trades = pd.DataFrame()
+    df_orders = pd.DataFrame()
+    df_risk = pd.DataFrame()
+    df_hb = pd.DataFrame()
+    df_order_states = pd.DataFrame()
+    df_market = pd.DataFrame()
+    df_optimize = pd.DataFrame()
+    active_run_id = None
+    resolved_source = None
+    runs_df = pd.DataFrame()
+
+    _ensure_workflow_jobs_schema(db_path)
+    _refresh_workflow_jobs(db_path)
+
+    use_state = data_source == "Postgres" or (data_source == "Auto" and bool(_resolve_postgres_dsn(db_path)))
+    if use_state and _resolve_postgres_dsn(db_path):
+        try:
+            runs_df = load_runs(db_path, refresh_counter=refresh_counter)
+            runs_df = _annotate_run_health(runs_df, stale_after_sec=run_stale_sec)
+            df_optimize = load_optimization_results_state(db_path, refresh_counter=refresh_counter)
+            if not runs_df.empty:
+                run_options = runs_df["run_id"].astype(str).tolist()
+                strategy_run_options = _runs_for_strategy(runs_df, strategy_name)
+                if filter_runs_by_strategy and strategy_run_options:
+                    run_options = strategy_run_options
+                elif filter_runs_by_strategy and not strategy_run_options:
+                    st.sidebar.info(
+                        "No Postgres runs tagged with selected strategy yet. Showing all runs instead."
                     )
 
-                pair_x_df = _apply_period_filter(pair_x_df, "datetime", period_start, period_end)
-                pair_y_df = _apply_period_filter(pair_y_df, "datetime", period_start, period_end)
-                pair_indicator_df = _build_pair_indicator_frame(
-                    pair_x_df, pair_y_df, strategy_params
+                default_run = _latest_running_run_id(runs_df) if pin_to_running else None
+                if default_run and _equity_rows_for_run(runs_df, default_run) <= 0:
+                    default_run = None
+                if default_run and default_run not in run_options:
+                    default_run = None
+                if not default_run:
+                    if strategy_run_options:
+                        strategy_runs_df = runs_df[runs_df["run_id"].astype(str).isin(run_options)]
+                        default_run = _latest_run_with_equity(strategy_runs_df)
+                    else:
+                        default_run = _latest_run_with_equity(runs_df)
+                if not default_run:
+                    default_run = run_options[0]
+
+                strategy_changed = st.session_state.get("dashboard_strategy_name") != strategy_name
+                st.session_state["dashboard_strategy_name"] = strategy_name
+
+                if "dashboard_run_id" not in st.session_state:
+                    st.session_state["dashboard_run_id"] = default_run
+                if strategy_changed:
+                    st.session_state["dashboard_run_id"] = default_run
+                if pin_to_running:
+                    st.session_state["dashboard_run_id"] = default_run
+                if st.session_state["dashboard_run_id"] not in run_options:
+                    st.session_state["dashboard_run_id"] = default_run
+
+                selected_idx = run_options.index(st.session_state["dashboard_run_id"])
+                active_run_id = st.sidebar.selectbox("Run ID", run_options, index=selected_idx)
+                st.session_state["dashboard_run_id"] = active_run_id
+
+                df_equity = load_equity_state(
+                    db_path, active_run_id, refresh_counter=refresh_counter, max_points=max_points
                 )
-                if pair_indicator_df.empty:
-                    st.info("Not enough aligned market bars to compute pair indicators.")
-                else:
-                    entry_z = float(strategy_params.get("entry_z", 2.0))
-                    exit_z = float(strategy_params.get("exit_z", 0.35))
-                    stop_z = float(strategy_params.get("stop_z", 3.5))
+                df_trades = load_fills_state(
+                    db_path, active_run_id, refresh_counter=refresh_counter, max_points=max_points
+                )
+                df_orders = load_orders_state(
+                    db_path, active_run_id, refresh_counter=refresh_counter, max_points=max_points
+                )
+                df_risk = load_risk_events_state(db_path, active_run_id, refresh_counter=refresh_counter)
+                df_hb = load_heartbeats_state(db_path, active_run_id, refresh_counter=refresh_counter)
+                df_order_states = load_order_states_state(
+                    db_path, active_run_id, refresh_counter=refresh_counter
+                )
+                resolved_source = "Postgres"
+        except Exception:
+            runs_df = pd.DataFrame()
+            df_optimize = pd.DataFrame()
 
-                    z_series = pd.to_numeric(pair_indicator_df["zscore"], errors="coerce")
-                    hedge_series = pd.to_numeric(pair_indicator_df["hedge_ratio"], errors="coerce")
-                    corr_series = pd.to_numeric(pair_indicator_df["correlation"], errors="coerce")
+    if resolved_source is None or (df_equity.empty and data_source == "Auto"):
+        fallback_equity = load_equity_csv(refresh_counter=refresh_counter, max_points=max_points)
+        fallback_trades = load_trades_csv(refresh_counter=refresh_counter, max_points=max_points)
+        if not fallback_equity.empty:
+            df_equity = fallback_equity
+            df_trades = fallback_trades
+            active_run_id = None
+            resolved_source = "CSV"
 
-                    latest_z = (
-                        float(z_series.dropna().iloc[-1])
-                        if z_series.notna().any()
-                        else float("nan")
-                    )
-                    latest_beta = (
-                        float(hedge_series.dropna().iloc[-1])
-                        if hedge_series.notna().any()
-                        else float("nan")
-                    )
-                    latest_corr = (
-                        float(corr_series.dropna().iloc[-1])
-                        if corr_series.notna().any()
-                        else float("nan")
-                    )
+    if resolved_source == "CSV" and data_source in {"Auto", "CSV"}:
+        st.warning(
+            "Dashboard is currently rendering CSV fallback data. In this mode, changing strategy updates "
+            "strategy indicators/config controls, but core PnL/equity history remains the same CSV sample until "
+            "a Postgres run with equity rows is available."
+        )
 
-                    pm1, pm2, pm3, pm4 = st.columns(4)
-                    pm1.metric("Pair", f"{pair_symbol_x} vs {pair_symbol_y}")
-                    pm2.metric("Latest Z", f"{latest_z:.3f}" if math.isfinite(latest_z) else "N/A")
-                    pm3.metric(
-                        "Hedge Ratio", f"{latest_beta:.4f}" if math.isfinite(latest_beta) else "N/A"
-                    )
-                    pm4.metric(
-                        "Correlation", f"{latest_corr:.4f}" if math.isfinite(latest_corr) else "N/A"
-                    )
+    if resolved_source is None:
+        resolved_source = "None"
 
-                    pair_plot_df = (
-                        _downsample_frame(pair_indicator_df, downsample_target_points)
-                        if auto_downsample
-                        else pair_indicator_df
-                    )
+    period_start, period_end = _resolve_period_window(
+        period_preset,
+        custom_start,
+        custom_end,
+        df_equity,
+        dt_col="datetime",
+    )
 
-                    fig_pair_norm = go.Figure()
-                    normalized_x = pair_plot_df["close_x"] / float(pair_plot_df["close_x"].iloc[0])
-                    normalized_y = pair_plot_df["close_y"] / float(pair_plot_df["close_y"].iloc[0])
-                    fig_pair_norm.add_trace(
+    df_equity = _apply_period_filter(df_equity, "datetime", period_start, period_end)
+    df_trades = _apply_period_filter(df_trades, "datetime", period_start, period_end)
+    df_orders = _apply_period_filter(df_orders, "created_at", period_start, period_end)
+    df_risk = _apply_period_filter(df_risk, "event_time", period_start, period_end)
+    df_hb = _apply_period_filter(df_hb, "heartbeat_time", period_start, period_end)
+    df_order_states = _apply_period_filter(df_order_states, "event_time", period_start, period_end)
+
+    if auto_downsample and not df_equity.empty:
+        plot_equity = _downsample_frame(df_equity, downsample_target_points)
+    else:
+        plot_equity = df_equity
+
+    if auto_downsample and not df_trades.empty:
+        plot_trades = _downsample_frame(df_trades, downsample_target_points)
+    else:
+        plot_trades = df_trades
+
+    if not runs_df.empty and active_run_id:
+        symbols = _extract_run_symbols(runs_df, active_run_id)
+    else:
+        symbols = list(BaseConfig.SYMBOLS)
+    market_symbol = st.sidebar.selectbox(
+        "Market Symbol", symbols if symbols else list(BaseConfig.SYMBOLS)
+    )
+
+    if str(market_db_path).strip():
+        df_market = load_market_ohlcv_state(
+            market_db_path,
+            market_symbol,
+            market_timeframe,
+            market_exchange,
+            refresh_counter=refresh_counter,
+            max_points=max_points,
+        )
+    df_market = _apply_period_filter(df_market, "datetime", period_start, period_end)
+    if auto_downsample and not df_market.empty:
+        plot_market = _downsample_frame(df_market, downsample_target_points)
+    else:
+        plot_market = df_market
+
+    trade_analytics = compute_trade_analytics(df_trades)
+    summary = build_summary(df_equity, trade_analytics)
+    performance = build_performance_metrics(df_equity)
+    latest_data_ts, latency_sec = _compute_data_latency_seconds(df_equity)
+    mirror_balance_equity = _build_balance_equity_frame(
+        df_equity,
+        trade_analytics,
+        initial_equity=summary.get("initial_equity", 0.0),
+    )
+    mirror_snapshot = _build_mirror_snapshot(summary, mirror_balance_equity)
+
+    st.subheader("PC Mirror Snapshot")
+    st.caption("Reference-style KPI strip + equity/balance/drawdown narrative")
+    _render_mirror_cards(mirror_snapshot)
+    mirror_left, mirror_right = st.columns(2)
+    if not mirror_balance_equity.empty:
+        with mirror_left:
+            st.plotly_chart(
+                _build_mirror_equity_curve_figure(mirror_balance_equity),
+                use_container_width=True,
+                key="mirror_equity_curve",
+            )
+        with mirror_right:
+            st.plotly_chart(
+                _build_mirror_balance_equity_figure(mirror_balance_equity, mirror_snapshot),
+                use_container_width=True,
+                key="mirror_balance_equity",
+            )
+    else:
+        with mirror_left:
+            st.info("No equity data for mirror-style curve yet.")
+        with mirror_right:
+            st.info("No balance/equity timeline for mirror-style chart yet.")
+
+    st.header("Overview")
+    st.caption("Performance summary is grouped by Context, Equity, Risk, and Trade Quality.")
+
+    ctx1, ctx2, ctx3, ctx4, ctx5, ctx6 = st.columns(6)
+    ctx1.metric("Source", resolved_source)
+    ctx2.metric("Bars", f"{summary['bars']}")
+    ctx3.metric("Fills", f"{summary['fills']}")
+    ctx4.metric("Avg Fills/Day", f"{summary['fills_per_day']:.2f}")
+    ctx5.metric("Closed PnL", _format_signed_dollar(summary.get("total_net_profit"), digits=2))
+    ctx6.metric("Win Rate", f"{summary['win_rate']:.2%}")
+
+    st.markdown("**Equity Context**")
+    eq1, eq2, eq3, eq4 = st.columns(4)
+    eq1.metric("Initial Equity", f"{summary['initial_equity']:.2f}")
+    eq2.metric("Final Equity", f"{summary['final_equity']:.2f}")
+    eq3.metric("Configured Initial Equity", f"{runner_initial_capital:.2f}")
+    eq4.metric("Configured Leverage", f"{int(runner_leverage)}x")
+
+    st.markdown("**PnL / Drawdown**")
+    mx1, mx2, mx3, mx4 = st.columns(4)
+    mx1.metric("Open P/L", _format_signed_dollar(summary.get("open_pnl"), digits=2))
+    mx2.metric("Total (C+O)", _format_signed_dollar(summary.get("total_c_plus_o"), digits=2))
+    mx3.metric("R/MDD", f"{_safe_float(summary.get('r_mdd'), 0.0):.2f}x")
+    mx4.metric(
+        "Equity MDD",
+        (
+            f"${_safe_float(summary.get('equity_drawdown_maximal'), 0.0):,.2f} "
+            f"({_safe_float(summary.get('equity_drawdown_relative_pct'), 0.0):.2%})"
+        ),
+    )
+
+    if performance:
+        p1, p2, p3, p4, p5, p6 = st.columns(6)
+        p1.metric("Total Return", f"{performance.get('Total Return', 0.0):.2%}")
+        p2.metric("Cumulative Return", f"{performance.get('Cumulative Return', 0.0):.2%}")
+        p3.metric("Sharpe", f"{performance.get('Sharpe Ratio', 0.0):.3f}")
+        p4.metric("Sortino", f"{performance.get('Sortino Ratio', 0.0):.3f}")
+        p5.metric("Max Drawdown", f"{performance.get('Max Drawdown', 0.0):.2%}")
+        p6.metric("Funding (Net)", f"{performance.get('Funding (Net)', 0.0):.4f}")
+
+    st.markdown("**Trade Quality**")
+    pf1, pf2, pf3, pf4, pf5, pf6 = st.columns(6)
+    pf1.metric("Profit Factor", _format_metric_value("Profit Factor", summary.get("profit_factor")))
+    pf2.metric("Recovery Factor", f"{_safe_float(summary.get('recovery_factor')):.3f}")
+    pf3.metric("Expected Payoff", f"{_safe_float(summary.get('expected_payoff')):.4f}")
+    pf4.metric("Profit Trades", str(summary.get("profit_trades_text", "0 (0.00%)")))
+    pf5.metric("Loss Trades", str(summary.get("loss_trades_text", "0 (0.00%)")))
+    pf6.metric("Payoff Ratio", f"{_safe_float(summary.get('payoff_ratio')):.3f}")
+
+    dir1, dir2, dir3, dir4 = st.columns(4)
+    dir1.metric("Long Trades (Win %)", str(summary.get("long_trades_win_pct", "0 (0.00%)")))
+    dir2.metric("Short Trades (Win %)", str(summary.get("short_trades_win_pct", "0 (0.00%)")))
+    dir3.metric("Avg Holding", _format_duration_seconds(summary.get("holding_time_avg_sec", 0.0)))
+    dir4.metric(
+        "Avg Profit / Loss",
+        (
+            f"{_safe_float(summary.get('avg_profit_trade'), 0.0):.2f} / "
+            f"{_safe_float(summary.get('avg_loss_trade'), 0.0):.2f}"
+        ),
+    )
+
+    if latest_data_ts is not None and latency_sec is not None:
+        st.caption(
+            f"Data timestamp: {latest_data_ts} | latency: {latency_sec:.1f}s | "
+            f"period preset: {period_preset} | range: {summary['period_start']} -> {summary['period_end']}"
+        )
+
+    if not runs_df.empty and "effective_status" in runs_df.columns:
+        healthy_runs = int((runs_df["effective_status"] == "RUNNING_HEALTHY").sum())
+        stale_runs = int((runs_df["effective_status"] == "RUNNING_STALE").sum())
+        no_telemetry_runs = int((runs_df["effective_status"] == "RUNNING_NO_TELEMETRY").sum())
+        st.caption(
+            f"Live run health -> healthy: {healthy_runs}, stale: {stale_runs}, "
+            f"no-telemetry: {no_telemetry_runs} (threshold={int(run_stale_sec)}s)"
+        )
+
+    st.subheader("Strategy Parameters")
+    st.json(strategy_params)
+
+    tab_overview, tab_exec, tab_risk, tab_market, tab_opt, tab_report, tab_raw = st.tabs(
+        [
+            "Performance & Price",
+            "Execution Analytics",
+            "Risk & Health",
+            "Market Data",
+            "Optimization Insights",
+            "Report Export",
+            "Raw Data",
+        ]
+    )
+
+    with tab_overview:
+        with st.expander("Metric Definitions", expanded=False):
+            metric_rows = []
+            for metric_name, definition in METRIC_DEFINITIONS.items():
+                metric_rows.append(
+                    {
+                        "Metric": metric_name,
+                        "Value": _format_metric_value(
+                            metric_name,
+                            _metric_value(metric_name, performance, summary),
+                        ),
+                        "Definition": definition,
+                    }
+                )
+            st.dataframe(pd.DataFrame(metric_rows), use_container_width=True)
+
+        mt5_rows = _build_mt5_summary_rows(summary)
+        if not mt5_rows.empty:
+            st.subheader("MT5-Style Summary Grid")
+            st.dataframe(mt5_rows, use_container_width=True, hide_index=True)
+
+        st.caption(
+            f"Data context: run={active_run_id if active_run_id else 'N/A'} | "
+            f"source={resolved_source} | symbol={market_symbol} | timeframe={market_timeframe} | "
+            f"exchange={market_exchange} | market_db={market_db_path}"
+        )
+
+        if not plot_equity.empty:
+            fig_equity = go.Figure()
+            fig_equity.add_trace(
+                go.Scatter(
+                    x=plot_equity["datetime"],
+                    y=plot_equity["total"],
+                    mode="lines",
+                    name="Strategy Equity",
+                    line=dict(color="#0db39e", width=2),
+                )
+            )
+            fig_equity.update_layout(
+                title="Equity Curve",
+                xaxis_title="Date",
+                yaxis_title="Equity",
+                template="plotly_white",
+                hovermode="x unified",
+            )
+            st.plotly_chart(fig_equity, use_container_width=True)
+
+            if "benchmark_price" in plot_equity.columns:
+                benchmark_series = pd.to_numeric(plot_equity["benchmark_price"], errors="coerce")
+                if benchmark_series.notna().any():
+                    fig_benchmark = go.Figure()
+                    fig_benchmark.add_trace(
                         go.Scatter(
-                            x=pair_plot_df["datetime"],
-                            y=normalized_x,
+                            x=plot_equity["datetime"],
+                            y=benchmark_series,
                             mode="lines",
-                            name=f"{pair_symbol_x} (normalized)",
-                            line=dict(color="#2b6cb0", width=1.8),
+                            line=dict(color="#805ad5", width=1.5),
+                            name="Benchmark Price",
                         )
                     )
-                    fig_pair_norm.add_trace(
-                        go.Scatter(
-                            x=pair_plot_df["datetime"],
-                            y=normalized_y,
-                            mode="lines",
-                            name=f"{pair_symbol_y} (normalized)",
-                            line=dict(color="#ed8936", width=1.8),
-                        )
-                    )
-                    fig_pair_norm.update_layout(
-                        title="Pair Price Inputs (Normalized)",
+                    fig_benchmark.update_layout(
+                        title="Benchmark Price (from Equity Metadata)",
                         xaxis_title="Date",
-                        yaxis_title="Normalized Price",
+                        yaxis_title="Price",
                         template="plotly_white",
                         hovermode="x unified",
                     )
-                    st.plotly_chart(fig_pair_norm, use_container_width=True)
+                    st.plotly_chart(fig_benchmark, use_container_width=True)
 
-                    fig_z = go.Figure()
-                    fig_z.add_trace(
+            if "funding" in plot_equity.columns:
+                funding_series = pd.to_numeric(plot_equity["funding"], errors="coerce")
+                if funding_series.notna().any():
+                    fig_funding = go.Figure()
+                    fig_funding.add_trace(
                         go.Scatter(
-                            x=pair_plot_df["datetime"],
-                            y=pair_plot_df["zscore"],
+                            x=plot_equity["datetime"],
+                            y=funding_series,
                             mode="lines",
-                            name="Z-Score",
+                            line=dict(color="#dd6b20", width=2),
+                            name="Funding (Net)",
+                        )
+                    )
+                    fig_funding.update_layout(
+                        title="Funding (Net) Over Time",
+                        xaxis_title="Date",
+                        yaxis_title="Funding",
+                        template="plotly_white",
+                        hovermode="x unified",
+                    )
+                    st.plotly_chart(fig_funding, use_container_width=True)
+
+            if (
+                performance
+                and len(performance.get("cum_return_series", [])) == len(df_equity.index) - 1
+            ):
+                cum_returns = pd.Series(performance["cum_return_series"])
+                fig_cum_ret = go.Figure()
+                fig_cum_ret.add_trace(
+                    go.Scatter(
+                        x=df_equity["datetime"].iloc[1:],
+                        y=cum_returns,
+                        mode="lines",
+                        line=dict(color="#2b6cb0", width=2),
+                        name="Cumulative Return",
+                    )
+                )
+                fig_cum_ret.update_layout(
+                    title="Cumulative Return",
+                    xaxis_title="Date",
+                    yaxis_title="Return",
+                    template="plotly_white",
+                    hovermode="x unified",
+                    yaxis_tickformat=".2%",
+                )
+                st.plotly_chart(fig_cum_ret, use_container_width=True)
+
+            roll_max = plot_equity["total"].cummax()
+            drawdown = (plot_equity["total"] - roll_max) / roll_max
+            fig_dd = go.Figure()
+            fig_dd.add_trace(
+                go.Scatter(
+                    x=plot_equity["datetime"],
+                    y=drawdown,
+                    fill="tozeroy",
+                    name="Drawdown",
+                    line=dict(color="#f05a66"),
+                )
+            )
+            fig_dd.update_layout(title="Drawdown", yaxis_title="Drawdown", template="plotly_white")
+            st.plotly_chart(fig_dd, use_container_width=True)
+
+            monthly_table = _build_monthly_returns_table(df_equity, performance)
+            if not monthly_table.empty:
+                values = monthly_table.to_numpy(dtype=float)
+                text_vals = [
+                    [f"{_safe_float(v):.2%}" if np.isfinite(v) else "" for v in row] for row in values
+                ]
+                fig_monthly = go.Figure(
+                    data=[
+                        go.Heatmap(
+                            z=values,
+                            x=list(monthly_table.columns),
+                            y=[str(idx) for idx in monthly_table.index],
+                            colorscale="RdBu",
+                            zmid=0.0,
+                            text=text_vals,
+                            texttemplate="%{text}",
+                            hovertemplate="Year %{y} | %{x}: %{z:.2%}<extra></extra>",
+                        )
+                    ]
+                )
+                fig_monthly.update_layout(
+                    title="Monthly Returns Heatmap",
+                    xaxis_title="Month",
+                    yaxis_title="Year",
+                    template="plotly_white",
+                )
+                st.plotly_chart(fig_monthly, use_container_width=True)
+
+        if not plot_market.empty:
+            fig_price = go.Figure()
+            fig_price.add_trace(
+                go.Candlestick(
+                    x=plot_market["datetime"],
+                    open=plot_market["open"],
+                    high=plot_market["high"],
+                    low=plot_market["low"],
+                    close=plot_market["close"],
+                    name=f"{market_symbol} price",
+                )
+            )
+
+            if not plot_trades.empty:
+                symbol_trades = plot_trades[plot_trades["symbol"] == market_symbol]
+                if not symbol_trades.empty:
+                    enriched = compute_trade_analytics(symbol_trades)
+                    for direction, color, symbol_shape in [
+                        ("BUY", "#0db39e", "triangle-up"),
+                        ("SELL", "#f05a66", "triangle-down"),
+                    ]:
+                        part = enriched[enriched["direction"] == direction]
+                        if part.empty:
+                            continue
+                        custom_cols = [
+                            part["quantity"],
+                            part["position_after"],
+                            part["realized_pnl"],
+                            part["realized_return_pct"],
+                        ]
+                        custom_data = pd.concat(custom_cols, axis=1).to_numpy()
+                        fig_price.add_trace(
+                            go.Scatter(
+                                x=part["datetime"],
+                                y=part["price"],
+                                mode="markers",
+                                name=direction,
+                                marker=dict(symbol=symbol_shape, size=10, color=color),
+                                customdata=custom_data,
+                                hovertemplate=(
+                                    "%{x}<br>"
+                                    f"{direction} @ %{{y:.4f}}<br>"
+                                    "Qty: %{customdata[0]:.4f}<br>"
+                                    "Position after: %{customdata[1]:.4f}<br>"
+                                    "Realized PnL: %{customdata[2]:.4f}<br>"
+                                    "Trade Return: %{customdata[3]:.4f}%<extra></extra>"
+                                ),
+                            )
+                        )
+
+            fig_price.update_layout(
+                title=f"{market_symbol} Price + Buy/Sell Markers",
+                xaxis_title="Date",
+                yaxis_title="Price",
+                template="plotly_white",
+                xaxis_rangeslider_visible=True,
+            )
+            st.plotly_chart(fig_price, use_container_width=True)
+
+    with tab_exec:
+        col_a, col_b, col_c, col_d = st.columns(4)
+        col_a.metric("BUY fills", f"{summary['buy_fills']}")
+        col_b.metric("SELL fills", f"{summary['sell_fills']}")
+        col_c.metric("Avg Qty", f"{summary['avg_qty']:.4f}")
+        col_d.metric("Avg Notional", f"{summary['avg_notional']:.2f}")
+
+        col_e, col_f, col_g, col_h = st.columns(4)
+        col_e.metric("Total Commission", f"{summary['total_commission']:.4f}")
+        col_f.metric("Avg Trade Return", f"{summary['avg_trade_return_pct']:.4f}%")
+        col_g.metric("Best Trade PnL", f"{summary['best_trade_pnl']:.4f}")
+        col_h.metric("Worst Trade PnL", f"{summary['worst_trade_pnl']:.4f}")
+
+        col_i, col_j, col_k, col_l = st.columns(4)
+        col_i.metric("Max Win Streak", f"{int(summary['win_streak_max'])}")
+        col_j.metric("Max Loss Streak", f"{int(summary['loss_streak_max'])}")
+        col_k.metric(
+            "Avg Win/Loss Streak", f"{summary['win_streak_avg']:.2f} / {summary['loss_streak_avg']:.2f}"
+        )
+        col_l.metric("Avg Holding Time", _format_duration_seconds(summary["holding_time_avg_sec"]))
+
+        direction_table = pd.DataFrame(
+            [
+                {
+                    "Direction": "Long",
+                    "Closed Trades": int(summary.get("long_trades", 0)),
+                    "Win Rate": f"{_safe_float(summary.get('long_win_rate')):.2%}",
+                },
+                {
+                    "Direction": "Short",
+                    "Closed Trades": int(summary.get("short_trades", 0)),
+                    "Win Rate": f"{_safe_float(summary.get('short_win_rate')):.2%}",
+                },
+            ]
+        )
+        st.dataframe(direction_table, use_container_width=True, hide_index=True)
+
+        if not trade_analytics.empty:
+            closed = (
+                trade_analytics[trade_analytics["closed_qty"] > 0]
+                if "closed_qty" in trade_analytics.columns
+                else trade_analytics[trade_analytics["realized_pnl"] != 0]
+            )
+            if not closed.empty:
+                fig_trade_pnl = go.Figure()
+                fig_trade_pnl.add_trace(
+                    go.Bar(
+                        x=closed["datetime"],
+                        y=closed["realized_pnl"],
+                        name="Realized PnL per closing trade",
+                    )
+                )
+                fig_trade_pnl.update_layout(
+                    title="Trade-by-Trade Realized PnL", template="plotly_white"
+                )
+                st.plotly_chart(fig_trade_pnl, use_container_width=True)
+
+                fig_cum = go.Figure()
+                fig_cum.add_trace(
+                    go.Scatter(
+                        x=closed["datetime"],
+                        y=closed["cum_realized_pnl"],
+                        mode="lines",
+                        name="Cumulative Realized PnL",
+                    )
+                )
+                fig_cum.update_layout(title="Cumulative Realized PnL", template="plotly_white")
+                st.plotly_chart(fig_cum, use_container_width=True)
+
+                decisive = closed[
+                    pd.to_numeric(closed["realized_pnl"], errors="coerce").fillna(0.0) != 0.0
+                ]
+                if not decisive.empty:
+                    outcomes = list((decisive["realized_pnl"] > 0.0).to_numpy(dtype=bool))
+                    streaks = _streak_groups(outcomes)
+                    streak_rows = []
+                    for flag, length in streaks:
+                        streak_rows.append(
+                            {
+                                "Result": "Win" if flag else "Loss",
+                                "Length": int(length),
+                            }
+                        )
+                    if streak_rows:
+                        streak_df = pd.DataFrame(streak_rows)
+                        dist = (
+                            streak_df.groupby(["Length", "Result"], observed=False)
+                            .size()
+                            .reset_index(name="Count")
+                        )
+                        fig_streak = go.Figure()
+                        for label, color in [("Win", "#2f855a"), ("Loss", "#c53030")]:
+                            part = dist[dist["Result"] == label]
+                            if part.empty:
+                                continue
+                            fig_streak.add_trace(
+                                go.Bar(
+                                    x=part["Length"],
+                                    y=part["Count"],
+                                    name=label,
+                                    marker_color=color,
+                                )
+                            )
+                        fig_streak.update_layout(
+                            title="Win/Loss Streak Distribution",
+                            xaxis_title="Streak Length",
+                            yaxis_title="Occurrences",
+                            barmode="group",
+                            template="plotly_white",
+                        )
+                        st.plotly_chart(fig_streak, use_container_width=True)
+
+        if not df_orders.empty:
+            status_counts = df_orders["status"].fillna("UNKNOWN").astype(str).value_counts()
+            fig_status = go.Figure(
+                data=[
+                    go.Pie(
+                        labels=status_counts.index.tolist(),
+                        values=status_counts.values.tolist(),
+                        hole=0.4,
+                    )
+                ]
+            )
+            fig_status.update_layout(title="Order Status Distribution")
+            st.plotly_chart(fig_status, use_container_width=True)
+
+    with tab_risk:
+        if not df_risk.empty:
+            reason_counts = df_risk["reason"].fillna("UNKNOWN").astype(str).value_counts()
+            fig_risk = go.Figure(
+                data=[go.Bar(x=reason_counts.index.tolist(), y=reason_counts.values.tolist())]
+            )
+            fig_risk.update_layout(title="Risk Event Counts by Reason", template="plotly_white")
+            st.plotly_chart(fig_risk, use_container_width=True)
+        else:
+            st.info("No risk events recorded for selected run/data source.")
+
+        if not df_hb.empty:
+            hb = df_hb.copy()
+            hb = hb.sort_values("heartbeat_time")
+            hb["delta_sec"] = hb["heartbeat_time"].diff().dt.total_seconds()
+            avg_hb = float(hb["delta_sec"].dropna().mean()) if hb["delta_sec"].notna().any() else 0.0
+            st.metric("Avg Heartbeat Interval (sec)", f"{avg_hb:.2f}")
+
+            fig_hb = go.Figure()
+            fig_hb.add_trace(
+                go.Scatter(
+                    x=hb["heartbeat_time"],
+                    y=hb["delta_sec"],
+                    mode="lines+markers",
+                    name="Heartbeat interval",
+                )
+            )
+            fig_hb.update_layout(title="Heartbeat Interval Trend", template="plotly_white")
+            st.plotly_chart(fig_hb, use_container_width=True)
+        else:
+            st.info("No heartbeats recorded for selected run/data source.")
+
+        if not df_order_states.empty:
+            state_counts = df_order_states["state"].fillna("UNKNOWN").astype(str).value_counts()
+            fig_state = go.Figure(
+                data=[go.Bar(x=state_counts.index.tolist(), y=state_counts.values.tolist())]
+            )
+            fig_state.update_layout(title="Order State Event Counts", template="plotly_white")
+            st.plotly_chart(fig_state, use_container_width=True)
+
+        trace_parts = []
+        if not df_orders.empty and "created_at" in df_orders.columns:
+            t = df_orders[["created_at", "symbol", "side", "status"]].copy()
+            t = t.rename(columns={"created_at": "event_time", "side": "event_detail"})
+            t["event_type"] = "order"
+            trace_parts.append(t)
+        if not df_risk.empty and "event_time" in df_risk.columns:
+            t = df_risk[["event_time", "reason"]].copy()
+            t["symbol"] = ""
+            t["status"] = ""
+            t = t.rename(columns={"reason": "event_detail"})
+            t["event_type"] = "risk"
+            trace_parts.append(t)
+        if not df_hb.empty and "heartbeat_time" in df_hb.columns:
+            t = df_hb[["heartbeat_time", "status"]].copy()
+            t = t.rename(columns={"heartbeat_time": "event_time"})
+            t["symbol"] = ""
+            t["event_detail"] = "heartbeat"
+            t["event_type"] = "heartbeat"
+            trace_parts.append(t)
+        if not df_order_states.empty and "event_time" in df_order_states.columns:
+            t = df_order_states[["event_time", "symbol", "state", "message"]].copy()
+            t = t.rename(columns={"state": "status", "message": "event_detail"})
+            t["event_type"] = "order_state"
+            trace_parts.append(t)
+
+        if trace_parts:
+            trace_df = pd.concat(trace_parts, ignore_index=True)
+            trace_df = trace_df.sort_values("event_time", ascending=False).head(500)
+            st.subheader("Strategy Process Trace")
+            st.dataframe(trace_df, use_container_width=True)
+
+    with tab_market:
+        if not plot_market.empty:
+            colm1, colm2, colm3, colm4 = st.columns(4)
+            colm1.metric("Market Bars", f"{len(plot_market)}")
+            colm2.metric("First Price", f"{float(plot_market['close'].iloc[0]):.4f}")
+            colm3.metric("Last Price", f"{float(plot_market['close'].iloc[-1]):.4f}")
+            high_val = float(pd.to_numeric(plot_market["high"], errors="coerce").max())
+            low_val = float(pd.to_numeric(plot_market["low"], errors="coerce").min())
+            colm4.metric("Range", f"{low_val:.4f} - {high_val:.4f}")
+
+            fig_close = go.Figure()
+            fig_close.add_trace(
+                go.Scatter(
+                    x=plot_market["datetime"],
+                    y=plot_market["close"],
+                    mode="lines",
+                    name="Close",
+                )
+            )
+            fig_close.update_layout(
+                title=f"{market_symbol} Close Price ({market_timeframe})",
+                template="plotly_white",
+            )
+            st.plotly_chart(fig_close, use_container_width=True)
+
+            fig_vol = go.Figure()
+            fig_vol.add_trace(go.Bar(x=plot_market["datetime"], y=plot_market["volume"], name="Volume"))
+            fig_vol.update_layout(title="Market Volume", template="plotly_white")
+            st.plotly_chart(fig_vol, use_container_width=True)
+
+            st.subheader("Strategy Indicator View")
+            if strategy_name == "PairTradingZScoreStrategy":
+                pair_symbol_x = str(
+                    strategy_params.get("symbol_x") or (runner_symbols[0] if runner_symbols else "")
+                )
+                pair_symbol_y = str(
+                    strategy_params.get("symbol_y")
+                    or (runner_symbols[1] if len(runner_symbols) > 1 else pair_symbol_x)
+                )
+                if pair_symbol_x == pair_symbol_y or not pair_symbol_x:
+                    st.warning("Pair strategy needs two different symbols (symbol_x / symbol_y).")
+                else:
+                    pair_x_df = pd.DataFrame()
+                    pair_y_df = pd.DataFrame()
+                    if _resolve_postgres_dsn(db_path):
+                        pair_x_df = load_market_ohlcv_state(
+                            db_path,
+                            pair_symbol_x,
+                            market_timeframe,
+                            market_exchange,
+                            refresh_counter=refresh_counter,
+                            max_points=max_points,
+                        )
+                        pair_y_df = load_market_ohlcv_state(
+                            db_path,
+                            pair_symbol_y,
+                            market_timeframe,
+                            market_exchange,
+                            refresh_counter=refresh_counter,
+                            max_points=max_points,
+                        )
+
+                    pair_x_df = _apply_period_filter(pair_x_df, "datetime", period_start, period_end)
+                    pair_y_df = _apply_period_filter(pair_y_df, "datetime", period_start, period_end)
+                    pair_indicator_df = _build_pair_indicator_frame(
+                        pair_x_df, pair_y_df, strategy_params
+                    )
+                    if pair_indicator_df.empty:
+                        st.info("Not enough aligned market bars to compute pair indicators.")
+                    else:
+                        entry_z = float(strategy_params.get("entry_z", 2.0))
+                        exit_z = float(strategy_params.get("exit_z", 0.35))
+                        stop_z = float(strategy_params.get("stop_z", 3.5))
+
+                        z_series = pd.to_numeric(pair_indicator_df["zscore"], errors="coerce")
+                        hedge_series = pd.to_numeric(pair_indicator_df["hedge_ratio"], errors="coerce")
+                        corr_series = pd.to_numeric(pair_indicator_df["correlation"], errors="coerce")
+
+                        latest_z = (
+                            float(z_series.dropna().iloc[-1])
+                            if z_series.notna().any()
+                            else float("nan")
+                        )
+                        latest_beta = (
+                            float(hedge_series.dropna().iloc[-1])
+                            if hedge_series.notna().any()
+                            else float("nan")
+                        )
+                        latest_corr = (
+                            float(corr_series.dropna().iloc[-1])
+                            if corr_series.notna().any()
+                            else float("nan")
+                        )
+
+                        pm1, pm2, pm3, pm4 = st.columns(4)
+                        pm1.metric("Pair", f"{pair_symbol_x} vs {pair_symbol_y}")
+                        pm2.metric("Latest Z", f"{latest_z:.3f}" if math.isfinite(latest_z) else "N/A")
+                        pm3.metric(
+                            "Hedge Ratio", f"{latest_beta:.4f}" if math.isfinite(latest_beta) else "N/A"
+                        )
+                        pm4.metric(
+                            "Correlation", f"{latest_corr:.4f}" if math.isfinite(latest_corr) else "N/A"
+                        )
+
+                        pair_plot_df = (
+                            _downsample_frame(pair_indicator_df, downsample_target_points)
+                            if auto_downsample
+                            else pair_indicator_df
+                        )
+
+                        fig_pair_norm = go.Figure()
+                        normalized_x = pair_plot_df["close_x"] / float(pair_plot_df["close_x"].iloc[0])
+                        normalized_y = pair_plot_df["close_y"] / float(pair_plot_df["close_y"].iloc[0])
+                        fig_pair_norm.add_trace(
+                            go.Scatter(
+                                x=pair_plot_df["datetime"],
+                                y=normalized_x,
+                                mode="lines",
+                                name=f"{pair_symbol_x} (normalized)",
+                                line=dict(color="#2b6cb0", width=1.8),
+                            )
+                        )
+                        fig_pair_norm.add_trace(
+                            go.Scatter(
+                                x=pair_plot_df["datetime"],
+                                y=normalized_y,
+                                mode="lines",
+                                name=f"{pair_symbol_y} (normalized)",
+                                line=dict(color="#ed8936", width=1.8),
+                            )
+                        )
+                        fig_pair_norm.update_layout(
+                            title="Pair Price Inputs (Normalized)",
+                            xaxis_title="Date",
+                            yaxis_title="Normalized Price",
+                            template="plotly_white",
+                            hovermode="x unified",
+                        )
+                        st.plotly_chart(fig_pair_norm, use_container_width=True)
+
+                        fig_z = go.Figure()
+                        fig_z.add_trace(
+                            go.Scatter(
+                                x=pair_plot_df["datetime"],
+                                y=pair_plot_df["zscore"],
+                                mode="lines",
+                                name="Z-Score",
+                                line=dict(color="#2b6cb0", width=2),
+                            )
+                        )
+                        fig_z.add_hline(y=entry_z, line_dash="dash", line_color="#c53030")
+                        fig_z.add_hline(y=-entry_z, line_dash="dash", line_color="#c53030")
+                        fig_z.add_hline(y=exit_z, line_dash="dot", line_color="#2f855a")
+                        fig_z.add_hline(y=-exit_z, line_dash="dot", line_color="#2f855a")
+                        fig_z.add_hline(y=stop_z, line_dash="dash", line_color="#7b341e")
+                        fig_z.add_hline(y=-stop_z, line_dash="dash", line_color="#7b341e")
+                        fig_z.update_layout(
+                            title="Pair Z-Score with Entry/Exit/Stop Bands",
+                            xaxis_title="Date",
+                            yaxis_title="Z-Score",
+                            template="plotly_white",
+                            hovermode="x unified",
+                        )
+                        st.plotly_chart(fig_z, use_container_width=True)
+
+                        fig_spread = go.Figure()
+                        fig_spread.add_trace(
+                            go.Scatter(
+                                x=pair_plot_df["datetime"],
+                                y=pair_plot_df["spread"],
+                                mode="lines",
+                                name="Spread",
+                                line=dict(color="#4a5568", width=1.6),
+                            )
+                        )
+                        fig_spread.add_trace(
+                            go.Scatter(
+                                x=pair_plot_df["datetime"],
+                                y=pair_plot_df["spread_mean"],
+                                mode="lines",
+                                name="Spread Mean",
+                                line=dict(color="#2f855a", width=1.2, dash="dash"),
+                            )
+                        )
+                        fig_spread.update_layout(
+                            title="Hedge-Adjusted Spread",
+                            xaxis_title="Date",
+                            yaxis_title="Spread",
+                            template="plotly_white",
+                            hovermode="x unified",
+                        )
+                        st.plotly_chart(fig_spread, use_container_width=True)
+            else:
+                indicator_df = _build_strategy_indicator_frame(
+                    plot_market, strategy_name, strategy_params
+                )
+                if indicator_df.empty:
+                    st.info("Not enough market bars to compute strategy indicators.")
+                elif strategy_name == "RsiStrategy":
+                    rsi_period = max(2, int(strategy_params.get("rsi_period", 14)))
+                    oversold = float(strategy_params.get("oversold", 30.0))
+                    overbought = float(strategy_params.get("overbought", 70.0))
+
+                    rsi_series = pd.to_numeric(indicator_df["rsi"], errors="coerce")
+                    latest_rsi = (
+                        float(rsi_series.dropna().iloc[-1])
+                        if rsi_series.notna().any()
+                        else float("nan")
+                    )
+                    rsi_zone = "N/A"
+                    if math.isfinite(latest_rsi):
+                        if latest_rsi <= oversold:
+                            rsi_zone = "Oversold"
+                        elif latest_rsi >= overbought:
+                            rsi_zone = "Overbought"
+                        else:
+                            rsi_zone = "Neutral"
+
+                    rm1, rm2, rm3 = st.columns(3)
+                    rm1.metric("RSI Period", f"{rsi_period}")
+                    rm2.metric(
+                        "Latest RSI", f"{latest_rsi:.2f}" if math.isfinite(latest_rsi) else "N/A"
+                    )
+                    rm3.metric("RSI Zone", rsi_zone)
+
+                    fig_rsi = go.Figure()
+                    fig_rsi.add_trace(
+                        go.Scatter(
+                            x=indicator_df["datetime"],
+                            y=rsi_series,
+                            mode="lines",
+                            name="RSI",
                             line=dict(color="#2b6cb0", width=2),
                         )
                     )
-                    fig_z.add_hline(y=entry_z, line_dash="dash", line_color="#c53030")
-                    fig_z.add_hline(y=-entry_z, line_dash="dash", line_color="#c53030")
-                    fig_z.add_hline(y=exit_z, line_dash="dot", line_color="#2f855a")
-                    fig_z.add_hline(y=-exit_z, line_dash="dot", line_color="#2f855a")
-                    fig_z.add_hline(y=stop_z, line_dash="dash", line_color="#7b341e")
-                    fig_z.add_hline(y=-stop_z, line_dash="dash", line_color="#7b341e")
-                    fig_z.update_layout(
-                        title="Pair Z-Score with Entry/Exit/Stop Bands",
+                    fig_rsi.add_hline(y=oversold, line_dash="dash", line_color="#2f855a")
+                    fig_rsi.add_hline(y=overbought, line_dash="dash", line_color="#c53030")
+                    fig_rsi.update_layout(
+                        title=f"RSI ({rsi_period}) with Oversold/Overbought Bands",
                         xaxis_title="Date",
-                        yaxis_title="Z-Score",
+                        yaxis_title="RSI",
+                        yaxis=dict(range=[0, 100]),
                         template="plotly_white",
                         hovermode="x unified",
                     )
-                    st.plotly_chart(fig_z, use_container_width=True)
+                    st.plotly_chart(fig_rsi, use_container_width=True)
 
-                    fig_spread = go.Figure()
-                    fig_spread.add_trace(
+                    prev_rsi = rsi_series.shift(1)
+                    long_entries = indicator_df[(prev_rsi >= oversold) & (rsi_series < oversold)]
+                    exits = indicator_df[(prev_rsi <= overbought) & (rsi_series > overbought)]
+                    fig_rsi_signals = go.Figure()
+                    fig_rsi_signals.add_trace(
                         go.Scatter(
-                            x=pair_plot_df["datetime"],
-                            y=pair_plot_df["spread"],
+                            x=indicator_df["datetime"],
+                            y=indicator_df["close"],
                             mode="lines",
-                            name="Spread",
-                            line=dict(color="#4a5568", width=1.6),
+                            name="Close",
+                            line=dict(color="#4a5568", width=1.5),
                         )
                     )
-                    fig_spread.add_trace(
-                        go.Scatter(
-                            x=pair_plot_df["datetime"],
-                            y=pair_plot_df["spread_mean"],
-                            mode="lines",
-                            name="Spread Mean",
-                            line=dict(color="#2f855a", width=1.2, dash="dash"),
+                    if not long_entries.empty:
+                        fig_rsi_signals.add_trace(
+                            go.Scatter(
+                                x=long_entries["datetime"],
+                                y=long_entries["close"],
+                                mode="markers",
+                                name="RSI Long Trigger",
+                                marker=dict(color="#2f855a", size=8, symbol="triangle-up"),
+                            )
                         )
-                    )
-                    fig_spread.update_layout(
-                        title="Hedge-Adjusted Spread",
+                    if not exits.empty:
+                        fig_rsi_signals.add_trace(
+                            go.Scatter(
+                                x=exits["datetime"],
+                                y=exits["close"],
+                                mode="markers",
+                                name="RSI Exit Trigger",
+                                marker=dict(color="#c53030", size=8, symbol="triangle-down"),
+                            )
+                        )
+                    fig_rsi_signals.update_layout(
+                        title="Price with RSI Trigger Points",
                         xaxis_title="Date",
-                        yaxis_title="Spread",
+                        yaxis_title="Price",
                         template="plotly_white",
                         hovermode="x unified",
                     )
-                    st.plotly_chart(fig_spread, use_container_width=True)
-        else:
-            indicator_df = _build_strategy_indicator_frame(
-                plot_market, strategy_name, strategy_params
-            )
-            if indicator_df.empty:
-                st.info("Not enough market bars to compute strategy indicators.")
-            elif strategy_name == "RsiStrategy":
-                rsi_period = max(2, int(strategy_params.get("rsi_period", 14)))
-                oversold = float(strategy_params.get("oversold", 30.0))
-                overbought = float(strategy_params.get("overbought", 70.0))
+                    st.plotly_chart(fig_rsi_signals, use_container_width=True)
 
-                rsi_series = pd.to_numeric(indicator_df["rsi"], errors="coerce")
-                latest_rsi = (
-                    float(rsi_series.dropna().iloc[-1])
-                    if rsi_series.notna().any()
-                    else float("nan")
-                )
-                rsi_zone = "N/A"
-                if math.isfinite(latest_rsi):
-                    if latest_rsi <= oversold:
-                        rsi_zone = "Oversold"
-                    elif latest_rsi >= overbought:
-                        rsi_zone = "Overbought"
-                    else:
-                        rsi_zone = "Neutral"
+                elif strategy_name == "MovingAverageCrossStrategy":
+                    short_window = max(2, int(strategy_params.get("short_window", 10)))
+                    long_window = max(short_window + 1, int(strategy_params.get("long_window", 30)))
 
-                rm1, rm2, rm3 = st.columns(3)
-                rm1.metric("RSI Period", f"{rsi_period}")
-                rm2.metric(
-                    "Latest RSI", f"{latest_rsi:.2f}" if math.isfinite(latest_rsi) else "N/A"
-                )
-                rm3.metric("RSI Zone", rsi_zone)
+                    ma_frame = indicator_df.copy()
+                    short_ma = pd.to_numeric(ma_frame.get("short_ma"), errors="coerce")
+                    long_ma = pd.to_numeric(ma_frame.get("long_ma"), errors="coerce")
 
-                fig_rsi = go.Figure()
-                fig_rsi.add_trace(
-                    go.Scatter(
-                        x=indicator_df["datetime"],
-                        y=rsi_series,
-                        mode="lines",
-                        name="RSI",
-                        line=dict(color="#2b6cb0", width=2),
-                    )
-                )
-                fig_rsi.add_hline(y=oversold, line_dash="dash", line_color="#2f855a")
-                fig_rsi.add_hline(y=overbought, line_dash="dash", line_color="#c53030")
-                fig_rsi.update_layout(
-                    title=f"RSI ({rsi_period}) with Oversold/Overbought Bands",
-                    xaxis_title="Date",
-                    yaxis_title="RSI",
-                    yaxis=dict(range=[0, 100]),
-                    template="plotly_white",
-                    hovermode="x unified",
-                )
-                st.plotly_chart(fig_rsi, use_container_width=True)
+                    mm1, mm2 = st.columns(2)
+                    mm1.metric("Short Window", f"{short_window}")
+                    mm2.metric("Long Window", f"{long_window}")
 
-                prev_rsi = rsi_series.shift(1)
-                long_entries = indicator_df[(prev_rsi >= oversold) & (rsi_series < oversold)]
-                exits = indicator_df[(prev_rsi <= overbought) & (rsi_series > overbought)]
-                fig_rsi_signals = go.Figure()
-                fig_rsi_signals.add_trace(
-                    go.Scatter(
-                        x=indicator_df["datetime"],
-                        y=indicator_df["close"],
-                        mode="lines",
-                        name="Close",
-                        line=dict(color="#4a5568", width=1.5),
-                    )
-                )
-                if not long_entries.empty:
-                    fig_rsi_signals.add_trace(
-                        go.Scatter(
-                            x=long_entries["datetime"],
-                            y=long_entries["close"],
-                            mode="markers",
-                            name="RSI Long Trigger",
-                            marker=dict(color="#2f855a", size=8, symbol="triangle-up"),
-                        )
-                    )
-                if not exits.empty:
-                    fig_rsi_signals.add_trace(
-                        go.Scatter(
-                            x=exits["datetime"],
-                            y=exits["close"],
-                            mode="markers",
-                            name="RSI Exit Trigger",
-                            marker=dict(color="#c53030", size=8, symbol="triangle-down"),
-                        )
-                    )
-                fig_rsi_signals.update_layout(
-                    title="Price with RSI Trigger Points",
-                    xaxis_title="Date",
-                    yaxis_title="Price",
-                    template="plotly_white",
-                    hovermode="x unified",
-                )
-                st.plotly_chart(fig_rsi_signals, use_container_width=True)
-
-            elif strategy_name == "MovingAverageCrossStrategy":
-                short_window = max(2, int(strategy_params.get("short_window", 10)))
-                long_window = max(short_window + 1, int(strategy_params.get("long_window", 30)))
-
-                ma_frame = indicator_df.copy()
-                short_ma = pd.to_numeric(ma_frame.get("short_ma"), errors="coerce")
-                long_ma = pd.to_numeric(ma_frame.get("long_ma"), errors="coerce")
-
-                mm1, mm2 = st.columns(2)
-                mm1.metric("Short Window", f"{short_window}")
-                mm2.metric("Long Window", f"{long_window}")
-
-                fig_ma = go.Figure()
-                fig_ma.add_trace(
-                    go.Scatter(
-                        x=ma_frame["datetime"],
-                        y=ma_frame["close"],
-                        mode="lines",
-                        name="Close",
-                        line=dict(color="#4a5568", width=1.5),
-                    )
-                )
-                fig_ma.add_trace(
-                    go.Scatter(
-                        x=ma_frame["datetime"],
-                        y=short_ma,
-                        mode="lines",
-                        name=f"Short MA ({short_window})",
-                        line=dict(color="#2b6cb0", width=1.8),
-                    )
-                )
-                fig_ma.add_trace(
-                    go.Scatter(
-                        x=ma_frame["datetime"],
-                        y=long_ma,
-                        mode="lines",
-                        name=f"Long MA ({long_window})",
-                        line=dict(color="#ed8936", width=1.8),
-                    )
-                )
-
-                prev_short = short_ma.shift(1)
-                prev_long = long_ma.shift(1)
-                cross_up = ma_frame[(prev_short <= prev_long) & (short_ma > long_ma)]
-                cross_down = ma_frame[(prev_short >= prev_long) & (short_ma < long_ma)]
-                if not cross_up.empty:
+                    fig_ma = go.Figure()
                     fig_ma.add_trace(
                         go.Scatter(
-                            x=cross_up["datetime"],
-                            y=cross_up["close"],
-                            mode="markers",
-                            name="MA Long Trigger",
-                            marker=dict(color="#2f855a", size=8, symbol="triangle-up"),
+                            x=ma_frame["datetime"],
+                            y=ma_frame["close"],
+                            mode="lines",
+                            name="Close",
+                            line=dict(color="#4a5568", width=1.5),
                         )
                     )
-                if not cross_down.empty:
                     fig_ma.add_trace(
                         go.Scatter(
-                            x=cross_down["datetime"],
-                            y=cross_down["close"],
-                            mode="markers",
-                            name="MA Exit Trigger",
-                            marker=dict(color="#c53030", size=8, symbol="triangle-down"),
+                            x=ma_frame["datetime"],
+                            y=short_ma,
+                            mode="lines",
+                            name=f"Short MA ({short_window})",
+                            line=dict(color="#2b6cb0", width=1.8),
+                        )
+                    )
+                    fig_ma.add_trace(
+                        go.Scatter(
+                            x=ma_frame["datetime"],
+                            y=long_ma,
+                            mode="lines",
+                            name=f"Long MA ({long_window})",
+                            line=dict(color="#ed8936", width=1.8),
                         )
                     )
 
-                fig_ma.update_layout(
-                    title="Moving Average Strategy Inputs and Cross Triggers",
-                    xaxis_title="Date",
-                    yaxis_title="Price",
-                    template="plotly_white",
-                    hovermode="x unified",
-                )
-                st.plotly_chart(fig_ma, use_container_width=True)
-    else:
-        st.info("No market_ohlcv rows available for selected symbol/timeframe/exchange.")
+                    prev_short = short_ma.shift(1)
+                    prev_long = long_ma.shift(1)
+                    cross_up = ma_frame[(prev_short <= prev_long) & (short_ma > long_ma)]
+                    cross_down = ma_frame[(prev_short >= prev_long) & (short_ma < long_ma)]
+                    if not cross_up.empty:
+                        fig_ma.add_trace(
+                            go.Scatter(
+                                x=cross_up["datetime"],
+                                y=cross_up["close"],
+                                mode="markers",
+                                name="MA Long Trigger",
+                                marker=dict(color="#2f855a", size=8, symbol="triangle-up"),
+                            )
+                        )
+                    if not cross_down.empty:
+                        fig_ma.add_trace(
+                            go.Scatter(
+                                x=cross_down["datetime"],
+                                y=cross_down["close"],
+                                mode="markers",
+                                name="MA Exit Trigger",
+                                marker=dict(color="#c53030", size=8, symbol="triangle-down"),
+                            )
+                        )
 
-with tab_opt:
-    st.subheader("Optimization Results")
-    if df_optimize.empty:
-        st.info("No optimization_results rows found in Postgres yet.")
-    else:
-        opt_run_ids = sorted(df_optimize["run_id"].dropna().astype(str).unique().tolist())
-        opt_stages = sorted(df_optimize["stage"].dropna().astype(str).unique().tolist())
-
-        opt_col_1, opt_col_2 = st.columns(2)
-        selected_opt_run = opt_col_1.selectbox(
-            "Optimization Run ID",
-            ["All", *opt_run_ids],
-            key="opt_run_id_filter",
-        )
-        selected_opt_stage = opt_col_2.selectbox(
-            "Optimization Stage",
-            ["All", *opt_stages],
-            key="opt_stage_filter",
-        )
-
-        opt_filtered = df_optimize.copy()
-        if selected_opt_run != "All":
-            opt_filtered = opt_filtered[opt_filtered["run_id"].astype(str) == selected_opt_run]
-        if selected_opt_stage != "All":
-            opt_filtered = opt_filtered[opt_filtered["stage"].astype(str) == selected_opt_stage]
-
-        if opt_filtered.empty:
-            st.warning("No rows matched the optimization filters.")
-        else:
-            sharpe_series = pd.to_numeric(opt_filtered["sharpe"], errors="coerce")
-            robust_series = pd.to_numeric(opt_filtered["robustness_score"], errors="coerce")
-            train_series = pd.to_numeric(opt_filtered["train_sharpe"], errors="coerce")
-            top_idx = sharpe_series.idxmax() if sharpe_series.notna().any() else None
-            top_row = opt_filtered.loc[top_idx] if top_idx is not None else None
-
-            optm1, optm2, optm3, optm4 = st.columns(4)
-            optm1.metric("Rows", f"{len(opt_filtered)}")
-            optm2.metric(
-                "Best Sharpe",
-                f"{float(sharpe_series.max()):.4f}" if sharpe_series.notna().any() else "N/A",
-            )
-            optm3.metric(
-                "Median Sharpe",
-                f"{float(sharpe_series.median()):.4f}" if sharpe_series.notna().any() else "N/A",
-            )
-            optm4.metric(
-                "Median Robustness",
-                f"{float(robust_series.median()):.4f}" if robust_series.notna().any() else "N/A",
-            )
-
-            if sharpe_series.notna().any() and train_series.notna().any():
-                fig_opt_scatter = go.Figure()
-                fig_opt_scatter.add_trace(
-                    go.Scatter(
-                        x=train_series,
-                        y=sharpe_series,
-                        mode="markers",
-                        marker=dict(size=8, color="#2b6cb0", opacity=0.8),
-                        text=opt_filtered["stage"].astype(str),
-                        hovertemplate=(
-                            "Stage: %{text}<br>"
-                            "Train Sharpe: %{x:.4f}<br>"
-                            "Current Sharpe: %{y:.4f}<extra></extra>"
-                        ),
-                        name="Candidates",
+                    fig_ma.update_layout(
+                        title="Moving Average Strategy Inputs and Cross Triggers",
+                        xaxis_title="Date",
+                        yaxis_title="Price",
+                        template="plotly_white",
+                        hovermode="x unified",
                     )
-                )
-                fig_opt_scatter.update_layout(
-                    title="Optimization Candidate Quality",
-                    xaxis_title="Train Sharpe",
-                    yaxis_title="Sharpe",
-                    template="plotly_white",
-                )
-                st.plotly_chart(fig_opt_scatter, use_container_width=True)
+                    st.plotly_chart(fig_ma, use_container_width=True)
+        else:
+            st.info("No market_ohlcv rows available for selected symbol/timeframe/exchange.")
 
-            table_cols = [
-                "created_at",
-                "run_id",
-                "stage",
-                "sharpe",
-                "train_sharpe",
-                "robustness_score",
-                "cagr",
-                "mdd",
-            ]
-            if "params" in opt_filtered.columns:
-                opt_filtered = opt_filtered.copy()
-                opt_filtered["params_view"] = opt_filtered["params"].apply(
-                    lambda v: json.dumps(v, ensure_ascii=False)
-                )
-                table_cols.append("params_view")
-            st.dataframe(
-                opt_filtered[table_cols].sort_values("created_at", ascending=False).head(500),
-                use_container_width=True,
+    with tab_opt:
+        st.subheader("Optimization Results")
+        if df_optimize.empty:
+            st.info("No optimization_results rows found in Postgres yet.")
+        else:
+            opt_run_ids = sorted(df_optimize["run_id"].dropna().astype(str).unique().tolist())
+            opt_stages = sorted(df_optimize["stage"].dropna().astype(str).unique().tolist())
+
+            opt_col_1, opt_col_2 = st.columns(2)
+            selected_opt_run = opt_col_1.selectbox(
+                "Optimization Run ID",
+                ["All", *opt_run_ids],
+                key="opt_run_id_filter",
+            )
+            selected_opt_stage = opt_col_2.selectbox(
+                "Optimization Stage",
+                ["All", *opt_stages],
+                key="opt_stage_filter",
             )
 
-            if top_row is not None:
-                st.caption("Best row by Sharpe")
-                st.json(
-                    {
-                        "run_id": top_row.get("run_id"),
-                        "stage": top_row.get("stage"),
-                        "sharpe": float(top_row.get("sharpe", 0.0)),
-                        "params": top_row.get("params", {}),
-                        "extra": top_row.get("extra", {}),
-                    }
+            opt_filtered = df_optimize.copy()
+            if selected_opt_run != "All":
+                opt_filtered = opt_filtered[opt_filtered["run_id"].astype(str) == selected_opt_run]
+            if selected_opt_stage != "All":
+                opt_filtered = opt_filtered[opt_filtered["stage"].astype(str) == selected_opt_stage]
+
+            if opt_filtered.empty:
+                st.warning("No rows matched the optimization filters.")
+            else:
+                sharpe_series = pd.to_numeric(opt_filtered["sharpe"], errors="coerce")
+                robust_series = pd.to_numeric(opt_filtered["robustness_score"], errors="coerce")
+                train_series = pd.to_numeric(opt_filtered["train_sharpe"], errors="coerce")
+                top_idx = sharpe_series.idxmax() if sharpe_series.notna().any() else None
+                top_row = opt_filtered.loc[top_idx] if top_idx is not None else None
+
+                optm1, optm2, optm3, optm4 = st.columns(4)
+                optm1.metric("Rows", f"{len(opt_filtered)}")
+                optm2.metric(
+                    "Best Sharpe",
+                    f"{float(sharpe_series.max()):.4f}" if sharpe_series.notna().any() else "N/A",
+                )
+                optm3.metric(
+                    "Median Sharpe",
+                    f"{float(sharpe_series.median()):.4f}" if sharpe_series.notna().any() else "N/A",
+                )
+                optm4.metric(
+                    "Median Robustness",
+                    f"{float(robust_series.median()):.4f}" if robust_series.notna().any() else "N/A",
                 )
 
-with tab_report:
-    st.subheader("No-Code Workflow Control")
-    st.caption(
-        f"Runner overrides -> initial_equity={runner_initial_capital:.2f}, "
-        f"leverage={runner_leverage}, timeframe={runner_timeframe}, symbols={runner_symbols}"
-    )
-    if opt_space_error:
-        st.error(opt_space_error)
+                if sharpe_series.notna().any() and train_series.notna().any():
+                    fig_opt_scatter = go.Figure()
+                    fig_opt_scatter.add_trace(
+                        go.Scatter(
+                            x=train_series,
+                            y=sharpe_series,
+                            mode="markers",
+                            marker=dict(size=8, color="#2b6cb0", opacity=0.8),
+                            text=opt_filtered["stage"].astype(str),
+                            hovertemplate=(
+                                "Stage: %{text}<br>"
+                                "Train Sharpe: %{x:.4f}<br>"
+                                "Current Sharpe: %{y:.4f}<extra></extra>"
+                            ),
+                            name="Candidates",
+                        )
+                    )
+                    fig_opt_scatter.update_layout(
+                        title="Optimization Candidate Quality",
+                        xaxis_title="Train Sharpe",
+                        yaxis_title="Sharpe",
+                        template="plotly_white",
+                    )
+                    st.plotly_chart(fig_opt_scatter, use_container_width=True)
 
-    workflow_jobs = load_workflow_jobs(db_path, refresh_counter=refresh_counter)
-    active_live_jobs = pd.DataFrame()
-    if not workflow_jobs.empty:
-        active_live_jobs = workflow_jobs[
-            (workflow_jobs["workflow"].isin(["live", "live_ws"]))
-            & (workflow_jobs["status"].isin(["RUNNING", "STOP_REQUESTED"]))
-        ]
-    if not active_live_jobs.empty:
-        st.warning(
-            f"{len(active_live_jobs)} live job(s) already active. "
-            "Stop existing live jobs before launching a new one."
-        )
-
-    live_col_1, live_col_2, live_col_3 = st.columns(3)
-    live_runner_kind = live_col_1.selectbox(
-        "Live Runner",
-        ["Polling (run_live.py)", "WebSocket (run_live_ws.py)"],
-        key="live_runner_kind",
-    )
-    live_mode = live_col_2.selectbox("Live Mode", ["paper", "real"], key="live_mode")
-    live_strategy_index = (
-        strategy_options.index(strategy_name) if strategy_name in strategy_options else 0
-    )
-    live_strategy_name = live_col_3.selectbox(
-        "Live Strategy",
-        strategy_options,
-        index=live_strategy_index,
-        key="live_strategy_name",
-    )
-
-    live_real_armed = True
-    if live_mode == "real":
-        st.warning(
-            "Real mode sends live exchange orders. Use only after paper/soak validation is complete."
-        )
-        arm_col_1, arm_col_2 = st.columns(2)
-        arm_ack_1 = arm_col_1.checkbox(
-            "I understand this can place real orders.",
-            key="arm_ack_1",
-        )
-        arm_ack_2 = arm_col_2.checkbox(
-            "I confirmed API keys/account/margin settings.",
-            key="arm_ack_2",
-        )
-        arm_phrase = st.text_input("Type ENABLE REAL to arm", key="arm_phrase")
-        live_real_armed = arm_ack_1 and arm_ack_2 and arm_phrase.strip().upper() == "ENABLE REAL"
-        if not live_real_armed:
-            st.info("Real mode is locked until all arm checks are completed.")
-
-    run_col_1, run_col_2, run_col_3 = st.columns(3)
-    with run_col_1:
-        if st.button("Start Backtest Job", type="primary", use_container_width=True):
-            params_path = _save_strategy_params(strategy_name, strategy_params)
-            backtest_run_id = str(uuid.uuid4())
-            backtest_args = [
-                "--data-source",
-                runner_data_source,
-                "--market-db-path",
-                market_db_path,
-                "--market-exchange",
-                market_exchange,
-                "--run-id",
-                backtest_run_id,
-            ]
-            job_id = _launch_managed_job(
-                db_path=db_path,
-                workflow="backtest",
-                script_name="run_backtest.py",
-                script_args=backtest_args,
-                env_overrides=runner_env_overrides,
-                requested_mode="backtest",
-                strategy=strategy_name,
-                run_id=backtest_run_id,
-                metadata={"strategy_params_path": params_path},
-            )
-            st.success(f"Backtest job launched: {job_id}")
-            st.cache_data.clear()
-
-    with run_col_2:
-        if st.button("Start Optimization Job", use_container_width=True):
-            optimize_run_id = str(uuid.uuid4())
-            optimize_args = [
-                "--folds",
-                str(int(optimize_folds)),
-                "--n-trials",
-                str(int(optimize_trials)),
-                "--max-workers",
-                str(int(optimize_workers)),
-                "--data-source",
-                runner_data_source,
-                "--market-db-path",
-                market_db_path,
-                "--market-exchange",
-                market_exchange,
-                "--run-id",
-                optimize_run_id,
-            ]
-            if persist_best_params:
-                optimize_args.append("--save-best-params")
-            job_id = _launch_managed_job(
-                db_path=db_path,
-                workflow="optimize",
-                script_name="optimize.py",
-                script_args=optimize_args,
-                env_overrides=runner_env_overrides,
-                requested_mode="optimize",
-                strategy=strategy_name,
-                run_id=optimize_run_id,
-                metadata={
-                    "folds": int(optimize_folds),
-                    "n_trials": int(optimize_trials),
-                    "max_workers": int(optimize_workers),
-                },
-            )
-            st.success(f"Optimization job launched: {job_id}")
-            st.cache_data.clear()
-
-    with run_col_3:
-        start_live_disabled = (
-            live_mode == "real" and not live_real_armed
-        ) or not active_live_jobs.empty
-        if st.button("Start Live Job", use_container_width=True, disabled=start_live_disabled):
-            live_run_id = str(uuid.uuid4())
-            stop_file = _build_stop_file_path(live_run_id)
-            live_script = "run_live.py"
-            live_workflow = "live"
-            if "WebSocket" in live_runner_kind:
-                live_script = "run_live_ws.py"
-                live_workflow = "live_ws"
-
-            live_args = [
-                "--strategy",
-                live_strategy_name,
-                "--run-id",
-                live_run_id,
-                "--stop-file",
-                stop_file,
-            ]
-            live_env = dict(runner_env_overrides)
-            live_env["LQ__LIVE__MODE"] = str(live_mode)
-            live_env["LQ__LIVE__EXCHANGE__NAME"] = str(market_exchange).lower()
-            live_env["LQ__LIVE__EXCHANGE__LEVERAGE"] = str(int(runner_leverage))
-            if live_mode == "real":
-                live_args.append("--enable-live-real")
-                live_env["LUMINA_ENABLE_LIVE_REAL"] = "true"
-
-            job_id = _launch_managed_job(
-                db_path=db_path,
-                workflow=live_workflow,
-                script_name=live_script,
-                script_args=live_args,
-                env_overrides=live_env,
-                requested_mode=live_mode,
-                strategy=live_strategy_name,
-                run_id=live_run_id,
-                stop_file=stop_file,
-                metadata={"runner_kind": live_runner_kind},
-            )
-            st.success(f"Live job launched: {job_id}")
-            st.cache_data.clear()
-
-    st.subheader("Workflow Jobs")
-    workflow_jobs = load_workflow_jobs(db_path, refresh_counter=refresh_counter)
-    if workflow_jobs.empty:
-        st.info("No workflow jobs recorded yet.")
-    else:
-        jobs_view = workflow_jobs.copy()
-        jobs_view["command"] = jobs_view["command_json"].fillna("").astype(str).str.slice(0, 120)
-        st.dataframe(
-            jobs_view[
-                [
-                    "started_at",
-                    "workflow",
-                    "status",
-                    "requested_mode",
-                    "strategy",
-                    "pid",
+                table_cols = [
+                    "created_at",
                     "run_id",
-                    "exit_code",
-                    "command",
+                    "stage",
+                    "sharpe",
+                    "train_sharpe",
+                    "robustness_score",
+                    "cagr",
+                    "mdd",
                 ]
-            ],
-            use_container_width=True,
-        )
-
-        active_jobs = workflow_jobs[
-            workflow_jobs["status"].isin(["RUNNING", "STOP_REQUESTED"])
-        ].copy()
-        if not active_jobs.empty:
-            ctrl_job_id = st.selectbox(
-                "Control Active Job",
-                active_jobs["job_id"].astype(str).tolist(),
-                key="control_active_job_id",
-            )
-            ctrl_row = active_jobs[active_jobs["job_id"].astype(str) == str(ctrl_job_id)].iloc[0]
-            ctrl_col_1, ctrl_col_2 = st.columns(2)
-            can_stop = (
-                bool(ctrl_row.get("stop_file")) and ctrl_row.get("status") != "STOP_REQUESTED"
-            )
-            if ctrl_col_1.button(
-                "Request Graceful Stop",
-                use_container_width=True,
-                disabled=not can_stop,
-                key=f"request_stop_{ctrl_job_id}",
-            ):
-                if _request_job_stop(db_path, str(ctrl_row.get("stop_file") or "")):
-                    _update_workflow_job_row(db_path, ctrl_job_id, status="STOP_REQUESTED")
-                    st.success(f"Stop requested for {ctrl_job_id}")
-                    st.cache_data.clear()
-                else:
-                    st.error("This job does not expose a graceful stop file.")
-
-            if ctrl_col_2.button(
-                "Force Kill Process",
-                use_container_width=True,
-                key=f"force_kill_{ctrl_job_id}",
-            ):
-                ok, detail = _terminate_process(ctrl_row.get("pid"))
-                if ok:
-                    _update_workflow_job_row(
-                        db_path,
-                        ctrl_job_id,
-                        status="KILLED",
-                        ended_at=_utc_now_iso(),
-                        exit_code=-9,
+                if "params" in opt_filtered.columns:
+                    opt_filtered = opt_filtered.copy()
+                    opt_filtered["params_view"] = opt_filtered["params"].apply(
+                        lambda v: json.dumps(v, ensure_ascii=False)
                     )
-                    if "workflow_processes" in st.session_state:
-                        st.session_state["workflow_processes"].pop(ctrl_job_id, None)
-                    st.success(f"Killed {ctrl_job_id}")
-                    st.cache_data.clear()
-                else:
-                    st.error(f"Kill failed: {detail}")
+                    table_cols.append("params_view")
+                st.dataframe(
+                    opt_filtered[table_cols].sort_values("created_at", ascending=False).head(500),
+                    use_container_width=True,
+                )
 
-        log_job_id = st.selectbox(
-            "Job Log Viewer",
-            workflow_jobs["job_id"].astype(str).tolist(),
-            key="workflow_log_viewer_job",
+                if top_row is not None:
+                    st.caption("Best row by Sharpe")
+                    st.json(
+                        {
+                            "run_id": top_row.get("run_id"),
+                            "stage": top_row.get("stage"),
+                            "sharpe": float(top_row.get("sharpe", 0.0)),
+                            "params": top_row.get("params", {}),
+                            "extra": top_row.get("extra", {}),
+                        }
+                    )
+
+    with tab_report:
+        st.subheader("No-Code Workflow Control")
+        st.caption(
+            f"Runner overrides -> initial_equity={runner_initial_capital:.2f}, "
+            f"leverage={runner_leverage}, timeframe={runner_timeframe}, symbols={runner_symbols}"
         )
-        log_row = workflow_jobs[workflow_jobs["job_id"].astype(str) == str(log_job_id)].iloc[0]
-        st.caption(f"Log path: {log_row.get('log_path')}")
-        st.text_area(
-            "Job Log Tail",
-            value=_tail_text_file(str(log_row.get("log_path") or ""), max_chars=25000),
-            height=260,
-            key="workflow_log_tail_view",
-        )
+        if opt_space_error:
+            st.error(opt_space_error)
 
-    st.subheader("Ghost Cleanup")
-    st.caption(
-        "Close stale RUNNING runs and reconcile orphan workflow_jobs. "
-        "Use dry-run first, then apply."
-    )
-    cleanup_col_1, cleanup_col_2, cleanup_col_3, cleanup_col_4 = st.columns(4)
-    cleanup_stale_sec = cleanup_col_1.number_input(
-        "Stale Sec",
-        min_value=60,
-        max_value=86400,
-        value=max(300, int(run_stale_sec)),
-        step=30,
-        key="ghost_cleanup_stale_sec",
-    )
-    cleanup_startup_grace_sec = cleanup_col_2.number_input(
-        "Startup Grace Sec",
-        min_value=30,
-        max_value=7200,
-        value=90,
-        step=30,
-        key="ghost_cleanup_startup_grace_sec",
-    )
-    cleanup_close_status = cleanup_col_3.selectbox(
-        "Close Status",
-        ["STOPPED", "FAILED"],
-        index=0,
-        key="ghost_cleanup_close_status",
-    )
-    cleanup_force_kill_age = cleanup_col_4.number_input(
-        "Force Kill STOP_REQUESTED Age Sec",
-        min_value=0,
-        max_value=86400,
-        value=0,
-        step=30,
-        key="ghost_cleanup_force_kill_age",
-    )
-
-    cleanup_btn_col_1, cleanup_btn_col_2 = st.columns(2)
-    if cleanup_btn_col_1.button("Ghost Cleanup Dry-Run", use_container_width=True):
-        cleanup_result = _run_ghost_cleanup_script(
-            dsn=db_path,
-            stale_sec=cleanup_stale_sec,
-            startup_grace_sec=cleanup_startup_grace_sec,
-            close_status=cleanup_close_status,
-            force_kill_stop_requested_after_sec=cleanup_force_kill_age,
-            apply_changes=False,
-        )
-        cleanup_result["mode"] = "dry_run"
-        st.session_state["ghost_cleanup_last_result"] = cleanup_result
-
-    if cleanup_btn_col_2.button("Ghost Cleanup Apply", use_container_width=True):
-        cleanup_result = _run_ghost_cleanup_script(
-            dsn=db_path,
-            stale_sec=cleanup_stale_sec,
-            startup_grace_sec=cleanup_startup_grace_sec,
-            close_status=cleanup_close_status,
-            force_kill_stop_requested_after_sec=cleanup_force_kill_age,
-            apply_changes=True,
-        )
-        cleanup_result["mode"] = "apply"
-        st.session_state["ghost_cleanup_last_result"] = cleanup_result
-        st.cache_data.clear()
-
-    cleanup_result = st.session_state.get("ghost_cleanup_last_result")
-    if cleanup_result:
-        if cleanup_result.get("ok"):
-            st.success(
-                f"Ghost cleanup {cleanup_result.get('mode', 'run')} completed in "
-                f"{cleanup_result.get('elapsed_sec', 0.0):.2f}s"
+        workflow_jobs = load_workflow_jobs(db_path, refresh_counter=refresh_counter)
+        active_live_jobs = pd.DataFrame()
+        if not workflow_jobs.empty:
+            active_live_jobs = workflow_jobs[
+                (workflow_jobs["workflow"].isin(["live", "live_ws"]))
+                & (workflow_jobs["status"].isin(["RUNNING", "STOP_REQUESTED"]))
+            ]
+        if not active_live_jobs.empty:
+            st.warning(
+                f"{len(active_live_jobs)} live job(s) already active. "
+                "Stop existing live jobs before launching a new one."
             )
+
+        live_col_1, live_col_2, live_col_3 = st.columns(3)
+        live_runner_kind = live_col_1.selectbox(
+            "Live Runner",
+            ["Polling (run_live.py)", "WebSocket (run_live_ws.py)"],
+            key="live_runner_kind",
+        )
+        live_mode = live_col_2.selectbox("Live Mode", ["paper", "real"], key="live_mode")
+        live_strategy_index = (
+            strategy_options.index(strategy_name) if strategy_name in strategy_options else 0
+        )
+        live_strategy_name = live_col_3.selectbox(
+            "Live Strategy",
+            strategy_options,
+            index=live_strategy_index,
+            key="live_strategy_name",
+        )
+
+        live_real_armed = True
+        if live_mode == "real":
+            st.warning(
+                "Real mode sends live exchange orders. Use only after paper/soak validation is complete."
+            )
+            arm_col_1, arm_col_2 = st.columns(2)
+            arm_ack_1 = arm_col_1.checkbox(
+                "I understand this can place real orders.",
+                key="arm_ack_1",
+            )
+            arm_ack_2 = arm_col_2.checkbox(
+                "I confirmed API keys/account/margin settings.",
+                key="arm_ack_2",
+            )
+            arm_phrase = st.text_input("Type ENABLE REAL to arm", key="arm_phrase")
+            live_real_armed = arm_ack_1 and arm_ack_2 and arm_phrase.strip().upper() == "ENABLE REAL"
+            if not live_real_armed:
+                st.info("Real mode is locked until all arm checks are completed.")
+
+        run_col_1, run_col_2, run_col_3 = st.columns(3)
+        with run_col_1:
+            if st.button("Start Backtest Job", type="primary", use_container_width=True):
+                params_path = _save_strategy_params(strategy_name, strategy_params)
+                backtest_run_id = str(uuid.uuid4())
+                backtest_args = [
+                    "--data-source",
+                    runner_data_source,
+                    "--market-db-path",
+                    market_db_path,
+                    "--market-exchange",
+                    market_exchange,
+                    "--run-id",
+                    backtest_run_id,
+                ]
+                job_id = _launch_managed_job(
+                    db_path=db_path,
+                    workflow="backtest",
+                    script_name="run_backtest.py",
+                    script_args=backtest_args,
+                    env_overrides=runner_env_overrides,
+                    requested_mode="backtest",
+                    strategy=strategy_name,
+                    run_id=backtest_run_id,
+                    metadata={"strategy_params_path": params_path},
+                )
+                st.success(f"Backtest job launched: {job_id}")
+                st.cache_data.clear()
+
+        with run_col_2:
+            if st.button("Start Optimization Job", use_container_width=True):
+                optimize_run_id = str(uuid.uuid4())
+                optimize_args = [
+                    "--folds",
+                    str(int(optimize_folds)),
+                    "--n-trials",
+                    str(int(optimize_trials)),
+                    "--max-workers",
+                    str(int(optimize_workers)),
+                    "--data-source",
+                    runner_data_source,
+                    "--market-db-path",
+                    market_db_path,
+                    "--market-exchange",
+                    market_exchange,
+                    "--run-id",
+                    optimize_run_id,
+                ]
+                if persist_best_params:
+                    optimize_args.append("--save-best-params")
+                job_id = _launch_managed_job(
+                    db_path=db_path,
+                    workflow="optimize",
+                    script_name="optimize.py",
+                    script_args=optimize_args,
+                    env_overrides=runner_env_overrides,
+                    requested_mode="optimize",
+                    strategy=strategy_name,
+                    run_id=optimize_run_id,
+                    metadata={
+                        "folds": int(optimize_folds),
+                        "n_trials": int(optimize_trials),
+                        "max_workers": int(optimize_workers),
+                    },
+                )
+                st.success(f"Optimization job launched: {job_id}")
+                st.cache_data.clear()
+
+        with run_col_3:
+            start_live_disabled = (
+                live_mode == "real" and not live_real_armed
+            ) or not active_live_jobs.empty
+            if st.button("Start Live Job", use_container_width=True, disabled=start_live_disabled):
+                live_run_id = str(uuid.uuid4())
+                stop_file = _build_stop_file_path(live_run_id)
+                live_script = "run_live.py"
+                live_workflow = "live"
+                if "WebSocket" in live_runner_kind:
+                    live_script = "run_live_ws.py"
+                    live_workflow = "live_ws"
+
+                live_args = [
+                    "--strategy",
+                    live_strategy_name,
+                    "--run-id",
+                    live_run_id,
+                    "--stop-file",
+                    stop_file,
+                ]
+                live_env = dict(runner_env_overrides)
+                live_env["LQ__LIVE__MODE"] = str(live_mode)
+                live_env["LQ__LIVE__EXCHANGE__NAME"] = str(market_exchange).lower()
+                live_env["LQ__LIVE__EXCHANGE__LEVERAGE"] = str(int(runner_leverage))
+                if live_mode == "real":
+                    live_args.append("--enable-live-real")
+                    live_env["LUMINA_ENABLE_LIVE_REAL"] = "true"
+
+                job_id = _launch_managed_job(
+                    db_path=db_path,
+                    workflow=live_workflow,
+                    script_name=live_script,
+                    script_args=live_args,
+                    env_overrides=live_env,
+                    requested_mode=live_mode,
+                    strategy=live_strategy_name,
+                    run_id=live_run_id,
+                    stop_file=stop_file,
+                    metadata={"runner_kind": live_runner_kind},
+                )
+                st.success(f"Live job launched: {job_id}")
+                st.cache_data.clear()
+
+        st.subheader("Workflow Jobs")
+        workflow_jobs = load_workflow_jobs(db_path, refresh_counter=refresh_counter)
+        if workflow_jobs.empty:
+            st.info("No workflow jobs recorded yet.")
         else:
-            st.error(f"Ghost cleanup failed (returncode={cleanup_result.get('returncode')})")
-        st.caption(f"Command: {' '.join(cleanup_result.get('command', []))}")
-        if cleanup_result.get("payload") is not None:
-            st.json(cleanup_result["payload"])
-        st.text_area(
-            "Ghost Cleanup Output",
-            value=cleanup_result.get("output", ""),
-            height=240,
-            key="ghost_cleanup_output_view",
+            jobs_view = workflow_jobs.copy()
+            jobs_view["command"] = jobs_view["command_json"].fillna("").astype(str).str.slice(0, 120)
+            st.dataframe(
+                jobs_view[
+                    [
+                        "started_at",
+                        "workflow",
+                        "status",
+                        "requested_mode",
+                        "strategy",
+                        "pid",
+                        "run_id",
+                        "exit_code",
+                        "command",
+                    ]
+                ],
+                use_container_width=True,
+            )
+
+            active_jobs = workflow_jobs[
+                workflow_jobs["status"].isin(["RUNNING", "STOP_REQUESTED"])
+            ].copy()
+            if not active_jobs.empty:
+                ctrl_job_id = st.selectbox(
+                    "Control Active Job",
+                    active_jobs["job_id"].astype(str).tolist(),
+                    key="control_active_job_id",
+                )
+                ctrl_row = active_jobs[active_jobs["job_id"].astype(str) == str(ctrl_job_id)].iloc[0]
+                ctrl_col_1, ctrl_col_2 = st.columns(2)
+                can_stop = (
+                    bool(ctrl_row.get("stop_file")) and ctrl_row.get("status") != "STOP_REQUESTED"
+                )
+                if ctrl_col_1.button(
+                    "Request Graceful Stop",
+                    use_container_width=True,
+                    disabled=not can_stop,
+                    key=f"request_stop_{ctrl_job_id}",
+                ):
+                    if _request_job_stop(db_path, str(ctrl_row.get("stop_file") or "")):
+                        _update_workflow_job_row(db_path, ctrl_job_id, status="STOP_REQUESTED")
+                        st.success(f"Stop requested for {ctrl_job_id}")
+                        st.cache_data.clear()
+                    else:
+                        st.error("This job does not expose a graceful stop file.")
+
+                if ctrl_col_2.button(
+                    "Force Kill Process",
+                    use_container_width=True,
+                    key=f"force_kill_{ctrl_job_id}",
+                ):
+                    ok, detail = _terminate_process(ctrl_row.get("pid"))
+                    if ok:
+                        _update_workflow_job_row(
+                            db_path,
+                            ctrl_job_id,
+                            status="KILLED",
+                            ended_at=_utc_now_iso(),
+                            exit_code=-9,
+                        )
+                        if "workflow_processes" in st.session_state:
+                            st.session_state["workflow_processes"].pop(ctrl_job_id, None)
+                        st.success(f"Killed {ctrl_job_id}")
+                        st.cache_data.clear()
+                    else:
+                        st.error(f"Kill failed: {detail}")
+
+            log_job_id = st.selectbox(
+                "Job Log Viewer",
+                workflow_jobs["job_id"].astype(str).tolist(),
+                key="workflow_log_viewer_job",
+            )
+            log_row = workflow_jobs[workflow_jobs["job_id"].astype(str) == str(log_job_id)].iloc[0]
+            st.caption(f"Log path: {log_row.get('log_path')}")
+            st.text_area(
+                "Job Log Tail",
+                value=_tail_text_file(str(log_row.get("log_path") or ""), max_chars=25000),
+                height=260,
+                key="workflow_log_tail_view",
+            )
+
+        st.subheader("Ghost Cleanup")
+        st.caption(
+            "Close stale RUNNING runs and reconcile orphan workflow_jobs. "
+            "Use dry-run first, then apply."
+        )
+        cleanup_col_1, cleanup_col_2, cleanup_col_3, cleanup_col_4 = st.columns(4)
+        cleanup_stale_sec = cleanup_col_1.number_input(
+            "Stale Sec",
+            min_value=60,
+            max_value=86400,
+            value=max(300, int(run_stale_sec)),
+            step=30,
+            key="ghost_cleanup_stale_sec",
+        )
+        cleanup_startup_grace_sec = cleanup_col_2.number_input(
+            "Startup Grace Sec",
+            min_value=30,
+            max_value=7200,
+            value=90,
+            step=30,
+            key="ghost_cleanup_startup_grace_sec",
+        )
+        cleanup_close_status = cleanup_col_3.selectbox(
+            "Close Status",
+            ["STOPPED", "FAILED"],
+            index=0,
+            key="ghost_cleanup_close_status",
+        )
+        cleanup_force_kill_age = cleanup_col_4.number_input(
+            "Force Kill STOP_REQUESTED Age Sec",
+            min_value=0,
+            max_value=86400,
+            value=0,
+            step=30,
+            key="ghost_cleanup_force_kill_age",
         )
 
-    payload = build_report_payload(
-        summary,
-        performance,
-        active_run_id,
-        resolved_source,
-        strategy_name,
-        period_preset,
-        df_equity,
-        trade_analytics,
-        df_risk,
-        df_hb,
-        runtime_overrides={
-            "initial_capital": float(runner_initial_capital),
-            "backtest_leverage": int(runner_leverage),
-            "symbols": runner_symbols,
-            "timeframe": runner_timeframe,
-            "runner_data_source": runner_data_source,
-            "runner_timeout_sec": int(runner_timeout_sec),
-        },
-        strategy_params=strategy_params,
-        mirror_snapshot=mirror_snapshot,
-        balance_equity_series=_serialize_balance_equity_frame(mirror_balance_equity, limit=1500),
-    )
+        cleanup_btn_col_1, cleanup_btn_col_2 = st.columns(2)
+        if cleanup_btn_col_1.button("Ghost Cleanup Dry-Run", use_container_width=True):
+            cleanup_result = _run_ghost_cleanup_script(
+                dsn=db_path,
+                stale_sec=cleanup_stale_sec,
+                startup_grace_sec=cleanup_startup_grace_sec,
+                close_status=cleanup_close_status,
+                force_kill_stop_requested_after_sec=cleanup_force_kill_age,
+                apply_changes=False,
+            )
+            cleanup_result["mode"] = "dry_run"
+            st.session_state["ghost_cleanup_last_result"] = cleanup_result
 
-    if st.button("Generate Snapshot Report", type="primary"):
-        json_path, md_path, markdown = save_report_snapshot(payload)
-        st.success(f"Report saved: {json_path} | {md_path}")
-        st.download_button(
-            label="Download Markdown Report",
-            data=markdown,
-            file_name=os.path.basename(md_path),
-            mime="text/markdown",
+        if cleanup_btn_col_2.button("Ghost Cleanup Apply", use_container_width=True):
+            cleanup_result = _run_ghost_cleanup_script(
+                dsn=db_path,
+                stale_sec=cleanup_stale_sec,
+                startup_grace_sec=cleanup_startup_grace_sec,
+                close_status=cleanup_close_status,
+                force_kill_stop_requested_after_sec=cleanup_force_kill_age,
+                apply_changes=True,
+            )
+            cleanup_result["mode"] = "apply"
+            st.session_state["ghost_cleanup_last_result"] = cleanup_result
+            st.cache_data.clear()
+
+        cleanup_result = st.session_state.get("ghost_cleanup_last_result")
+        if cleanup_result:
+            if cleanup_result.get("ok"):
+                st.success(
+                    f"Ghost cleanup {cleanup_result.get('mode', 'run')} completed in "
+                    f"{cleanup_result.get('elapsed_sec', 0.0):.2f}s"
+                )
+            else:
+                st.error(f"Ghost cleanup failed (returncode={cleanup_result.get('returncode')})")
+            st.caption(f"Command: {' '.join(cleanup_result.get('command', []))}")
+            if cleanup_result.get("payload") is not None:
+                st.json(cleanup_result["payload"])
+            st.text_area(
+                "Ghost Cleanup Output",
+                value=cleanup_result.get("output", ""),
+                height=240,
+                key="ghost_cleanup_output_view",
+            )
+
+        payload = build_report_payload(
+            summary,
+            performance,
+            active_run_id,
+            resolved_source,
+            strategy_name,
+            period_preset,
+            df_equity,
+            trade_analytics,
+            df_risk,
+            df_hb,
+            runtime_overrides={
+                "initial_capital": float(runner_initial_capital),
+                "backtest_leverage": int(runner_leverage),
+                "symbols": runner_symbols,
+                "timeframe": runner_timeframe,
+                "runner_data_source": runner_data_source,
+                "runner_timeout_sec": int(runner_timeout_sec),
+            },
+            strategy_params=strategy_params,
+            mirror_snapshot=mirror_snapshot,
+            balance_equity_series=_serialize_balance_equity_frame(mirror_balance_equity, limit=1500),
         )
-        st.download_button(
-            label="Download JSON Report",
-            data=json.dumps(payload, indent=2, ensure_ascii=False),
-            file_name=os.path.basename(json_path),
-            mime="application/json",
+
+        if st.button("Generate Snapshot Report", type="primary"):
+            json_path, md_path, markdown = save_report_snapshot(payload)
+            st.success(f"Report saved: {json_path} | {md_path}")
+            st.download_button(
+                label="Download Markdown Report",
+                data=markdown,
+                file_name=os.path.basename(md_path),
+                mime="text/markdown",
+            )
+            st.download_button(
+                label="Download JSON Report",
+                data=json.dumps(payload, indent=2, ensure_ascii=False),
+                file_name=os.path.basename(json_path),
+                mime="application/json",
+            )
+
+        if payload.get("mt5_summary"):
+            st.subheader("Snapshot MT5 Summary")
+            st.dataframe(pd.DataFrame(payload.get("mt5_summary", [])), use_container_width=True)
+
+        monthly_payload = payload.get("monthly_returns") or {}
+        if monthly_payload:
+            st.subheader("Snapshot Monthly Returns")
+            monthly_df = pd.DataFrame.from_dict(monthly_payload, orient="index")
+            monthly_df.index.name = "Year"
+            st.dataframe(monthly_df, use_container_width=True)
+
+        st.subheader("Current Snapshot Preview")
+        st.json(payload)
+
+    with tab_raw:
+        st.caption(
+            f"Run: {active_run_id if active_run_id else 'N/A'} | Source: {resolved_source} | "
+            f"Market: {market_symbol} {market_timeframe} ({market_exchange})"
+        )
+        with st.expander("Runs"):
+            st.dataframe(runs_df)
+        with st.expander("Equity"):
+            st.dataframe(df_equity)
+        with st.expander("Fills (enriched)"):
+            st.dataframe(trade_analytics)
+        with st.expander("Orders"):
+            st.dataframe(df_orders)
+        with st.expander("Risk Events"):
+            st.dataframe(df_risk)
+        with st.expander("Heartbeats"):
+            st.dataframe(df_hb)
+        with st.expander("Order State Events"):
+            st.dataframe(df_order_states)
+        with st.expander("Market OHLCV"):
+            st.dataframe(df_market)
+        with st.expander("Optimization Results"):
+            st.dataframe(df_optimize)
+        with st.expander("Workflow Jobs"):
+            st.dataframe(load_workflow_jobs(db_path, refresh_counter=refresh_counter))
+
+    if df_equity.empty:
+        st.warning(
+            "No equity data found for current selection. "
+            "Start a backtest job from Report Export tab, or switch source/period. "
+            f"Configured initial equity is {runner_initial_capital:.2f}."
         )
 
-    if payload.get("mt5_summary"):
-        st.subheader("Snapshot MT5 Summary")
-        st.dataframe(pd.DataFrame(payload.get("mt5_summary", [])), use_container_width=True)
 
-    monthly_payload = payload.get("monthly_returns") or {}
-    if monthly_payload:
-        st.subheader("Snapshot Monthly Returns")
-        monthly_df = pd.DataFrame.from_dict(monthly_payload, orient="index")
-        monthly_df.index.name = "Year"
-        st.dataframe(monthly_df, use_container_width=True)
 
-    st.subheader("Current Snapshot Preview")
-    st.json(payload)
+def main() -> None:
+    _render_dashboard_page_shell()
+    _route_dashboard_view()
+    render_main_dashboard()
 
-with tab_raw:
-    st.caption(
-        f"Run: {active_run_id if active_run_id else 'N/A'} | Source: {resolved_source} | "
-        f"Market: {market_symbol} {market_timeframe} ({market_exchange})"
-    )
-    with st.expander("Runs"):
-        st.dataframe(runs_df)
-    with st.expander("Equity"):
-        st.dataframe(df_equity)
-    with st.expander("Fills (enriched)"):
-        st.dataframe(trade_analytics)
-    with st.expander("Orders"):
-        st.dataframe(df_orders)
-    with st.expander("Risk Events"):
-        st.dataframe(df_risk)
-    with st.expander("Heartbeats"):
-        st.dataframe(df_hb)
-    with st.expander("Order State Events"):
-        st.dataframe(df_order_states)
-    with st.expander("Market OHLCV"):
-        st.dataframe(df_market)
-    with st.expander("Optimization Results"):
-        st.dataframe(df_optimize)
-    with st.expander("Workflow Jobs"):
-        st.dataframe(load_workflow_jobs(db_path, refresh_counter=refresh_counter))
 
-if df_equity.empty:
-    st.warning(
-        "No equity data found for current selection. "
-        "Start a backtest job from Report Export tab, or switch source/period. "
-        f"Configured initial equity is {runner_initial_capital:.2f}."
-    )
+main()
