@@ -697,6 +697,14 @@ class _ManagedJobLaunchSpec:
         )
 
 
+@dataclass(frozen=True)
+class _LiveRunnerSelection:
+    runner_kind: str
+    live_mode: str
+    strategy_name: str
+    real_armed: bool
+
+
 def _build_backtest_job_launch_spec(
     *,
     runner_data_source,
@@ -818,6 +826,66 @@ def _build_live_job_launch_spec(
         run_id=live_run_id,
         stop_file=stop_file,
         metadata={"runner_kind": live_runner_kind},
+    )
+
+
+def _select_active_live_jobs(workflow_jobs):
+    if workflow_jobs.empty:
+        return pd.DataFrame()
+    return workflow_jobs[
+        (workflow_jobs["workflow"].isin(["live", "live_ws"]))
+        & (workflow_jobs["status"].isin(["RUNNING", "STOP_REQUESTED"]))
+    ]
+
+
+def _is_live_real_mode_armed(*, arm_ack_1, arm_ack_2, arm_phrase) -> bool:
+    return bool(arm_ack_1 and arm_ack_2 and str(arm_phrase).strip().upper() == "ENABLE REAL")
+
+
+def _render_live_runner_settings(*, strategy_options, strategy_name) -> _LiveRunnerSelection:
+    live_col_1, live_col_2, live_col_3 = st.columns(3)
+    live_runner_kind = live_col_1.selectbox(
+        "Live Runner",
+        ["Polling (run_live.py)", "WebSocket (run_live_ws.py)"],
+        key="live_runner_kind",
+    )
+    live_mode = live_col_2.selectbox("Live Mode", ["paper", "real"], key="live_mode")
+    live_strategy_index = strategy_options.index(strategy_name) if strategy_name in strategy_options else 0
+    live_strategy_name = live_col_3.selectbox(
+        "Live Strategy",
+        strategy_options,
+        index=live_strategy_index,
+        key="live_strategy_name",
+    )
+
+    live_real_armed = True
+    if live_mode == "real":
+        st.warning(
+            "Real mode sends live exchange orders. Use only after paper/soak validation is complete."
+        )
+        arm_col_1, arm_col_2 = st.columns(2)
+        arm_ack_1 = arm_col_1.checkbox(
+            "I understand this can place real orders.",
+            key="arm_ack_1",
+        )
+        arm_ack_2 = arm_col_2.checkbox(
+            "I confirmed API keys/account/margin settings.",
+            key="arm_ack_2",
+        )
+        arm_phrase = st.text_input("Type ENABLE REAL to arm", key="arm_phrase")
+        live_real_armed = _is_live_real_mode_armed(
+            arm_ack_1=arm_ack_1,
+            arm_ack_2=arm_ack_2,
+            arm_phrase=arm_phrase,
+        )
+        if not live_real_armed:
+            st.info("Real mode is locked until all arm checks are completed.")
+
+    return _LiveRunnerSelection(
+        runner_kind=str(live_runner_kind),
+        live_mode=str(live_mode),
+        strategy_name=str(live_strategy_name),
+        real_armed=bool(live_real_armed),
     )
 
 
@@ -4955,53 +5023,21 @@ def render_main_dashboard() -> None:
             st.error(opt_space_error)
 
         workflow_jobs = load_workflow_jobs(db_path, refresh_counter=refresh_counter)
-        active_live_jobs = pd.DataFrame()
-        if not workflow_jobs.empty:
-            active_live_jobs = workflow_jobs[
-                (workflow_jobs["workflow"].isin(["live", "live_ws"]))
-                & (workflow_jobs["status"].isin(["RUNNING", "STOP_REQUESTED"]))
-            ]
+        active_live_jobs = _select_active_live_jobs(workflow_jobs)
         if not active_live_jobs.empty:
             st.warning(
                 f"{len(active_live_jobs)} live job(s) already active. "
                 "Stop existing live jobs before launching a new one."
             )
 
-        live_col_1, live_col_2, live_col_3 = st.columns(3)
-        live_runner_kind = live_col_1.selectbox(
-            "Live Runner",
-            ["Polling (run_live.py)", "WebSocket (run_live_ws.py)"],
-            key="live_runner_kind",
+        live_runner_selection = _render_live_runner_settings(
+            strategy_options=strategy_options,
+            strategy_name=strategy_name,
         )
-        live_mode = live_col_2.selectbox("Live Mode", ["paper", "real"], key="live_mode")
-        live_strategy_index = (
-            strategy_options.index(strategy_name) if strategy_name in strategy_options else 0
-        )
-        live_strategy_name = live_col_3.selectbox(
-            "Live Strategy",
-            strategy_options,
-            index=live_strategy_index,
-            key="live_strategy_name",
-        )
-
-        live_real_armed = True
-        if live_mode == "real":
-            st.warning(
-                "Real mode sends live exchange orders. Use only after paper/soak validation is complete."
-            )
-            arm_col_1, arm_col_2 = st.columns(2)
-            arm_ack_1 = arm_col_1.checkbox(
-                "I understand this can place real orders.",
-                key="arm_ack_1",
-            )
-            arm_ack_2 = arm_col_2.checkbox(
-                "I confirmed API keys/account/margin settings.",
-                key="arm_ack_2",
-            )
-            arm_phrase = st.text_input("Type ENABLE REAL to arm", key="arm_phrase")
-            live_real_armed = arm_ack_1 and arm_ack_2 and arm_phrase.strip().upper() == "ENABLE REAL"
-            if not live_real_armed:
-                st.info("Real mode is locked until all arm checks are completed.")
+        live_runner_kind = live_runner_selection.runner_kind
+        live_mode = live_runner_selection.live_mode
+        live_strategy_name = live_runner_selection.strategy_name
+        live_real_armed = live_runner_selection.real_armed
 
         run_col_1, run_col_2, run_col_3 = st.columns(3)
         with run_col_1:

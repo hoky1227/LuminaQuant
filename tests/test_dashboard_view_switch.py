@@ -140,9 +140,19 @@ class _CacheRecorder:
 
 
 class _GhostCleanupStreamlit(_HelperStreamlit):
-    def __init__(self, *, button_results: list[bool]) -> None:
+    def __init__(
+        self,
+        *,
+        button_results: list[bool],
+        selectbox_results: list[str] | None = None,
+        checkbox_results: list[bool] | None = None,
+        text_input_results: list[str] | None = None,
+    ) -> None:
         super().__init__()
         self._button_results = list(button_results)
+        self._selectbox_results = list(selectbox_results or [])
+        self._checkbox_results = list(checkbox_results or [])
+        self._text_input_results = list(text_input_results or [])
         self.cache_data = _CacheRecorder()
         self.session_state: dict[str, Any] = {}
 
@@ -156,7 +166,11 @@ class _GhostCleanupStreamlit(_HelperStreamlit):
 
     def selectbox(self, label: str, options: list[str], index: int = 0, **kwargs: Any) -> str:
         self.calls.append(("selectbox", label, list(options), index, kwargs))
-        return options[index]
+        return self._selectbox_results.pop(0) if self._selectbox_results else options[index]
+
+    def checkbox(self, label: str, **kwargs: Any) -> bool:
+        self.calls.append(("checkbox", label, kwargs))
+        return self._checkbox_results.pop(0) if self._checkbox_results else False
 
     def button(self, label: str, **kwargs: Any) -> bool:
         self.calls.append(("button", label, kwargs))
@@ -173,6 +187,10 @@ class _GhostCleanupStreamlit(_HelperStreamlit):
 
     def plotly_chart(self, figure: Any, **kwargs: Any) -> None:
         self.calls.append(("plotly_chart", figure, kwargs))
+
+    def text_input(self, label: str, **kwargs: Any) -> str:
+        self.calls.append(("text_input", label, kwargs))
+        return self._text_input_results.pop(0) if self._text_input_results else ""
 
     def text_area(self, label: str, value: str, **kwargs: Any) -> None:
         self.calls.append(("text_area", label, value, kwargs))
@@ -771,3 +789,89 @@ def test_render_optimization_results_tab_summarizes_best_row_without_scatter(mon
         },
     ) in helper_st.calls
     assert not any(call[0] == "plotly_chart" for call in helper_st.calls)
+
+
+def test_select_active_live_jobs_filters_running_live_rows(monkeypatch) -> None:
+    import numpy as real_np
+    import pandas as real_pd
+
+    module, _, _ = _load_dashboard_app(monkeypatch)
+    monkeypatch.setitem(sys.modules, "numpy", real_np)
+    monkeypatch.setitem(sys.modules, "pandas", real_pd)
+    module.pd = real_pd
+
+    workflow_jobs = real_pd.DataFrame(
+        [
+            {"job_id": "keep-1", "workflow": "live", "status": "RUNNING"},
+            {"job_id": "keep-2", "workflow": "live_ws", "status": "STOP_REQUESTED"},
+            {"job_id": "drop-1", "workflow": "backtest", "status": "RUNNING"},
+            {"job_id": "drop-2", "workflow": "live", "status": "COMPLETED"},
+        ]
+    )
+
+    active = module._select_active_live_jobs(workflow_jobs)
+
+    assert active["job_id"].astype(str).tolist() == ["keep-1", "keep-2"]
+
+
+def test_is_live_real_mode_armed_requires_both_checks_and_phrase(monkeypatch) -> None:
+    module, _, _ = _load_dashboard_app(monkeypatch)
+
+    assert (
+        module._is_live_real_mode_armed(
+            arm_ack_1=True,
+            arm_ack_2=True,
+            arm_phrase="enable real",
+        )
+        is True
+    )
+    assert (
+        module._is_live_real_mode_armed(
+            arm_ack_1=True,
+            arm_ack_2=False,
+            arm_phrase="ENABLE REAL",
+        )
+        is False
+    )
+    assert (
+        module._is_live_real_mode_armed(
+            arm_ack_1=True,
+            arm_ack_2=True,
+            arm_phrase="not armed",
+        )
+        is False
+    )
+
+
+def test_render_live_runner_settings_surfaces_real_mode_lock(monkeypatch) -> None:
+    module, _, _ = _load_dashboard_app(monkeypatch)
+    helper_st = _GhostCleanupStreamlit(
+        button_results=[],
+        selectbox_results=[
+            "WebSocket (run_live_ws.py)",
+            "real",
+            "TrendStrategy",
+        ],
+        checkbox_results=[True, False],
+        text_input_results=["ENABLE REAL"],
+    )
+
+    module.st = helper_st
+
+    selection = module._render_live_runner_settings(
+        strategy_options=["RsiStrategy", "TrendStrategy"],
+        strategy_name="RsiStrategy",
+    )
+
+    assert selection == module._LiveRunnerSelection(
+        runner_kind="WebSocket (run_live_ws.py)",
+        live_mode="real",
+        strategy_name="TrendStrategy",
+        real_armed=False,
+    )
+    assert any(
+        call[0] == "warning"
+        and "Real mode sends live exchange orders" in call[1]
+        for call in helper_st.calls
+    )
+    assert ("info", "Real mode is locked until all arm checks are completed.") in helper_st.calls
