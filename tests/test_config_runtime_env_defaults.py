@@ -66,7 +66,7 @@ def _write_market_data_config(tmp_path, *, symbols, root_path: str, exchange: st
     return str(cfg_path)
 
 
-def test_config_module_seeds_runtime_env_defaults_from_runtime(tmp_path, monkeypatch):
+def test_config_module_exposes_explicit_runtime_env_seeding(tmp_path, monkeypatch):
     cfg_path = _write_config(tmp_path)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("LQ_CONFIG_PATH", cfg_path)
@@ -86,6 +86,11 @@ def test_config_module_seeds_runtime_env_defaults_from_runtime(tmp_path, monkeyp
     assert config_module.LiveConfig.MARKET_DATA_SOURCE == "external"
     assert config_module.BacktestConfig.CHUNK_DAYS == 9
     assert config_module.BaseConfig.MARKET_WINDOW_PARITY_V2_ENABLED is True
+    assert "LQ__STORAGE__COLLECTOR_PERIODIC_ENABLED" not in config_module.os.environ
+
+    seeded = config_module.seed_runtime_env_defaults()
+
+    assert seeded["LQ__STORAGE__COLLECTOR_PERIODIC_ENABLED"] == "0"
     assert config_module.os.environ["LQ__STORAGE__COLLECTOR_PERIODIC_ENABLED"] == "0"
     assert json.loads(config_module.os.environ["LQ__STORAGE__MATERIALIZER_REQUIRED_TIMEFRAMES"]) == [
         "1s",

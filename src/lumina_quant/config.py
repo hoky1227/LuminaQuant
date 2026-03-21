@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import os
 import re
-from collections.abc import MutableMapping
 from dataclasses import asdict
 from typing import ClassVar
 
@@ -136,67 +135,28 @@ def _runtime_env_defaults(runtime) -> dict[str, str]:
     return defaults
 
 
-def _seed_runtime_env_defaults(runtime, *, environ: MutableMapping[str, str] | None = None) -> None:
-    target = os.environ if environ is None else environ
-    for key, value in _runtime_env_defaults(runtime).items():
-        target.setdefault(key, value)
-
-
 def _current_config_path() -> str:
     return str(os.getenv("LQ_CONFIG_PATH", "config.yaml") or "config.yaml")
 
 
-def _runtime_env_without_auto_seeded_defaults(
-    environ: MutableMapping[str, str] | None = None,
-) -> dict[str, str]:
-    source = os.environ if environ is None else environ
-    effective = dict(source)
-    _strip_auto_seeded_runtime_env_defaults(
-        effective,
-        seeded_defaults=_SEEDED_RUNTIME_ENV_DEFAULTS,
-        env_before_seed=_ENV_BEFORE_RUNTIME_SEED,
+def seed_runtime_env_defaults(*, runtime=None, environ: dict[str, str] | None = None) -> dict[str, str]:
+    """Explicitly seed missing LQ runtime env defaults from a runtime config."""
+    resolved_runtime = runtime or load_runtime_config(
+        config_path=_current_config_path(),
+        env=os.environ,
     )
-    return effective
-
-
-def _strip_auto_seeded_runtime_env_defaults(
-    target: MutableMapping[str, str],
-    *,
-    seeded_defaults: MutableMapping[str, str] | dict[str, str],
-    env_before_seed: MutableMapping[str, str] | dict[str, str],
-) -> None:
-    for key, value in seeded_defaults.items():
-        if key in env_before_seed:
-            continue
-        if target.get(key) == value:
-            target.pop(key, None)
-
-
-def _refresh_seeded_runtime_env_defaults(
-    runtime, *, environ: MutableMapping[str, str] | None = None
-) -> None:
     target = os.environ if environ is None else environ
-    next_defaults = _runtime_env_defaults(runtime)
-    _strip_auto_seeded_runtime_env_defaults(
-        target,
-        seeded_defaults=_SEEDED_RUNTIME_ENV_DEFAULTS,
-        env_before_seed=_ENV_BEFORE_RUNTIME_SEED,
-    )
-    for key, value in next_defaults.items():
-        if key in _ENV_BEFORE_RUNTIME_SEED:
-            target.setdefault(key, value)
-            continue
+    defaults = _runtime_env_defaults(resolved_runtime)
+    for key, value in defaults.items():
         target.setdefault(key, value)
-    _SEEDED_RUNTIME_ENV_DEFAULTS.clear()
-    _SEEDED_RUNTIME_ENV_DEFAULTS.update(next_defaults)
+    return defaults
 
 
 def load_current_runtime_config():
     runtime = load_runtime_config(
         config_path=_current_config_path(),
-        env=_runtime_env_without_auto_seeded_defaults(),
+        env=os.environ,
     )
-    _refresh_seeded_runtime_env_defaults(runtime)
     return runtime
 
 
@@ -217,19 +177,8 @@ def current_market_data_runtime_settings() -> dict[str, object]:
         ),
     }
 
-
-_PREVIOUS_ENV_BEFORE_RUNTIME_SEED = dict(globals().get("_ENV_BEFORE_RUNTIME_SEED", {}))
-_PREVIOUS_SEEDED_RUNTIME_ENV_DEFAULTS = dict(globals().get("_SEEDED_RUNTIME_ENV_DEFAULTS", {}))
-_strip_auto_seeded_runtime_env_defaults(
-    os.environ,
-    seeded_defaults=_PREVIOUS_SEEDED_RUNTIME_ENV_DEFAULTS,
-    env_before_seed=_PREVIOUS_ENV_BEFORE_RUNTIME_SEED,
-)
 _CONFIG_PATH = os.getenv("LQ_CONFIG_PATH", "config.yaml")
-_ENV_BEFORE_RUNTIME_SEED = dict(os.environ)
-_RUNTIME = load_runtime_config(config_path=_CONFIG_PATH)
-_SEEDED_RUNTIME_ENV_DEFAULTS = _runtime_env_defaults(_RUNTIME)
-_seed_runtime_env_defaults(_RUNTIME)
+_RUNTIME = load_runtime_config(config_path=_CONFIG_PATH, env=os.environ)
 
 
 def _apply_config_values(config_cls: type, values: dict[str, object]) -> None:
@@ -531,7 +480,7 @@ class LiveConfig(BaseConfig):
     def _as_runtime(cls):
         runtime = load_runtime_config(
             config_path=_current_config_path(),
-            env=_runtime_env_without_auto_seeded_defaults(),
+            env=os.environ,
         )
         runtime.live.mode = cls.MODE
         runtime.live.market_data_source = str(cls.MARKET_DATA_SOURCE)
@@ -641,10 +590,17 @@ def _optimization_config_values(runtime) -> dict[str, object]:
     }
 
 
-_apply_config_values(BaseConfig, _base_config_values(_RUNTIME))
-_apply_config_values(BacktestConfig, _backtest_config_values(_RUNTIME))
-_apply_config_values(LiveConfig, _live_config_values(_RUNTIME))
-_apply_config_values(OptimizationConfig, _optimization_config_values(_RUNTIME))
+def initialize_config_classes(*, runtime=None) -> object:
+    """Refresh config class attributes from a typed runtime object."""
+    resolved_runtime = runtime or load_current_runtime_config()
+    _apply_config_values(BaseConfig, _base_config_values(resolved_runtime))
+    _apply_config_values(BacktestConfig, _backtest_config_values(resolved_runtime))
+    _apply_config_values(LiveConfig, _live_config_values(resolved_runtime))
+    _apply_config_values(OptimizationConfig, _optimization_config_values(resolved_runtime))
+    return resolved_runtime
+
+
+_RUNTIME = initialize_config_classes(runtime=_RUNTIME)
 
 
 def export_runtime_dict() -> dict:
