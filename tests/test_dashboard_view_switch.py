@@ -78,8 +78,23 @@ class _DummyOptimizationConfig:
 
 
 class _Frame:
-    def __init__(self, *, empty: bool) -> None:
+    def __init__(self, *, empty: bool, size: int = 0) -> None:
         self.empty = empty
+        self._size = size
+
+    def __len__(self) -> int:
+        return self._size
+
+
+class _LaunchSpecRecorder:
+    def __init__(self, job_id: str, sink: list[dict[str, Any]], payload: dict[str, Any]) -> None:
+        self._job_id = job_id
+        self._sink = sink
+        self._payload = payload
+
+    def launch(self, *, db_path: str) -> str:
+        self._sink.append({"db_path": db_path, **self._payload})
+        return self._job_id
 
 
 class _HelperExpander:
@@ -155,6 +170,12 @@ class _GhostCleanupStreamlit(_HelperStreamlit):
         self._text_input_results = list(text_input_results or [])
         self.cache_data = _CacheRecorder()
         self.session_state: dict[str, Any] = {}
+
+    def __enter__(self) -> _GhostCleanupStreamlit:
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        return False
 
     def columns(self, count: int):
         self.calls.append(("columns", count))
@@ -875,3 +896,218 @@ def test_render_live_runner_settings_surfaces_real_mode_lock(monkeypatch) -> Non
         for call in helper_st.calls
     )
     assert ("info", "Real mode is locked until all arm checks are completed.") in helper_st.calls
+
+
+def test_render_managed_run_launch_controls_starts_backtest_job(monkeypatch) -> None:
+    module, _, _ = _load_dashboard_app(monkeypatch)
+    helper_st = _GhostCleanupStreamlit(button_results=[True, False, False])
+    launch_calls: list[dict[str, Any]] = []
+
+    module.st = helper_st
+    monkeypatch.setattr(module, "_save_strategy_params", lambda strategy_name, params: "/tmp/params.json")
+    monkeypatch.setattr(module.uuid, "uuid4", lambda: "backtest-run-id")
+    monkeypatch.setattr(
+        module,
+        "_build_backtest_job_launch_spec",
+        lambda **kwargs: _LaunchSpecRecorder("job-backtest", launch_calls, kwargs),
+    )
+
+    module._render_managed_run_launch_controls(
+        db_path="postgres://lumina",
+        launch_context=module._ManagedRunLaunchContext(
+            strategy_name="RsiStrategy",
+            strategy_params={"lookback": 14},
+            runner_data_source="postgres",
+            market_db_path="/tmp/market",
+            market_exchange="binance",
+            runner_env_overrides={"LQ__RUNNER__TIMEFRAME": "5m"},
+            optimize_folds=4,
+            optimize_trials=12,
+            optimize_workers=2,
+            persist_best_params=True,
+            runner_leverage=3,
+        ),
+        live_runner_selection=module._LiveRunnerSelection(
+            runner_kind="Polling (run_live.py)",
+            live_mode="paper",
+            strategy_name="RsiStrategy",
+            real_armed=True,
+        ),
+        active_live_jobs=_Frame(empty=True),
+    )
+
+    assert launch_calls == [
+        {
+            "db_path": "postgres://lumina",
+            "runner_data_source": "postgres",
+            "market_db_path": "/tmp/market",
+            "market_exchange": "binance",
+            "runner_env_overrides": {"LQ__RUNNER__TIMEFRAME": "5m"},
+            "strategy_name": "RsiStrategy",
+            "backtest_run_id": "backtest-run-id",
+            "strategy_params_path": "/tmp/params.json",
+        }
+    ]
+    assert ("success", "Backtest job launched: job-backtest") in helper_st.calls
+    assert helper_st.cache_data.clear_calls == 1
+
+
+def test_render_managed_run_launch_controls_disables_live_when_real_mode_not_armed(monkeypatch) -> None:
+    module, _, _ = _load_dashboard_app(monkeypatch)
+    helper_st = _GhostCleanupStreamlit(button_results=[False, False, False])
+
+    module.st = helper_st
+
+    module._render_managed_run_launch_controls(
+        db_path="postgres://lumina",
+        launch_context=module._ManagedRunLaunchContext(
+            strategy_name="RsiStrategy",
+            strategy_params={"lookback": 14},
+            runner_data_source="postgres",
+            market_db_path="/tmp/market",
+            market_exchange="binance",
+            runner_env_overrides={"LQ__RUNNER__TIMEFRAME": "5m"},
+            optimize_folds=4,
+            optimize_trials=12,
+            optimize_workers=2,
+            persist_best_params=True,
+            runner_leverage=3,
+        ),
+        live_runner_selection=module._LiveRunnerSelection(
+            runner_kind="Polling (run_live.py)",
+            live_mode="real",
+            strategy_name="RsiStrategy",
+            real_armed=False,
+        ),
+        active_live_jobs=_Frame(empty=True),
+    )
+
+    live_button_calls = [call for call in helper_st.calls if call[0] == "button" and call[1] == "Start Live Job"]
+    assert len(live_button_calls) == 1
+    assert live_button_calls[0][2]["disabled"] is True
+
+
+def test_render_report_tab_orchestrates_subsections_and_warnings(monkeypatch) -> None:
+    module, _, _ = _load_dashboard_app(monkeypatch)
+    helper_st = _GhostCleanupStreamlit(button_results=[])
+    calls: list[tuple[str, Any]] = []
+    workflow_jobs = object()
+    active_live_jobs = _Frame(empty=False, size=2)
+    df_equity = _Frame(empty=True)
+    trade_analytics = _Frame(empty=True)
+    df_risk = _Frame(empty=True)
+    df_hb = _Frame(empty=True)
+    mirror_balance_equity = _Frame(empty=True)
+    live_selection = module._LiveRunnerSelection(
+        runner_kind="Polling (run_live.py)",
+        live_mode="paper",
+        strategy_name="TrendStrategy",
+        real_armed=True,
+    )
+
+    module.st = helper_st
+    monkeypatch.setattr(module, "load_workflow_jobs", lambda db_path, refresh_counter=0: workflow_jobs)
+    monkeypatch.setattr(module, "_select_active_live_jobs", lambda rows: active_live_jobs)
+    monkeypatch.setattr(
+        module,
+        "_render_live_runner_settings",
+        lambda **kwargs: calls.append(("live_settings", kwargs)) or live_selection,
+    )
+    monkeypatch.setattr(
+        module,
+        "_render_managed_run_launch_controls",
+        lambda **kwargs: calls.append(("launch_controls", kwargs)),
+    )
+    monkeypatch.setattr(
+        module,
+        "_render_workflow_jobs_section",
+        lambda **kwargs: calls.append(("workflow_jobs", kwargs)),
+    )
+    monkeypatch.setattr(
+        module,
+        "_render_ghost_cleanup_section",
+        lambda **kwargs: calls.append(("ghost_cleanup", kwargs)),
+    )
+    monkeypatch.setattr(
+        module,
+        "_render_snapshot_report_section",
+        lambda **kwargs: calls.append(("snapshot_report", kwargs)),
+    )
+
+    module._render_report_tab(
+        db_path="postgres://lumina",
+        refresh_counter=5,
+        strategy_options=["RsiStrategy", "TrendStrategy"],
+        strategy_name="RsiStrategy",
+        strategy_params={"lookback": 14},
+        runner_initial_capital=1500.0,
+        runner_leverage=3,
+        runner_symbols=["BTC/USDT"],
+        runner_timeframe="5m",
+        runner_data_source="postgres",
+        runner_timeout_sec=60,
+        runner_env_overrides={"LQ__RUNNER__TIMEFRAME": "5m"},
+        market_db_path="/tmp/market",
+        market_exchange="binance",
+        optimize_folds=4,
+        optimize_trials=12,
+        optimize_workers=2,
+        persist_best_params=True,
+        opt_space_error="invalid search space",
+        run_stale_sec=300,
+        summary={"bars": 10},
+        performance={"sharpe": 1.2},
+        active_run_id="run-1",
+        resolved_source="postgres",
+        period_preset="30d",
+        df_equity=df_equity,
+        trade_analytics=trade_analytics,
+        df_risk=df_risk,
+        df_hb=df_hb,
+        mirror_snapshot={"wins": 1},
+        mirror_balance_equity=mirror_balance_equity,
+    )
+
+    assert ("subheader", "No-Code Workflow Control") in helper_st.calls
+    assert any(call[0] == "caption" and "initial_equity=1500.00" in call[1] for call in helper_st.calls)
+    assert ("error", "invalid search space") in helper_st.calls
+    assert any(call[0] == "warning" and "live job(s) already active" in call[1] for call in helper_st.calls)
+    assert calls[:4] == [
+        ("live_settings", {"strategy_options": ["RsiStrategy", "TrendStrategy"], "strategy_name": "RsiStrategy"}),
+        (
+            "launch_controls",
+            {
+                "db_path": "postgres://lumina",
+                "launch_context": module._ManagedRunLaunchContext(
+                    strategy_name="RsiStrategy",
+                    strategy_params={"lookback": 14},
+                    runner_data_source="postgres",
+                    market_db_path="/tmp/market",
+                    market_exchange="binance",
+                    runner_env_overrides={"LQ__RUNNER__TIMEFRAME": "5m"},
+                    optimize_folds=4,
+                    optimize_trials=12,
+                    optimize_workers=2,
+                    persist_best_params=True,
+                    runner_leverage=3,
+                ),
+                "live_runner_selection": live_selection,
+                "active_live_jobs": active_live_jobs,
+            },
+        ),
+        ("workflow_jobs", {"db_path": "postgres://lumina", "refresh_counter": 5}),
+        ("ghost_cleanup", {"db_path": "postgres://lumina", "run_stale_sec": 300}),
+    ]
+    snapshot_name, snapshot_kwargs = calls[4]
+    assert snapshot_name == "snapshot_report"
+    assert snapshot_kwargs["summary"] == {"bars": 10}
+    assert snapshot_kwargs["performance"] == {"sharpe": 1.2}
+    assert snapshot_kwargs["active_run_id"] == "run-1"
+    assert snapshot_kwargs["resolved_source"] == "postgres"
+    assert snapshot_kwargs["strategy_name"] == "RsiStrategy"
+    assert snapshot_kwargs["period_preset"] == "30d"
+    assert snapshot_kwargs["df_equity"] is df_equity
+    assert snapshot_kwargs["trade_analytics"] is trade_analytics
+    assert snapshot_kwargs["df_risk"] is df_risk
+    assert snapshot_kwargs["df_hb"] is df_hb
+    assert snapshot_kwargs["mirror_balance_equity"] is mirror_balance_equity

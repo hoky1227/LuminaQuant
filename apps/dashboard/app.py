@@ -705,6 +705,21 @@ class _LiveRunnerSelection:
     real_armed: bool
 
 
+@dataclass(frozen=True)
+class _ManagedRunLaunchContext:
+    strategy_name: str
+    strategy_params: dict[str, object]
+    runner_data_source: str
+    market_db_path: str
+    market_exchange: str
+    runner_env_overrides: dict[str, str]
+    optimize_folds: int
+    optimize_trials: int
+    optimize_workers: int
+    persist_best_params: bool
+    runner_leverage: int
+
+
 def _build_backtest_job_launch_spec(
     *,
     runner_data_source,
@@ -887,6 +902,78 @@ def _render_live_runner_settings(*, strategy_options, strategy_name) -> _LiveRun
         strategy_name=str(live_strategy_name),
         real_armed=bool(live_real_armed),
     )
+
+
+def _render_managed_run_launch_controls(
+    *,
+    db_path,
+    launch_context: _ManagedRunLaunchContext,
+    live_runner_selection: _LiveRunnerSelection,
+    active_live_jobs,
+) -> None:
+    run_col_1, run_col_2, run_col_3 = st.columns(3)
+    with run_col_1:
+        if st.button("Start Backtest Job", type="primary", use_container_width=True):
+            params_path = _save_strategy_params(
+                launch_context.strategy_name,
+                launch_context.strategy_params,
+            )
+            backtest_run_id = str(uuid.uuid4())
+            job_id = _build_backtest_job_launch_spec(
+                runner_data_source=launch_context.runner_data_source,
+                market_db_path=launch_context.market_db_path,
+                market_exchange=launch_context.market_exchange,
+                runner_env_overrides=launch_context.runner_env_overrides,
+                strategy_name=launch_context.strategy_name,
+                backtest_run_id=backtest_run_id,
+                strategy_params_path=params_path,
+            ).launch(
+                db_path=db_path,
+            )
+            st.success(f"Backtest job launched: {job_id}")
+            st.cache_data.clear()
+
+    with run_col_2:
+        if st.button("Start Optimization Job", use_container_width=True):
+            optimize_run_id = str(uuid.uuid4())
+            job_id = _build_optimize_job_launch_spec(
+                optimize_folds=launch_context.optimize_folds,
+                optimize_trials=launch_context.optimize_trials,
+                optimize_workers=launch_context.optimize_workers,
+                runner_data_source=launch_context.runner_data_source,
+                market_db_path=launch_context.market_db_path,
+                market_exchange=launch_context.market_exchange,
+                persist_best_params=launch_context.persist_best_params,
+                runner_env_overrides=launch_context.runner_env_overrides,
+                strategy_name=launch_context.strategy_name,
+                optimize_run_id=optimize_run_id,
+            ).launch(
+                db_path=db_path,
+            )
+            st.success(f"Optimization job launched: {job_id}")
+            st.cache_data.clear()
+
+    with run_col_3:
+        start_live_disabled = (
+            live_runner_selection.live_mode == "real" and not live_runner_selection.real_armed
+        ) or not active_live_jobs.empty
+        if st.button("Start Live Job", use_container_width=True, disabled=start_live_disabled):
+            live_run_id = str(uuid.uuid4())
+            stop_file = _build_stop_file_path(live_run_id)
+            job_id = _build_live_job_launch_spec(
+                runner_env_overrides=launch_context.runner_env_overrides,
+                live_mode=live_runner_selection.live_mode,
+                market_exchange=launch_context.market_exchange,
+                runner_leverage=launch_context.runner_leverage,
+                live_runner_kind=live_runner_selection.runner_kind,
+                live_strategy_name=live_runner_selection.strategy_name,
+                live_run_id=live_run_id,
+                stop_file=stop_file,
+            ).launch(
+                db_path=db_path,
+            )
+            st.success(f"Live job launched: {job_id}")
+            st.cache_data.clear()
 
 
 def _launch_managed_job(
@@ -3572,6 +3659,103 @@ def _render_optimization_results_tab(df_optimize) -> None:
         )
 
 
+def _render_report_tab(
+    *,
+    db_path,
+    refresh_counter,
+    strategy_options,
+    strategy_name,
+    strategy_params,
+    runner_initial_capital,
+    runner_leverage,
+    runner_symbols,
+    runner_timeframe,
+    runner_data_source,
+    runner_timeout_sec,
+    runner_env_overrides,
+    market_db_path,
+    market_exchange,
+    optimize_folds,
+    optimize_trials,
+    optimize_workers,
+    persist_best_params,
+    opt_space_error,
+    run_stale_sec,
+    summary,
+    performance,
+    active_run_id,
+    resolved_source,
+    period_preset,
+    df_equity,
+    trade_analytics,
+    df_risk,
+    df_hb,
+    mirror_snapshot,
+    mirror_balance_equity,
+) -> None:
+    st.subheader("No-Code Workflow Control")
+    st.caption(
+        f"Runner overrides -> initial_equity={runner_initial_capital:.2f}, "
+        f"leverage={runner_leverage}, timeframe={runner_timeframe}, symbols={runner_symbols}"
+    )
+    if opt_space_error:
+        st.error(opt_space_error)
+
+    workflow_jobs = load_workflow_jobs(db_path, refresh_counter=refresh_counter)
+    active_live_jobs = _select_active_live_jobs(workflow_jobs)
+    if not active_live_jobs.empty:
+        st.warning(
+            f"{len(active_live_jobs)} live job(s) already active. "
+            "Stop existing live jobs before launching a new one."
+        )
+
+    live_runner_selection = _render_live_runner_settings(
+        strategy_options=strategy_options,
+        strategy_name=strategy_name,
+    )
+    _render_managed_run_launch_controls(
+        db_path=db_path,
+        launch_context=_ManagedRunLaunchContext(
+            strategy_name=strategy_name,
+            strategy_params=strategy_params,
+            runner_data_source=runner_data_source,
+            market_db_path=market_db_path,
+            market_exchange=market_exchange,
+            runner_env_overrides=runner_env_overrides,
+            optimize_folds=optimize_folds,
+            optimize_trials=optimize_trials,
+            optimize_workers=optimize_workers,
+            persist_best_params=persist_best_params,
+            runner_leverage=runner_leverage,
+        ),
+        live_runner_selection=live_runner_selection,
+        active_live_jobs=active_live_jobs,
+    )
+    _render_workflow_jobs_section(db_path=db_path, refresh_counter=refresh_counter)
+    _render_ghost_cleanup_section(db_path=db_path, run_stale_sec=run_stale_sec)
+    _render_snapshot_report_section(
+        summary=summary,
+        performance=performance,
+        active_run_id=active_run_id,
+        resolved_source=resolved_source,
+        strategy_name=strategy_name,
+        period_preset=period_preset,
+        df_equity=df_equity,
+        trade_analytics=trade_analytics,
+        df_risk=df_risk,
+        df_hb=df_hb,
+        runner_initial_capital=runner_initial_capital,
+        runner_leverage=runner_leverage,
+        runner_symbols=runner_symbols,
+        runner_timeframe=runner_timeframe,
+        runner_data_source=runner_data_source,
+        runner_timeout_sec=runner_timeout_sec,
+        strategy_params=strategy_params,
+        mirror_snapshot=mirror_snapshot,
+        mirror_balance_equity=mirror_balance_equity,
+    )
+
+
 def render_main_dashboard() -> None:
     st.sidebar.header("Configuration")
     data_source = st.sidebar.selectbox("Data Source", ["Auto", "Postgres", "CSV"])
@@ -5014,102 +5198,16 @@ def render_main_dashboard() -> None:
         _render_optimization_results_tab(df_optimize)
 
     with tab_report:
-        st.subheader("No-Code Workflow Control")
-        st.caption(
-            f"Runner overrides -> initial_equity={runner_initial_capital:.2f}, "
-            f"leverage={runner_leverage}, timeframe={runner_timeframe}, symbols={runner_symbols}"
-        )
-        if opt_space_error:
-            st.error(opt_space_error)
-
-        workflow_jobs = load_workflow_jobs(db_path, refresh_counter=refresh_counter)
-        active_live_jobs = _select_active_live_jobs(workflow_jobs)
-        if not active_live_jobs.empty:
-            st.warning(
-                f"{len(active_live_jobs)} live job(s) already active. "
-                "Stop existing live jobs before launching a new one."
-            )
-
-        live_runner_selection = _render_live_runner_settings(
+        _render_report_tab(
+            db_path=db_path,
+            refresh_counter=refresh_counter,
             strategy_options=strategy_options,
-            strategy_name=strategy_name,
-        )
-        live_runner_kind = live_runner_selection.runner_kind
-        live_mode = live_runner_selection.live_mode
-        live_strategy_name = live_runner_selection.strategy_name
-        live_real_armed = live_runner_selection.real_armed
-
-        run_col_1, run_col_2, run_col_3 = st.columns(3)
-        with run_col_1:
-            if st.button("Start Backtest Job", type="primary", use_container_width=True):
-                params_path = _save_strategy_params(strategy_name, strategy_params)
-                backtest_run_id = str(uuid.uuid4())
-                job_id = _build_backtest_job_launch_spec(
-                    runner_data_source=runner_data_source,
-                    market_db_path=market_db_path,
-                    market_exchange=market_exchange,
-                    runner_env_overrides=runner_env_overrides,
-                    strategy_name=strategy_name,
-                    backtest_run_id=backtest_run_id,
-                    strategy_params_path=params_path,
-                ).launch(
-                    db_path=db_path,
-                )
-                st.success(f"Backtest job launched: {job_id}")
-                st.cache_data.clear()
-
-        with run_col_2:
-            if st.button("Start Optimization Job", use_container_width=True):
-                optimize_run_id = str(uuid.uuid4())
-                job_id = _build_optimize_job_launch_spec(
-                    optimize_folds=optimize_folds,
-                    optimize_trials=optimize_trials,
-                    optimize_workers=optimize_workers,
-                    runner_data_source=runner_data_source,
-                    market_db_path=market_db_path,
-                    market_exchange=market_exchange,
-                    persist_best_params=persist_best_params,
-                    runner_env_overrides=runner_env_overrides,
-                    strategy_name=strategy_name,
-                    optimize_run_id=optimize_run_id,
-                ).launch(
-                    db_path=db_path,
-                )
-                st.success(f"Optimization job launched: {job_id}")
-                st.cache_data.clear()
-
-        with run_col_3:
-            start_live_disabled = (
-                live_mode == "real" and not live_real_armed
-            ) or not active_live_jobs.empty
-            if st.button("Start Live Job", use_container_width=True, disabled=start_live_disabled):
-                live_run_id = str(uuid.uuid4())
-                stop_file = _build_stop_file_path(live_run_id)
-                job_id = _build_live_job_launch_spec(
-                    runner_env_overrides=runner_env_overrides,
-                    live_mode=live_mode,
-                    market_exchange=market_exchange,
-                    runner_leverage=runner_leverage,
-                    live_runner_kind=live_runner_kind,
-                    live_strategy_name=live_strategy_name,
-                    live_run_id=live_run_id,
-                    stop_file=stop_file,
-                ).launch(
-                    db_path=db_path,
-                )
-                st.success(f"Live job launched: {job_id}")
-                st.cache_data.clear()
-
-        _render_workflow_jobs_section(db_path=db_path, refresh_counter=refresh_counter)
-
-        _render_ghost_cleanup_section(db_path=db_path, run_stale_sec=run_stale_sec)
-
-        _render_snapshot_report_section(
             summary=summary,
             performance=performance,
             active_run_id=active_run_id,
             resolved_source=resolved_source,
             strategy_name=strategy_name,
+            strategy_params=strategy_params,
             period_preset=period_preset,
             df_equity=df_equity,
             trade_analytics=trade_analytics,
@@ -5121,7 +5219,15 @@ def render_main_dashboard() -> None:
             runner_timeframe=runner_timeframe,
             runner_data_source=runner_data_source,
             runner_timeout_sec=runner_timeout_sec,
-            strategy_params=strategy_params,
+            runner_env_overrides=runner_env_overrides,
+            market_db_path=market_db_path,
+            market_exchange=market_exchange,
+            optimize_folds=optimize_folds,
+            optimize_trials=optimize_trials,
+            optimize_workers=optimize_workers,
+            persist_best_params=persist_best_params,
+            opt_space_error=opt_space_error,
+            run_stale_sec=run_stale_sec,
             mirror_snapshot=mirror_snapshot,
             mirror_balance_equity=mirror_balance_equity,
         )
