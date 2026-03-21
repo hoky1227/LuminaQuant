@@ -1749,16 +1749,11 @@ def _build_primary_trend_candidates(ctx: _CandidateBuildContext) -> None:
             )
 
 
-def _build_core_mean_reversion_candidates(ctx: _CandidateBuildContext) -> None:
+def _build_vwap_mean_reversion_candidates(ctx: _CandidateBuildContext) -> None:
     candidates = ctx.candidates
     normalized_symbols = ctx.normalized_symbols
     mean_rev_tfs = ctx.mean_rev_tfs
-    std_mean_rev_tfs = ctx.std_mean_rev_tfs
-    liquidity_tfs = ctx.liquidity_tfs
-    session_liquidity_tfs = ctx.session_liquidity_tfs
-    funding_crowding_tfs = ctx.funding_crowding_tfs
-    basis_snapback_tfs = ctx.basis_snapback_tfs
-    vol_of_vol_tfs = ctx.vol_of_vol_tfs
+
     # Vol-compression VWAP reversion sleeve.
     for timeframe in mean_rev_tfs:
         tf_tag = timeframe.replace("/", "-")
@@ -1831,6 +1826,12 @@ def _build_core_mean_reversion_candidates(ctx: _CandidateBuildContext) -> None:
                 },
             )
 
+
+def _build_zscore_mean_reversion_candidates(ctx: _CandidateBuildContext) -> None:
+    candidates = ctx.candidates
+    normalized_symbols = ctx.normalized_symbols
+    std_mean_rev_tfs = ctx.std_mean_rev_tfs
+
     # Classic z-score mean reversion sleeve.
     for timeframe in std_mean_rev_tfs:
         tf_tag = timeframe.replace("/", "-")
@@ -1874,6 +1875,14 @@ def _build_core_mean_reversion_candidates(ctx: _CandidateBuildContext) -> None:
                 },
             )
 
+
+def _build_liquidity_event_reversion_candidates(ctx: _CandidateBuildContext) -> None:
+    candidates = ctx.candidates
+    normalized_symbols = ctx.normalized_symbols
+    liquidity_tfs = ctx.liquidity_tfs
+    session_liquidity_tfs = ctx.session_liquidity_tfs
+    crypto_symbols = tuple(symbol for symbol in normalized_symbols if symbol not in _METALS)
+
     # Liquidity-shock event reversion sleeve.
     for timeframe in liquidity_tfs:
         tf_tag = timeframe.replace("/", "-")
@@ -1898,7 +1907,7 @@ def _build_core_mean_reversion_candidates(ctx: _CandidateBuildContext) -> None:
                 family="mean_reversion",
                 strategy_class="LiquidityShockReversionStrategy",
                 timeframe=timeframe,
-                symbols=tuple(symbol for symbol in normalized_symbols if symbol not in _METALS),
+                symbols=crypto_symbols,
                 params=params,
                 notes=(
                     "Event-triggered liquidity-shock mean reversion that fades outsized intraday moves "
@@ -1937,7 +1946,7 @@ def _build_core_mean_reversion_candidates(ctx: _CandidateBuildContext) -> None:
                 family="mean_reversion",
                 strategy_class="SessionLiquidityVacuumFadeStrategy",
                 timeframe=timeframe,
-                symbols=tuple(symbol for symbol in normalized_symbols if symbol not in _METALS),
+                symbols=crypto_symbols,
                 params=params,
                 notes=(
                     "Session-transition liquidity vacuum fade that only reacts around repeated UTC handoff windows "
@@ -1951,6 +1960,15 @@ def _build_core_mean_reversion_candidates(ctx: _CandidateBuildContext) -> None:
                     "symbol_scope": "crypto_excluding_metals",
                 },
             )
+
+
+def _build_derivatives_mean_reversion_candidates(ctx: _CandidateBuildContext) -> None:
+    candidates = ctx.candidates
+    normalized_symbols = ctx.normalized_symbols
+    funding_crowding_tfs = ctx.funding_crowding_tfs
+    basis_snapback_tfs = ctx.basis_snapback_tfs
+    vol_of_vol_tfs = ctx.vol_of_vol_tfs
+    crypto_symbols = tuple(symbol for symbol in normalized_symbols if symbol not in _METALS)
 
     for timeframe in funding_crowding_tfs:
         tf_tag = timeframe.replace("/", "-")
@@ -1974,7 +1992,7 @@ def _build_core_mean_reversion_candidates(ctx: _CandidateBuildContext) -> None:
                 family="mean_reversion",
                 strategy_class="FundingLiquidationCrowdingFadeStrategy",
                 timeframe=timeframe,
-                symbols=tuple(symbol for symbol in normalized_symbols if symbol not in _METALS),
+                symbols=crypto_symbols,
                 params=params,
                 notes=(
                     "Fade derivative crowding/liquidation exhaustion after aligned funding, OI, and liquidation shocks "
@@ -2009,7 +2027,7 @@ def _build_core_mean_reversion_candidates(ctx: _CandidateBuildContext) -> None:
                 family="mean_reversion",
                 strategy_class="BasisSnapbackReversionStrategy",
                 timeframe=timeframe,
-                symbols=tuple(symbol for symbol in normalized_symbols if symbol not in _METALS),
+                symbols=crypto_symbols,
                 params=params,
                 notes=(
                     "Mean-revert derivatives basis dislocations when mark-vs-index spread becomes extreme "
@@ -2046,7 +2064,7 @@ def _build_core_mean_reversion_candidates(ctx: _CandidateBuildContext) -> None:
                 family="mean_reversion",
                 strategy_class="VolOfVolExhaustionFadeStrategy",
                 timeframe=timeframe,
-                symbols=tuple(symbol for symbol in normalized_symbols if symbol not in _METALS),
+                symbols=crypto_symbols,
                 params=params,
                 notes=(
                     "Fade second-order volatility exhaustion after realized-vol spikes "
@@ -2060,6 +2078,13 @@ def _build_core_mean_reversion_candidates(ctx: _CandidateBuildContext) -> None:
                     "symbol_scope": "crypto_excluding_metals",
                 },
             )
+
+
+def _build_core_mean_reversion_candidates(ctx: _CandidateBuildContext) -> None:
+    _build_vwap_mean_reversion_candidates(ctx)
+    _build_zscore_mean_reversion_candidates(ctx)
+    _build_liquidity_event_reversion_candidates(ctx)
+    _build_derivatives_mean_reversion_candidates(ctx)
 
 
 def _build_intraday_alpha_candidates(ctx: _CandidateBuildContext) -> None:
