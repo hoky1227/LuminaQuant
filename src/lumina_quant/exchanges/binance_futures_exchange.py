@@ -49,6 +49,21 @@ class BinanceFuturesExchange(ExchangeInterface):
             return float(default)
 
     @staticmethod
+    def _as_bool(value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return False
+        if isinstance(value, (int, float)):
+            return value != 0
+        token = str(value).strip().lower()
+        if token in {"1", "true", "t", "yes", "y", "on"}:
+            return True
+        if token in {"0", "false", "f", "no", "n", "off", ""}:
+            return False
+        return bool(value)
+
+    @staticmethod
     def _normalize_symbol(symbol: str) -> str:
         return normalize_symbol(symbol)
 
@@ -290,7 +305,7 @@ class BinanceFuturesExchange(ExchangeInterface):
             "clientOrderId": row.get("clientOrderId"),
             "client_order_id": row.get("clientOrderId"),
             "positionSide": row.get("positionSide"),
-            "reduceOnly": bool(row.get("reduceOnly")),
+            "reduceOnly": self._as_bool(row.get("reduceOnly")),
             "timeInForce": row.get("timeInForce"),
         }
 

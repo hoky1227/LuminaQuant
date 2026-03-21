@@ -103,7 +103,7 @@ def test_exchange_normalizes_open_orders(monkeypatch) -> None:
                 "type": "LIMIT",
                 "clientOrderId": "LQ-1",
                 "positionSide": "LONG",
-                "reduceOnly": False,
+                "reduceOnly": "false",
                 "timeInForce": "GTC",
             }
         ],
@@ -115,3 +115,26 @@ def test_exchange_normalizes_open_orders(monkeypatch) -> None:
     assert rows[0]["side"] == "buy"
     assert rows[0]["amount"] == 1.0
     assert rows[0]["filled"] == 0.1
+    assert rows[0]["reduceOnly"] is False
+
+
+def test_exchange_bootstrap_does_not_silently_swallow_setup_failures(monkeypatch) -> None:
+    _stub_exchange_bootstrap(monkeypatch)
+
+    def _raise_for_leverage(self, **_kwargs):
+        raise BinanceFuturesAPIError("leverage mismatch", error_code=-4019)
+
+    monkeypatch.setattr(
+        BinanceFuturesRESTClient,
+        "change_initial_leverage",
+        _raise_for_leverage,
+        raising=True,
+    )
+
+    try:
+        BinanceFuturesExchange(MockConfig())
+    except BinanceFuturesAPIError as exc:
+        assert exc.error_code == -4019
+        assert "leverage mismatch" in str(exc)
+    else:  # pragma: no cover - defensive assertion
+        raise AssertionError("Expected BinanceFuturesAPIError to propagate during bootstrap")
