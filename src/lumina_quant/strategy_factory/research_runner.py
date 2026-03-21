@@ -4187,6 +4187,213 @@ def _candidate_cost_rate(candidate: dict[str, Any]) -> float:
     return 0.0005
 
 
+def _candidate_symbols_and_timeframe(
+    candidate: Mapping[str, Any],
+) -> tuple[list[str], str]:
+    symbols = canonicalize_symbol_list(list(candidate.get("symbols") or []))
+    timeframe = str(candidate.get("strategy_timeframe") or candidate.get("timeframe") or "1m")
+    return symbols, timeframe
+
+
+def _candidate_bundle_list(
+    *,
+    symbols: Sequence[str],
+    timeframe: str,
+    cache: Mapping[tuple[str, str], SeriesBundle],
+) -> list[SeriesBundle]:
+    bundles: list[SeriesBundle] = []
+    for symbol in symbols:
+        bundle = cache.get((symbol, timeframe))
+        if bundle is None:
+            continue
+        bundles.append(bundle)
+    return bundles
+
+
+def _insufficient_candidate_result(
+    candidate: dict[str, Any],
+    *,
+    symbols: Sequence[str],
+    timeframe: str,
+    cache: Mapping[tuple[str, str], SeriesBundle],
+) -> dict[str, Any]:
+    return {
+        "error": "insufficient_data",
+        "candidate": candidate,
+        "returns": np.asarray([], dtype=float),
+        "turnover": np.asarray([], dtype=float),
+        "exposure": np.asarray([], dtype=float),
+        "metadata": {
+            "missing_symbols": [symbol for symbol in symbols if (symbol, timeframe) not in cache]
+        },
+    }
+
+
+def _candidate_benchmark_series(
+    *,
+    benchmark_cache: Mapping[str, Mapping[str, np.ndarray] | np.ndarray],
+    timeframe: str,
+    timestamps: np.ndarray,
+    returns_size: int,
+) -> np.ndarray:
+    benchmark_entry = benchmark_cache.get(timeframe)
+    if isinstance(benchmark_entry, Mapping):
+        benchmark_datetime = benchmark_entry.get("datetime")
+        benchmark_returns = benchmark_entry.get("returns")
+        return _align_series_to_timestamps(
+            timestamps,
+            source_timestamps=np.asarray(
+                benchmark_datetime if benchmark_datetime is not None else [],
+                dtype="datetime64[ms]",
+            ),
+            values=np.asarray(benchmark_returns if benchmark_returns is not None else [], dtype=float),
+        )
+
+    benchmark = np.asarray(benchmark_entry if benchmark_entry is not None else [], dtype=float)
+    if benchmark.size < returns_size:
+        benchmark = np.zeros(returns_size, dtype=float)
+    return benchmark[-returns_size:]
+
+
+def _metrics_for_mask(
+    *,
+    returns: np.ndarray,
+    turnover: np.ndarray,
+    exposure: np.ndarray,
+    benchmark_returns: np.ndarray,
+    timestamps: np.ndarray,
+    mask: np.ndarray,
+    periods_per_year: int,
+    candidate_count: int,
+) -> dict[str, Any]:
+    return _compute_metrics(
+        returns[mask],
+        turnover=turnover[mask],
+        exposure=exposure[mask],
+        benchmark_returns=benchmark_returns[mask],
+        periods_per_year=periods_per_year,
+        num_trials=candidate_count,
+        metric_config=BacktestConfig,
+        timestamps=timestamps[mask],
+    )
+
+
+def _candidate_stage_metrics(
+    *,
+    returns: np.ndarray,
+    turnover: np.ndarray,
+    exposure: np.ndarray,
+    benchmark: np.ndarray,
+    timestamps: np.ndarray,
+    split_masks: Mapping[str, np.ndarray],
+    periods_per_year: int,
+    candidate_count: int,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    train_metrics = _metrics_for_mask(
+        returns=returns,
+        turnover=turnover,
+        exposure=exposure,
+        benchmark_returns=benchmark,
+        timestamps=timestamps,
+        mask=split_masks["train"],
+        periods_per_year=periods_per_year,
+        candidate_count=candidate_count,
+    )
+    val_metrics = _metrics_for_mask(
+        returns=returns,
+        turnover=turnover,
+        exposure=exposure,
+        benchmark_returns=benchmark,
+        timestamps=timestamps,
+        mask=split_masks["val"],
+        periods_per_year=periods_per_year,
+        candidate_count=candidate_count,
+    )
+    oos_metrics = _metrics_for_mask(
+        returns=returns,
+        turnover=turnover,
+        exposure=exposure,
+        benchmark_returns=benchmark,
+        timestamps=timestamps,
+        mask=split_masks["oos"],
+        periods_per_year=periods_per_year,
+        candidate_count=candidate_count,
+    )
+    return train_metrics, val_metrics, oos_metrics
+
+
+def _candidate_oos_cost_stress_metrics(
+    *,
+    returns_raw: np.ndarray,
+    turnover: np.ndarray,
+    exposure: np.ndarray,
+    benchmark: np.ndarray,
+    timestamps: np.ndarray,
+    split_masks: Mapping[str, np.ndarray],
+    cost_rate: float,
+    periods_per_year: int,
+    candidate_count: int,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    oos_mask = split_masks["oos"]
+    oos_turnover = turnover[oos_mask]
+    oos_x2 = returns_raw[oos_mask] - (oos_turnover * (cost_rate * 2.0))
+    oos_x3 = returns_raw[oos_mask] - (oos_turnover * (cost_rate * 3.0))
+    oos_stress_x2 = _compute_metrics(
+        oos_x2,
+        turnover=oos_turnover,
+        exposure=exposure[oos_mask],
+        benchmark_returns=benchmark[oos_mask],
+        periods_per_year=periods_per_year,
+        num_trials=candidate_count,
+        metric_config=BacktestConfig,
+        timestamps=timestamps[oos_mask],
+    )
+    oos_stress_x3 = _compute_metrics(
+        oos_x3,
+        turnover=oos_turnover,
+        exposure=exposure[oos_mask],
+        benchmark_returns=benchmark[oos_mask],
+        periods_per_year=periods_per_year,
+        num_trials=candidate_count,
+        metric_config=BacktestConfig,
+        timestamps=timestamps[oos_mask],
+    )
+    return oos_stress_x2, oos_stress_x3
+
+
+def _apply_cost_stress_hard_rejects(
+    *,
+    hard_reject: dict[str, Any],
+    oos_stress_x2: Mapping[str, Any],
+    oos_stress_x3: Mapping[str, Any],
+    scoring_config: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    updated = dict(hard_reject)
+    cfg = _resolve_score_config(scoring_config)
+    stress_cfg = dict(cfg.get("cost_stress_thresholds") or {})
+    if float(oos_stress_x2.get("sharpe", 0.0)) < float(stress_cfg.get("x2_sharpe_min", 0.0)):
+        updated["stress_x2_sharpe"] = float(oos_stress_x2.get("sharpe", 0.0))
+    if float(oos_stress_x3.get("sharpe", 0.0)) < float(stress_cfg.get("x3_sharpe_min", -0.25)):
+        updated["stress_x3_sharpe"] = float(oos_stress_x3.get("sharpe", 0.0))
+    return updated
+
+
+def _stage1_prefilter_score(
+    result: Mapping[str, Any],
+    *,
+    stage1_weights: Mapping[str, Any],
+    stage1_error_score: float,
+) -> float:
+    if result.get("error"):
+        return float(stage1_error_score)
+    train = dict(result.get("train") or {})
+    return float(
+        (float(stage1_weights["sharpe_weight"]) * float(train.get("sharpe", 0.0)))
+        + (float(stage1_weights["return_weight"]) * float(train.get("return", 0.0)))
+        - (float(stage1_weights["pbo_penalty"]) * float(train.get("pbo", 1.0)))
+    )
+
+
 def _evaluate_candidate(
     candidate: dict[str, Any],
     *,
@@ -4197,25 +4404,16 @@ def _evaluate_candidate(
     scoring_config: Mapping[str, Any] | None = None,
     split: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    symbols = canonicalize_symbol_list(list(candidate.get("symbols") or []))
-    timeframe = str(candidate.get("strategy_timeframe") or candidate.get("timeframe") or "1m")
-    bundles: list[SeriesBundle] = []
-    for symbol in symbols:
-        bundle = cache.get((symbol, timeframe))
-        if bundle is None:
-            continue
-        bundles.append(bundle)
-
+    symbols, timeframe = _candidate_symbols_and_timeframe(candidate)
+    bundles = _candidate_bundle_list(symbols=symbols, timeframe=timeframe, cache=cache)
     aligned = _align_bundles(bundles, feature_cache=feature_cache)
     if aligned is None:
-        return {
-            "error": "insufficient_data",
-            "candidate": candidate,
-            "returns": np.asarray([], dtype=float),
-            "turnover": np.asarray([], dtype=float),
-            "exposure": np.asarray([], dtype=float),
-            "metadata": {"missing_symbols": [symbol for symbol in symbols if (symbol, timeframe) not in cache]},
-        }
+        return _insufficient_candidate_result(
+            candidate,
+            symbols=symbols,
+            timeframe=timeframe,
+            cache=cache,
+        )
 
     returns_raw, turnover, exposure, meta = _strategy_signal(candidate, aligned=aligned, symbols=symbols)
     cost_rate = _candidate_cost_rate(candidate)
@@ -4223,96 +4421,34 @@ def _evaluate_candidate(
     timestamps = np.asarray(aligned.get("datetime"), dtype="datetime64[ms]")
 
     split_masks = _split_masks_from_datetimes(timestamps, split=split)
-    train_returns = returns[split_masks["train"]]
-    val_returns = returns[split_masks["val"]]
-    oos_returns = returns[split_masks["oos"]]
-
-    train_turnover = turnover[split_masks["train"]]
-    val_turnover = turnover[split_masks["val"]]
-    oos_turnover = turnover[split_masks["oos"]]
-
-    train_exposure = exposure[split_masks["train"]]
-    val_exposure = exposure[split_masks["val"]]
-    oos_exposure = exposure[split_masks["oos"]]
-
     periods_per_year = int(_PERIODS_PER_YEAR.get(timeframe, 365))
-    benchmark_entry = benchmark_cache.get(timeframe)
-    if isinstance(benchmark_entry, Mapping):
-        benchmark_datetime = benchmark_entry.get("datetime")
-        benchmark_returns = benchmark_entry.get("returns")
-        benchmark = _align_series_to_timestamps(
-            timestamps,
-            source_timestamps=np.asarray(
-                benchmark_datetime if benchmark_datetime is not None else [],
-                dtype="datetime64[ms]",
-            ),
-            values=np.asarray(benchmark_returns if benchmark_returns is not None else [], dtype=float),
-        )
-    else:
-        benchmark = np.asarray(benchmark_entry if benchmark_entry is not None else [], dtype=float)
-        if benchmark.size < returns.size:
-            benchmark = np.zeros_like(returns)
-        benchmark = benchmark[-returns.size :]
-
-    train_bench = benchmark[split_masks["train"]]
-    val_bench = benchmark[split_masks["val"]]
-    oos_bench = benchmark[split_masks["oos"]]
-
-    train_metrics = _compute_metrics(
-        train_returns,
-        turnover=train_turnover,
-        exposure=train_exposure,
-        benchmark_returns=train_bench,
-        periods_per_year=periods_per_year,
-        num_trials=candidate_count,
-        metric_config=BacktestConfig,
-        timestamps=timestamps[split_masks["train"]],
+    benchmark = _candidate_benchmark_series(
+        benchmark_cache=benchmark_cache,
+        timeframe=timeframe,
+        timestamps=timestamps,
+        returns_size=returns.size,
     )
-    val_metrics = _compute_metrics(
-        val_returns,
-        turnover=val_turnover,
-        exposure=val_exposure,
-        benchmark_returns=val_bench,
+    train_metrics, val_metrics, oos_metrics = _candidate_stage_metrics(
+        returns=returns,
+        turnover=turnover,
+        exposure=exposure,
+        benchmark=benchmark,
+        timestamps=timestamps,
+        split_masks=split_masks,
         periods_per_year=periods_per_year,
-        num_trials=candidate_count,
-        metric_config=BacktestConfig,
-        timestamps=timestamps[split_masks["val"]],
-    )
-    oos_metrics = _compute_metrics(
-        oos_returns,
-        turnover=oos_turnover,
-        exposure=oos_exposure,
-        benchmark_returns=oos_bench,
-        periods_per_year=periods_per_year,
-        num_trials=candidate_count,
-        metric_config=BacktestConfig,
-        timestamps=timestamps[split_masks["oos"]],
+        candidate_count=candidate_count,
     )
 
-    # Cost stress tests on OOS.
-    cost_rate_x2 = cost_rate * 2.0
-    cost_rate_x3 = cost_rate * 3.0
-    oos_x2 = returns_raw[split_masks["oos"]] - (oos_turnover * cost_rate_x2)
-    oos_x3 = returns_raw[split_masks["oos"]] - (oos_turnover * cost_rate_x3)
-    oos_stress_x2 = _compute_metrics(
-        oos_x2,
-        turnover=oos_turnover,
-        exposure=oos_exposure,
-        benchmark_returns=oos_bench,
+    oos_stress_x2, oos_stress_x3 = _candidate_oos_cost_stress_metrics(
+        returns_raw=returns_raw,
+        turnover=turnover,
+        exposure=exposure,
+        benchmark=benchmark,
+        timestamps=timestamps,
+        split_masks=split_masks,
+        cost_rate=cost_rate,
         periods_per_year=periods_per_year,
-        num_trials=candidate_count,
-        metric_config=BacktestConfig,
-        timestamps=timestamps[split_masks["oos"]],
-    )
-    oos_stress_x3 = _compute_metrics(
-        oos_x3,
-        turnover=oos_turnover,
-        exposure=oos_exposure,
-        benchmark_returns=oos_bench,
-        periods_per_year=periods_per_year,
-        num_trials=candidate_count,
-        metric_config=BacktestConfig,
-        timestamps=timestamps[split_masks["oos"]],
+        candidate_count=candidate_count,
     )
 
     hurdle_fields, passed, hard_reject = _hurdle_fields(
@@ -4322,17 +4458,12 @@ def _evaluate_candidate(
         scoring_config=scoring_config,
     )
 
-    cfg = _resolve_score_config(scoring_config)
-    stress_cfg = dict(cfg.get("cost_stress_thresholds") or {})
-    x2_sharpe_min = float(stress_cfg.get("x2_sharpe_min", 0.0))
-    x3_sharpe_min = float(stress_cfg.get("x3_sharpe_min", -0.25))
-
-    # Enforce hard reject when stress collapses.
-    if float(oos_stress_x2.get("sharpe", 0.0)) < x2_sharpe_min:
-        hard_reject["stress_x2_sharpe"] = float(oos_stress_x2.get("sharpe", 0.0))
-    if float(oos_stress_x3.get("sharpe", 0.0)) < x3_sharpe_min:
-        hard_reject["stress_x3_sharpe"] = float(oos_stress_x3.get("sharpe", 0.0))
-
+    hard_reject = _apply_cost_stress_hard_rejects(
+        hard_reject=hard_reject,
+        oos_stress_x2=oos_stress_x2,
+        oos_stress_x3=oos_stress_x3,
+        scoring_config=scoring_config,
+    )
     passed = passed and not hard_reject
     for stage in ("train", "val", "oos"):
         hurdle_fields[stage]["pass"] = bool(hurdle_fields[stage]["pass"] and passed)
@@ -4670,70 +4801,97 @@ def _build_default_split(strategy_timeframe: str) -> dict[str, Any]:
     }
 
 
-def run_candidate_research(
-    *,
-    candidates: Iterable[dict[str, Any]],
-    base_timeframe: str = "1s",
-    strategy_timeframes: Sequence[str] | None = None,
-    symbol_universe: Sequence[str] | None = None,
-    stage1_keep_ratio: float = 0.35,
-    max_candidates: int = 512,
-    score_config: Mapping[str, Any] | None = None,
-    split: Mapping[str, Any] | None = None,
-    data_mode: str = "legacy",
-    allow_csv_fallback: bool = True,
-    allow_synthetic_fallback: bool = True,
-    min_bundle_bars: int = _MIN_BARS,
-) -> dict[str, Any]:
-    """Evaluate candidate manifest into train/val/OOS report contract (v2)."""
-    base_tf = str(base_timeframe).strip().lower() or "1s"
-    if base_tf != "1s":
-        base_tf = "1s"
+@dataclass(frozen=True, slots=True)
+class _ResearchRunScoringConfig:
+    resolved_scoring_config: dict[str, Any]
+    keep_ratio_applied: float
+    stage1_weights: dict[str, Any]
+    stage1_error_score: float
+    failed_candidate_selection_score: float
+    sort_missing_selection_score: float
 
+
+def _normalize_candidate_research_base_timeframe(base_timeframe: str) -> str:
+    base_tf = str(base_timeframe).strip().lower() or "1s"
+    return "1s" if base_tf != "1s" else base_tf
+
+
+def _resolve_research_run_scoring_config(
+    *,
+    score_config: Mapping[str, Any] | None,
+    stage1_keep_ratio: float,
+) -> _ResearchRunScoringConfig:
     resolved_scoring_config = _resolve_score_config(score_config)
     keep_ratio_cfg = dict(resolved_scoring_config["keep_ratio_bounds"])
     score_fallbacks = dict(resolved_scoring_config["score_fallbacks"])
-    stage1_weights = dict(resolved_scoring_config["stage1_prefilter_weights"])
-    keep_ratio_min = float(keep_ratio_cfg["min"])
-    keep_ratio_max = float(keep_ratio_cfg["max"])
-    stage1_error_score = float(score_fallbacks["stage1_error_score"])
-    failed_candidate_selection_score = float(score_fallbacks["failed_candidate_selection_score"])
-    sort_missing_selection_score = float(score_fallbacks["sort_missing_selection_score"])
-    keep_ratio_applied = max(keep_ratio_min, min(keep_ratio_max, float(stage1_keep_ratio)))
+    return _ResearchRunScoringConfig(
+        resolved_scoring_config=resolved_scoring_config,
+        keep_ratio_applied=max(
+            float(keep_ratio_cfg["min"]),
+            min(float(keep_ratio_cfg["max"]), float(stage1_keep_ratio)),
+        ),
+        stage1_weights=dict(resolved_scoring_config["stage1_prefilter_weights"]),
+        stage1_error_score=float(score_fallbacks["stage1_error_score"]),
+        failed_candidate_selection_score=float(score_fallbacks["failed_candidate_selection_score"]),
+        sort_missing_selection_score=float(score_fallbacks["sort_missing_selection_score"]),
+    )
 
+
+def _adapt_candidate_inputs(
+    candidates: Iterable[dict[str, Any]],
+    *,
+    max_candidates: int,
+) -> list[dict[str, Any]]:
     adapted = [adapt_legacy_candidate(item) for item in candidates]
     if int(max_candidates) > 0:
         adapted = adapted[: int(max_candidates)]
+    return adapted
 
-    if not adapted:
-        normalized_timeframes = normalize_strategy_timeframes(
-            strategy_timeframes or CANONICAL_STRATEGY_TIMEFRAMES,
-            required=CANONICAL_STRATEGY_TIMEFRAMES,
-            strict_subset=True,
-        )
-        empty_split = _resolve_split_config(
-            split,
-            strategy_timeframe=normalized_timeframes[0] if normalized_timeframes else "1m",
-        )
-        return {
-            "schema_version": "v2",
-            "generated_at": datetime.now(UTC).isoformat(),
-            "base_timeframe": base_tf,
-            "strategy_timeframes": normalized_timeframes,
-            "symbol_universe": canonicalize_symbol_list(
-                symbol_universe or _current_research_market_data_settings()["symbols"]
-            ),
-            "split": empty_split,
-            "candidates": [],
-            "stage1": {
-                "input_count": 0,
-                "selected_count": 0,
-                "keep_ratio": float(stage1_keep_ratio),
-                "keep_ratio_applied": float(keep_ratio_applied),
-            },
-            "scoring_config": resolved_scoring_config,
-        }
 
+def _empty_candidate_research_report(
+    *,
+    base_timeframe: str,
+    strategy_timeframes: Sequence[str] | None,
+    symbol_universe: Sequence[str] | None,
+    stage1_keep_ratio: float,
+    scoring: _ResearchRunScoringConfig,
+    split: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    normalized_timeframes = normalize_strategy_timeframes(
+        strategy_timeframes or CANONICAL_STRATEGY_TIMEFRAMES,
+        required=CANONICAL_STRATEGY_TIMEFRAMES,
+        strict_subset=True,
+    )
+    empty_split = _resolve_split_config(
+        split,
+        strategy_timeframe=normalized_timeframes[0] if normalized_timeframes else "1m",
+    )
+    return {
+        "schema_version": "v2",
+        "generated_at": datetime.now(UTC).isoformat(),
+        "base_timeframe": base_timeframe,
+        "strategy_timeframes": normalized_timeframes,
+        "symbol_universe": canonicalize_symbol_list(
+            symbol_universe or _current_research_market_data_settings()["symbols"]
+        ),
+        "split": empty_split,
+        "candidates": [],
+        "stage1": {
+            "input_count": 0,
+            "selected_count": 0,
+            "keep_ratio": float(stage1_keep_ratio),
+            "keep_ratio_applied": float(scoring.keep_ratio_applied),
+        },
+        "scoring_config": scoring.resolved_scoring_config,
+    }
+
+
+def _resolve_research_run_timeframes_and_universe(
+    *,
+    adapted: Sequence[dict[str, Any]],
+    strategy_timeframes: Sequence[str] | None,
+    symbol_universe: Sequence[str] | None,
+) -> tuple[list[str], list[str]]:
     discovered_timeframes = sorted(
         {
             str(row.get("strategy_timeframe") or row.get("timeframe") or "1m").strip().lower()
@@ -4748,17 +4906,33 @@ def run_candidate_research(
     universe = canonicalize_symbol_list(
         symbol_universe or _current_research_market_data_settings()["symbols"]
     )
-
     candidate_symbols = canonicalize_symbol_list(
         itertools.chain.from_iterable(list(row.get("symbols") or []) for row in adapted)
     )
     if candidate_symbols:
-        universe = canonicalize_symbol_list(list(dict.fromkeys(list(universe) + list(candidate_symbols))))
+        universe = canonicalize_symbol_list(
+            list(dict.fromkeys(list(universe) + list(candidate_symbols)))
+        )
+    return normalized_timeframes, universe
 
-    split_timeframe = normalized_timeframes[0] if normalized_timeframes else "1m"
-    resolved_split = _resolve_split_config(split, strategy_timeframe=split_timeframe)
+
+def _load_research_run_resources(
+    *,
+    adapted: Sequence[dict[str, Any]],
+    normalized_timeframes: Sequence[str],
+    universe: Sequence[str],
+    resolved_split: Mapping[str, Any],
+    data_mode: str,
+    allow_csv_fallback: bool,
+    allow_synthetic_fallback: bool,
+    min_bundle_bars: int,
+) -> tuple[
+    dict[tuple[str, str], SeriesBundle],
+    dict[str, list[str]],
+    dict[str, pl.DataFrame],
+    dict[str, dict[str, np.ndarray]],
+]:
     load_start, load_end = _split_window_bounds(resolved_split)
-
     load_bundle_kwargs = {
         "symbols": universe,
         "timeframes": normalized_timeframes,
@@ -4777,6 +4951,7 @@ def run_candidate_research(
         if "unexpected keyword argument" not in str(exc):
             raise
         cache, data_sources = _load_bundle_cache(**load_bundle_kwargs)
+
     support_feature_symbols = canonicalize_symbol_list(
         itertools.chain.from_iterable(
             list(row.get("symbols") or [])
@@ -4791,184 +4966,275 @@ def run_candidate_research(
         end_date=_datetime_to_iso_z(load_end),
     )
     benchmark = _benchmark_cache(cache, normalized_timeframes)
+    return cache, data_sources, feature_cache, benchmark
 
-    # Stage-1 fast prefilter: evaluate on early train region approximation.
+
+def _evaluate_candidate_with_optional_split(
+    candidate: dict[str, Any],
+    *,
+    cache: Mapping[tuple[str, str], SeriesBundle],
+    feature_cache: Mapping[str, pl.DataFrame] | None,
+    benchmark_cache: Mapping[str, Mapping[str, np.ndarray] | np.ndarray],
+    candidate_count: int,
+    scoring_config: Mapping[str, Any] | None,
+    split: Mapping[str, Any],
+) -> dict[str, Any]:
+    evaluate_kwargs = {
+        "cache": cache,
+        "feature_cache": feature_cache,
+        "benchmark_cache": benchmark_cache,
+        "candidate_count": max(1, candidate_count),
+        "scoring_config": scoring_config,
+    }
+    try:
+        return _evaluate_candidate(
+            candidate,
+            **evaluate_kwargs,
+            split=split,
+        )
+    except TypeError as exc:
+        if "unexpected keyword argument" not in str(exc):
+            raise
+        return _evaluate_candidate(candidate, **evaluate_kwargs)
+
+
+def _select_stage2_results(
+    *,
+    adapted: Sequence[dict[str, Any]],
+    cache: Mapping[tuple[str, str], SeriesBundle],
+    feature_cache: Mapping[str, pl.DataFrame] | None,
+    benchmark: Mapping[str, Mapping[str, np.ndarray] | np.ndarray],
+    scoring: _ResearchRunScoringConfig,
+    resolved_split: Mapping[str, Any],
+) -> list[dict[str, Any]]:
     scored_stage1: list[tuple[float, dict[str, Any]]] = []
     for row in adapted:
-        evaluate_kwargs = {
-            "cache": cache,
-            "feature_cache": feature_cache,
-            "benchmark_cache": benchmark,
-            "candidate_count": max(1, len(adapted)),
-            "scoring_config": resolved_scoring_config,
-        }
-        try:
-            result = _evaluate_candidate(
-                row,
-                **evaluate_kwargs,
-                split=resolved_split,
-            )
-        except TypeError as exc:
-            if "unexpected keyword argument" not in str(exc):
-                raise
-            result = _evaluate_candidate(
-                row,
-                **evaluate_kwargs,
-            )
-        if result.get("error"):
-            score = stage1_error_score
-        else:
-            train = dict(result.get("train") or {})
-            score = (
-                (float(stage1_weights["sharpe_weight"]) * float(train.get("sharpe", 0.0)))
-                + (float(stage1_weights["return_weight"]) * float(train.get("return", 0.0)))
-                - (float(stage1_weights["pbo_penalty"]) * float(train.get("pbo", 1.0)))
-            )
+        result = _evaluate_candidate_with_optional_split(
+            row,
+            cache=cache,
+            feature_cache=feature_cache,
+            benchmark_cache=benchmark,
+            candidate_count=len(adapted),
+            scoring_config=scoring.resolved_scoring_config,
+            split=resolved_split,
+        )
+        score = _stage1_prefilter_score(
+            result,
+            stage1_weights=scoring.stage1_weights,
+            stage1_error_score=scoring.stage1_error_score,
+        )
         scored_stage1.append((float(score), result))
 
     ranked = sorted(scored_stage1, key=lambda item: item[0], reverse=True)
-    keep_ratio = keep_ratio_applied
-    keep_count = max(1, round(len(ranked) * keep_ratio))
-    stage2 = [item[1] for item in ranked[:keep_count]]
+    keep_count = max(1, round(len(ranked) * scoring.keep_ratio_applied))
+    return [item[1] for item in ranked[:keep_count]]
 
+
+def _result_timestamps_and_split_masks(
+    result: Mapping[str, Any],
+    *,
+    resolved_split: Mapping[str, Any],
+) -> tuple[np.ndarray, dict[str, np.ndarray], bool]:
+    returns = np.asarray(result.get("returns"), dtype=float)
+    raw_timestamps = result.get("timestamps")
+    timestamps = (
+        np.asarray(raw_timestamps, dtype="datetime64[ms]")
+        if raw_timestamps is not None
+        else np.asarray([], dtype="datetime64[ms]")
+    )
+    has_aligned_timestamps = timestamps.size == returns.size
+    if has_aligned_timestamps:
+        split_masks = _split_masks_from_datetimes(timestamps, split=resolved_split)
+    else:
+        train_slice, val_slice, oos_slice = _split_lengths(returns.size)
+        split_masks = {
+            "train": np.zeros(returns.size, dtype=bool),
+            "val": np.zeros(returns.size, dtype=bool),
+            "oos": np.zeros(returns.size, dtype=bool),
+        }
+        split_masks["train"][train_slice] = True
+        split_masks["val"][val_slice] = True
+        split_masks["oos"][oos_slice] = True
+    return timestamps, split_masks, has_aligned_timestamps
+
+
+def _error_candidate_report_payload(
+    *,
+    result: Mapping[str, Any],
+    resolved_scoring_config: Mapping[str, Any],
+    failed_candidate_selection_score: float,
+    candidate_count: int,
+) -> dict[str, Any]:
+    row = dict(result.get("candidate") or {})
+    timeframe = str(row.get("strategy_timeframe") or row.get("timeframe") or "1m")
+    empty_metrics = _compute_metrics(
+        np.asarray([], dtype=float),
+        turnover=np.asarray([], dtype=float),
+        exposure=np.asarray([], dtype=float),
+        benchmark_returns=np.asarray([], dtype=float),
+        periods_per_year=int(_PERIODS_PER_YEAR.get(timeframe, 365)),
+        num_trials=max(1, candidate_count),
+        metric_config=BacktestConfig,
+        timestamps=np.asarray([], dtype="datetime64[ms]"),
+    )
+    hurdles, passed, _ = _hurdle_fields(
+        empty_metrics,
+        empty_metrics,
+        empty_metrics,
+        scoring_config=resolved_scoring_config,
+    )
+    return {
+        "candidate_id": str(row.get("candidate_id")),
+        "name": str(row.get("name")),
+        "strategy_class": str(row.get("strategy_class")),
+        "strategy": str(row.get("strategy") or row.get("strategy_class") or ""),
+        "family": str(row.get("family") or _family_from_strategy(str(row.get("strategy_class")))),
+        "strategy_timeframe": timeframe,
+        "timeframe": timeframe,
+        "symbols": canonicalize_symbol_list(list(row.get("symbols") or [])),
+        "params": dict(row.get("params") or {}),
+        "train": empty_metrics,
+        "val": empty_metrics,
+        "oos": empty_metrics,
+        "hurdle_fields": hurdles,
+        "return_streams": {"train": [], "val": [], "oos": []},
+        "cost_metrics": {"turnover": 0.0, "fee_cost": 0.0, "slippage_cost": 0.0},
+        "oos_cost_stress": {
+            "x2": {"sharpe": 0.0, "return": 0.0},
+            "x3": {"sharpe": 0.0, "return": 0.0},
+        },
+        "hard_reject": True,
+        "hard_reject_reasons": {"insufficient_data": True},
+        "selection_score": failed_candidate_selection_score,
+        "pass": bool(passed),
+        "metadata": dict(result.get("metadata") or {}),
+    }
+
+
+def _candidate_return_streams(
+    *,
+    returns: np.ndarray,
+    timestamps: np.ndarray,
+    split_masks: Mapping[str, np.ndarray],
+    has_aligned_timestamps: bool,
+) -> dict[str, list[dict[str, float | int]]]:
+    return {
+        "train": _series_to_stream(
+            returns[split_masks["train"]],
+            timestamps=timestamps[split_masks["train"]] if has_aligned_timestamps else None,
+        ),
+        "val": _series_to_stream(
+            returns[split_masks["val"]],
+            timestamps=timestamps[split_masks["val"]] if has_aligned_timestamps else None,
+        ),
+        "oos": _series_to_stream(
+            returns[split_masks["oos"]],
+            timestamps=timestamps[split_masks["oos"]] if has_aligned_timestamps else None,
+        ),
+    }
+
+
+def _successful_candidate_report_payload(
+    *,
+    result: Mapping[str, Any],
+    resolved_split: Mapping[str, Any],
+    resolved_scoring_config: Mapping[str, Any],
+) -> dict[str, Any]:
+    row = dict(result.get("candidate") or {})
+    timeframe = str(row.get("strategy_timeframe") or row.get("timeframe") or "1m")
+    returns = np.asarray(result.get("returns"), dtype=float)
+    timestamps, split_masks, has_aligned_timestamps = _result_timestamps_and_split_masks(
+        result,
+        resolved_split=resolved_split,
+    )
+    train = dict(result.get("train") or {})
+    val = dict(result.get("val") or {})
+    oos = dict(result.get("oos") or {})
+    hard_reject = dict(result.get("hard_reject_reasons") or {})
+    hard_reject_flag = bool(hard_reject)
+
+    candidate_payload = {
+        "candidate_id": str(row.get("candidate_id")),
+        "name": str(row.get("name")),
+        "strategy_class": str(row.get("strategy_class")),
+        "strategy": str(row.get("strategy") or row.get("strategy_class") or ""),
+        "family": str(row.get("family") or _family_from_strategy(str(row.get("strategy_class")))),
+        "strategy_timeframe": timeframe,
+        "timeframe": timeframe,
+        "symbols": canonicalize_symbol_list(list(row.get("symbols") or [])),
+        "params": dict(row.get("params") or {}),
+        "notes": str(row.get("notes") or result.get("notes") or ""),
+        "tags": [
+            str(tag)
+            for tag in list(row.get("tags") or result.get("tags") or [])
+            if str(tag)
+        ],
+        "train": train,
+        "val": val,
+        "oos": oos,
+        "hurdle_fields": dict(result.get("hurdle_fields") or {}),
+        "return_streams": _candidate_return_streams(
+            returns=returns,
+            timestamps=timestamps,
+            split_masks=split_masks,
+            has_aligned_timestamps=has_aligned_timestamps,
+        ),
+        "cost_metrics": {
+            "turnover": float(oos.get("turnover", 0.0)),
+            "fee_cost": float(result.get("metadata", {}).get("cost_rate", 0.0)),
+            "slippage_cost": float(result.get("metadata", {}).get("cost_rate", 0.0) * 0.7),
+        },
+        "oos_cost_stress": dict(result.get("oos_cost_stress") or {}),
+        "hard_reject": hard_reject_flag,
+        "hard_reject_reasons": hard_reject,
+        "pass": bool(result.get("pass", False)) and not hard_reject_flag,
+        "metadata": {
+            **dict(row.get("metadata") or {}),
+            **dict(result.get("metadata") or {}),
+        },
+    }
+    candidate_payload["selection_score"] = _candidate_rank_score(
+        candidate_payload,
+        scoring_config=resolved_scoring_config,
+    )
+    return candidate_payload
+
+
+def _report_candidates_from_stage2_results(
+    *,
+    stage2_results: Sequence[dict[str, Any]],
+    candidate_count: int,
+    resolved_split: Mapping[str, Any],
+    scoring: _ResearchRunScoringConfig,
+) -> list[dict[str, Any]]:
     report_candidates: list[dict[str, Any]] = []
-    for result in stage2:
-        row = dict(result.get("candidate") or {})
-        timeframe = str(row.get("strategy_timeframe") or row.get("timeframe") or "1m")
-
+    for result in stage2_results:
         if result.get("error"):
-            empty_metrics = _compute_metrics(
-                np.asarray([], dtype=float),
-                turnover=np.asarray([], dtype=float),
-                exposure=np.asarray([], dtype=float),
-                benchmark_returns=np.asarray([], dtype=float),
-                periods_per_year=int(_PERIODS_PER_YEAR.get(timeframe, 365)),
-                num_trials=max(1, len(adapted)),
-                metric_config=BacktestConfig,
-                timestamps=np.asarray([], dtype="datetime64[ms]"),
-            )
-            hurdles, passed, hard_reject = _hurdle_fields(
-                empty_metrics,
-                empty_metrics,
-                empty_metrics,
-                scoring_config=resolved_scoring_config,
-            )
             report_candidates.append(
-                {
-                    "candidate_id": str(row.get("candidate_id")),
-                    "name": str(row.get("name")),
-                    "strategy_class": str(row.get("strategy_class")),
-                    "strategy": str(row.get("strategy") or row.get("strategy_class") or ""),
-                    "family": str(row.get("family") or _family_from_strategy(str(row.get("strategy_class")))),
-                    "strategy_timeframe": timeframe,
-                    "timeframe": timeframe,
-                    "symbols": canonicalize_symbol_list(list(row.get("symbols") or [])),
-                    "params": dict(row.get("params") or {}),
-                    "train": empty_metrics,
-                    "val": empty_metrics,
-                    "oos": empty_metrics,
-                    "hurdle_fields": hurdles,
-                    "return_streams": {"train": [], "val": [], "oos": []},
-                    "cost_metrics": {"turnover": 0.0, "fee_cost": 0.0, "slippage_cost": 0.0},
-                    "oos_cost_stress": {"x2": {"sharpe": 0.0, "return": 0.0}, "x3": {"sharpe": 0.0, "return": 0.0}},
-                    "hard_reject": True,
-                    "hard_reject_reasons": {"insufficient_data": True},
-                    "selection_score": failed_candidate_selection_score,
-                    "pass": bool(passed),
-                    "metadata": dict(result.get("metadata") or {}),
-                }
+                _error_candidate_report_payload(
+                    result=result,
+                    resolved_scoring_config=scoring.resolved_scoring_config,
+                    failed_candidate_selection_score=scoring.failed_candidate_selection_score,
+                    candidate_count=candidate_count,
+                )
             )
             continue
-
-        returns = np.asarray(result.get("returns"), dtype=float)
-        raw_timestamps = result.get("timestamps")
-        timestamps = (
-            np.asarray(raw_timestamps, dtype="datetime64[ms]")
-            if raw_timestamps is not None
-            else np.asarray([], dtype="datetime64[ms]")
+        report_candidates.append(
+            _successful_candidate_report_payload(
+                result=result,
+                resolved_split=resolved_split,
+                resolved_scoring_config=scoring.resolved_scoring_config,
+            )
         )
-        has_aligned_timestamps = timestamps.size == returns.size
-        if has_aligned_timestamps:
-            split_masks = _split_masks_from_datetimes(timestamps, split=resolved_split)
-        else:
-            train_slice, val_slice, oos_slice = _split_lengths(returns.size)
-            split_masks = {
-                "train": np.zeros(returns.size, dtype=bool),
-                "val": np.zeros(returns.size, dtype=bool),
-                "oos": np.zeros(returns.size, dtype=bool),
-            }
-            split_masks["train"][train_slice] = True
-            split_masks["val"][val_slice] = True
-            split_masks["oos"][oos_slice] = True
+    return report_candidates
 
-        train = dict(result.get("train") or {})
-        val = dict(result.get("val") or {})
-        oos = dict(result.get("oos") or {})
 
-        hard_reject = dict(result.get("hard_reject_reasons") or {})
-        hard_reject_flag = bool(hard_reject)
-
-        candidate_payload = {
-            "candidate_id": str(row.get("candidate_id")),
-            "name": str(row.get("name")),
-            "strategy_class": str(row.get("strategy_class")),
-            "strategy": str(row.get("strategy") or row.get("strategy_class") or ""),
-            "family": str(row.get("family") or _family_from_strategy(str(row.get("strategy_class")))),
-            "strategy_timeframe": timeframe,
-            "timeframe": timeframe,
-            "symbols": canonicalize_symbol_list(list(row.get("symbols") or [])),
-            "params": dict(row.get("params") or {}),
-            "notes": str(row.get("notes") or result.get("notes") or ""),
-            "tags": [
-                str(tag)
-                for tag in list(row.get("tags") or result.get("tags") or [])
-                if str(tag)
-            ],
-            "train": train,
-            "val": val,
-            "oos": oos,
-            "hurdle_fields": dict(result.get("hurdle_fields") or {}),
-                "return_streams": {
-                    "train": _series_to_stream(
-                        returns[split_masks["train"]],
-                        timestamps=timestamps[split_masks["train"]] if has_aligned_timestamps else None,
-                    ),
-                    "val": _series_to_stream(
-                        returns[split_masks["val"]],
-                        timestamps=timestamps[split_masks["val"]] if has_aligned_timestamps else None,
-                    ),
-                    "oos": _series_to_stream(
-                        returns[split_masks["oos"]],
-                        timestamps=timestamps[split_masks["oos"]] if has_aligned_timestamps else None,
-                    ),
-                },
-            "cost_metrics": {
-                "turnover": float(oos.get("turnover", 0.0)),
-                "fee_cost": float(result.get("metadata", {}).get("cost_rate", 0.0)),
-                "slippage_cost": float(result.get("metadata", {}).get("cost_rate", 0.0) * 0.7),
-            },
-            "oos_cost_stress": dict(result.get("oos_cost_stress") or {}),
-            "hard_reject": hard_reject_flag,
-            "hard_reject_reasons": hard_reject,
-            "pass": bool(result.get("pass", False)) and not hard_reject_flag,
-            "metadata": {
-                **dict(row.get("metadata") or {}),
-                **dict(result.get("metadata") or {}),
-            },
-        }
-        candidate_payload["selection_score"] = _candidate_rank_score(
-            candidate_payload,
-            scoring_config=resolved_scoring_config,
-        )
-        report_candidates.append(candidate_payload)
-
-    # Cross-candidate diversification diagnostics.
+def _attach_cross_candidate_correlations(report_candidates: Sequence[dict[str, Any]]) -> None:
     oos_series = {
         row["candidate_id"]: np.asarray([point["v"] for point in row["return_streams"]["oos"]], dtype=float)
         for row in report_candidates
         if row.get("return_streams", {}).get("oos")
     }
-
     for row in report_candidates:
         cid = str(row.get("candidate_id"))
         base = oos_series.get(cid)
@@ -4980,11 +5246,79 @@ def run_candidate_research(
             if other_id == cid:
                 continue
             corr_values.append(_correlation(base, other))
-        row.setdefault("oos", {})["cross_candidate_corr"] = float(np.mean(corr_values)) if corr_values else 0.0
+        row.setdefault("oos", {})["cross_candidate_corr"] = (
+            float(np.mean(corr_values)) if corr_values else 0.0
+        )
 
-    # Stable sort by robust score.
+
+def run_candidate_research(
+    *,
+    candidates: Iterable[dict[str, Any]],
+    base_timeframe: str = "1s",
+    strategy_timeframes: Sequence[str] | None = None,
+    symbol_universe: Sequence[str] | None = None,
+    stage1_keep_ratio: float = 0.35,
+    max_candidates: int = 512,
+    score_config: Mapping[str, Any] | None = None,
+    split: Mapping[str, Any] | None = None,
+    data_mode: str = "legacy",
+    allow_csv_fallback: bool = True,
+    allow_synthetic_fallback: bool = True,
+    min_bundle_bars: int = _MIN_BARS,
+) -> dict[str, Any]:
+    """Evaluate candidate manifest into train/val/OOS report contract (v2)."""
+    base_tf = _normalize_candidate_research_base_timeframe(base_timeframe)
+    scoring = _resolve_research_run_scoring_config(
+        score_config=score_config,
+        stage1_keep_ratio=stage1_keep_ratio,
+    )
+    adapted = _adapt_candidate_inputs(candidates, max_candidates=max_candidates)
+
+    if not adapted:
+        return _empty_candidate_research_report(
+            base_timeframe=base_tf,
+            strategy_timeframes=strategy_timeframes,
+            symbol_universe=symbol_universe,
+            stage1_keep_ratio=stage1_keep_ratio,
+            scoring=scoring,
+            split=split,
+        )
+
+    normalized_timeframes, universe = _resolve_research_run_timeframes_and_universe(
+        adapted=adapted,
+        strategy_timeframes=strategy_timeframes,
+        symbol_universe=symbol_universe,
+    )
+    split_timeframe = normalized_timeframes[0] if normalized_timeframes else "1m"
+    resolved_split = _resolve_split_config(split, strategy_timeframe=split_timeframe)
+
+    cache, data_sources, feature_cache, benchmark = _load_research_run_resources(
+        adapted=adapted,
+        normalized_timeframes=normalized_timeframes,
+        universe=universe,
+        resolved_split=resolved_split,
+        data_mode=str(data_mode or "legacy"),
+        allow_csv_fallback=bool(allow_csv_fallback),
+        allow_synthetic_fallback=bool(allow_synthetic_fallback),
+        min_bundle_bars=max(1, int(min_bundle_bars)),
+    )
+    stage2_results = _select_stage2_results(
+        adapted=adapted,
+        cache=cache,
+        feature_cache=feature_cache,
+        benchmark=benchmark,
+        scoring=scoring,
+        resolved_split=resolved_split,
+    )
+    report_candidates = _report_candidates_from_stage2_results(
+        stage2_results=stage2_results,
+        candidate_count=len(adapted),
+        resolved_split=resolved_split,
+        scoring=scoring,
+    )
+    _attach_cross_candidate_correlations(report_candidates)
     report_candidates.sort(
-        key=lambda item: float(item.get("selection_score", sort_missing_selection_score)),
+        key=lambda item: float(item.get("selection_score", scoring.sort_missing_selection_score)),
         reverse=True,
     )
 
@@ -4998,11 +5332,11 @@ def run_candidate_research(
         "candidates": report_candidates,
         "stage1": {
             "input_count": len(adapted),
-            "selected_count": len(stage2),
+            "selected_count": len(stage2_results),
             "keep_ratio": float(stage1_keep_ratio),
-            "keep_ratio_applied": float(keep_ratio_applied),
+            "keep_ratio_applied": float(scoring.keep_ratio_applied),
         },
-        "scoring_config": resolved_scoring_config,
+        "scoring_config": scoring.resolved_scoring_config,
         "data_sources": data_sources,
     }
 
