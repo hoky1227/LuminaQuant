@@ -6,6 +6,7 @@ import hashlib
 import json
 import subprocess
 import sys
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -441,8 +442,72 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = _build_parser().parse_args(argv)
+@dataclass(slots=True)
+class _ExactWindowCliContext:
+    args: argparse.Namespace
+    output_root: Path
+    run_id: str
+    requested_timeframes: list[str]
+    requested_symbols: list[str]
+    batch_timeframes: list[str]
+    batch_id: str
+    adopt_run_dir: Path | None
+    resolved_windows: dict[str, Any]
+    adaptive_windows: dict[str, Any] | None
+    candidate_hash: str
+    run_signature: str
+    heavy_lock_path: Path
+    run_root: Path
+    batch_dir: Path
+    root_latest_path: Path
+    run_latest_path: Path
+    manifest_path: Path
+    progress_path: Path
+    rss_log_path: Path
+
+    @property
+    def allow_metals(self) -> bool:
+        return bool(self.args.allow_metals)
+
+    @property
+    def chunk_days(self) -> int:
+        return max(1, int(self.args.chunk_days))
+
+    @property
+    def window_profile(self) -> str:
+        return str(self.args.window_profile or "default")
+
+    @property
+    def emit_memory_baseline(self) -> bool:
+        return bool(self.args.emit_memory_baseline)
+
+
+@dataclass(slots=True)
+class _ExactWindowArtifacts:
+    summary_path: Path
+    details_path: Path
+    rss_log_path: Path
+    fail_analysis_path: Path
+    memory_evidence_path: Path
+
+
+def _summary_int(summary: dict[str, Any] | None, key: str) -> int:
+    return int(summary.get(key) or 0) if isinstance(summary, dict) else 0
+
+
+def _serialize_adaptive_windows(
+    adaptive_windows: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if adaptive_windows is None:
+        return None
+    return {
+        key: value if not hasattr(value, "isoformat") else value.isoformat()
+        for key, value in adaptive_windows.items()
+        if key != "coverage_rows"
+    }
+
+
+def _build_exact_window_cli_context(args: argparse.Namespace) -> _ExactWindowCliContext:
     output_root = Path(args.output_dir).resolve()
     output_root.mkdir(parents=True, exist_ok=True)
     run_id = str(args.run_id or "").strip() or f"exact_window_{_utc_stamp()}"
@@ -456,12 +521,10 @@ def main(argv: list[str] | None = None) -> int:
         if str(args.adopt_run_dir or "").strip()
         else None
     )
-
     resolved_windows, adaptive_windows = _build_resolved_windows(
         args=args,
         symbols=requested_symbols,
     )
-
     candidate_hash = _candidate_library_hash()
     run_signature = _candidate_run_signature(
         candidate_library_hash=candidate_hash,
@@ -474,203 +537,8 @@ def main(argv: list[str] | None = None) -> int:
         window_profile=str(args.window_profile or "default"),
         allow_metals=bool(args.allow_metals),
     )
-
-    if (
-        not bool(args.emit_memory_baseline)
-        and adopt_run_dir is None
-        and not bool(args.force_rerun)
-    ):
-        registry_entry = _find_completed_signature_entry(
-            _registry_path(output_root),
-            signature=run_signature,
-        )
-        if registry_entry is not None:
-            reused_summary = Path(str(registry_entry.get("summary_path") or "")).resolve()
-            reused_details = Path(str(registry_entry.get("details_path") or "")).resolve()
-            reused_fail_analysis = Path(
-                str(registry_entry.get("fail_analysis_path") or "")
-            ).resolve()
-            reused_memory = Path(
-                str(registry_entry.get("memory_evidence_path") or "")
-            ).resolve()
-            run_root = output_root / run_id
-            run_root.mkdir(parents=True, exist_ok=True)
-            batch_dir = run_root / batch_id
-            batch_dir.mkdir(parents=True, exist_ok=True)
-            root_latest_path = output_root / "latest.json"
-            run_latest_path = run_root / "latest.json"
-            manifest_path = run_root / "manifest.json"
-            progress_path = run_root / "progress.csv"
-
-            latest_pointer = {
-                "schema_version": "1.0",
-                "run_id": run_id,
-                "run_root": str(run_root),
-                "run_dir": str(batch_dir),
-                "batch_id": batch_id,
-                "updated_at_utc": _utc_now().isoformat(),
-                "status": "skipped_duplicate",
-                "run_signature": run_signature,
-                "heavy_lock_path": str(output_root / "exact_window_heavy_run.lock"),
-                "summary_path": _path_or_default(reused_summary),
-                "details_path": _path_or_default(reused_details),
-                "fail_analysis_path": _path_or_default(reused_fail_analysis),
-                "memory_evidence_path": _path_or_default(reused_memory),
-            }
-            manifest = {
-                "schema_version": "1.0",
-                "status": "skipped_duplicate",
-                "run_id": run_id,
-                "batch_id": batch_id,
-                "reused_run_id": str(registry_entry.get("run_id") or ""),
-                "started_at_utc": _utc_now().isoformat(),
-                "completed_at_utc": _utc_now().isoformat(),
-                "code_commit_sha": _git_commit_marker()[0],
-                "git_dirty": _git_commit_marker()[1],
-                "candidate_library_hash": candidate_hash,
-                "run_signature": run_signature,
-                "requested_timeframes": requested_timeframes,
-                "requested_symbols": requested_symbols,
-                "allow_metals": bool(args.allow_metals),
-                "chunk_days": max(1, int(args.chunk_days)),
-                "window_profile": str(args.window_profile or "default"),
-                "windows": resolved_windows,
-                "train_start": resolved_windows.get("train_start"),
-                "val_start": resolved_windows.get("val_start"),
-                "oos_start": resolved_windows.get("oos_start"),
-                "requested_oos_end_exclusive": resolved_windows.get("requested_oos_end_exclusive"),
-                "run_root": str(run_root),
-                "batch_dir": str(batch_dir),
-                "artifacts": {
-                    "manifest_path": str(manifest_path),
-                    "progress_path": str(progress_path),
-                    "run_latest_path": str(run_latest_path),
-                    "root_latest_path": str(root_latest_path),
-                    "summary_path": _path_or_default(reused_summary),
-                    "details_path": _path_or_default(reused_details),
-                    "fail_analysis_path": _path_or_default(reused_fail_analysis),
-                    "memory_evidence_path": _path_or_default(reused_memory),
-                },
-            }
-            if adaptive_windows is not None:
-                manifest["adaptive_windows"] = {
-                    key: value if not hasattr(value, "isoformat") else value.isoformat()
-                    for key, value in adaptive_windows.items()
-                    if key != "coverage_rows"
-                }
-            _write_json(manifest_path, manifest)
-            _write_json(run_latest_path, latest_pointer)
-            _write_json(root_latest_path, latest_pointer)
-            _append_progress_row(
-                progress_path,
-                {
-                    "timestamp_utc": _utc_now().isoformat(),
-                    "batch_id": batch_id,
-                    "status": "skipped_duplicate",
-                    "timeframes": ",".join(batch_timeframes),
-                    "evaluated_count": 0,
-                    "promoted_count": 0,
-                    "summary_path": _path_or_default(reused_summary),
-                    "details_path": _path_or_default(reused_details),
-                    "rss_log_path": "",
-                    "fail_analysis_path": _path_or_default(reused_fail_analysis),
-                    "memory_evidence_path": _path_or_default(reused_memory),
-                    "notes": "skipped duplicate run signature",
-                },
-            )
-            summary_path = reused_summary
-            details_path = reused_details
-            upsert_backtest_registry(
-                output_root,
-                run_id=run_id,
-                batch_id=batch_id,
-                status="skipped_duplicate",
-                run_signature=run_signature,
-                manifest_path=str(manifest_path),
-                summary_path=str(summary_path),
-                details_path=str(details_path),
-                fail_analysis_path=str(reused_fail_analysis),
-                memory_evidence_path=str(reused_memory),
-                requested_timeframes=requested_timeframes,
-                requested_symbols=requested_symbols,
-                allow_metals=bool(args.allow_metals),
-                batch_payload=_registry_batch_payload(
-                    status="skipped_duplicate",
-                    error=None,
-                    summary=None,
-                    memory_bundle=None,
-                    batch_payload={
-                        "train_start": resolved_windows.get("train_start"),
-                        "val_start": resolved_windows.get("val_start"),
-                        "oos_start": resolved_windows.get("oos_start"),
-                        "requested_oos_end_exclusive": resolved_windows.get("requested_oos_end_exclusive"),
-                        "window_profile": str(args.window_profile or "default"),
-                        "chunk_days": max(1, int(args.chunk_days)),
-                    },
-                ),
-            )
-            print(
-                json.dumps(
-                    {
-                        "status": "skipped_duplicate",
-                        "run_id": run_id,
-                        "manifest_path": str(manifest_path),
-                        "progress_path": str(progress_path),
-                        "latest_path": str(root_latest_path),
-                        "run_latest_path": str(run_latest_path),
-                        "summary_latest": _path_or_default(reused_summary),
-                        "details_latest": _path_or_default(reused_details),
-                        "fail_analysis_latest": _path_or_default(reused_fail_analysis),
-                        "rss_log_latest": "",
-                        "memory_evidence_latest": _path_or_default(reused_memory),
-                        "run_signature": run_signature,
-                        "reused_run_id": str(registry_entry.get("run_id") or ""),
-                    },
-                    indent=2,
-                )
-            )
-            return 0
-
-    heavy_lock_path = output_root / "exact_window_heavy_run.lock"
-    run_lock: HeavyRunLock | None = None
-    if not bool(args.emit_memory_baseline) and adopt_run_dir is None:
-        try:
-            run_lock = HeavyRunLock.acquire(
-                lock_path=heavy_lock_path,
-                label="exact_window",
-                metadata={
-                    "run_id": run_id,
-                    "batch_id": batch_id,
-                    "requested_timeframes": requested_timeframes,
-                    "requested_symbols": requested_symbols,
-                    "allow_metals": bool(args.allow_metals),
-                    "run_signature": run_signature,
-                },
-            )
-        except HeavyRunActiveError as exc:
-            print(
-                json.dumps(
-                    {
-                        "status": "blocked_active_run",
-                        "run_id": run_id,
-                        "batch_id": batch_id,
-                        "lock_path": str(exc.lock_path),
-                        "active_run": dict(exc.active_payload),
-                    },
-                    indent=2,
-                ),
-                file=sys.stderr,
-            )
-            return 3
-
     run_root = output_root / run_id
     batch_dir = adopt_run_dir if adopt_run_dir is not None else (run_root / batch_id)
-    batch_dir.mkdir(parents=True, exist_ok=True)
-
-    root_latest_path = output_root / "latest.json"
-    run_latest_path = run_root / "latest.json"
-    manifest_path = run_root / "manifest.json"
-    progress_path = run_root / "progress.csv"
     rss_log_path = (
         Path(args.rss_log_path).resolve()
         if args.rss_log_path
@@ -678,444 +546,757 @@ def main(argv: list[str] | None = None) -> int:
         if args.existing_log_path
         else batch_dir / RSS_LOG_LATEST
     )
+    return _ExactWindowCliContext(
+        args=args,
+        output_root=output_root,
+        run_id=run_id,
+        requested_timeframes=requested_timeframes,
+        requested_symbols=requested_symbols,
+        batch_timeframes=batch_timeframes,
+        batch_id=batch_id,
+        adopt_run_dir=adopt_run_dir,
+        resolved_windows=resolved_windows,
+        adaptive_windows=adaptive_windows,
+        candidate_hash=candidate_hash,
+        run_signature=run_signature,
+        heavy_lock_path=output_root / "exact_window_heavy_run.lock",
+        run_root=run_root,
+        batch_dir=batch_dir,
+        root_latest_path=output_root / "latest.json",
+        run_latest_path=run_root / "latest.json",
+        manifest_path=run_root / "manifest.json",
+        progress_path=run_root / "progress.csv",
+        rss_log_path=rss_log_path,
+    )
 
+
+def _ensure_exact_window_run_dirs(context: _ExactWindowCliContext) -> None:
+    context.run_root.mkdir(parents=True, exist_ok=True)
+    context.batch_dir.mkdir(parents=True, exist_ok=True)
+
+
+def _build_running_manifest(
+    context: _ExactWindowCliContext,
+    *,
+    commit_sha: str,
+    git_dirty: bool,
+) -> dict[str, Any]:
+    return {
+        "schema_version": "1.0",
+        "status": "running",
+        "run_id": context.run_id,
+        "batch_id": context.batch_id,
+        "started_at_utc": _utc_now().isoformat(),
+        "code_commit_sha": commit_sha,
+        "git_dirty": git_dirty,
+        "candidate_library_hash": context.candidate_hash,
+        "run_signature": context.run_signature,
+        "requested_timeframes": context.requested_timeframes,
+        "requested_symbols": context.requested_symbols,
+        "allow_metals": context.allow_metals,
+        "chunk_days": context.chunk_days,
+        "max_parquet_workers": 1,
+        "clamp_ts": "2026-03-07T10:00:00Z",
+        "window_profile": context.window_profile,
+        "windows": context.resolved_windows,
+        "train_start": context.resolved_windows.get("train_start"),
+        "val_start": context.resolved_windows.get("val_start"),
+        "oos_start": context.resolved_windows.get("oos_start"),
+        "requested_oos_end_exclusive": context.resolved_windows.get(
+            "requested_oos_end_exclusive"
+        ),
+        "run_root": str(context.run_root),
+        "batch_dir": str(context.batch_dir),
+        "artifacts": {
+            "manifest_path": str(context.manifest_path),
+            "progress_path": str(context.progress_path),
+            "run_latest_path": str(context.run_latest_path),
+            "root_latest_path": str(context.root_latest_path),
+            "rss_log_path": str(context.rss_log_path),
+            "heavy_lock_path": str(context.heavy_lock_path),
+        },
+    }
+
+
+def _build_running_latest_pointer(context: _ExactWindowCliContext) -> dict[str, Any]:
+    return {
+        "schema_version": "1.0",
+        "run_id": context.run_id,
+        "run_root": str(context.run_root),
+        "run_dir": str(context.batch_dir),
+        "batch_id": context.batch_id,
+        "updated_at_utc": _utc_now().isoformat(),
+        "status": "running",
+        "heavy_lock_path": str(context.heavy_lock_path),
+    }
+
+
+def _persist_exact_window_run_state(
+    context: _ExactWindowCliContext,
+    *,
+    manifest: dict[str, Any],
+    latest_pointer: dict[str, Any],
+) -> None:
+    _write_json(context.manifest_path, manifest)
+    _write_json(context.run_latest_path, latest_pointer)
+    _write_json(context.root_latest_path, latest_pointer)
+
+
+def _print_exact_window_payload(payload: dict[str, Any], *, stream: Any = None) -> None:
+    print(json.dumps(payload, indent=2), file=stream or sys.stdout)
+
+
+def _handle_duplicate_signature_skip(
+    context: _ExactWindowCliContext,
+    *,
+    registry_entry: dict[str, Any],
+) -> int:
+    _ensure_exact_window_run_dirs(context)
+    reused_summary = Path(str(registry_entry.get("summary_path") or "")).resolve()
+    reused_details = Path(str(registry_entry.get("details_path") or "")).resolve()
+    reused_fail_analysis = Path(
+        str(registry_entry.get("fail_analysis_path") or "")
+    ).resolve()
+    reused_memory = Path(
+        str(registry_entry.get("memory_evidence_path") or "")
+    ).resolve()
     commit_sha, git_dirty = _git_commit_marker()
-    try:
-        manifest = {
-            "schema_version": "1.0",
-            "status": "running",
-            "run_id": run_id,
-            "batch_id": batch_id,
-            "started_at_utc": _utc_now().isoformat(),
-            "code_commit_sha": commit_sha,
-            "git_dirty": git_dirty,
-            "candidate_library_hash": candidate_hash,
-            "run_signature": run_signature,
-            "requested_timeframes": requested_timeframes,
-            "requested_symbols": requested_symbols,
-            "allow_metals": bool(args.allow_metals),
-            "chunk_days": max(1, int(args.chunk_days)),
-            "max_parquet_workers": 1,
-            "clamp_ts": "2026-03-07T10:00:00Z",
-                "window_profile": str(args.window_profile or "default"),
-                "windows": resolved_windows,
-                "train_start": resolved_windows.get("train_start"),
-                "val_start": resolved_windows.get("val_start"),
-                "oos_start": resolved_windows.get("oos_start"),
-                "requested_oos_end_exclusive": resolved_windows.get("requested_oos_end_exclusive"),
-                "run_root": str(run_root),
-                "batch_dir": str(batch_dir),
-                "artifacts": {
-                    "manifest_path": str(manifest_path),
-                    "progress_path": str(progress_path),
-                "run_latest_path": str(run_latest_path),
-                "root_latest_path": str(root_latest_path),
-                "rss_log_path": str(rss_log_path),
-                "heavy_lock_path": str(heavy_lock_path),
-            },
-        }
-        latest_pointer = {
-            "schema_version": "1.0",
-            "run_id": run_id,
-            "run_root": str(run_root),
-            "run_dir": str(batch_dir),
-            "batch_id": batch_id,
+    latest_pointer = _build_running_latest_pointer(context)
+    latest_pointer.update(
+        {
             "updated_at_utc": _utc_now().isoformat(),
-            "status": "running",
-            "heavy_lock_path": str(heavy_lock_path),
+            "status": "skipped_duplicate",
+            "run_signature": context.run_signature,
+            "summary_path": _path_or_default(reused_summary),
+            "details_path": _path_or_default(reused_details),
+            "fail_analysis_path": _path_or_default(reused_fail_analysis),
+            "memory_evidence_path": _path_or_default(reused_memory),
         }
-        _write_json(manifest_path, manifest)
-        _write_json(run_latest_path, latest_pointer)
-        _write_json(root_latest_path, latest_pointer)
-
-        if adopt_run_dir is not None:
-            summary_path = batch_dir / SUMMARY_LATEST
-            details_path = batch_dir / DETAILS_LATEST
-            fail_analysis_path = batch_dir / "exact_window_fail_analysis_latest.json"
-            memory_evidence_path = batch_dir / MEMORY_EVIDENCE_LATEST
-            existing_pid = int(args.existing_pid or 0)
-            pid_running = existing_pid > 0 and Path(f"/proc/{existing_pid}").exists()
-            status = (
-                "running"
-                if pid_running
-                else "completed"
-                if summary_path.exists()
-                else "pending"
-            )
-            fail_bundle = (
-                write_fail_analysis_bundle(output_dir=output_root)
-                if summary_path.exists() and details_path.exists() and not args.skip_fail_analysis
-                else None
-            )
-            memory_bundle = write_memory_evidence_bundle(
-                output_dir=output_root,
-                memory_summary={
-                    "generated_at": _utc_now().isoformat(),
-                    "status": status,
-                    "rss_log_path": _path_or_default(rss_log_path),
-                    "existing_pid": existing_pid or None,
-                },
-                summary=json.loads(summary_path.read_text(encoding="utf-8")) if summary_path.exists() else None,
-            )
-            if fail_bundle is not None:
-                fail_analysis_path = Path(fail_bundle["json_latest"])
-            if memory_bundle is not None:
-                memory_evidence_path = Path(memory_bundle["json_latest"])
-            stable_paths = sync_exact_window_latest_aliases(output_root)
-            summary_path = Path(stable_paths.get("summary") or summary_path)
-            details_path = Path(stable_paths.get("details") or details_path)
-            rss_log_path = Path(stable_paths.get("rss_log") or rss_log_path)
-            fail_analysis_path = Path(stable_paths.get("fail_analysis") or fail_analysis_path)
-            memory_evidence_path = Path(stable_paths.get("memory_evidence") or memory_evidence_path)
-            adopted_summary = (
-                json.loads(summary_path.read_text(encoding="utf-8"))
-                if summary_path.exists()
-                else None
-            )
-            latest_pointer.update(
-                {
-                    "updated_at_utc": _utc_now().isoformat(),
-                    "status": status,
-                    "run_dir": str(batch_dir),
-                    "summary_path": _path_or_default(summary_path),
-                    "details_path": _path_or_default(details_path),
-                    "rss_log_path": _path_or_default(rss_log_path),
-                    "fail_analysis_path": _path_or_default(fail_analysis_path),
-                    "memory_evidence_path": _path_or_default(memory_evidence_path),
-                    "existing_pid": existing_pid or None,
-                }
-            )
-            manifest.update(
-                {
-                    "status": status,
-                    "completed_at_utc": _utc_now().isoformat(),
-                    "adopted_existing_run": True,
-                    "existing_pid": existing_pid or None,
-                    "existing_log_path": _path_or_default(rss_log_path),
-                    "artifacts": {
-                        **dict(manifest.get("artifacts") or {}),
-                        "summary_path": _path_or_default(summary_path),
-                        "details_path": _path_or_default(details_path),
-                        "fail_analysis_path": _path_or_default(fail_analysis_path),
-                        "memory_evidence_path": _path_or_default(memory_evidence_path),
-                    },
-                }
-            )
-            _write_json(run_latest_path, latest_pointer)
-            _write_json(root_latest_path, latest_pointer)
-            _write_json(manifest_path, manifest)
-            _append_progress_row(
-                progress_path,
-                {
-                    "timestamp_utc": _utc_now().isoformat(),
-                    "batch_id": batch_id,
-                    "status": status,
-                    "timeframes": ",".join(batch_timeframes),
-                    "evaluated_count": 0,
-                    "promoted_count": 0,
-                    "summary_path": _path_or_default(summary_path),
-                    "details_path": _path_or_default(details_path),
-                    "rss_log_path": _path_or_default(rss_log_path),
-                    "fail_analysis_path": _path_or_default(fail_analysis_path),
-                    "memory_evidence_path": _path_or_default(memory_evidence_path),
-                    "notes": f"adopted_existing_run pid={existing_pid or 'n/a'}",
-                },
-            )
-            upsert_backtest_registry(
-                output_root,
-                run_id=run_id,
-                batch_id=batch_id,
-                status=status,
-                run_signature=run_signature,
-                manifest_path=str(manifest_path),
-                summary_path=str(summary_path),
-                details_path=str(details_path),
-                fail_analysis_path=str(fail_analysis_path),
-                memory_evidence_path=str(memory_evidence_path),
-                requested_timeframes=requested_timeframes,
-                requested_symbols=requested_symbols,
-                allow_metals=bool(args.allow_metals),
-                batch_payload=_registry_batch_payload(
-                    status=status,
-                    error=None,
-                    summary=adopted_summary,
-                    memory_bundle=memory_bundle,
-                    batch_payload={
-                        "train_start": resolved_windows.get("train_start"),
-                        "val_start": resolved_windows.get("val_start"),
-                        "oos_start": resolved_windows.get("oos_start"),
-                        "requested_oos_end_exclusive": resolved_windows.get("requested_oos_end_exclusive"),
-                        "window_profile": str(args.window_profile or "default"),
-                        "chunk_days": max(1, int(args.chunk_days)),
-                    },
+    )
+    manifest = {
+        "schema_version": "1.0",
+        "status": "skipped_duplicate",
+        "run_id": context.run_id,
+        "batch_id": context.batch_id,
+        "reused_run_id": str(registry_entry.get("run_id") or ""),
+        "started_at_utc": _utc_now().isoformat(),
+        "completed_at_utc": _utc_now().isoformat(),
+        "code_commit_sha": commit_sha,
+        "git_dirty": git_dirty,
+        "candidate_library_hash": context.candidate_hash,
+        "run_signature": context.run_signature,
+        "requested_timeframes": context.requested_timeframes,
+        "requested_symbols": context.requested_symbols,
+        "allow_metals": context.allow_metals,
+        "chunk_days": context.chunk_days,
+        "window_profile": context.window_profile,
+        "windows": context.resolved_windows,
+        "train_start": context.resolved_windows.get("train_start"),
+        "val_start": context.resolved_windows.get("val_start"),
+        "oos_start": context.resolved_windows.get("oos_start"),
+        "requested_oos_end_exclusive": context.resolved_windows.get(
+            "requested_oos_end_exclusive"
+        ),
+        "run_root": str(context.run_root),
+        "batch_dir": str(context.batch_dir),
+        "artifacts": {
+            "manifest_path": str(context.manifest_path),
+            "progress_path": str(context.progress_path),
+            "run_latest_path": str(context.run_latest_path),
+            "root_latest_path": str(context.root_latest_path),
+            "summary_path": _path_or_default(reused_summary),
+            "details_path": _path_or_default(reused_details),
+            "fail_analysis_path": _path_or_default(reused_fail_analysis),
+            "memory_evidence_path": _path_or_default(reused_memory),
+        },
+    }
+    serialized_adaptive = _serialize_adaptive_windows(context.adaptive_windows)
+    if serialized_adaptive is not None:
+        manifest["adaptive_windows"] = serialized_adaptive
+    _persist_exact_window_run_state(
+        context,
+        manifest=manifest,
+        latest_pointer=latest_pointer,
+    )
+    _append_progress_row(
+        context.progress_path,
+        {
+            "timestamp_utc": _utc_now().isoformat(),
+            "batch_id": context.batch_id,
+            "status": "skipped_duplicate",
+            "timeframes": ",".join(context.batch_timeframes),
+            "evaluated_count": 0,
+            "promoted_count": 0,
+            "summary_path": _path_or_default(reused_summary),
+            "details_path": _path_or_default(reused_details),
+            "rss_log_path": "",
+            "fail_analysis_path": _path_or_default(reused_fail_analysis),
+            "memory_evidence_path": _path_or_default(reused_memory),
+            "notes": "skipped duplicate run signature",
+        },
+    )
+    upsert_backtest_registry(
+        context.output_root,
+        run_id=context.run_id,
+        batch_id=context.batch_id,
+        status="skipped_duplicate",
+        run_signature=context.run_signature,
+        manifest_path=str(context.manifest_path),
+        summary_path=str(reused_summary),
+        details_path=str(reused_details),
+        fail_analysis_path=str(reused_fail_analysis),
+        memory_evidence_path=str(reused_memory),
+        requested_timeframes=context.requested_timeframes,
+        requested_symbols=context.requested_symbols,
+        allow_metals=context.allow_metals,
+        batch_payload=_registry_batch_payload(
+            status="skipped_duplicate",
+            error=None,
+            summary=None,
+            memory_bundle=None,
+            batch_payload={
+                "train_start": context.resolved_windows.get("train_start"),
+                "val_start": context.resolved_windows.get("val_start"),
+                "oos_start": context.resolved_windows.get("oos_start"),
+                "requested_oos_end_exclusive": context.resolved_windows.get(
+                    "requested_oos_end_exclusive"
                 ),
-            )
-            print(
-                json.dumps(
-                    {
-                        "status": status,
-                        "run_id": run_id,
-                        "manifest_path": str(manifest_path),
-                        "progress_path": str(progress_path),
-                        "latest_path": str(root_latest_path),
-                        "run_latest_path": str(run_latest_path),
-                        "summary_latest": _path_or_default(summary_path),
-                        "details_latest": _path_or_default(details_path),
-                        "fail_analysis_latest": _path_or_default(fail_analysis_path),
-                        "rss_log_latest": _path_or_default(rss_log_path),
-                        "memory_evidence_latest": _path_or_default(memory_evidence_path),
-                        "existing_pid": existing_pid or None,
-                    },
-                    indent=2,
-                )
-            )
-            return 0
+                "window_profile": context.window_profile,
+                "chunk_days": context.chunk_days,
+            },
+        ),
+    )
+    _print_exact_window_payload(
+        {
+            "status": "skipped_duplicate",
+            "run_id": context.run_id,
+            "manifest_path": str(context.manifest_path),
+            "progress_path": str(context.progress_path),
+            "latest_path": str(context.root_latest_path),
+            "run_latest_path": str(context.run_latest_path),
+            "summary_latest": _path_or_default(reused_summary),
+            "details_latest": _path_or_default(reused_details),
+            "fail_analysis_latest": _path_or_default(reused_fail_analysis),
+            "rss_log_latest": "",
+            "memory_evidence_latest": _path_or_default(reused_memory),
+            "run_signature": context.run_signature,
+            "reused_run_id": str(registry_entry.get("run_id") or ""),
+        }
+    )
+    return 0
 
-        guard = RSSGuard(
-            log_path=rss_log_path,
-            soft_limit_bytes=args.soft_rss_bytes,
-            hard_limit_bytes=args.hard_rss_bytes,
-        )
-        guard.sample(
-            event="cli_start",
-            context={
-                "mode": "baseline_probe" if bool(args.emit_memory_baseline) else "suite_run",
-                "timeframes": requested_timeframes,
-                "symbols": requested_symbols,
-                "allow_metals": bool(args.allow_metals),
-                "run_id": run_id,
-                "batch_id": batch_id,
+
+def _acquire_exact_window_run_lock(
+    context: _ExactWindowCliContext,
+) -> HeavyRunLock | None:
+    if context.emit_memory_baseline or context.adopt_run_dir is not None:
+        return None
+    try:
+        return HeavyRunLock.acquire(
+            lock_path=context.heavy_lock_path,
+            label="exact_window",
+            metadata={
+                "run_id": context.run_id,
+                "batch_id": context.batch_id,
+                "requested_timeframes": context.requested_timeframes,
+                "requested_symbols": context.requested_symbols,
+                "allow_metals": context.allow_metals,
+                "run_signature": context.run_signature,
             },
         )
+    except HeavyRunActiveError as exc:
+        _print_exact_window_payload(
+            {
+                "status": "blocked_active_run",
+                "run_id": context.run_id,
+                "batch_id": context.batch_id,
+                "lock_path": str(exc.lock_path),
+                "active_run": dict(exc.active_payload),
+            },
+            stream=sys.stderr,
+        )
+        return None
 
-        summary: dict[str, Any] | None = None
-        fail_bundle: dict[str, Any] | None = None
-        memory_bundle: dict[str, Any] | None = None
-        status = "baseline_probe" if bool(args.emit_memory_baseline) else "completed"
-        error: str | None = None
-        rc = 0
 
-        try:
-            if not args.emit_memory_baseline:
-                score_config = _load_score_config(args.score_config)
-                summary = run_exact_window_suite(
-                    output_dir=str(batch_dir),
-                    score_config=score_config,
-                    timeframes=requested_timeframes,
-                    symbols=requested_symbols,
-                    chunk_days=max(1, int(args.chunk_days)),
-                    allow_metals=bool(args.allow_metals),
-                    train_start=resolved_windows.get("train_start"),
-                    val_start=resolved_windows.get("val_start"),
-                    oos_start=resolved_windows.get("oos_start"),
-                    requested_oos_end_exclusive=resolved_windows.get("requested_oos_end_exclusive"),
-                    progress_callback=guard.checkpoint,
-                )
-                if adaptive_windows is not None:
-                    manifest["adaptive_windows"] = {
-                        key: value if not hasattr(value, "isoformat") else value.isoformat()
-                        for key, value in adaptive_windows.items()
-                        if key != "coverage_rows"
-                    }
-                if not args.skip_fail_analysis:
-                    fail_bundle = write_fail_analysis_bundle(output_dir=output_root, summary=summary)
-        except RSSLimitExceeded as exc:
-            status = "aborted_rss_guard"
-            error = str(exc)
-            rc = 2
-        except Exception as exc:  # pragma: no cover
-            status = "failed"
-            error = str(exc)
-            rc = 1
-        finally:
-            if not args.emit_memory_baseline:
-                guard.sample(event="cli_finish", context={"status": status, "run_id": run_id})
-                memory_bundle = write_memory_evidence_bundle(
-                    output_dir=output_root,
-                    memory_summary=guard.finalize(status=status, error=error),
+def _resolve_exact_window_artifacts(
+    *,
+    stable_paths: dict[str, str],
+    summary_path: Path,
+    details_path: Path,
+    rss_log_path: Path,
+    fail_analysis_path: Path,
+    memory_evidence_path: Path,
+    fail_bundle: dict[str, Any] | None = None,
+    memory_bundle: dict[str, Any] | None = None,
+) -> _ExactWindowArtifacts:
+    resolved_summary = Path(stable_paths.get("summary") or summary_path)
+    resolved_details = Path(stable_paths.get("details") or details_path)
+    resolved_rss = Path(stable_paths.get("rss_log") or rss_log_path)
+    resolved_fail = Path(
+        stable_paths.get("fail_analysis")
+        or (fail_bundle["json_latest"] if fail_bundle else fail_analysis_path)
+    )
+    resolved_memory = Path(
+        stable_paths.get("memory_evidence")
+        or (memory_bundle["json_latest"] if memory_bundle else memory_evidence_path)
+    )
+    return _ExactWindowArtifacts(
+        summary_path=resolved_summary,
+        details_path=resolved_details,
+        rss_log_path=resolved_rss,
+        fail_analysis_path=resolved_fail,
+        memory_evidence_path=resolved_memory,
+    )
+
+
+def _handle_adopted_exact_window_run(
+    context: _ExactWindowCliContext,
+    *,
+    manifest: dict[str, Any],
+    latest_pointer: dict[str, Any],
+) -> int:
+    summary_path = context.batch_dir / SUMMARY_LATEST
+    details_path = context.batch_dir / DETAILS_LATEST
+    fail_analysis_path = context.batch_dir / "exact_window_fail_analysis_latest.json"
+    memory_evidence_path = context.batch_dir / MEMORY_EVIDENCE_LATEST
+    existing_pid = int(context.args.existing_pid or 0)
+    pid_running = existing_pid > 0 and Path(f"/proc/{existing_pid}").exists()
+    status = (
+        "running"
+        if pid_running
+        else "completed"
+        if summary_path.exists()
+        else "pending"
+    )
+    fail_bundle = (
+        write_fail_analysis_bundle(output_dir=context.output_root)
+        if summary_path.exists()
+        and details_path.exists()
+        and not context.args.skip_fail_analysis
+        else None
+    )
+    memory_bundle = write_memory_evidence_bundle(
+        output_dir=context.output_root,
+        memory_summary={
+            "generated_at": _utc_now().isoformat(),
+            "status": status,
+            "rss_log_path": _path_or_default(context.rss_log_path),
+            "existing_pid": existing_pid or None,
+        },
+        summary=json.loads(summary_path.read_text(encoding="utf-8"))
+        if summary_path.exists()
+        else None,
+    )
+    stable_paths = sync_exact_window_latest_aliases(context.output_root)
+    artifacts = _resolve_exact_window_artifacts(
+        stable_paths=stable_paths,
+        summary_path=summary_path,
+        details_path=details_path,
+        rss_log_path=context.rss_log_path,
+        fail_analysis_path=fail_analysis_path,
+        memory_evidence_path=memory_evidence_path,
+        fail_bundle=fail_bundle,
+        memory_bundle=memory_bundle,
+    )
+    adopted_summary = (
+        json.loads(artifacts.summary_path.read_text(encoding="utf-8"))
+        if artifacts.summary_path.exists()
+        else None
+    )
+    latest_pointer.update(
+        {
+            "updated_at_utc": _utc_now().isoformat(),
+            "status": status,
+            "run_dir": str(context.batch_dir),
+            "summary_path": _path_or_default(artifacts.summary_path),
+            "details_path": _path_or_default(artifacts.details_path),
+            "rss_log_path": _path_or_default(artifacts.rss_log_path),
+            "fail_analysis_path": _path_or_default(artifacts.fail_analysis_path),
+            "memory_evidence_path": _path_or_default(artifacts.memory_evidence_path),
+            "existing_pid": existing_pid or None,
+        }
+    )
+    manifest.update(
+        {
+            "status": status,
+            "completed_at_utc": _utc_now().isoformat(),
+            "adopted_existing_run": True,
+            "existing_pid": existing_pid or None,
+            "existing_log_path": _path_or_default(artifacts.rss_log_path),
+            "artifacts": {
+                **dict(manifest.get("artifacts") or {}),
+                "summary_path": _path_or_default(artifacts.summary_path),
+                "details_path": _path_or_default(artifacts.details_path),
+                "fail_analysis_path": _path_or_default(artifacts.fail_analysis_path),
+                "memory_evidence_path": _path_or_default(artifacts.memory_evidence_path),
+            },
+        }
+    )
+    _persist_exact_window_run_state(
+        context,
+        manifest=manifest,
+        latest_pointer=latest_pointer,
+    )
+    _append_progress_row(
+        context.progress_path,
+        {
+            "timestamp_utc": _utc_now().isoformat(),
+            "batch_id": context.batch_id,
+            "status": status,
+            "timeframes": ",".join(context.batch_timeframes),
+            "evaluated_count": 0,
+            "promoted_count": 0,
+            "summary_path": _path_or_default(artifacts.summary_path),
+            "details_path": _path_or_default(artifacts.details_path),
+            "rss_log_path": _path_or_default(artifacts.rss_log_path),
+            "fail_analysis_path": _path_or_default(artifacts.fail_analysis_path),
+            "memory_evidence_path": _path_or_default(artifacts.memory_evidence_path),
+            "notes": f"adopted_existing_run pid={existing_pid or 'n/a'}",
+        },
+    )
+    upsert_backtest_registry(
+        context.output_root,
+        run_id=context.run_id,
+        batch_id=context.batch_id,
+        status=status,
+        run_signature=context.run_signature,
+        manifest_path=str(context.manifest_path),
+        summary_path=str(artifacts.summary_path),
+        details_path=str(artifacts.details_path),
+        fail_analysis_path=str(artifacts.fail_analysis_path),
+        memory_evidence_path=str(artifacts.memory_evidence_path),
+        requested_timeframes=context.requested_timeframes,
+        requested_symbols=context.requested_symbols,
+        allow_metals=context.allow_metals,
+        batch_payload=_registry_batch_payload(
+            status=status,
+            error=None,
+            summary=adopted_summary,
+            memory_bundle=memory_bundle,
+            batch_payload={
+                "train_start": context.resolved_windows.get("train_start"),
+                "val_start": context.resolved_windows.get("val_start"),
+                "oos_start": context.resolved_windows.get("oos_start"),
+                "requested_oos_end_exclusive": context.resolved_windows.get(
+                    "requested_oos_end_exclusive"
+                ),
+                "window_profile": context.window_profile,
+                "chunk_days": context.chunk_days,
+            },
+        ),
+    )
+    _print_exact_window_payload(
+        {
+            "status": status,
+            "run_id": context.run_id,
+            "manifest_path": str(context.manifest_path),
+            "progress_path": str(context.progress_path),
+            "latest_path": str(context.root_latest_path),
+            "run_latest_path": str(context.run_latest_path),
+            "summary_latest": _path_or_default(artifacts.summary_path),
+            "details_latest": _path_or_default(artifacts.details_path),
+            "fail_analysis_latest": _path_or_default(artifacts.fail_analysis_path),
+            "rss_log_latest": _path_or_default(artifacts.rss_log_path),
+            "memory_evidence_latest": _path_or_default(artifacts.memory_evidence_path),
+            "existing_pid": existing_pid or None,
+        }
+    )
+    return 0
+
+
+def _execute_exact_window_cli_run(
+    context: _ExactWindowCliContext,
+    *,
+    manifest: dict[str, Any],
+    latest_pointer: dict[str, Any],
+) -> int:
+    guard = RSSGuard(
+        log_path=context.rss_log_path,
+        soft_limit_bytes=context.args.soft_rss_bytes,
+        hard_limit_bytes=context.args.hard_rss_bytes,
+    )
+    guard.sample(
+        event="cli_start",
+        context={
+            "mode": "baseline_probe" if context.emit_memory_baseline else "suite_run",
+            "timeframes": context.requested_timeframes,
+            "symbols": context.requested_symbols,
+            "allow_metals": context.allow_metals,
+            "run_id": context.run_id,
+            "batch_id": context.batch_id,
+        },
+    )
+    summary: dict[str, Any] | None = None
+    fail_bundle: dict[str, Any] | None = None
+    memory_bundle: dict[str, Any] | None = None
+    status = "baseline_probe" if context.emit_memory_baseline else "completed"
+    error: str | None = None
+    rc = 0
+
+    try:
+        if not context.emit_memory_baseline:
+            score_config = _load_score_config(context.args.score_config)
+            summary = run_exact_window_suite(
+                output_dir=str(context.batch_dir),
+                score_config=score_config,
+                timeframes=context.requested_timeframes,
+                symbols=context.requested_symbols,
+                chunk_days=context.chunk_days,
+                allow_metals=context.allow_metals,
+                train_start=context.resolved_windows.get("train_start"),
+                val_start=context.resolved_windows.get("val_start"),
+                oos_start=context.resolved_windows.get("oos_start"),
+                requested_oos_end_exclusive=context.resolved_windows.get(
+                    "requested_oos_end_exclusive"
+                ),
+                progress_callback=guard.checkpoint,
+            )
+            serialized_adaptive = _serialize_adaptive_windows(context.adaptive_windows)
+            if serialized_adaptive is not None:
+                manifest["adaptive_windows"] = serialized_adaptive
+            if not context.args.skip_fail_analysis:
+                fail_bundle = write_fail_analysis_bundle(
+                    output_dir=context.output_root,
                     summary=summary,
                 )
-
-        stable_paths = sync_exact_window_latest_aliases(output_root)
-        summary_path = Path(stable_paths.get("summary") or (batch_dir / SUMMARY_LATEST))
-        details_path = Path(stable_paths.get("details") or (batch_dir / DETAILS_LATEST))
-        rss_path = Path(stable_paths.get("rss_log") or rss_log_path)
-        fail_analysis_path = (
-            Path(fail_bundle["json_latest"])
-            if fail_bundle
-            else Path(
-                stable_paths.get("fail_analysis")
-                or (batch_dir / "exact_window_fail_analysis_latest.json")
+    except RSSLimitExceeded as exc:
+        status = "aborted_rss_guard"
+        error = str(exc)
+        rc = 2
+    except Exception as exc:  # pragma: no cover
+        status = "failed"
+        error = str(exc)
+        rc = 1
+    finally:
+        if not context.emit_memory_baseline:
+            guard.sample(
+                event="cli_finish",
+                context={"status": status, "run_id": context.run_id},
             )
-        )
-        memory_evidence_path = (
-            Path(memory_bundle["json_latest"])
-            if memory_bundle
-            else Path(stable_paths.get("memory_evidence") or (batch_dir / MEMORY_EVIDENCE_LATEST))
-        )
-        if fail_bundle:
-            fail_analysis_path = Path(stable_paths.get("fail_analysis") or fail_analysis_path)
-        if memory_bundle:
-            memory_evidence_path = Path(stable_paths.get("memory_evidence") or memory_evidence_path)
-
-        latest_pointer.update(
-            {
-                "updated_at_utc": _utc_now().isoformat(),
-                "status": status,
-                "summary_path": str(summary_path),
-                "details_path": str(details_path),
-                "rss_log_path": str(rss_path),
-                "fail_analysis_path": str(fail_analysis_path),
-                "memory_evidence_path": str(memory_evidence_path),
-                "promoted_count": int(summary.get("promoted_count") or 0)
-                if isinstance(summary, dict)
-                else 0,
-            }
-        )
-        manifest.update(
-            {
-                "status": status,
-                "completed_at_utc": _utc_now().isoformat(),
-                "train_start": resolved_windows.get("train_start"),
-                "val_start": resolved_windows.get("val_start"),
-                "oos_start": resolved_windows.get("oos_start"),
-                "requested_oos_end_exclusive": resolved_windows.get("requested_oos_end_exclusive"),
-                "error": error,
-                "windows": dict(summary.get("windows") or {}) if isinstance(summary, dict) else resolved_windows,
-                "execution_profile": {
-                    **(
-                        dict(summary.get("execution_profile") or {})
-                        if isinstance(summary, dict)
-                        else {}
-                    ),
-                    "train_start": resolved_windows.get("train_start"),
-                    "val_start": resolved_windows.get("val_start"),
-                    "oos_start": resolved_windows.get("oos_start"),
-                    "requested_oos_end_exclusive": resolved_windows.get("requested_oos_end_exclusive"),
-                    "chunk_days": max(1, int(args.chunk_days)),
-                    "requested_timeframes": requested_timeframes,
-                    "requested_symbols": requested_symbols,
-                    "allow_metals": bool(args.allow_metals),
-                    "window_profile": str(args.window_profile or "default"),
-                },
-                "evaluated_count": int(summary.get("evaluated_count") or 0)
-                if isinstance(summary, dict)
-                else 0,
-                "promoted_count": int(summary.get("promoted_count") or 0)
-                if isinstance(summary, dict)
-                else 0,
-                "artifacts": {
-                    **dict(manifest.get("artifacts") or {}),
-                    "summary_path": str(summary_path),
-                    "details_path": str(details_path),
-                    "fail_analysis_path": str(fail_analysis_path),
-                    "memory_evidence_path": str(memory_evidence_path),
-                },
-            }
-        )
-        _write_json(run_latest_path, latest_pointer)
-        _write_json(root_latest_path, latest_pointer)
-        _write_json(manifest_path, manifest)
-        _append_progress_row(
-            progress_path,
-            {
-                "timestamp_utc": _utc_now().isoformat(),
-                "batch_id": batch_id,
-                "status": status,
-                "timeframes": ",".join(batch_timeframes),
-                "evaluated_count": int(summary.get("evaluated_count") or 0)
-                if isinstance(summary, dict)
-                else 0,
-                "promoted_count": int(summary.get("promoted_count") or 0)
-                if isinstance(summary, dict)
-                else 0,
-                "summary_path": str(summary_path),
-                "details_path": str(details_path),
-                "rss_log_path": str(rss_path),
-                "fail_analysis_path": str(fail_analysis_path),
-                "memory_evidence_path": str(memory_evidence_path),
-                "notes": error or "",
-            },
-        )
-        upsert_backtest_registry(
-            output_root,
-            run_id=run_id,
-            batch_id=batch_id,
-            status=status,
-            run_signature=run_signature,
-            manifest_path=str(manifest_path),
-            summary_path=str(summary_path),
-            details_path=str(details_path),
-            fail_analysis_path=str(fail_analysis_path),
-            memory_evidence_path=str(memory_evidence_path),
-            requested_timeframes=requested_timeframes,
-            requested_symbols=requested_symbols,
-            allow_metals=bool(args.allow_metals),
-            batch_payload=_registry_batch_payload(
-                status=status,
-                error=error,
+            memory_bundle = write_memory_evidence_bundle(
+                output_dir=context.output_root,
+                memory_summary=guard.finalize(status=status, error=error),
                 summary=summary,
-                memory_bundle=memory_bundle,
-                batch_payload={
-                    "train_start": resolved_windows.get("train_start"),
-                    "val_start": resolved_windows.get("val_start"),
-                    "oos_start": resolved_windows.get("oos_start"),
-                    "requested_oos_end_exclusive": resolved_windows.get("requested_oos_end_exclusive"),
-                    "window_profile": str(args.window_profile or "default"),
-                    "chunk_days": max(1, int(args.chunk_days)),
-                },
-            ),
-        )
+            )
 
-        _append_signature_entry(
-            _registry_path(output_root),
-            signature=run_signature,
-            run_id=run_id,
-            status=status,
-            batch_id=batch_id,
-            run_root=str(run_root),
-            batch_dir=str(batch_dir),
-            manifest_path=str(manifest_path),
-            summary_path=str(summary_path),
-            details_path=str(details_path),
-            fail_analysis_path=str(fail_analysis_path),
-            memory_evidence_path=str(memory_evidence_path),
-            error=error,
-        )
-
-        payload = {
+    stable_paths = sync_exact_window_latest_aliases(context.output_root)
+    artifacts = _resolve_exact_window_artifacts(
+        stable_paths=stable_paths,
+        summary_path=context.batch_dir / SUMMARY_LATEST,
+        details_path=context.batch_dir / DETAILS_LATEST,
+        rss_log_path=context.rss_log_path,
+        fail_analysis_path=context.batch_dir / "exact_window_fail_analysis_latest.json",
+        memory_evidence_path=context.batch_dir / MEMORY_EVIDENCE_LATEST,
+        fail_bundle=fail_bundle,
+        memory_bundle=memory_bundle,
+    )
+    latest_pointer.update(
+        {
+            "updated_at_utc": _utc_now().isoformat(),
             "status": status,
-            "run_id": run_id,
-            "manifest_path": str(manifest_path),
-            "progress_path": str(progress_path),
-            "latest_path": str(root_latest_path),
-            "run_latest_path": str(run_latest_path),
-            "summary_latest": str(summary_path),
-            "details_latest": str(details_path),
-            "fail_analysis_latest": str(fail_analysis_path),
-            "rss_log_latest": str(rss_path),
-            "memory_evidence_latest": str(memory_evidence_path),
-            "heavy_lock_path": str(heavy_lock_path),
-            "allow_metals": bool(args.allow_metals),
-            "run_signature": run_signature,
-            "eligible_symbols": summary.get("eligible_symbols") if isinstance(summary, dict) else [],
-            "best_strategy_count": len(summary.get("best_per_strategy") or [])
-            if isinstance(summary, dict)
-            else 0,
-            "promoted_count": int(summary.get("promoted_count") or 0)
-            if isinstance(summary, dict)
-            else 0,
-            "portfolio_weight_count": (
-                len((summary.get("portfolio") or {}).get("weights") or [])
-                if isinstance(summary, dict)
-                else 0
-            ),
+            "summary_path": str(artifacts.summary_path),
+            "details_path": str(artifacts.details_path),
+            "rss_log_path": str(artifacts.rss_log_path),
+            "fail_analysis_path": str(artifacts.fail_analysis_path),
+            "memory_evidence_path": str(artifacts.memory_evidence_path),
+            "promoted_count": _summary_int(summary, "promoted_count"),
         }
-        if error:
-            payload["error"] = error
-        stream = sys.stdout if rc == 0 else sys.stderr
-        print(json.dumps(payload, indent=2), file=stream)
-        return int(rc)
+    )
+    manifest.update(
+        {
+            "status": status,
+            "completed_at_utc": _utc_now().isoformat(),
+            "train_start": context.resolved_windows.get("train_start"),
+            "val_start": context.resolved_windows.get("val_start"),
+            "oos_start": context.resolved_windows.get("oos_start"),
+            "requested_oos_end_exclusive": context.resolved_windows.get(
+                "requested_oos_end_exclusive"
+            ),
+            "error": error,
+            "windows": dict(summary.get("windows") or {})
+            if isinstance(summary, dict)
+            else context.resolved_windows,
+            "execution_profile": {
+                **(
+                    dict(summary.get("execution_profile") or {})
+                    if isinstance(summary, dict)
+                    else {}
+                ),
+                "train_start": context.resolved_windows.get("train_start"),
+                "val_start": context.resolved_windows.get("val_start"),
+                "oos_start": context.resolved_windows.get("oos_start"),
+                "requested_oos_end_exclusive": context.resolved_windows.get(
+                    "requested_oos_end_exclusive"
+                ),
+                "chunk_days": context.chunk_days,
+                "requested_timeframes": context.requested_timeframes,
+                "requested_symbols": context.requested_symbols,
+                "allow_metals": context.allow_metals,
+                "window_profile": context.window_profile,
+            },
+            "evaluated_count": _summary_int(summary, "evaluated_count"),
+            "promoted_count": _summary_int(summary, "promoted_count"),
+            "artifacts": {
+                **dict(manifest.get("artifacts") or {}),
+                "summary_path": str(artifacts.summary_path),
+                "details_path": str(artifacts.details_path),
+                "fail_analysis_path": str(artifacts.fail_analysis_path),
+                "memory_evidence_path": str(artifacts.memory_evidence_path),
+            },
+        }
+    )
+    _persist_exact_window_run_state(
+        context,
+        manifest=manifest,
+        latest_pointer=latest_pointer,
+    )
+    _append_progress_row(
+        context.progress_path,
+        {
+            "timestamp_utc": _utc_now().isoformat(),
+            "batch_id": context.batch_id,
+            "status": status,
+            "timeframes": ",".join(context.batch_timeframes),
+            "evaluated_count": _summary_int(summary, "evaluated_count"),
+            "promoted_count": _summary_int(summary, "promoted_count"),
+            "summary_path": str(artifacts.summary_path),
+            "details_path": str(artifacts.details_path),
+            "rss_log_path": str(artifacts.rss_log_path),
+            "fail_analysis_path": str(artifacts.fail_analysis_path),
+            "memory_evidence_path": str(artifacts.memory_evidence_path),
+            "notes": error or "",
+        },
+    )
+    upsert_backtest_registry(
+        context.output_root,
+        run_id=context.run_id,
+        batch_id=context.batch_id,
+        status=status,
+        run_signature=context.run_signature,
+        manifest_path=str(context.manifest_path),
+        summary_path=str(artifacts.summary_path),
+        details_path=str(artifacts.details_path),
+        fail_analysis_path=str(artifacts.fail_analysis_path),
+        memory_evidence_path=str(artifacts.memory_evidence_path),
+        requested_timeframes=context.requested_timeframes,
+        requested_symbols=context.requested_symbols,
+        allow_metals=context.allow_metals,
+        batch_payload=_registry_batch_payload(
+            status=status,
+            error=error,
+            summary=summary,
+            memory_bundle=memory_bundle,
+            batch_payload={
+                "train_start": context.resolved_windows.get("train_start"),
+                "val_start": context.resolved_windows.get("val_start"),
+                "oos_start": context.resolved_windows.get("oos_start"),
+                "requested_oos_end_exclusive": context.resolved_windows.get(
+                    "requested_oos_end_exclusive"
+                ),
+                "window_profile": context.window_profile,
+                "chunk_days": context.chunk_days,
+            },
+        ),
+    )
+    _append_signature_entry(
+        _registry_path(context.output_root),
+        signature=context.run_signature,
+        run_id=context.run_id,
+        status=status,
+        batch_id=context.batch_id,
+        run_root=str(context.run_root),
+        batch_dir=str(context.batch_dir),
+        manifest_path=str(context.manifest_path),
+        summary_path=str(artifacts.summary_path),
+        details_path=str(artifacts.details_path),
+        fail_analysis_path=str(artifacts.fail_analysis_path),
+        memory_evidence_path=str(artifacts.memory_evidence_path),
+        error=error,
+    )
+    payload = {
+        "status": status,
+        "run_id": context.run_id,
+        "manifest_path": str(context.manifest_path),
+        "progress_path": str(context.progress_path),
+        "latest_path": str(context.root_latest_path),
+        "run_latest_path": str(context.run_latest_path),
+        "summary_latest": str(artifacts.summary_path),
+        "details_latest": str(artifacts.details_path),
+        "fail_analysis_latest": str(artifacts.fail_analysis_path),
+        "rss_log_latest": str(artifacts.rss_log_path),
+        "memory_evidence_latest": str(artifacts.memory_evidence_path),
+        "heavy_lock_path": str(context.heavy_lock_path),
+        "allow_metals": context.allow_metals,
+        "run_signature": context.run_signature,
+        "eligible_symbols": summary.get("eligible_symbols") if isinstance(summary, dict) else [],
+        "best_strategy_count": len(summary.get("best_per_strategy") or [])
+        if isinstance(summary, dict)
+        else 0,
+        "promoted_count": _summary_int(summary, "promoted_count"),
+        "portfolio_weight_count": (
+            len((summary.get("portfolio") or {}).get("weights") or [])
+            if isinstance(summary, dict)
+            else 0
+        ),
+    }
+    if error:
+        payload["error"] = error
+    _print_exact_window_payload(
+        payload,
+        stream=sys.stdout if rc == 0 else sys.stderr,
+    )
+    return int(rc)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _build_parser().parse_args(argv)
+    context = _build_exact_window_cli_context(args)
+    if (
+        not context.emit_memory_baseline
+        and context.adopt_run_dir is None
+        and not bool(args.force_rerun)
+    ):
+        registry_entry = _find_completed_signature_entry(
+            _registry_path(context.output_root),
+            signature=context.run_signature,
+        )
+        if registry_entry is not None:
+            return _handle_duplicate_signature_skip(
+                context,
+                registry_entry=registry_entry,
+            )
+    run_lock = _acquire_exact_window_run_lock(context)
+    if (
+        run_lock is None
+        and not context.emit_memory_baseline
+        and context.adopt_run_dir is None
+    ):
+        return 3
+    _ensure_exact_window_run_dirs(context)
+    commit_sha, git_dirty = _git_commit_marker()
+    manifest = _build_running_manifest(
+        context,
+        commit_sha=commit_sha,
+        git_dirty=git_dirty,
+    )
+    latest_pointer = _build_running_latest_pointer(context)
+    try:
+        _persist_exact_window_run_state(
+            context,
+            manifest=manifest,
+            latest_pointer=latest_pointer,
+        )
+        if context.adopt_run_dir is not None:
+            return _handle_adopted_exact_window_run(
+                context,
+                manifest=manifest,
+                latest_pointer=latest_pointer,
+            )
+        return _execute_exact_window_cli_run(
+            context,
+            manifest=manifest,
+            latest_pointer=latest_pointer,
+        )
     finally:
         if run_lock is not None:
             run_lock.release()

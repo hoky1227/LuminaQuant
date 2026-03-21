@@ -438,6 +438,78 @@ def test_exact_window_cli_supports_baseline_probe(tmp_path: Path, monkeypatch, c
     assert called["suite"] is False
 
 
+def test_exact_window_cli_adopts_existing_run_artifacts(tmp_path: Path, monkeypatch, capsys):
+    output_root = tmp_path / "reports"
+    adopt_dir = output_root / "adopted-run" / "1m"
+    adopt_dir.mkdir(parents=True, exist_ok=True)
+    summary_path = adopt_dir / exact_window_cli.SUMMARY_LATEST
+    details_path = adopt_dir / exact_window_cli.DETAILS_LATEST
+    rss_path = adopt_dir / exact_window_cli.RSS_LOG_LATEST
+    summary_path.write_text(
+        json.dumps(
+            {
+                "eligible_symbols": ["BTC/USDT"],
+                "best_per_strategy": [{"candidate_id": "cand-1"}],
+                "promoted_count": 1,
+                "portfolio": {"weights": [{"candidate_id": "cand-1"}]},
+            }
+        ),
+        encoding="utf-8",
+    )
+    details_path.write_text(json.dumps([{"candidate_id": "cand-1"}]), encoding="utf-8")
+    rss_path.write_text("sample\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        exact_window_cli,
+        "write_fail_analysis_bundle",
+        lambda **kwargs: {
+            "json_latest": output_root / "exact_window_fail_analysis_latest.json",
+        },
+    )
+    monkeypatch.setattr(
+        exact_window_cli,
+        "write_memory_evidence_bundle",
+        lambda **kwargs: {
+            "json_latest": output_root / "exact_window_memory_evidence_latest.json",
+        },
+    )
+    monkeypatch.setattr(
+        exact_window_cli,
+        "sync_exact_window_latest_aliases",
+        lambda root: {},
+    )
+
+    rc = exact_window_cli.main(
+        [
+            "--output-dir",
+            str(output_root),
+            "--timeframes",
+            "1m",
+            "--symbols",
+            "BTC/USDT",
+            "--adopt-run-dir",
+            str(adopt_dir),
+        ]
+    )
+
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "completed"
+    assert payload["summary_latest"] == str(summary_path)
+    assert payload["details_latest"] == str(details_path)
+    assert payload["rss_log_latest"] == str(rss_path)
+    assert payload["existing_pid"] is None
+
+    manifest = json.loads(
+        (output_root / next(output_root.glob("exact_window_*/manifest.json")).relative_to(output_root)).read_text(
+            encoding="utf-8"
+        )
+    )
+    assert manifest["adopted_existing_run"] is True
+    assert manifest["status"] == "completed"
+    assert manifest["artifacts"]["summary_path"] == str(summary_path)
+
+
 def test_exact_window_cli_blocks_when_another_heavy_run_is_active(tmp_path: Path, monkeypatch, capsys):
     class _BusyLock:
         @staticmethod
