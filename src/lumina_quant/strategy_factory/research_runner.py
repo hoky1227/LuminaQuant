@@ -28,6 +28,7 @@ from lumina_quant.symbols import (
     canonicalize_symbol_list,
     normalize_strategy_timeframes,
 )
+from lumina_quant.strategy_factory.strategy_signal_dispatch import StrategySignalDispatcher
 from lumina_quant.utils.risk_free import (
     resolve_risk_free_config,
     sharpe_ratio as compute_sharpe_ratio,
@@ -63,17 +64,24 @@ _FEATURE_POINT_COLUMNS: tuple[str, ...] = (
 )
 
 
-def _current_research_market_data_settings() -> dict[str, Any]:
-    try:
-        defaults = current_market_data_runtime_settings()
-    except FileNotFoundError:
-        defaults = {
-            "symbols": list(getattr(BaseConfig, "SYMBOLS", [])),
-            "market_data_parquet_path": str(
-                getattr(BaseConfig, "MARKET_DATA_PARQUET_PATH", "data/market_parquet")
-            ),
-            "market_data_exchange": str(getattr(BaseConfig, "MARKET_DATA_EXCHANGE", "binance") or "binance"),
-        }
+def _current_research_market_data_settings(
+    runtime_settings: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    if runtime_settings is not None:
+        defaults = dict(runtime_settings)
+    else:
+        try:
+            defaults = current_market_data_runtime_settings()
+        except FileNotFoundError:
+            defaults = {
+                "symbols": list(getattr(BaseConfig, "SYMBOLS", [])),
+                "market_data_parquet_path": str(
+                    getattr(BaseConfig, "MARKET_DATA_PARQUET_PATH", "data/market_parquet")
+                ),
+                "market_data_exchange": str(
+                    getattr(BaseConfig, "MARKET_DATA_EXCHANGE", "binance") or "binance"
+                ),
+            }
     return {
         "symbols": canonicalize_symbol_list(list(defaults["symbols"])),
         "parquet_root": str(defaults["market_data_parquet_path"] or "data/market_parquet"),
@@ -374,8 +382,9 @@ def _load_feature_cache(
     symbols: Sequence[str],
     start_date: Any = None,
     end_date: Any = None,
+    market_data_settings: Mapping[str, Any] | None = None,
 ) -> dict[str, pl.DataFrame]:
-    defaults = _current_research_market_data_settings()
+    defaults = _current_research_market_data_settings(market_data_settings)
     db_path = str(defaults["parquet_root"])
     exchange = str(defaults["exchange"])
     cache: dict[str, pl.DataFrame] = {}
@@ -389,7 +398,7 @@ def _load_feature_cache(
                 start_date=start_date,
                 end_date=end_date,
             )
-        except Exception:
+        except (FileNotFoundError, OSError, RuntimeError, ValueError):
             frame = pl.DataFrame()
 
         if frame.is_empty() or "timestamp_ms" not in frame.columns:
@@ -3979,7 +3988,7 @@ def _apply_pair_spread_strategy(
         exposures[x_idx] = simulated[0]
         exposures[y_idx] = simulated[1]
         meta["event_driven_proxy"] = True
-    except Exception as exc:
+    except (AttributeError, TypeError, ValueError, RuntimeError) as exc:
         entry_z = float(params.get("entry_z", 2.0))
         exit_z = float(params.get("exit_z", 0.35))
         lookback = int(params.get("lookback_window", 96))
@@ -4778,11 +4787,12 @@ def _load_bundle_cache(
     allow_csv_fallback: bool = True,
     allow_synthetic_fallback: bool = True,
     min_bars: int = _MIN_BARS,
+    market_data_settings: Mapping[str, Any] | None = None,
 ) -> tuple[dict[tuple[str, str], SeriesBundle], dict[str, list[str]]]:
     cache: dict[tuple[str, str], SeriesBundle] = {}
     source_map: dict[str, list[str]] = {"parquet": [], "csv": [], "synthetic": []}
 
-    defaults = _current_research_market_data_settings()
+    defaults = _current_research_market_data_settings(market_data_settings)
     parquet_root = str(defaults["parquet_root"])
     exchange = str(defaults["exchange"])
 
@@ -4798,7 +4808,7 @@ def _load_bundle_cache(
                 end_date=end_date,
                 data_mode=str(data_mode or "legacy"),
             )
-        except Exception:
+        except (FileNotFoundError, OSError, RuntimeError, ValueError):
             loaded = {}
 
         for symbol in symbols:
@@ -4828,7 +4838,7 @@ def _load_bundle_cache(
                         continue
                     try:
                         frame_csv = _read_csv_ohlcv(csv_path)
-                    except Exception:
+                    except (FileNotFoundError, OSError, RuntimeError, ValueError):
                         frame_csv = pl.DataFrame()
                     if not frame_csv.is_empty() and (start_date is not None or end_date is not None):
                         start_bound = _coerce_utc_datetime(start_date)
@@ -5026,6 +5036,7 @@ def _load_research_run_resources(
     allow_csv_fallback: bool,
     allow_synthetic_fallback: bool,
     min_bundle_bars: int,
+    market_data_settings: Mapping[str, Any] | None = None,
 ) -> tuple[
     dict[tuple[str, str], SeriesBundle],
     dict[str, list[str]],
@@ -5046,6 +5057,7 @@ def _load_research_run_resources(
             allow_csv_fallback=bool(allow_csv_fallback),
             allow_synthetic_fallback=bool(allow_synthetic_fallback),
             min_bars=max(1, int(min_bundle_bars)),
+            market_data_settings=market_data_settings,
         )
     except TypeError as exc:
         if "unexpected keyword argument" not in str(exc):
@@ -5064,6 +5076,7 @@ def _load_research_run_resources(
         symbols=support_feature_symbols,
         start_date=_datetime_to_iso_z(load_start),
         end_date=_datetime_to_iso_z(load_end),
+        market_data_settings=market_data_settings,
     )
     benchmark = _benchmark_cache(cache, normalized_timeframes)
     return cache, data_sources, feature_cache, benchmark
