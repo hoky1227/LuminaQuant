@@ -576,6 +576,53 @@ def test_basis_snapback_reversion_strategy_signal_produces_exposure():
     assert meta == {}
 
 
+def test_residual_basket_reversion_strategy_signal_produces_exposure():
+    length = 420
+    btc_close = np.linspace(100.0, 120.0, length, dtype=float)
+    eth_close = np.linspace(100.0, 112.0, length, dtype=float)
+    bnb_close = np.linspace(100.0, 108.0, length, dtype=float)
+    eth_close[200:210] *= np.linspace(0.96, 0.92, 10, dtype=float)
+    bnb_close[200:210] *= np.linspace(1.04, 1.08, 10, dtype=float)
+    aligned = {"datetime": _minute_datetimes(length)}
+    for symbol, close in {
+        "BTC/USDT": btc_close,
+        "ETH/USDT": eth_close,
+        "BNB/USDT": bnb_close,
+    }.items():
+        aligned[f"{symbol}:open"] = close
+        aligned[f"{symbol}:high"] = close + 0.2
+        aligned[f"{symbol}:low"] = close - 0.2
+        aligned[f"{symbol}:close"] = close
+        aligned[f"{symbol}:volume"] = np.full(length, 120.0, dtype=float)
+
+    candidate = {
+        "strategy_class": "ResidualBasketReversionStrategy",
+        "params": {
+            "residual_window": 32,
+            "entry_z": 0.8,
+            "exit_z": 0.2,
+            "rebalance_bars": 2,
+            "max_longs": 1,
+            "max_shorts": 1,
+            "stop_loss_pct": 0.02,
+            "allow_short": True,
+            "btc_symbol": "BTC/USDT",
+        },
+    }
+
+    _, turnover, exposure, meta = research_runner._strategy_signal(
+        candidate,
+        aligned=aligned,
+        symbols=["BTC/USDT", "ETH/USDT", "BNB/USDT"],
+    )
+
+    assert np.any(np.abs(exposure) > 0.0)
+    assert np.any(turnover > 0.0)
+    assert meta.get("cross_sectional") is True
+    assert meta.get("residualized_cross_sectional") is True
+    assert meta.get("btc_symbol") == "BTC/USDT"
+
+
 def test_session_gated_residual_basket_reversion_strategy_signal_produces_exposure():
     length = 420
     datetimes = _minute_datetimes(length)
