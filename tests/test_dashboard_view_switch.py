@@ -603,3 +603,84 @@ def test_render_ghost_cleanup_section_records_dry_run_and_preserves_cache(monkey
     assert ("success", "Ghost cleanup dry_run completed in 1.25s") in helper_st.calls
     assert ("json", {"closed_runs": 2}) in helper_st.calls
     assert any(call[0] == "text_area" and call[2] == "done" for call in helper_st.calls)
+
+
+def test_render_workflow_jobs_section_reports_empty_state(monkeypatch) -> None:
+    import numpy as real_np
+    import pandas as real_pd
+
+    module, _, _ = _load_dashboard_app(monkeypatch)
+    helper_st = _GhostCleanupStreamlit(button_results=[])
+
+    monkeypatch.setitem(sys.modules, "numpy", real_np)
+    monkeypatch.setitem(sys.modules, "pandas", real_pd)
+    module.st = helper_st
+    module.pd = real_pd
+    monkeypatch.setattr(module, "load_workflow_jobs", lambda db_path, refresh_counter=0: real_pd.DataFrame())
+
+    module._render_workflow_jobs_section(db_path="postgres://lumina", refresh_counter=3)
+
+    assert ("subheader", "Workflow Jobs") in helper_st.calls
+    assert ("info", "No workflow jobs recorded yet.") in helper_st.calls
+
+
+def test_render_workflow_jobs_section_handles_graceful_stop_and_log_tail(monkeypatch) -> None:
+    import numpy as real_np
+    import pandas as real_pd
+
+    module, _, _ = _load_dashboard_app(monkeypatch)
+    helper_st = _GhostCleanupStreamlit(button_results=[True, False])
+    captured_stop: dict[str, Any] = {}
+    update_calls: list[dict[str, Any]] = []
+
+    workflow_jobs = real_pd.DataFrame(
+        [
+            {
+                "job_id": "job-1",
+                "started_at": "2026-03-21T00:00:00Z",
+                "workflow": "live",
+                "status": "RUNNING",
+                "requested_mode": "paper",
+                "strategy": "TrendStrategy",
+                "pid": 1234,
+                "run_id": "run-1",
+                "exit_code": None,
+                "command_json": "[\"python\", \"run_live.py\"]",
+                "stop_file": "/tmp/job-1.stop",
+                "log_path": "/tmp/job-1.log",
+            }
+        ]
+    )
+
+    monkeypatch.setitem(sys.modules, "numpy", real_np)
+    monkeypatch.setitem(sys.modules, "pandas", real_pd)
+    module.st = helper_st
+    module.pd = real_pd
+    monkeypatch.setattr(module, "load_workflow_jobs", lambda db_path, refresh_counter=0: workflow_jobs)
+    monkeypatch.setattr(
+        module,
+        "_request_job_stop",
+        lambda db_path, stop_file: captured_stop.update({"db_path": db_path, "stop_file": stop_file})
+        or True,
+    )
+    monkeypatch.setattr(
+        module,
+        "_update_workflow_job_row",
+        lambda db_path, job_id, **kwargs: update_calls.append(
+            {"db_path": db_path, "job_id": job_id, **kwargs}
+        ),
+    )
+    monkeypatch.setattr(module, "_tail_text_file", lambda path, max_chars=25000: f"tail:{path}:{max_chars}")
+
+    module._render_workflow_jobs_section(db_path="postgres://lumina", refresh_counter=7)
+
+    assert captured_stop == {"db_path": "postgres://lumina", "stop_file": "/tmp/job-1.stop"}
+    assert update_calls == [
+        {"db_path": "postgres://lumina", "job_id": "job-1", "status": "STOP_REQUESTED"}
+    ]
+    assert helper_st.cache_data.clear_calls == 1
+    assert ("success", "Stop requested for job-1") in helper_st.calls
+    assert ("caption", "Log path: /tmp/job-1.log") in helper_st.calls
+    assert any(
+        call[0] == "text_area" and call[2] == "tail:/tmp/job-1.log:25000" for call in helper_st.calls
+    )

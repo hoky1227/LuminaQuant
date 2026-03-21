@@ -3300,6 +3300,99 @@ def _render_ghost_cleanup_section(*, db_path, run_stale_sec) -> None:
         )
 
 
+def _render_active_workflow_job_controls(*, db_path, active_jobs) -> None:
+    ctrl_job_id = st.selectbox(
+        "Control Active Job",
+        active_jobs["job_id"].astype(str).tolist(),
+        key="control_active_job_id",
+    )
+    ctrl_row = active_jobs[active_jobs["job_id"].astype(str) == str(ctrl_job_id)].iloc[0]
+    ctrl_col_1, ctrl_col_2 = st.columns(2)
+    can_stop = bool(ctrl_row.get("stop_file")) and ctrl_row.get("status") != "STOP_REQUESTED"
+    if ctrl_col_1.button(
+        "Request Graceful Stop",
+        use_container_width=True,
+        disabled=not can_stop,
+        key=f"request_stop_{ctrl_job_id}",
+    ):
+        if _request_job_stop(db_path, str(ctrl_row.get("stop_file") or "")):
+            _update_workflow_job_row(db_path, ctrl_job_id, status="STOP_REQUESTED")
+            st.success(f"Stop requested for {ctrl_job_id}")
+            st.cache_data.clear()
+        else:
+            st.error("This job does not expose a graceful stop file.")
+
+    if ctrl_col_2.button(
+        "Force Kill Process",
+        use_container_width=True,
+        key=f"force_kill_{ctrl_job_id}",
+    ):
+        ok, detail = _terminate_process(ctrl_row.get("pid"))
+        if ok:
+            _update_workflow_job_row(
+                db_path,
+                ctrl_job_id,
+                status="KILLED",
+                ended_at=_utc_now_iso(),
+                exit_code=-9,
+            )
+            if "workflow_processes" in st.session_state:
+                st.session_state["workflow_processes"].pop(ctrl_job_id, None)
+            st.success(f"Killed {ctrl_job_id}")
+            st.cache_data.clear()
+        else:
+            st.error(f"Kill failed: {detail}")
+
+
+def _render_workflow_job_log_viewer(workflow_jobs) -> None:
+    log_job_id = st.selectbox(
+        "Job Log Viewer",
+        workflow_jobs["job_id"].astype(str).tolist(),
+        key="workflow_log_viewer_job",
+    )
+    log_row = workflow_jobs[workflow_jobs["job_id"].astype(str) == str(log_job_id)].iloc[0]
+    st.caption(f"Log path: {log_row.get('log_path')}")
+    st.text_area(
+        "Job Log Tail",
+        value=_tail_text_file(str(log_row.get("log_path") or ""), max_chars=25000),
+        height=260,
+        key="workflow_log_tail_view",
+    )
+
+
+def _render_workflow_jobs_section(*, db_path, refresh_counter) -> None:
+    st.subheader("Workflow Jobs")
+    workflow_jobs = load_workflow_jobs(db_path, refresh_counter=refresh_counter)
+    if workflow_jobs.empty:
+        st.info("No workflow jobs recorded yet.")
+        return
+
+    jobs_view = workflow_jobs.copy()
+    jobs_view["command"] = jobs_view["command_json"].fillna("").astype(str).str.slice(0, 120)
+    st.dataframe(
+        jobs_view[
+            [
+                "started_at",
+                "workflow",
+                "status",
+                "requested_mode",
+                "strategy",
+                "pid",
+                "run_id",
+                "exit_code",
+                "command",
+            ]
+        ],
+        use_container_width=True,
+    )
+
+    active_jobs = workflow_jobs[workflow_jobs["status"].isin(["RUNNING", "STOP_REQUESTED"])].copy()
+    if not active_jobs.empty:
+        _render_active_workflow_job_controls(db_path=db_path, active_jobs=active_jobs)
+
+    _render_workflow_job_log_viewer(workflow_jobs)
+
+
 def render_main_dashboard() -> None:
     st.sidebar.header("Configuration")
     data_source = st.sidebar.selectbox("Data Source", ["Auto", "Postgres", "CSV"])
@@ -4965,91 +5058,7 @@ def render_main_dashboard() -> None:
                 st.success(f"Live job launched: {job_id}")
                 st.cache_data.clear()
 
-        st.subheader("Workflow Jobs")
-        workflow_jobs = load_workflow_jobs(db_path, refresh_counter=refresh_counter)
-        if workflow_jobs.empty:
-            st.info("No workflow jobs recorded yet.")
-        else:
-            jobs_view = workflow_jobs.copy()
-            jobs_view["command"] = jobs_view["command_json"].fillna("").astype(str).str.slice(0, 120)
-            st.dataframe(
-                jobs_view[
-                    [
-                        "started_at",
-                        "workflow",
-                        "status",
-                        "requested_mode",
-                        "strategy",
-                        "pid",
-                        "run_id",
-                        "exit_code",
-                        "command",
-                    ]
-                ],
-                use_container_width=True,
-            )
-
-            active_jobs = workflow_jobs[
-                workflow_jobs["status"].isin(["RUNNING", "STOP_REQUESTED"])
-            ].copy()
-            if not active_jobs.empty:
-                ctrl_job_id = st.selectbox(
-                    "Control Active Job",
-                    active_jobs["job_id"].astype(str).tolist(),
-                    key="control_active_job_id",
-                )
-                ctrl_row = active_jobs[active_jobs["job_id"].astype(str) == str(ctrl_job_id)].iloc[0]
-                ctrl_col_1, ctrl_col_2 = st.columns(2)
-                can_stop = (
-                    bool(ctrl_row.get("stop_file")) and ctrl_row.get("status") != "STOP_REQUESTED"
-                )
-                if ctrl_col_1.button(
-                    "Request Graceful Stop",
-                    use_container_width=True,
-                    disabled=not can_stop,
-                    key=f"request_stop_{ctrl_job_id}",
-                ):
-                    if _request_job_stop(db_path, str(ctrl_row.get("stop_file") or "")):
-                        _update_workflow_job_row(db_path, ctrl_job_id, status="STOP_REQUESTED")
-                        st.success(f"Stop requested for {ctrl_job_id}")
-                        st.cache_data.clear()
-                    else:
-                        st.error("This job does not expose a graceful stop file.")
-
-                if ctrl_col_2.button(
-                    "Force Kill Process",
-                    use_container_width=True,
-                    key=f"force_kill_{ctrl_job_id}",
-                ):
-                    ok, detail = _terminate_process(ctrl_row.get("pid"))
-                    if ok:
-                        _update_workflow_job_row(
-                            db_path,
-                            ctrl_job_id,
-                            status="KILLED",
-                            ended_at=_utc_now_iso(),
-                            exit_code=-9,
-                        )
-                        if "workflow_processes" in st.session_state:
-                            st.session_state["workflow_processes"].pop(ctrl_job_id, None)
-                        st.success(f"Killed {ctrl_job_id}")
-                        st.cache_data.clear()
-                    else:
-                        st.error(f"Kill failed: {detail}")
-
-            log_job_id = st.selectbox(
-                "Job Log Viewer",
-                workflow_jobs["job_id"].astype(str).tolist(),
-                key="workflow_log_viewer_job",
-            )
-            log_row = workflow_jobs[workflow_jobs["job_id"].astype(str) == str(log_job_id)].iloc[0]
-            st.caption(f"Log path: {log_row.get('log_path')}")
-            st.text_area(
-                "Job Log Tail",
-                value=_tail_text_file(str(log_row.get("log_path") or ""), max_chars=25000),
-                height=260,
-                key="workflow_log_tail_view",
-            )
+        _render_workflow_jobs_section(db_path=db_path, refresh_counter=refresh_counter)
 
         _render_ghost_cleanup_section(db_path=db_path, run_stale_sec=run_stale_sec)
 
