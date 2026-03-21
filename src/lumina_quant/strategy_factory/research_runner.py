@@ -1407,6 +1407,353 @@ def _composite_momentum_series(
     return out
 
 
+@dataclass(frozen=True, slots=True)
+class _VwapReversionConfig:
+    window: int
+    entry_dev: float
+    exit_dev: float
+    stop_loss_pct: float
+    allow_short: bool
+
+
+def _resolve_vwap_reversion_config(params: Mapping[str, Any]) -> _VwapReversionConfig:
+    return _VwapReversionConfig(
+        window=max(8, int(params.get("window", 64))),
+        entry_dev=float(params.get("entry_dev", 0.02)),
+        exit_dev=max(0.0, float(params.get("exit_dev", 0.005))),
+        stop_loss_pct=float(params.get("stop_loss_pct", 0.03)),
+        allow_short=bool(params.get("allow_short", True)),
+    )
+
+
+def _vwap_reversion_position_series(
+    *,
+    close: np.ndarray,
+    volume: np.ndarray,
+    config: _VwapReversionConfig,
+) -> np.ndarray:
+    deviation = np.nan_to_num(
+        _rolling_vwap_deviation(close, volume, config.window),
+        nan=0.0,
+    )
+    position = np.zeros(close.shape, dtype=float)
+    mode = 0
+    entry_price: float | None = None
+
+    for idx in range(close.size):
+        close_i = float(close[idx])
+        deviation_i = float(deviation[idx])
+        if not np.isfinite(close_i):
+            continue
+        if mode == 1 and entry_price is not None:
+            stop_hit = close_i <= entry_price * (1.0 - config.stop_loss_pct)
+            revert_hit = deviation_i >= -config.exit_dev
+            if stop_hit or revert_hit:
+                mode = 0
+                entry_price = None
+            else:
+                position[idx] = 1.0
+                continue
+        elif mode == -1 and entry_price is not None:
+            stop_hit = close_i >= entry_price * (1.0 + config.stop_loss_pct)
+            revert_hit = deviation_i <= config.exit_dev
+            if stop_hit or revert_hit:
+                mode = 0
+                entry_price = None
+            else:
+                position[idx] = -1.0
+                continue
+
+        if mode == 0:
+            if deviation_i <= -config.entry_dev:
+                mode = 1
+                entry_price = close_i
+                position[idx] = 1.0
+            elif config.allow_short and deviation_i >= config.entry_dev:
+                mode = -1
+                entry_price = close_i
+                position[idx] = -1.0
+
+    return position
+
+
+def _apply_vwap_reversion_strategy(
+    *,
+    params: Mapping[str, Any],
+    aligned: Mapping[str, np.ndarray],
+    symbols: Sequence[str],
+    exposures: np.ndarray,
+) -> None:
+    config = _resolve_vwap_reversion_config(params)
+    for s_idx, symbol in enumerate(symbols):
+        close = np.asarray(aligned[f"{symbol}:close"], dtype=float)
+        volume = np.asarray(aligned[f"{symbol}:volume"], dtype=float)
+        exposures[s_idx] = _vwap_reversion_position_series(
+            close=close,
+            volume=volume,
+            config=config,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class _RollingBreakoutConfig:
+    lookback_bars: int
+    breakout_buffer: float
+    atr_window: int
+    atr_stop_multiplier: float
+    stop_loss_pct: float
+    allow_short: bool
+
+
+def _resolve_rolling_breakout_config(params: Mapping[str, Any]) -> _RollingBreakoutConfig:
+    return _RollingBreakoutConfig(
+        lookback_bars=max(8, int(params.get("lookback_bars", 48))),
+        breakout_buffer=float(params.get("breakout_buffer", 0.0)),
+        atr_window=max(4, int(params.get("atr_window", 14))),
+        atr_stop_multiplier=float(params.get("atr_stop_multiplier", 2.5)),
+        stop_loss_pct=float(params.get("stop_loss_pct", 0.03)),
+        allow_short=bool(params.get("allow_short", False)),
+    )
+
+
+def _rolling_breakout_atr_pct(
+    *,
+    close: np.ndarray,
+    high: np.ndarray,
+    low: np.ndarray,
+    window: int,
+) -> np.ndarray:
+    atr_pct = np.full(close.shape, np.nan, dtype=float)
+    if close.size == 0:
+        return atr_pct
+    prev_close = np.r_[close[0], close[:-1]]
+    tr = np.maximum(
+        high - low,
+        np.maximum(np.abs(high - prev_close), np.abs(low - prev_close)),
+    )
+    for idx in range(window, close.size + 1):
+        atr_pct[idx - 1] = _safe_mean(
+            tr[idx - window : idx] / np.clip(close[idx - window : idx], 1e-12, np.inf)
+        )
+    return atr_pct
+
+
+def _rolling_breakout_position_series(
+    *,
+    close: np.ndarray,
+    channel_high: np.ndarray,
+    channel_low: np.ndarray,
+    atr_pct: np.ndarray,
+    config: _RollingBreakoutConfig,
+) -> np.ndarray:
+    position = np.zeros(close.shape, dtype=float)
+    mode = 0
+    entry_price: float | None = None
+
+    for idx in range(close.size):
+        close_i = float(close[idx])
+        stop_pct = max(
+            config.stop_loss_pct,
+            config.atr_stop_multiplier * float(atr_pct[idx])
+            if np.isfinite(atr_pct[idx])
+            else config.stop_loss_pct,
+        )
+        upper = float(channel_high[idx]) if np.isfinite(channel_high[idx]) else None
+        lower = float(channel_low[idx]) if np.isfinite(channel_low[idx]) else None
+        if mode == 1 and entry_price is not None:
+            stop_hit = close_i <= entry_price * (1.0 - stop_pct)
+            exit_hit = lower is not None and close_i < lower
+            if stop_hit or exit_hit:
+                mode = 0
+                entry_price = None
+            else:
+                position[idx] = 1.0
+                continue
+        elif mode == -1 and entry_price is not None:
+            stop_hit = close_i >= entry_price * (1.0 + stop_pct)
+            exit_hit = upper is not None and close_i > upper
+            if stop_hit or exit_hit:
+                mode = 0
+                entry_price = None
+            else:
+                position[idx] = -1.0
+                continue
+
+        if mode == 0 and upper is not None and lower is not None:
+            if close_i >= upper * (1.0 + config.breakout_buffer):
+                mode = 1
+                entry_price = close_i
+                position[idx] = 1.0
+            elif config.allow_short and close_i <= lower * (1.0 - config.breakout_buffer):
+                mode = -1
+                entry_price = close_i
+                position[idx] = -1.0
+
+    return position
+
+
+def _apply_rolling_breakout_strategy(
+    *,
+    params: Mapping[str, Any],
+    aligned: Mapping[str, np.ndarray],
+    symbols: Sequence[str],
+    exposures: np.ndarray,
+) -> None:
+    config = _resolve_rolling_breakout_config(params)
+    for s_idx, symbol in enumerate(symbols):
+        close = np.asarray(aligned[f"{symbol}:close"], dtype=float)
+        high = np.asarray(aligned[f"{symbol}:high"], dtype=float)
+        low = np.asarray(aligned[f"{symbol}:low"], dtype=float)
+        channel_high, channel_low = _rolling_channel(high, low, config.lookback_bars)
+        atr_pct = _rolling_breakout_atr_pct(
+            close=close,
+            high=high,
+            low=low,
+            window=config.atr_window,
+        )
+        exposures[s_idx] = _rolling_breakout_position_series(
+            close=close,
+            channel_high=channel_high,
+            channel_low=channel_low,
+            atr_pct=atr_pct,
+            config=config,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class _RegimeBreakoutCandidateConfig:
+    lookback_window: int
+    slope_window: int
+    volatility_fast_window: int
+    volatility_slow_window: int
+    range_entry_threshold: float
+    slope_entry_threshold: float
+    momentum_floor: float
+    max_volatility_ratio: float
+    stop_loss_pct: float
+    allow_short: bool
+
+
+def _resolve_regime_breakout_candidate_config(
+    params: Mapping[str, Any],
+) -> _RegimeBreakoutCandidateConfig:
+    volatility_fast_window = max(4, int(params.get("volatility_fast_window", 12)))
+    return _RegimeBreakoutCandidateConfig(
+        lookback_window=max(8, int(params.get("lookback_window", 48))),
+        slope_window=max(4, int(params.get("slope_window", 21))),
+        volatility_fast_window=volatility_fast_window,
+        volatility_slow_window=max(
+            volatility_fast_window + 2,
+            int(params.get("volatility_slow_window", 48)),
+        ),
+        range_entry_threshold=float(params.get("range_entry_threshold", 0.70)),
+        slope_entry_threshold=float(params.get("slope_entry_threshold", 0.0)),
+        momentum_floor=float(params.get("momentum_floor", 0.0)),
+        max_volatility_ratio=float(params.get("max_volatility_ratio", 1.8)),
+        stop_loss_pct=float(params.get("stop_loss_pct", 0.03)),
+        allow_short=bool(params.get("allow_short", True)),
+    )
+
+
+def _regime_breakout_candidate_position_series(
+    *,
+    close: np.ndarray,
+    channel_high: np.ndarray,
+    channel_low: np.ndarray,
+    vol_ratio: np.ndarray,
+    slope_series: np.ndarray,
+    momentum_series: np.ndarray,
+    config: _RegimeBreakoutCandidateConfig,
+) -> np.ndarray:
+    position = np.zeros(close.shape, dtype=float)
+    mode = 0
+    entry_price: float | None = None
+
+    for idx in range(close.size):
+        close_i = float(close[idx])
+        upper = float(channel_high[idx]) if np.isfinite(channel_high[idx]) else None
+        lower = float(channel_low[idx]) if np.isfinite(channel_low[idx]) else None
+        slope = float(slope_series[idx]) if np.isfinite(slope_series[idx]) else None
+        momentum = float(momentum_series[idx]) if np.isfinite(momentum_series[idx]) else None
+        if upper is None or lower is None or upper <= lower or slope is None or momentum is None:
+            continue
+        range_pos = (close_i - lower) / max(upper - lower, 1e-12)
+        vol_ok = float(vol_ratio[idx]) <= config.max_volatility_ratio
+        if mode == 1 and entry_price is not None:
+            stop_hit = close_i <= entry_price * (1.0 - config.stop_loss_pct)
+            exit_hit = slope < 0.0 or range_pos < 0.50
+            if stop_hit or exit_hit:
+                mode = 0
+                entry_price = None
+            else:
+                position[idx] = 1.0
+                continue
+        elif mode == -1 and entry_price is not None:
+            stop_hit = close_i >= entry_price * (1.0 + config.stop_loss_pct)
+            exit_hit = slope > 0.0 or range_pos > 0.50
+            if stop_hit or exit_hit:
+                mode = 0
+                entry_price = None
+            else:
+                position[idx] = -1.0
+                continue
+
+        if mode == 0 and vol_ok:
+            if (
+                range_pos >= config.range_entry_threshold
+                and slope >= config.slope_entry_threshold
+                and momentum >= config.momentum_floor
+            ):
+                mode = 1
+                entry_price = close_i
+                position[idx] = 1.0
+            elif (
+                config.allow_short
+                and range_pos <= (1.0 - config.range_entry_threshold)
+                and slope <= -config.slope_entry_threshold
+                and momentum <= -config.momentum_floor
+            ):
+                mode = -1
+                entry_price = close_i
+                position[idx] = -1.0
+
+    return position
+
+
+def _apply_regime_breakout_candidate_strategy(
+    *,
+    params: Mapping[str, Any],
+    aligned: Mapping[str, np.ndarray],
+    symbols: Sequence[str],
+    exposures: np.ndarray,
+) -> None:
+    config = _resolve_regime_breakout_candidate_config(params)
+    for s_idx, symbol in enumerate(symbols):
+        close = np.asarray(aligned[f"{symbol}:close"], dtype=float)
+        high = np.asarray(aligned[f"{symbol}:high"], dtype=float)
+        low = np.asarray(aligned[f"{symbol}:low"], dtype=float)
+        channel_high, channel_low = _rolling_channel(high, low, config.lookback_window)
+        vol_ratio = np.nan_to_num(
+            _vol_ratio_series(
+                close,
+                config.volatility_fast_window,
+                config.volatility_slow_window,
+            ),
+            nan=np.inf,
+        )
+        slope_series = _rolling_slope_series(close, config.slope_window)
+        momentum_series = _composite_momentum_series(close)
+        exposures[s_idx] = _regime_breakout_candidate_position_series(
+            close=close,
+            channel_high=channel_high,
+            channel_low=channel_low,
+            vol_ratio=vol_ratio,
+            slope_series=slope_series,
+            momentum_series=momentum_series,
+            config=config,
+        )
+
+
 def _pair_spread_z(px: np.ndarray, py: np.ndarray, window: int = 96) -> np.ndarray:
     n = min(px.size, py.size)
     out = np.full(n, np.nan, dtype=float)
@@ -3341,175 +3688,28 @@ def _strategy_signal(
             exposures[s_idx] = pos
 
     elif strategy_class == "VwapReversionStrategy":
-        window = max(8, int(params.get("window", 64)))
-        entry_dev = float(params.get("entry_dev", 0.02))
-        exit_dev = max(0.0, float(params.get("exit_dev", 0.005)))
-        stop_loss_pct = float(params.get("stop_loss_pct", 0.03))
-        allow_short = bool(params.get("allow_short", True))
-
-        for s_idx, symbol in enumerate(symbols):
-            close = np.asarray(aligned[f"{symbol}:close"], dtype=float)
-            volume = np.asarray(aligned[f"{symbol}:volume"], dtype=float)
-            deviation = np.nan_to_num(_rolling_vwap_deviation(close, volume, window), nan=0.0)
-            pos = np.zeros(close.shape, dtype=float)
-            mode = 0
-            entry_price: float | None = None
-            for idx in range(close.size):
-                close_i = float(close[idx])
-                dev_i = float(deviation[idx])
-                if not np.isfinite(close_i):
-                    continue
-                if mode == 1 and entry_price is not None:
-                    stop_hit = close_i <= entry_price * (1.0 - stop_loss_pct)
-                    revert_hit = dev_i >= -exit_dev
-                    if stop_hit or revert_hit:
-                        mode = 0
-                        entry_price = None
-                    else:
-                        pos[idx] = 1.0
-                        continue
-                elif mode == -1 and entry_price is not None:
-                    stop_hit = close_i >= entry_price * (1.0 + stop_loss_pct)
-                    revert_hit = dev_i <= exit_dev
-                    if stop_hit or revert_hit:
-                        mode = 0
-                        entry_price = None
-                    else:
-                        pos[idx] = -1.0
-                        continue
-
-                if mode == 0:
-                    if dev_i <= -entry_dev:
-                        mode = 1
-                        entry_price = close_i
-                        pos[idx] = 1.0
-                    elif allow_short and dev_i >= entry_dev:
-                        mode = -1
-                        entry_price = close_i
-                        pos[idx] = -1.0
-            exposures[s_idx] = pos
+        _apply_vwap_reversion_strategy(
+            params=params,
+            aligned=aligned,
+            symbols=symbols,
+            exposures=exposures,
+        )
 
     elif strategy_class == "RollingBreakoutStrategy":
-        lookback_bars = max(8, int(params.get("lookback_bars", 48)))
-        breakout_buffer = float(params.get("breakout_buffer", 0.0))
-        atr_window = max(4, int(params.get("atr_window", 14)))
-        atr_stop_multiplier = float(params.get("atr_stop_multiplier", 2.5))
-        stop_loss_pct = float(params.get("stop_loss_pct", 0.03))
-        allow_short = bool(params.get("allow_short", False))
-
-        for s_idx, symbol in enumerate(symbols):
-            close = np.asarray(aligned[f"{symbol}:close"], dtype=float)
-            high = np.asarray(aligned[f"{symbol}:high"], dtype=float)
-            low = np.asarray(aligned[f"{symbol}:low"], dtype=float)
-            channel_high, channel_low = _rolling_channel(high, low, lookback_bars)
-            prev_close = np.r_[close[0], close[:-1]]
-            tr = np.maximum(high - low, np.maximum(np.abs(high - prev_close), np.abs(low - prev_close)))
-            atr_pct = np.full(close.shape, np.nan, dtype=float)
-            for idx in range(atr_window, close.size + 1):
-                atr_pct[idx - 1] = _safe_mean(tr[idx - atr_window : idx] / np.clip(close[idx - atr_window : idx], 1e-12, np.inf))
-            pos = np.zeros(close.shape, dtype=float)
-            mode = 0
-            entry_price: float | None = None
-            for idx in range(close.size):
-                close_i = float(close[idx])
-                stop_pct = max(
-                    stop_loss_pct,
-                    atr_stop_multiplier * float(atr_pct[idx]) if np.isfinite(atr_pct[idx]) else stop_loss_pct,
-                )
-                upper = float(channel_high[idx]) if np.isfinite(channel_high[idx]) else None
-                lower = float(channel_low[idx]) if np.isfinite(channel_low[idx]) else None
-                if mode == 1 and entry_price is not None:
-                    stop_hit = close_i <= entry_price * (1.0 - stop_pct)
-                    exit_hit = lower is not None and close_i < lower
-                    if stop_hit or exit_hit:
-                        mode = 0
-                        entry_price = None
-                    else:
-                        pos[idx] = 1.0
-                        continue
-                elif mode == -1 and entry_price is not None:
-                    stop_hit = close_i >= entry_price * (1.0 + stop_pct)
-                    exit_hit = upper is not None and close_i > upper
-                    if stop_hit or exit_hit:
-                        mode = 0
-                        entry_price = None
-                    else:
-                        pos[idx] = -1.0
-                        continue
-
-                if mode == 0 and upper is not None and lower is not None:
-                    if close_i >= upper * (1.0 + breakout_buffer):
-                        mode = 1
-                        entry_price = close_i
-                        pos[idx] = 1.0
-                    elif allow_short and close_i <= lower * (1.0 - breakout_buffer):
-                        mode = -1
-                        entry_price = close_i
-                        pos[idx] = -1.0
-            exposures[s_idx] = pos
+        _apply_rolling_breakout_strategy(
+            params=params,
+            aligned=aligned,
+            symbols=symbols,
+            exposures=exposures,
+        )
 
     elif strategy_class == "RegimeBreakoutCandidateStrategy":
-        lookback_window = max(8, int(params.get("lookback_window", 48)))
-        slope_window = max(4, int(params.get("slope_window", 21)))
-        fast_vol = max(4, int(params.get("volatility_fast_window", 12)))
-        slow_vol = max(fast_vol + 2, int(params.get("volatility_slow_window", 48)))
-        range_entry_threshold = float(params.get("range_entry_threshold", 0.70))
-        slope_entry_threshold = float(params.get("slope_entry_threshold", 0.0))
-        momentum_floor = float(params.get("momentum_floor", 0.0))
-        max_volatility_ratio = float(params.get("max_volatility_ratio", 1.8))
-        stop_loss_pct = float(params.get("stop_loss_pct", 0.03))
-        allow_short = bool(params.get("allow_short", True))
-
-        for s_idx, symbol in enumerate(symbols):
-            close = np.asarray(aligned[f"{symbol}:close"], dtype=float)
-            high = np.asarray(aligned[f"{symbol}:high"], dtype=float)
-            low = np.asarray(aligned[f"{symbol}:low"], dtype=float)
-            channel_high, channel_low = _rolling_channel(high, low, lookback_window)
-            vol_ratio = np.nan_to_num(_vol_ratio_series(close, fast_vol, slow_vol), nan=np.inf)
-            slope_series = _rolling_slope_series(close, slope_window)
-            momentum_series = _composite_momentum_series(close)
-            pos = np.zeros(close.shape, dtype=float)
-            mode = 0
-            entry_price: float | None = None
-            for idx in range(close.size):
-                close_i = float(close[idx])
-                upper = float(channel_high[idx]) if np.isfinite(channel_high[idx]) else None
-                lower = float(channel_low[idx]) if np.isfinite(channel_low[idx]) else None
-                slope = float(slope_series[idx]) if np.isfinite(slope_series[idx]) else None
-                momentum = float(momentum_series[idx]) if np.isfinite(momentum_series[idx]) else None
-                if upper is None or lower is None or upper <= lower or slope is None or momentum is None:
-                    continue
-                range_pos = (close_i - lower) / max(upper - lower, 1e-12)
-                vol_ok = float(vol_ratio[idx]) <= max_volatility_ratio
-                if mode == 1 and entry_price is not None:
-                    stop_hit = close_i <= entry_price * (1.0 - stop_loss_pct)
-                    exit_hit = slope < 0.0 or range_pos < 0.50
-                    if stop_hit or exit_hit:
-                        mode = 0
-                        entry_price = None
-                    else:
-                        pos[idx] = 1.0
-                        continue
-                elif mode == -1 and entry_price is not None:
-                    stop_hit = close_i >= entry_price * (1.0 + stop_loss_pct)
-                    exit_hit = slope > 0.0 or range_pos > 0.50
-                    if stop_hit or exit_hit:
-                        mode = 0
-                        entry_price = None
-                    else:
-                        pos[idx] = -1.0
-                        continue
-
-                if mode == 0 and vol_ok:
-                    if range_pos >= range_entry_threshold and slope >= slope_entry_threshold and momentum >= momentum_floor:
-                        mode = 1
-                        entry_price = close_i
-                        pos[idx] = 1.0
-                    elif allow_short and range_pos <= (1.0 - range_entry_threshold) and slope <= -slope_entry_threshold and momentum <= -momentum_floor:
-                        mode = -1
-                        entry_price = close_i
-                        pos[idx] = -1.0
-            exposures[s_idx] = pos
+        _apply_regime_breakout_candidate_strategy(
+            params=params,
+            aligned=aligned,
+            symbols=symbols,
+            exposures=exposures,
+        )
 
     elif strategy_class in {"PairSpreadZScoreStrategy", "PairTradingZScoreStrategy"} and len(symbols) >= 2:
         symbol_x, symbol_y, x_idx, y_idx = _resolve_symbol_pair(symbols, params)

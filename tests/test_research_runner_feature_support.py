@@ -845,6 +845,43 @@ def test_multi_horizon_trend_exhaustion_fade_strategy_signal_produces_exposure()
     assert meta == {}
 
 
+def test_vwap_reversion_strategy_signal_produces_exposure():
+    length = 180
+    close = np.full(length, 100.0, dtype=float)
+    close[70:85] = np.linspace(100.0, 95.0, 15, dtype=float)
+    close[85:110] = np.linspace(95.0, 101.0, 25, dtype=float)
+    close[110:] = 101.0
+    aligned = {
+        "datetime": _minute_datetimes(length),
+        "BTC/USDT:open": close - 0.1,
+        "BTC/USDT:high": close + 0.2,
+        "BTC/USDT:low": close - 0.2,
+        "BTC/USDT:close": close,
+        "BTC/USDT:volume": np.full(length, 120.0, dtype=float),
+    }
+    candidate = {
+        "strategy_class": "VwapReversionStrategy",
+        "params": {
+            "window": 24,
+            "entry_dev": 0.015,
+            "exit_dev": 0.003,
+            "stop_loss_pct": 0.03,
+            "allow_short": False,
+        },
+    }
+
+    _, turnover, exposure, meta = research_runner._strategy_signal(
+        candidate,
+        aligned=aligned,
+        symbols=["BTC/USDT"],
+    )
+
+    assert exposure.shape == (length,)
+    assert meta == {}
+    assert np.any(exposure > 0.0)
+    assert np.any(turnover > 0.0)
+
+
 def test_rolling_breakout_strategy_signal_produces_exposure():
     length = 160
     close = np.linspace(100.0, 112.0, length, dtype=float)
@@ -883,6 +920,84 @@ def test_rolling_breakout_strategy_signal_produces_exposure():
     assert meta == {}
     assert np.any(exposure > 0.0)
     assert np.any(turnover > 0.0)
+
+
+def test_vwap_reversion_preserves_default_window(monkeypatch):
+    windows: list[int] = []
+
+    def _stub_rolling_vwap_deviation(close, volume, window):
+        windows.append(int(window))
+        return np.zeros_like(np.asarray(close, dtype=float))
+
+    monkeypatch.setattr(
+        research_runner,
+        "_rolling_vwap_deviation",
+        _stub_rolling_vwap_deviation,
+    )
+
+    length = 120
+    close = np.linspace(100.0, 104.0, length, dtype=float)
+    aligned = {
+        "datetime": _minute_datetimes(length),
+        "BTC/USDT:open": close - 0.1,
+        "BTC/USDT:high": close + 0.2,
+        "BTC/USDT:low": close - 0.2,
+        "BTC/USDT:close": close,
+        "BTC/USDT:volume": np.full(length, 120.0, dtype=float),
+    }
+
+    research_runner._strategy_signal(
+        {"strategy_class": "VwapReversionStrategy", "params": {}},
+        aligned=aligned,
+        symbols=["BTC/USDT"],
+    )
+
+    assert windows == [64]
+
+
+def test_rolling_breakout_preserves_default_lookback(monkeypatch):
+    channel_windows: list[int] = []
+    atr_windows: list[int] = []
+
+    def _stub_rolling_channel(high, low, window):
+        channel_windows.append(int(window))
+        shape = np.asarray(high, dtype=float).shape
+        return np.full(shape, np.nan, dtype=float), np.full(shape, np.nan, dtype=float)
+
+    def _stub_rolling_breakout_atr_pct(*, close, high, low, window):
+        atr_windows.append(int(window))
+        return np.full(np.asarray(close, dtype=float).shape, np.nan, dtype=float)
+
+    monkeypatch.setattr(
+        research_runner,
+        "_rolling_channel",
+        _stub_rolling_channel,
+    )
+    monkeypatch.setattr(
+        research_runner,
+        "_rolling_breakout_atr_pct",
+        _stub_rolling_breakout_atr_pct,
+    )
+
+    length = 120
+    close = np.linspace(100.0, 104.0, length, dtype=float)
+    aligned = {
+        "datetime": _minute_datetimes(length),
+        "BTC/USDT:open": close - 0.1,
+        "BTC/USDT:high": close + 0.5,
+        "BTC/USDT:low": close - 0.5,
+        "BTC/USDT:close": close,
+        "BTC/USDT:volume": np.full(length, 120.0, dtype=float),
+    }
+
+    research_runner._strategy_signal(
+        {"strategy_class": "RollingBreakoutStrategy", "params": {}},
+        aligned=aligned,
+        symbols=["BTC/USDT"],
+    )
+
+    assert channel_windows == [48]
+    assert atr_windows == [14]
 
 
 def test_topcap_tsmom_strategy_signal_produces_cross_sectional_exposure():
@@ -1297,6 +1412,55 @@ def test_regime_breakout_strategy_signal_respects_composite_momentum_gate():
     assert np.all(exposure >= 0.0)
     assert not np.any(exposure > 0.0)
     assert not np.any(turnover > 0.0)
+
+
+def test_regime_breakout_preserves_default_windows(monkeypatch):
+    observed: dict[str, list[int]] = {
+        "channel": [],
+        "vol_fast": [],
+        "vol_slow": [],
+        "slope": [],
+    }
+
+    def _stub_rolling_channel(high, low, window):
+        observed["channel"].append(int(window))
+        shape = np.asarray(high, dtype=float).shape
+        return np.full(shape, np.nan, dtype=float), np.full(shape, np.nan, dtype=float)
+
+    def _stub_vol_ratio_series(values, fast_window, slow_window):
+        observed["vol_fast"].append(int(fast_window))
+        observed["vol_slow"].append(int(slow_window))
+        return np.full(np.asarray(values, dtype=float).shape, np.nan, dtype=float)
+
+    def _stub_rolling_slope_series(values, window):
+        observed["slope"].append(int(window))
+        return np.full(np.asarray(values, dtype=float).shape, np.nan, dtype=float)
+
+    monkeypatch.setattr(research_runner, "_rolling_channel", _stub_rolling_channel)
+    monkeypatch.setattr(research_runner, "_vol_ratio_series", _stub_vol_ratio_series)
+    monkeypatch.setattr(research_runner, "_rolling_slope_series", _stub_rolling_slope_series)
+
+    length = 120
+    close = np.linspace(100.0, 104.0, length, dtype=float)
+    aligned = {
+        "datetime": _minute_datetimes(length),
+        "BTC/USDT:open": close - 0.1,
+        "BTC/USDT:high": close + 0.5,
+        "BTC/USDT:low": close - 0.5,
+        "BTC/USDT:close": close,
+        "BTC/USDT:volume": np.full(length, 120.0, dtype=float),
+    }
+
+    research_runner._strategy_signal(
+        {"strategy_class": "RegimeBreakoutCandidateStrategy", "params": {}},
+        aligned=aligned,
+        symbols=["BTC/USDT"],
+    )
+
+    assert observed["channel"] == [48]
+    assert observed["vol_fast"] == [12]
+    assert observed["vol_slow"] == [48]
+    assert observed["slope"] == [21]
 
 
 def _pair_aligned_prices(length: int = 320) -> dict[str, np.ndarray]:
