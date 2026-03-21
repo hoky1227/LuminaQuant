@@ -174,3 +174,18 @@ def test_current_runtime_settings_ignore_auto_seeded_defaults_from_previous_conf
         "market_data_parquet_path": "var/data/second_parquet",
         "market_data_exchange": "kraken",
     }
+
+
+def test_config_module_reexports_runtime_access_module(tmp_path, monkeypatch):
+    cfg_path = _write_config(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("LQ_CONFIG_PATH", cfg_path)
+    sys.modules.pop("lumina_quant.configuration.runtime_access", None)
+    import lumina_quant.config as config_module
+
+    config_module = importlib.reload(config_module)
+
+    assert config_module.load_config(cfg_path)["live"]["mode"] == "paper"
+    assert "lumina_quant.configuration.runtime_access" in sys.modules
+    assert config_module.BaseConfig.__module__ == "lumina_quant.configuration.runtime_access"
+    assert config_module.BaseConfig.TIMEFRAME == "5m"
