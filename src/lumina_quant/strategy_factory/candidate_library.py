@@ -1604,52 +1604,84 @@ def _add_alpha101_formula_candidates(
             )
 
 
-def build_binance_futures_candidates(
-    *,
-    timeframes: Sequence[str] = DEFAULT_TIMEFRAMES,
-    symbols: Sequence[str] = DEFAULT_BINANCE_TOP10_PLUS_METALS,
-) -> list[StrategyCandidate]:
-    """Build candidate universe for RG_PVTM and diversifier sleeves."""
-    normalized_timeframes = tuple(
-        normalize_strategy_timeframes(
-            list(timeframes),
-            required=CANONICAL_STRATEGY_TIMEFRAMES,
-            strict_subset=True,
-        )
-    )
-    normalized_symbols = _normalize_unique(symbols)
-    if not normalized_timeframes:
-        raise ValueError("timeframes must not be empty")
-    if len(normalized_symbols) < 2:
-        raise ValueError("symbols must include at least two instruments")
+@dataclass
+class _CandidateBuildContext:
+    normalized_timeframes: tuple[str, ...]
+    normalized_symbols: tuple[str, ...]
+    candidates: list[StrategyCandidate] = field(default_factory=list)
+    pairs: list[tuple[str, str]] = field(init=False)
+    trend_tfs: list[str] = field(init=False)
+    mean_rev_tfs: list[str] = field(init=False)
+    std_mean_rev_tfs: list[str] = field(init=False)
+    liquidity_tfs: list[str] = field(init=False)
+    session_liquidity_tfs: list[str] = field(init=False)
+    funding_crowding_tfs: list[str] = field(init=False)
+    basis_snapback_tfs: list[str] = field(init=False)
+    vol_of_vol_tfs: list[str] = field(init=False)
+    session_residual_tfs: list[str] = field(init=False)
+    contagion_tfs: list[str] = field(init=False)
+    breakout_tfs: list[str] = field(init=False)
+    breadth_tfs: list[str] = field(init=False)
+    trend_exhaustion_tfs: list[str] = field(init=False)
+    topcap_tfs: list[str] = field(init=False)
+    alpha101_tfs: list[str] = field(init=False)
+    pair_tfs: list[str] = field(init=False)
+    residual_basket_tfs: list[str] = field(init=False)
+    lag_convergence_tfs: list[str] = field(init=False)
+    carry_tfs: list[str] = field(init=False)
+    micro_tfs: list[str] = field(init=False)
+    crypto_symbols: list[str] = field(init=False)
+    laggard_symbols: list[str] = field(init=False)
+    perp_support_data_available: bool = field(init=False)
 
-    candidates: list[StrategyCandidate] = []
-    pairs = _pairs_in_universe(normalized_symbols)
+    def __post_init__(self) -> None:
+        self.pairs = list(_pairs_in_universe(self.normalized_symbols))
+        self.trend_tfs = self._present('30m', '1h')
+        self.mean_rev_tfs = self._present('5m', '15m')
+        self.std_mean_rev_tfs = self._present('15m', '30m')
+        self.liquidity_tfs = self._present('5m', '15m')
+        self.session_liquidity_tfs = self._present('5m')
+        self.funding_crowding_tfs = self._present('30m')
+        self.basis_snapback_tfs = self._present('30m')
+        self.vol_of_vol_tfs = self._present('15m')
+        self.session_residual_tfs = self._present('5m')
+        self.contagion_tfs = self._present('5m')
+        self.breakout_tfs = self._present('30m', '1h')
+        self.breadth_tfs = self._present('30m')
+        self.trend_exhaustion_tfs = self._present('30m')
+        self.topcap_tfs = self._present('1h', '4h')
+        self.alpha101_tfs = self._present('1h', '4h')
+        self.pair_tfs = self._present('15m', '30m', '1h', '4h', '1d')
+        self.residual_basket_tfs = self._present('15m')
+        self.lag_convergence_tfs = self._present('4h', '1d')
+        self.carry_tfs = self._present('30m', '1h', '4h')
+        self.micro_tfs = self._present('1s')
+        self.crypto_symbols = [symbol for symbol in self.normalized_symbols if symbol not in _METALS]
+        self.laggard_symbols = [
+            symbol for symbol in self.crypto_symbols if symbol not in _CRYPTO_LEADERS
+        ]
+        self.perp_support_data_available = _has_perp_support_data()
 
-    trend_tfs = [tf for tf in ("30m", "1h") if tf in normalized_timeframes]
-    mean_rev_tfs = [tf for tf in ("5m", "15m") if tf in normalized_timeframes]
-    std_mean_rev_tfs = [tf for tf in ("15m", "30m") if tf in normalized_timeframes]
-    liquidity_tfs = [tf for tf in ("5m", "15m") if tf in normalized_timeframes]
-    session_liquidity_tfs = [tf for tf in ("5m",) if tf in normalized_timeframes]
-    funding_crowding_tfs = [tf for tf in ("30m",) if tf in normalized_timeframes]
-    basis_snapback_tfs = [tf for tf in ("30m",) if tf in normalized_timeframes]
-    vol_of_vol_tfs = [tf for tf in ("15m",) if tf in normalized_timeframes]
-    session_residual_tfs = [tf for tf in ("5m",) if tf in normalized_timeframes]
-    contagion_tfs = [tf for tf in ("5m",) if tf in normalized_timeframes]
-    breakout_tfs = [tf for tf in ("30m", "1h") if tf in normalized_timeframes]
-    breadth_tfs = [tf for tf in ("30m",) if tf in normalized_timeframes]
-    trend_exhaustion_tfs = [tf for tf in ("30m",) if tf in normalized_timeframes]
-    topcap_tfs = [tf for tf in ("1h", "4h") if tf in normalized_timeframes]
-    alpha101_tfs = [tf for tf in ("1h", "4h") if tf in normalized_timeframes]
-    pair_tfs = [tf for tf in ("15m", "30m", "1h", "4h", "1d") if tf in normalized_timeframes]
-    residual_basket_tfs = [tf for tf in ("15m",) if tf in normalized_timeframes]
-    lag_convergence_tfs = [tf for tf in ("4h", "1d") if tf in normalized_timeframes]
-    carry_tfs = [tf for tf in ("30m", "1h", "4h") if tf in normalized_timeframes]
-    micro_tfs = [tf for tf in ("1s",) if tf in normalized_timeframes]
+    def _present(self, *choices: str) -> list[str]:
+        return [tf for tf in choices if tf in self.normalized_timeframes]
 
-    crypto_symbols = [symbol for symbol in normalized_symbols if symbol not in _METALS]
-    laggard_symbols = [symbol for symbol in crypto_symbols if symbol not in _CRYPTO_LEADERS]
+    def build(self) -> list[StrategyCandidate]:
+        _build_primary_trend_candidates(self)
+        _build_core_mean_reversion_candidates(self)
+        _build_intraday_alpha_candidates(self)
+        _build_cross_sectional_rotation_candidates(self)
+        _build_cross_asset_mean_reversion_candidates(self)
+        _build_formula_and_breadth_candidates(self)
+        _build_breakout_candidates(self)
+        _build_pair_and_intermarket_candidates(self)
+        _build_optional_carry_and_micro_candidates(self)
+        return self.candidates
 
+
+def _build_primary_trend_candidates(ctx: _CandidateBuildContext) -> None:
+    candidates = ctx.candidates
+    normalized_symbols = ctx.normalized_symbols
+    trend_tfs = ctx.trend_tfs
     # Primary trend sleeve (RG_PVTM) with explicit 30m/1h OOS-stability retune only.
     for timeframe in trend_tfs:
         tf_tag = timeframe.replace("/", "-")
@@ -1716,6 +1748,17 @@ def build_binance_futures_candidates(
                 },
             )
 
+
+def _build_core_mean_reversion_candidates(ctx: _CandidateBuildContext) -> None:
+    candidates = ctx.candidates
+    normalized_symbols = ctx.normalized_symbols
+    mean_rev_tfs = ctx.mean_rev_tfs
+    std_mean_rev_tfs = ctx.std_mean_rev_tfs
+    liquidity_tfs = ctx.liquidity_tfs
+    session_liquidity_tfs = ctx.session_liquidity_tfs
+    funding_crowding_tfs = ctx.funding_crowding_tfs
+    basis_snapback_tfs = ctx.basis_snapback_tfs
+    vol_of_vol_tfs = ctx.vol_of_vol_tfs
     # Vol-compression VWAP reversion sleeve.
     for timeframe in mean_rev_tfs:
         tf_tag = timeframe.replace("/", "-")
@@ -2018,6 +2061,12 @@ def build_binance_futures_candidates(
                 },
             )
 
+
+def _build_intraday_alpha_candidates(ctx: _CandidateBuildContext) -> None:
+    candidates = ctx.candidates
+    laggard_symbols = ctx.laggard_symbols
+    mean_rev_tfs = ctx.mean_rev_tfs
+    normalized_symbols = ctx.normalized_symbols
     # Lead/lag spillover sleeve (metals excluded).
     if laggard_symbols:
         for timeframe in mean_rev_tfs:
@@ -2049,6 +2098,13 @@ def build_binance_futures_candidates(
                         },
                     )
 
+
+def _build_cross_sectional_rotation_candidates(ctx: _CandidateBuildContext) -> None:
+    candidates = ctx.candidates
+    crypto_symbols = ctx.crypto_symbols
+    topcap_tfs = ctx.topcap_tfs
+    residual_basket_tfs = ctx.residual_basket_tfs
+    session_residual_tfs = ctx.session_residual_tfs
     if len(crypto_symbols) >= 4:
         for timeframe in topcap_tfs:
             tf_tag = timeframe.replace("/", "-")
@@ -2204,6 +2260,13 @@ def build_binance_futures_candidates(
                     },
                 )
 
+
+def _build_cross_asset_mean_reversion_candidates(ctx: _CandidateBuildContext) -> None:
+    candidates = ctx.candidates
+    crypto_symbols = ctx.crypto_symbols
+    normalized_symbols = ctx.normalized_symbols
+    contagion_tfs = ctx.contagion_tfs
+    trend_exhaustion_tfs = ctx.trend_exhaustion_tfs
     for timeframe in contagion_tfs:
         tf_tag = timeframe.replace("/", "-")
         for spec in _LIQUIDATION_CONTAGION_FADE_SLICE.get(timeframe, ()):
@@ -2275,6 +2338,13 @@ def build_binance_futures_candidates(
                 },
             )
 
+
+def _build_formula_and_breadth_candidates(ctx: _CandidateBuildContext) -> None:
+    candidates = ctx.candidates
+    alpha101_tfs = ctx.alpha101_tfs
+    crypto_symbols = ctx.crypto_symbols
+    breadth_tfs = ctx.breadth_tfs
+    normalized_symbols = ctx.normalized_symbols
     if crypto_symbols:
         _add_alpha101_formula_candidates(
             candidates,
@@ -2318,6 +2388,11 @@ def build_binance_futures_candidates(
                 },
             )
 
+
+def _build_breakout_candidates(ctx: _CandidateBuildContext) -> None:
+    candidates = ctx.candidates
+    breakout_tfs = ctx.breakout_tfs
+    normalized_symbols = ctx.normalized_symbols
     # Single-asset breakout sleeves.
     for timeframe in breakout_tfs:
         tf_tag = timeframe.replace("/", "-")
@@ -2388,6 +2463,12 @@ def build_binance_futures_candidates(
                 },
             )
 
+
+def _build_pair_and_intermarket_candidates(ctx: _CandidateBuildContext) -> None:
+    candidates = ctx.candidates
+    pair_tfs = ctx.pair_tfs
+    pairs = ctx.pairs
+    lag_convergence_tfs = ctx.lag_convergence_tfs
     # Pair spread sleeve.
     for timeframe in pair_tfs:
         tf_tag = timeframe.replace("/", "-")
@@ -2539,8 +2620,15 @@ def build_binance_futures_candidates(
                     },
                 )
 
+
+def _build_optional_carry_and_micro_candidates(ctx: _CandidateBuildContext) -> None:
+    candidates = ctx.candidates
+    carry_tfs = ctx.carry_tfs
+    micro_tfs = ctx.micro_tfs
+    crypto_symbols = ctx.crypto_symbols
+    perp_support_data_available = ctx.perp_support_data_available
     # Optional carry/crowding sleeve.
-    if _has_perp_support_data() and carry_tfs:
+    if perp_support_data_available and carry_tfs:
         for timeframe in carry_tfs:
             tf_tag = timeframe.replace("/", "-")
             for entry, exit_th in ((0.25, 0.08), (0.35, 0.10), (0.45, 0.15)):
@@ -2565,7 +2653,7 @@ def build_binance_futures_candidates(
                     tags=("carry", "perp", "funding", "crowding"),
                     metadata={
                         "timeframe": timeframe,
-                        "data_dependent": _has_perp_support_data(),
+                        "data_dependent": perp_support_data_available,
                         "symbol_scope": "crypto",
                     },
                 )
@@ -2597,8 +2685,30 @@ def build_binance_futures_candidates(
                 },
             )
 
-    return candidates
 
+def build_binance_futures_candidates(
+    *,
+    timeframes: Sequence[str] = DEFAULT_TIMEFRAMES,
+    symbols: Sequence[str] = DEFAULT_BINANCE_TOP10_PLUS_METALS,
+) -> list[StrategyCandidate]:
+    """Build candidate universe for RG_PVTM and diversifier sleeves."""
+    normalized_timeframes = tuple(
+        normalize_strategy_timeframes(
+            list(timeframes),
+            required=CANONICAL_STRATEGY_TIMEFRAMES,
+            strict_subset=True,
+        )
+    )
+    normalized_symbols = _normalize_unique(symbols)
+    if not normalized_timeframes:
+        raise ValueError('timeframes must not be empty')
+    if len(normalized_symbols) < 2:
+        raise ValueError('symbols must include at least two instruments')
+
+    return _CandidateBuildContext(
+        normalized_timeframes=normalized_timeframes,
+        normalized_symbols=normalized_symbols,
+    ).build()
 
 def build_candidate_manifest(
     *,
