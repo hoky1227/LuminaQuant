@@ -1704,6 +1704,538 @@ def _returns_from_close(closes: np.ndarray) -> np.ndarray:
     return np.diff(closes, prepend=closes[0]) / np.clip(np.r_[closes[0], closes[:-1]], 1e-12, np.inf)
 
 
+def _resolve_strategy_anchor_symbol(
+    raw_symbol: Any,
+    symbols: Sequence[str],
+    *,
+    default: str,
+) -> str:
+    resolved = canonical_symbol(str(raw_symbol or default))
+    if resolved not in symbols and symbols:
+        return canonical_symbol(str(symbols[0]))
+    return resolved
+
+
+@dataclass(frozen=True, slots=True)
+class _CompositeTrendStrategyConfig:
+    long_threshold: float
+    short_threshold: float
+    exit_score_cross: float
+    te_min: float
+    vr_min: float
+    risk_target_vol: float
+    max_signal_strength: float
+    vol_window: int
+    max_hold_bars: int
+    allow_short: bool
+    benchmark_regime_ma: int
+    benchmark_symbol: str
+    crowding_reduce_threshold: float
+    crowding_block_threshold: float
+
+
+def _resolve_composite_trend_strategy_config(
+    params: Mapping[str, Any],
+    symbols: Sequence[str],
+) -> _CompositeTrendStrategyConfig:
+    return _CompositeTrendStrategyConfig(
+        long_threshold=float(params.get("long_threshold", 0.55)),
+        short_threshold=float(params.get("short_threshold", 0.55)),
+        exit_score_cross=float(params.get("exit_score_cross", 0.05)),
+        te_min=float(params.get("te_min", 0.25)),
+        vr_min=float(params.get("vr_min", 0.85)),
+        risk_target_vol=float(params.get("risk_target_vol", 0.004)),
+        max_signal_strength=float(params.get("max_signal_strength", 2.0)),
+        vol_window=int(params.get("vol_window", 120)),
+        max_hold_bars=int(params.get("max_hold_bars", 640)),
+        allow_short=bool(params.get("allow_short", True)),
+        benchmark_regime_ma=max(0, int(params.get("benchmark_regime_ma", 0))),
+        benchmark_symbol=_resolve_strategy_anchor_symbol(
+            params.get("benchmark_symbol"),
+            symbols,
+            default="BTC/USDT",
+        ),
+        crowding_reduce_threshold=float(params.get("crowding_reduce_threshold", 0.55)),
+        crowding_block_threshold=float(params.get("crowding_block_threshold", 0.85)),
+    )
+
+
+def _composite_trend_benchmark_long_gate(
+    *,
+    aligned: Mapping[str, np.ndarray],
+    n: int,
+    config: _CompositeTrendStrategyConfig,
+) -> np.ndarray:
+    gate = np.ones(n, dtype=bool)
+    if config.benchmark_regime_ma <= 0:
+        return gate
+
+    benchmark_close = np.asarray(aligned[f"{config.benchmark_symbol}:close"], dtype=float)
+    for idx in range(config.benchmark_regime_ma - 1, n):
+        window = benchmark_close[idx - config.benchmark_regime_ma + 1 : idx + 1]
+        if np.all(np.isfinite(window)):
+            gate[idx] = bool(float(benchmark_close[idx]) >= _safe_mean(window))
+    return gate
+
+
+def _apply_composite_trend_strategy(
+    *,
+    params: Mapping[str, Any],
+    aligned: Mapping[str, np.ndarray],
+    symbols: Sequence[str],
+    n: int,
+    exposures: np.ndarray,
+    meta: dict[str, Any],
+) -> None:
+    config = _resolve_composite_trend_strategy_config(params, symbols)
+    benchmark_long_gate = _composite_trend_benchmark_long_gate(
+        aligned=aligned,
+        n=n,
+        config=config,
+    )
+
+    for s_idx, symbol in enumerate(symbols):
+        close = np.asarray(aligned[f"{symbol}:close"], dtype=float)
+        volume = np.asarray(aligned[f"{symbol}:volume"], dtype=float)
+
+        ret8 = np.log(np.clip(close, 1e-12, np.inf) / np.clip(np.roll(close, 8), 1e-12, np.inf))
+        ret21 = np.log(np.clip(close, 1e-12, np.inf) / np.clip(np.roll(close, 21), 1e-12, np.inf))
+        ret55 = np.log(np.clip(close, 1e-12, np.inf) / np.clip(np.roll(close, 55), 1e-12, np.inf))
+        z8 = _rolling_z(ret8, 120)
+        z21 = _rolling_z(ret21, 120)
+        z55 = _rolling_z(ret55, 120)
+        mom = (0.5 * np.nan_to_num(z8)) + (0.3 * np.nan_to_num(z21)) + (0.2 * np.nan_to_num(z55))
+        te = np.nan_to_num(_trend_efficiency_series(close, 55), nan=0.0)
+        vr = np.nan_to_num(_vol_ratio_series(close, 8, 55), nan=0.0)
+
+        vol_shock = _rolling_z(np.nan_to_num(volume, nan=0.0), 64)
+        score = mom * (1.0 + 0.25 * np.tanh(np.nan_to_num(vol_shock) / 2.0)) * np.clip(te, 0.0, 1.0)
+        gate = (te >= config.te_min) & (vr >= config.vr_min)
+        long_gate = gate & benchmark_long_gate
+
+        crowding = aligned.get(f"{symbol}:crowding_score")
+        exposures[s_idx] = _composite_trend_position_series(
+            close=close,
+            score=np.asarray(score, dtype=float),
+            gate=np.asarray(gate, dtype=bool),
+            long_gate=np.asarray(long_gate, dtype=bool),
+            short_gate=np.asarray(gate, dtype=bool),
+            crowding=None if crowding is None else np.asarray(crowding, dtype=float),
+            long_threshold=config.long_threshold,
+            short_threshold=config.short_threshold,
+            exit_score_cross=config.exit_score_cross,
+            risk_target_vol=config.risk_target_vol,
+            max_signal_strength=config.max_signal_strength,
+            vol_window=config.vol_window,
+            max_hold_bars=config.max_hold_bars,
+            crowding_reduce_threshold=config.crowding_reduce_threshold,
+            crowding_block_threshold=config.crowding_block_threshold,
+            allow_short=config.allow_short,
+        )
+
+    if config.benchmark_regime_ma > 0:
+        meta["benchmark_regime_ma"] = config.benchmark_regime_ma
+        meta["benchmark_symbol"] = config.benchmark_symbol
+        meta["crash_aware_gate"] = True
+
+
+@dataclass(frozen=True, slots=True)
+class _TopCapTimeSeriesMomentumConfig:
+    lookback_bars: int
+    rebalance_bars: int
+    signal_threshold: float
+    stop_loss_pct: float
+    take_profit_pct: float
+    max_longs: int
+    max_shorts: int
+    min_price: float
+    btc_regime_ma: int
+    benchmark_drawdown_window: int
+    benchmark_drawdown_limit: float
+    residualize_btc: bool
+    residualize_mean: bool
+    btc_symbol: str
+
+
+def _resolve_topcap_tsmom_config(
+    params: Mapping[str, Any],
+    symbols: Sequence[str],
+) -> _TopCapTimeSeriesMomentumConfig:
+    return _TopCapTimeSeriesMomentumConfig(
+        lookback_bars=max(2, int(params.get("lookback_bars", 16))),
+        rebalance_bars=max(1, int(params.get("rebalance_bars", 4))),
+        signal_threshold=float(params.get("signal_threshold", 0.04)),
+        stop_loss_pct=max(0.0, float(params.get("stop_loss_pct", 0.08))),
+        take_profit_pct=max(0.0, float(params.get("take_profit_pct", 0.0))),
+        max_longs=max(0, int(params.get("max_longs", 2))),
+        max_shorts=max(0, int(params.get("max_shorts", 2))),
+        min_price=max(0.0, float(params.get("min_price", 0.10))),
+        btc_regime_ma=max(0, int(params.get("btc_regime_ma", 0))),
+        benchmark_drawdown_window=max(0, int(params.get("benchmark_drawdown_window", 0))),
+        benchmark_drawdown_limit=max(0.0, float(params.get("benchmark_drawdown_limit", 0.0))),
+        residualize_btc=bool(params.get("residualize_btc", False)),
+        residualize_mean=bool(params.get("residualize_mean", False)),
+        btc_symbol=_resolve_strategy_anchor_symbol(
+            params.get("btc_symbol"),
+            symbols,
+            default="BTC/USDT",
+        ),
+    )
+
+
+def _apply_topcap_risk_exits(
+    *,
+    current_close_map: Mapping[str, float],
+    symbols: Sequence[str],
+    position_state: np.ndarray,
+    entry_price: np.ndarray,
+    config: _TopCapTimeSeriesMomentumConfig,
+) -> None:
+    if config.stop_loss_pct <= 0.0 and config.take_profit_pct <= 0.0:
+        return
+
+    for s_idx, symbol in enumerate(symbols):
+        if position_state[s_idx] == 0.0 or not np.isfinite(entry_price[s_idx]):
+            continue
+
+        close_i = current_close_map[symbol]
+        if not np.isfinite(close_i) or close_i <= 0.0:
+            continue
+
+        stop_long = position_state[s_idx] > 0.0 and close_i <= float(entry_price[s_idx]) * (1.0 - config.stop_loss_pct)
+        stop_short = position_state[s_idx] < 0.0 and close_i >= float(entry_price[s_idx]) * (1.0 + config.stop_loss_pct)
+        tp_long = (
+            config.take_profit_pct > 0.0
+            and position_state[s_idx] > 0.0
+            and close_i >= float(entry_price[s_idx]) * (1.0 + config.take_profit_pct)
+        )
+        tp_short = (
+            config.take_profit_pct > 0.0
+            and position_state[s_idx] < 0.0
+            and close_i <= float(entry_price[s_idx]) * (1.0 - config.take_profit_pct)
+        )
+        if stop_long or stop_short or tp_long or tp_short:
+            position_state[s_idx] = 0.0
+            entry_price[s_idx] = np.nan
+
+
+def _topcap_ranked_momentum_rows(
+    *,
+    close_by_symbol: Mapping[str, np.ndarray],
+    symbols: Sequence[str],
+    idx: int,
+    config: _TopCapTimeSeriesMomentumConfig,
+) -> list[tuple[float, str]]:
+    rows: list[tuple[float, str]] = []
+    for symbol in symbols:
+        close_arr = close_by_symbol[symbol]
+        latest = float(close_arr[idx])
+        base = float(close_arr[idx - config.lookback_bars])
+        if latest < config.min_price or base <= 0.0 or not np.isfinite(latest) or not np.isfinite(base):
+            continue
+        momentum = (latest / base) - 1.0
+        if np.isfinite(momentum):
+            rows.append((float(momentum), symbol))
+    return rows
+
+
+def _topcap_market_regime(
+    btc_close: np.ndarray,
+    *,
+    idx: int,
+    config: _TopCapTimeSeriesMomentumConfig,
+) -> str:
+    regime = "BOTH"
+    if (
+        config.benchmark_drawdown_window > 0
+        and config.benchmark_drawdown_limit > 0.0
+        and idx >= config.benchmark_drawdown_window - 1
+    ):
+        window = btc_close[idx - config.benchmark_drawdown_window + 1 : idx + 1]
+        if np.all(np.isfinite(window)):
+            peak = float(np.max(window))
+            if peak > 0.0:
+                drawdown = (float(btc_close[idx]) / peak) - 1.0
+                if drawdown <= -config.benchmark_drawdown_limit:
+                    regime = "RISK_OFF"
+
+    if regime != "RISK_OFF" and config.btc_regime_ma > 0 and idx >= config.btc_regime_ma:
+        window = btc_close[idx - config.btc_regime_ma + 1 : idx + 1]
+        if np.all(np.isfinite(window)):
+            regime = "RISK_ON" if float(btc_close[idx]) >= _safe_mean(window) else "RISK_OFF"
+    return regime
+
+
+def _topcap_residualized_rows(
+    momentum_rows: list[tuple[float, str]],
+    *,
+    config: _TopCapTimeSeriesMomentumConfig,
+) -> list[tuple[float, str]]:
+    if not momentum_rows:
+        return momentum_rows
+
+    if not config.residualize_btc and not config.residualize_mean:
+        momentum_rows.sort(key=lambda item: item[0])
+        return momentum_rows
+
+    momentum_map = {symbol: momentum for momentum, symbol in momentum_rows}
+    if config.residualize_btc and config.btc_symbol in momentum_map:
+        btc_momentum = float(momentum_map[config.btc_symbol])
+        for symbol in list(momentum_map):
+            momentum_map[symbol] = float(momentum_map[symbol]) - btc_momentum
+    if config.residualize_mean and momentum_map:
+        mean_momentum = _safe_mean(np.asarray(list(momentum_map.values()), dtype=float))
+        for symbol in list(momentum_map):
+            momentum_map[symbol] = float(momentum_map[symbol]) - mean_momentum
+
+    residualized = [(float(momentum_map[symbol]), symbol) for _, symbol in momentum_rows]
+    residualized.sort(key=lambda item: item[0])
+    return residualized
+
+
+def _topcap_target_sets(
+    momentum_rows: list[tuple[float, str]],
+    *,
+    regime: str,
+    config: _TopCapTimeSeriesMomentumConfig,
+) -> tuple[set[str], set[str]]:
+    longs = [symbol for momentum, symbol in reversed(momentum_rows) if momentum >= config.signal_threshold][
+        : config.max_longs
+    ]
+    shorts = [symbol for momentum, symbol in momentum_rows if momentum <= -config.signal_threshold][
+        : config.max_shorts
+    ]
+    if regime == "RISK_ON":
+        shorts = []
+    elif regime == "RISK_OFF":
+        longs = []
+
+    long_set = set(longs)
+    short_set = {symbol for symbol in shorts if symbol not in long_set}
+    return long_set, short_set
+
+
+def _apply_topcap_target_positions(
+    *,
+    current_close_map: Mapping[str, float],
+    symbols: Sequence[str],
+    position_state: np.ndarray,
+    entry_price: np.ndarray,
+    long_set: set[str],
+    short_set: set[str],
+) -> None:
+    for s_idx, symbol in enumerate(symbols):
+        next_position = 0.0
+        if symbol in long_set:
+            next_position = 1.0
+        elif symbol in short_set:
+            next_position = -1.0
+
+        if next_position == 0.0:
+            if position_state[s_idx] != 0.0:
+                entry_price[s_idx] = np.nan
+            position_state[s_idx] = 0.0
+            continue
+
+        if position_state[s_idx] != next_position or not np.isfinite(entry_price[s_idx]):
+            entry_price[s_idx] = current_close_map[symbol]
+        position_state[s_idx] = next_position
+
+
+def _apply_topcap_tsmom_strategy(
+    *,
+    params: Mapping[str, Any],
+    aligned: Mapping[str, np.ndarray],
+    symbols: Sequence[str],
+    n: int,
+    exposures: np.ndarray,
+    meta: dict[str, Any],
+) -> None:
+    config = _resolve_topcap_tsmom_config(params, symbols)
+    close_by_symbol = {
+        symbol: np.asarray(aligned[f"{symbol}:close"], dtype=float)
+        for symbol in symbols
+    }
+    btc_close = close_by_symbol[config.btc_symbol]
+    position_state = np.zeros(len(symbols), dtype=float)
+    entry_price = np.full(len(symbols), np.nan, dtype=float)
+
+    for idx in range(n):
+        current_close_map = {
+            symbol: float(close_by_symbol[symbol][idx])
+            for symbol in symbols
+        }
+        _apply_topcap_risk_exits(
+            current_close_map=current_close_map,
+            symbols=symbols,
+            position_state=position_state,
+            entry_price=entry_price,
+            config=config,
+        )
+
+        if idx < config.lookback_bars or (idx + 1) % config.rebalance_bars != 0:
+            exposures[:, idx] = position_state
+            continue
+
+        momentum_rows = _topcap_ranked_momentum_rows(
+            close_by_symbol=close_by_symbol,
+            symbols=symbols,
+            idx=idx,
+            config=config,
+        )
+        regime = _topcap_market_regime(
+            btc_close,
+            idx=idx,
+            config=config,
+        )
+        ranked_rows = _topcap_residualized_rows(momentum_rows, config=config)
+        long_set, short_set = _topcap_target_sets(
+            ranked_rows,
+            regime=regime,
+            config=config,
+        )
+        _apply_topcap_target_positions(
+            current_close_map=current_close_map,
+            symbols=symbols,
+            position_state=position_state,
+            entry_price=entry_price,
+            long_set=long_set,
+            short_set=short_set,
+        )
+        exposures[:, idx] = position_state
+
+    meta["cross_sectional"] = True
+    if config.take_profit_pct > 0.0:
+        meta["take_profit_pct"] = config.take_profit_pct
+    if config.residualize_btc or config.residualize_mean:
+        meta["residualized_cross_sectional"] = True
+        meta["residualize_btc"] = config.residualize_btc
+        meta["residualize_mean"] = config.residualize_mean
+    if config.benchmark_drawdown_window > 0 and config.benchmark_drawdown_limit > 0.0:
+        meta["crash_aware_gate"] = True
+        meta["benchmark_drawdown_window"] = config.benchmark_drawdown_window
+        meta["benchmark_drawdown_limit"] = config.benchmark_drawdown_limit
+
+
+@dataclass(frozen=True, slots=True)
+class _MeanReversionStdConfig:
+    window: int
+    entry_z: float
+    exit_z: float
+    stop_loss_pct: float
+    allow_short: bool
+    residualize_btc: bool
+    btc_symbol: str
+
+
+def _resolve_mean_reversion_std_config(
+    params: Mapping[str, Any],
+    symbols: Sequence[str],
+) -> _MeanReversionStdConfig:
+    return _MeanReversionStdConfig(
+        window=max(8, int(params.get("window", 64))),
+        entry_z=float(params.get("entry_z", 2.0)),
+        exit_z=max(0.0, float(params.get("exit_z", 0.5))),
+        stop_loss_pct=float(params.get("stop_loss_pct", 0.03)),
+        allow_short=bool(params.get("allow_short", True)),
+        residualize_btc=bool(params.get("residualize_btc", False)),
+        btc_symbol=_resolve_strategy_anchor_symbol(
+            params.get("btc_symbol"),
+            symbols,
+            default="BTC/USDT",
+        ),
+    )
+
+
+def _mean_reversion_position_series(
+    *,
+    close: np.ndarray,
+    signal_series: np.ndarray,
+    window: int,
+    entry_z: float,
+    exit_z: float,
+    stop_loss_pct: float,
+    allow_short: bool,
+) -> np.ndarray:
+    zscore = np.nan_to_num(_rolling_z(signal_series, window), nan=0.0)
+    pos = np.zeros(close.shape, dtype=float)
+    mode = 0
+    entry_price: float | None = None
+
+    for idx in range(close.size):
+        close_i = float(close[idx])
+        z_i = float(zscore[idx])
+        if not np.isfinite(close_i):
+            continue
+
+        if mode == 1 and entry_price is not None:
+            stop_hit = close_i <= entry_price * (1.0 - stop_loss_pct)
+            revert_hit = z_i >= -exit_z
+            if stop_hit or revert_hit:
+                mode = 0
+                entry_price = None
+            else:
+                pos[idx] = 1.0
+                continue
+        elif mode == -1 and entry_price is not None:
+            stop_hit = close_i >= entry_price * (1.0 + stop_loss_pct)
+            revert_hit = z_i <= exit_z
+            if stop_hit or revert_hit:
+                mode = 0
+                entry_price = None
+            else:
+                pos[idx] = -1.0
+                continue
+
+        if mode == 0:
+            if z_i <= -entry_z:
+                mode = 1
+                entry_price = close_i
+                pos[idx] = 1.0
+            elif allow_short and z_i >= entry_z:
+                mode = -1
+                entry_price = close_i
+                pos[idx] = -1.0
+    return pos
+
+
+def _apply_mean_reversion_std_strategy(
+    *,
+    params: Mapping[str, Any],
+    aligned: Mapping[str, np.ndarray],
+    symbols: Sequence[str],
+    exposures: np.ndarray,
+    meta: dict[str, Any],
+) -> None:
+    config = _resolve_mean_reversion_std_config(params, symbols)
+    btc_close = None
+    if config.residualize_btc and config.btc_symbol in symbols:
+        btc_close = np.asarray(aligned[f"{config.btc_symbol}:close"], dtype=float)
+
+    for s_idx, symbol in enumerate(symbols):
+        if config.residualize_btc and symbol == config.btc_symbol:
+            continue
+
+        close = np.asarray(aligned[f"{symbol}:close"], dtype=float)
+        signal_series = close
+        if btc_close is not None:
+            signal_series = _beta_neutral_residual_series(close, btc_close, window=config.window)
+        exposures[s_idx] = _mean_reversion_position_series(
+            close=close,
+            signal_series=signal_series,
+            window=config.window,
+            entry_z=config.entry_z,
+            exit_z=config.exit_z,
+            stop_loss_pct=config.stop_loss_pct,
+            allow_short=config.allow_short,
+        )
+
+    if config.residualize_btc:
+        meta["residualized_single_asset"] = True
+        meta["residualize_btc"] = True
+        meta["btc_symbol"] = config.btc_symbol
+
+
 def _strategy_signal(
     candidate: dict[str, Any],
     *,
@@ -1727,78 +2259,14 @@ def _strategy_signal(
     meta: dict[str, Any] = {}
 
     if strategy_class == "CompositeTrendStrategy":
-        long_th = float(params.get("long_threshold", 0.55))
-        short_th = float(params.get("short_threshold", 0.55))
-        exit_score_cross = float(params.get("exit_score_cross", 0.05))
-        te_min = float(params.get("te_min", 0.25))
-        vr_min = float(params.get("vr_min", 0.85))
-        risk_target_vol = float(params.get("risk_target_vol", 0.004))
-        max_signal_strength = float(params.get("max_signal_strength", 2.0))
-        vol_window = int(params.get("vol_window", 120))
-        max_hold_bars = int(params.get("max_hold_bars", 640))
-        allow_short = bool(params.get("allow_short", True))
-        benchmark_regime_ma = max(0, int(params.get("benchmark_regime_ma", 0)))
-        benchmark_symbol = canonical_symbol(str(params.get("benchmark_symbol") or "BTC/USDT"))
-        if benchmark_symbol not in symbols:
-            benchmark_symbol = canonical_symbol(str(symbols[0]))
-        reduce_th = float(params.get("crowding_reduce_threshold", 0.55))
-        block_th = float(params.get("crowding_block_threshold", 0.85))
-
-        benchmark_long_gate = np.ones(n, dtype=bool)
-        if benchmark_regime_ma > 0:
-            benchmark_close = np.asarray(aligned[f"{benchmark_symbol}:close"], dtype=float)
-            for idx in range(benchmark_regime_ma - 1, n):
-                window = benchmark_close[idx - benchmark_regime_ma + 1 : idx + 1]
-                if np.all(np.isfinite(window)):
-                    benchmark_long_gate[idx] = bool(float(benchmark_close[idx]) >= _safe_mean(window))
-
-        for s_idx, symbol in enumerate(symbols):
-            close = aligned[f"{symbol}:close"]
-            high = aligned[f"{symbol}:high"]
-            low = aligned[f"{symbol}:low"]
-            volume = aligned[f"{symbol}:volume"]
-
-            ret8 = np.log(np.clip(close, 1e-12, np.inf) / np.clip(np.roll(close, 8), 1e-12, np.inf))
-            ret21 = np.log(np.clip(close, 1e-12, np.inf) / np.clip(np.roll(close, 21), 1e-12, np.inf))
-            ret55 = np.log(np.clip(close, 1e-12, np.inf) / np.clip(np.roll(close, 55), 1e-12, np.inf))
-            z8 = _rolling_z(ret8, 120)
-            z21 = _rolling_z(ret21, 120)
-            z55 = _rolling_z(ret55, 120)
-            mom = (0.5 * np.nan_to_num(z8)) + (0.3 * np.nan_to_num(z21)) + (0.2 * np.nan_to_num(z55))
-            te = np.nan_to_num(_trend_efficiency_series(close, 55), nan=0.0)
-            vr = np.nan_to_num(_vol_ratio_series(close, 8, 55), nan=0.0)
-
-            vol_shock = _rolling_z(np.nan_to_num(volume, nan=0.0), 64)
-            score = mom * (1.0 + 0.25 * np.tanh(np.nan_to_num(vol_shock) / 2.0)) * np.clip(te, 0.0, 1.0)
-            gate = (te >= te_min) & (vr >= vr_min)
-            long_gate = gate & benchmark_long_gate
-
-            crowding = aligned.get(f"{symbol}:crowding_score")
-            position = _composite_trend_position_series(
-                close=np.asarray(close, dtype=float),
-                score=np.asarray(score, dtype=float),
-                gate=np.asarray(gate, dtype=bool),
-                long_gate=np.asarray(long_gate, dtype=bool),
-                short_gate=np.asarray(gate, dtype=bool),
-                crowding=None if crowding is None else np.asarray(crowding, dtype=float),
-                long_threshold=long_th,
-                short_threshold=short_th,
-                exit_score_cross=exit_score_cross,
-                risk_target_vol=risk_target_vol,
-                max_signal_strength=max_signal_strength,
-                vol_window=vol_window,
-                max_hold_bars=max_hold_bars,
-                crowding_reduce_threshold=reduce_th,
-                crowding_block_threshold=block_th,
-                allow_short=allow_short,
-            )
-            exposures[s_idx] = position
-
-            _ = high, low  # kept for symmetry with requested factor inputs.
-        if benchmark_regime_ma > 0:
-            meta["benchmark_regime_ma"] = benchmark_regime_ma
-            meta["benchmark_symbol"] = benchmark_symbol
-            meta["crash_aware_gate"] = True
+        _apply_composite_trend_strategy(
+            params=params,
+            aligned=aligned,
+            symbols=symbols,
+            n=n,
+            exposures=exposures,
+            meta=meta,
+        )
 
     elif strategy_class in {"VolCompressionVWAPReversionStrategy", "VolCompressionVwapReversionStrategy", "VolatilityCompressionReversionStrategy"}:
         entry_z = float(params.get("entry_z", 1.5))
@@ -1855,132 +2323,14 @@ def _strategy_signal(
                 exposures[s_idx] = pos
 
     elif strategy_class == "TopCapTimeSeriesMomentumStrategy":
-        lookback_bars = max(2, int(params.get("lookback_bars", 16)))
-        rebalance_bars = max(1, int(params.get("rebalance_bars", 4)))
-        signal_threshold = float(params.get("signal_threshold", 0.04))
-        stop_loss_pct = max(0.0, float(params.get("stop_loss_pct", 0.08)))
-        take_profit_pct = max(0.0, float(params.get("take_profit_pct", 0.0)))
-        max_longs = max(0, int(params.get("max_longs", 2)))
-        max_shorts = max(0, int(params.get("max_shorts", 2)))
-        min_price = max(0.0, float(params.get("min_price", 0.10)))
-        btc_regime_ma = max(0, int(params.get("btc_regime_ma", 0)))
-        benchmark_drawdown_window = max(0, int(params.get("benchmark_drawdown_window", 0)))
-        benchmark_drawdown_limit = max(0.0, float(params.get("benchmark_drawdown_limit", 0.0)))
-        residualize_btc = bool(params.get("residualize_btc", False))
-        residualize_mean = bool(params.get("residualize_mean", False))
-        btc_symbol = canonical_symbol(str(params.get("btc_symbol") or "BTC/USDT"))
-        if btc_symbol not in symbols:
-            btc_symbol = canonical_symbol(str(symbols[0]))
-
-        position_state = np.zeros(len(symbols), dtype=float)
-        entry_price = np.full(len(symbols), np.nan, dtype=float)
-        for idx in range(n):
-            current_close_map = {
-                symbol: float(np.asarray(aligned[f"{symbol}:close"], dtype=float)[idx])
-                for symbol in symbols
-            }
-            if stop_loss_pct > 0.0 or take_profit_pct > 0.0:
-                for s_idx, symbol in enumerate(symbols):
-                    if position_state[s_idx] == 0.0 or not np.isfinite(entry_price[s_idx]):
-                        continue
-                    close_i = current_close_map[symbol]
-                    if not np.isfinite(close_i) or close_i <= 0.0:
-                        continue
-                    stop_long = position_state[s_idx] > 0.0 and close_i <= float(entry_price[s_idx]) * (1.0 - stop_loss_pct)
-                    stop_short = position_state[s_idx] < 0.0 and close_i >= float(entry_price[s_idx]) * (1.0 + stop_loss_pct)
-                    tp_long = take_profit_pct > 0.0 and position_state[s_idx] > 0.0 and close_i >= float(entry_price[s_idx]) * (1.0 + take_profit_pct)
-                    tp_short = take_profit_pct > 0.0 and position_state[s_idx] < 0.0 and close_i <= float(entry_price[s_idx]) * (1.0 - take_profit_pct)
-                    if stop_long or stop_short or tp_long or tp_short:
-                        position_state[s_idx] = 0.0
-                        entry_price[s_idx] = np.nan
-            if idx < lookback_bars:
-                exposures[:, idx] = position_state
-                continue
-            if (idx + 1) % rebalance_bars != 0:
-                exposures[:, idx] = position_state
-                continue
-
-            momentum_rows: list[tuple[float, str]] = []
-            for symbol in symbols:
-                close_arr = np.asarray(aligned[f"{symbol}:close"], dtype=float)
-                latest = float(close_arr[idx])
-                base = float(close_arr[idx - lookback_bars])
-                if latest < min_price or base <= 0.0 or not np.isfinite(latest) or not np.isfinite(base):
-                    continue
-                momentum = (latest / base) - 1.0
-                if np.isfinite(momentum):
-                    momentum_rows.append((float(momentum), symbol))
-
-            regime = "BOTH"
-            btc_close = np.asarray(aligned[f"{btc_symbol}:close"], dtype=float)
-            if benchmark_drawdown_window > 0 and benchmark_drawdown_limit > 0.0 and idx >= benchmark_drawdown_window - 1:
-                window = btc_close[idx - benchmark_drawdown_window + 1 : idx + 1]
-                if np.all(np.isfinite(window)):
-                    peak = float(np.max(window))
-                    if peak > 0.0:
-                        drawdown = (float(btc_close[idx]) / peak) - 1.0
-                        if drawdown <= -benchmark_drawdown_limit:
-                            regime = "RISK_OFF"
-            if regime != "RISK_OFF" and btc_regime_ma > 0 and idx >= btc_regime_ma and np.all(
-                np.isfinite(btc_close[idx - btc_regime_ma + 1 : idx + 1])
-            ):
-                avg = _safe_mean(btc_close[idx - btc_regime_ma + 1 : idx + 1])
-                regime = "RISK_ON" if float(btc_close[idx]) >= avg else "RISK_OFF"
-
-            momentum_map = {symbol: momentum for momentum, symbol in momentum_rows}
-            if residualize_btc and btc_symbol in momentum_map:
-                btc_momentum = float(momentum_map[btc_symbol])
-                for symbol in list(momentum_map):
-                    momentum_map[symbol] = float(momentum_map[symbol]) - btc_momentum
-            if residualize_mean and momentum_map:
-                mean_momentum = _safe_mean(np.asarray(list(momentum_map.values()), dtype=float))
-                for symbol in list(momentum_map):
-                    momentum_map[symbol] = float(momentum_map[symbol]) - mean_momentum
-            momentum_rows = [(float(momentum_map[symbol]), symbol) for _, symbol in momentum_rows]
-            momentum_rows.sort(key=lambda item: item[0])
-            longs = [
-                symbol
-                for momentum, symbol in reversed(momentum_rows)
-                if momentum >= signal_threshold
-            ][:max_longs]
-            shorts = [
-                symbol
-                for momentum, symbol in momentum_rows
-                if momentum <= -signal_threshold
-            ][:max_shorts]
-            if regime == "RISK_ON":
-                shorts = []
-            elif regime == "RISK_OFF":
-                longs = []
-            long_set = set(longs)
-            shorts = [symbol for symbol in shorts if symbol not in long_set]
-
-            for s_idx, symbol in enumerate(symbols):
-                next_position = 0.0
-                if symbol in long_set:
-                    next_position = 1.0
-                elif symbol in shorts:
-                    next_position = -1.0
-                if next_position == 0.0:
-                    if position_state[s_idx] != 0.0:
-                        entry_price[s_idx] = np.nan
-                    position_state[s_idx] = 0.0
-                    continue
-                if position_state[s_idx] != next_position or not np.isfinite(entry_price[s_idx]):
-                    entry_price[s_idx] = current_close_map[symbol]
-                position_state[s_idx] = next_position
-            exposures[:, idx] = position_state
-        meta["cross_sectional"] = True
-        if take_profit_pct > 0.0:
-            meta["take_profit_pct"] = take_profit_pct
-        if residualize_btc or residualize_mean:
-            meta["residualized_cross_sectional"] = True
-            meta["residualize_btc"] = residualize_btc
-            meta["residualize_mean"] = residualize_mean
-        if benchmark_drawdown_window > 0 and benchmark_drawdown_limit > 0.0:
-            meta["crash_aware_gate"] = True
-            meta["benchmark_drawdown_window"] = benchmark_drawdown_window
-            meta["benchmark_drawdown_limit"] = benchmark_drawdown_limit
+        _apply_topcap_tsmom_strategy(
+            params=params,
+            aligned=aligned,
+            symbols=symbols,
+            n=n,
+            exposures=exposures,
+            meta=meta,
+        )
 
     elif strategy_class == "Alpha101FormulaStrategy":
         simulated = _simulate_event_driven_strategy_exposures(
@@ -2000,66 +2350,13 @@ def _strategy_signal(
         )
 
     elif strategy_class == "MeanReversionStdStrategy":
-        window = max(8, int(params.get("window", 64)))
-        entry_z = float(params.get("entry_z", 2.0))
-        exit_z = max(0.0, float(params.get("exit_z", 0.5)))
-        stop_loss_pct = float(params.get("stop_loss_pct", 0.03))
-        allow_short = bool(params.get("allow_short", True))
-        residualize_btc = bool(params.get("residualize_btc", False))
-        btc_symbol = canonical_symbol(str(params.get("btc_symbol") or "BTC/USDT"))
-        if btc_symbol not in symbols and symbols:
-            btc_symbol = canonical_symbol(str(symbols[0]))
-
-        for s_idx, symbol in enumerate(symbols):
-            if residualize_btc and symbol == btc_symbol:
-                continue
-            close = np.asarray(aligned[f"{symbol}:close"], dtype=float)
-            signal_series = close
-            if residualize_btc and btc_symbol in symbols:
-                btc_close = np.asarray(aligned[f"{btc_symbol}:close"], dtype=float)
-                signal_series = _beta_neutral_residual_series(close, btc_close, window=window)
-            zscore = np.nan_to_num(_rolling_z(signal_series, window), nan=0.0)
-            pos = np.zeros(close.shape, dtype=float)
-            mode = 0
-            entry_price: float | None = None
-            for idx in range(close.size):
-                close_i = float(close[idx])
-                z_i = float(zscore[idx])
-                if not np.isfinite(close_i):
-                    continue
-                if mode == 1 and entry_price is not None:
-                    stop_hit = close_i <= entry_price * (1.0 - stop_loss_pct)
-                    revert_hit = z_i >= -exit_z
-                    if stop_hit or revert_hit:
-                        mode = 0
-                        entry_price = None
-                    else:
-                        pos[idx] = 1.0
-                        continue
-                elif mode == -1 and entry_price is not None:
-                    stop_hit = close_i >= entry_price * (1.0 + stop_loss_pct)
-                    revert_hit = z_i <= exit_z
-                    if stop_hit or revert_hit:
-                        mode = 0
-                        entry_price = None
-                    else:
-                        pos[idx] = -1.0
-                        continue
-
-                if mode == 0:
-                    if z_i <= -entry_z:
-                        mode = 1
-                        entry_price = close_i
-                        pos[idx] = 1.0
-                    elif allow_short and z_i >= entry_z:
-                        mode = -1
-                        entry_price = close_i
-                        pos[idx] = -1.0
-            exposures[s_idx] = pos
-        if residualize_btc:
-            meta["residualized_single_asset"] = True
-            meta["residualize_btc"] = True
-            meta["btc_symbol"] = btc_symbol
+        _apply_mean_reversion_std_strategy(
+            params=params,
+            aligned=aligned,
+            symbols=symbols,
+            exposures=exposures,
+            meta=meta,
+        )
 
     elif strategy_class == "LiquidityShockReversionStrategy":
         volume_window = max(8, int(params.get("volume_window", 64)))
