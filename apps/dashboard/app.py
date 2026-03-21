@@ -34,6 +34,12 @@ from lumina_quant.utils.performance import (
     create_sharpe_ratio,
     create_sortino_ratio,
 )
+from apps.dashboard.services.workflow_jobs import (
+    build_backtest_job_launch_spec as _build_backtest_job_launch_spec_data,
+    build_live_job_launch_spec as _build_live_job_launch_spec_data,
+    build_optimize_job_launch_spec as _build_optimize_job_launch_spec_data,
+    build_stop_file_path as _build_stop_file_path_data,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = PROJECT_ROOT / "src"
@@ -666,15 +672,13 @@ def _annotate_run_health(runs_df, stale_after_sec=DEFAULT_RUN_STALE_SEC):
 
 
 def _build_stop_file_path(job_id):
-    os.makedirs(WORKFLOW_CONTROL_DIR, exist_ok=True)
-    return os.path.join(WORKFLOW_CONTROL_DIR, f"{job_id}.stop")
+    return _build_stop_file_path_data(job_id, control_dir=WORKFLOW_CONTROL_DIR)
 
 
 @dataclass(frozen=True)
 class _ManagedJobLaunchSpec:
     workflow: str
-    script_name: str
-    script_args: tuple[str, ...]
+    command: tuple[str, ...]
     env_overrides: dict[str, str]
     requested_mode: str | None
     strategy: str | None
@@ -686,8 +690,7 @@ class _ManagedJobLaunchSpec:
         return _launch_managed_job(
             db_path=db_path,
             workflow=self.workflow,
-            script_name=self.script_name,
-            script_args=self.script_args,
+            command=self.command,
             env_overrides=self.env_overrides,
             requested_mode=self.requested_mode,
             strategy=self.strategy,
@@ -888,23 +891,15 @@ def _build_backtest_job_launch_spec(
     strategy_params_path,
 ) -> _ManagedJobLaunchSpec:
     return _ManagedJobLaunchSpec(
-        workflow="backtest",
-        script_name="run_backtest.py",
-        script_args=(
-            "--data-source",
-            runner_data_source,
-            "--market-db-path",
-            market_db_path,
-            "--market-exchange",
-            market_exchange,
-            "--run-id",
-            backtest_run_id,
-        ),
-        env_overrides=dict(runner_env_overrides),
-        requested_mode="backtest",
-        strategy=strategy_name,
-        run_id=backtest_run_id,
-        metadata={"strategy_params_path": strategy_params_path},
+        **_build_backtest_job_launch_spec_data(
+            runner_data_source=runner_data_source,
+            market_db_path=market_db_path,
+            market_exchange=market_exchange,
+            runner_env_overrides=runner_env_overrides,
+            strategy_name=strategy_name,
+            backtest_run_id=backtest_run_id,
+            strategy_params_path=strategy_params_path,
+        )
     )
 
 
@@ -921,37 +916,19 @@ def _build_optimize_job_launch_spec(
     strategy_name,
     optimize_run_id,
 ) -> _ManagedJobLaunchSpec:
-    optimize_args = [
-        "--folds",
-        str(int(optimize_folds)),
-        "--n-trials",
-        str(int(optimize_trials)),
-        "--max-workers",
-        str(int(optimize_workers)),
-        "--data-source",
-        runner_data_source,
-        "--market-db-path",
-        market_db_path,
-        "--market-exchange",
-        market_exchange,
-        "--run-id",
-        optimize_run_id,
-    ]
-    if persist_best_params:
-        optimize_args.append("--save-best-params")
     return _ManagedJobLaunchSpec(
-        workflow="optimize",
-        script_name="optimize.py",
-        script_args=tuple(optimize_args),
-        env_overrides=dict(runner_env_overrides),
-        requested_mode="optimize",
-        strategy=strategy_name,
-        run_id=optimize_run_id,
-        metadata={
-            "folds": int(optimize_folds),
-            "n_trials": int(optimize_trials),
-            "max_workers": int(optimize_workers),
-        },
+        **_build_optimize_job_launch_spec_data(
+            optimize_folds=optimize_folds,
+            optimize_trials=optimize_trials,
+            optimize_workers=optimize_workers,
+            runner_data_source=runner_data_source,
+            market_db_path=market_db_path,
+            market_exchange=market_exchange,
+            persist_best_params=persist_best_params,
+            runner_env_overrides=runner_env_overrides,
+            strategy_name=strategy_name,
+            optimize_run_id=optimize_run_id,
+        )
     )
 
 
@@ -966,38 +943,17 @@ def _build_live_job_launch_spec(
     live_run_id,
     stop_file,
 ) -> _ManagedJobLaunchSpec:
-    live_script = "run_live.py"
-    live_workflow = "live"
-    if "WebSocket" in live_runner_kind:
-        live_script = "run_live_ws.py"
-        live_workflow = "live_ws"
-
-    live_args = [
-        "--strategy",
-        live_strategy_name,
-        "--run-id",
-        live_run_id,
-        "--stop-file",
-        stop_file,
-    ]
-    live_env = dict(runner_env_overrides)
-    live_env["LQ__LIVE__MODE"] = str(live_mode)
-    live_env["LQ__LIVE__EXCHANGE__NAME"] = str(market_exchange).lower()
-    live_env["LQ__LIVE__EXCHANGE__LEVERAGE"] = str(int(runner_leverage))
-    if live_mode == "real":
-        live_args.append("--enable-live-real")
-        live_env["LUMINA_ENABLE_LIVE_REAL"] = "true"
-
     return _ManagedJobLaunchSpec(
-        workflow=live_workflow,
-        script_name=live_script,
-        script_args=tuple(live_args),
-        env_overrides=live_env,
-        requested_mode=live_mode,
-        strategy=live_strategy_name,
-        run_id=live_run_id,
-        stop_file=stop_file,
-        metadata={"runner_kind": live_runner_kind},
+        **_build_live_job_launch_spec_data(
+            runner_env_overrides=runner_env_overrides,
+            live_mode=live_mode,
+            market_exchange=market_exchange,
+            runner_leverage=runner_leverage,
+            live_runner_kind=live_runner_kind,
+            live_strategy_name=live_strategy_name,
+            live_run_id=live_run_id,
+            stop_file=stop_file,
+        )
     )
 
 
@@ -1018,7 +974,10 @@ def _render_live_runner_settings(*, strategy_options, strategy_name) -> _LiveRun
     live_col_1, live_col_2, live_col_3 = st.columns(3)
     live_runner_kind = live_col_1.selectbox(
         "Live Runner",
-        ["Polling (run_live.py)", "WebSocket (run_live_ws.py)"],
+        [
+            "Polling (uv run lq live --transport poll)",
+            "WebSocket (uv run lq live --transport ws)",
+        ],
         key="live_runner_kind",
     )
     live_mode = live_col_2.selectbox("Live Mode", ["paper", "real"], key="live_mode")
@@ -1137,8 +1096,7 @@ def _launch_managed_job(
     *,
     db_path,
     workflow,
-    script_name,
-    script_args,
+    command,
     env_overrides,
     requested_mode=None,
     strategy=None,
@@ -1152,7 +1110,7 @@ def _launch_managed_job(
     os.makedirs(WORKFLOW_LOG_DIR, exist_ok=True)
     job_id = str(uuid.uuid4())
     log_path = os.path.join(WORKFLOW_LOG_DIR, f"{workflow}_{job_id}.log")
-    command = [sys.executable, script_name, *list(script_args)]
+    command = [str(part) for part in command]
     env = os.environ.copy()
     env.update({k: str(v) for k, v in (env_overrides or {}).items()})
 
