@@ -324,17 +324,7 @@ def _normalize_backend_token(value: Any, *, field_name: str) -> str:
     )
 
 
-def _normalize_runtime_config(
-    runtime: RuntimeConfig,
-    *,
-    sections: dict[str, dict[str, Any]],
-) -> None:
-    storage_raw = sections["storage"]
-    exec_raw = sections["execution"]
-    live_raw = sections["live"]
-    backtest_raw = sections["backtest"]
-    market_window_raw = sections["market_window"]
-
+def _normalize_storage_runtime_section(runtime: RuntimeConfig, storage_raw: dict[str, Any]) -> None:
     runtime.storage.market_data_parquet_path = _resolve_storage_path(
         runtime.storage.market_data_parquet_path
     )
@@ -388,6 +378,8 @@ def _normalize_runtime_config(
             )
         )
 
+
+def _normalize_trading_and_risk_runtime_section(runtime: RuntimeConfig) -> None:
     runtime.trading.timeframe = _normalize_timeframe_token(runtime.trading.timeframe, "1m")
     normalized_timeframes: list[str] = []
     raw_timeframes = getattr(runtime.trading, "timeframes", None)
@@ -407,6 +399,9 @@ def _normalize_runtime_config(
     runtime.trading.min_trade_qty = _as_float(runtime.trading.min_trade_qty, 0.001)
     runtime.risk.risk_per_trade = _as_float(runtime.risk.risk_per_trade, 0.005)
     runtime.risk.max_daily_loss_pct = _as_float(runtime.risk.max_daily_loss_pct, 0.03)
+
+
+def _normalize_execution_runtime_section(runtime: RuntimeConfig, exec_raw: dict[str, Any]) -> None:
     runtime.execution.slippage_rate = _as_float(runtime.execution.slippage_rate, 0.0005)
 
     raw_gpu_mode = exec_raw.get("gpu_mode") if isinstance(exec_raw, dict) else None
@@ -436,11 +431,16 @@ def _normalize_runtime_config(
     runtime.execution.compute_backend = requested_gpu_mode
     runtime.execution.gpu_vram_gb = max(0.0, _as_float(runtime.execution.gpu_vram_gb, 0.0))
 
+
+def _normalize_live_exchange_runtime_section(runtime: RuntimeConfig) -> None:
     runtime.live.exchange.driver = _normalize_exchange_driver(
         runtime.live.exchange.driver,
         exchange_name=runtime.live.exchange.name,
     )
     runtime.live.exchange.leverage = _as_int(runtime.live.exchange.leverage, 3)
+
+
+def _normalize_backtest_risk_free_runtime_section(runtime: RuntimeConfig) -> None:
     runtime.backtest.risk_free_mode = str(
         getattr(runtime.backtest, "risk_free_mode", "us_treasury_constant")
         or "us_treasury_constant"
@@ -462,6 +462,9 @@ def _normalize_runtime_config(
         getattr(runtime.backtest, "sortino_target_annual", runtime.backtest.risk_free_annual),
         runtime.backtest.risk_free_annual,
     )
+
+
+def _normalize_live_runtime_section(runtime: RuntimeConfig, live_raw: dict[str, Any]) -> None:
     runtime.live.market_data_source = _normalize_live_source(
         getattr(runtime.live, "market_data_source", "committed")
     )
@@ -568,6 +571,8 @@ def _normalize_runtime_config(
         False,
     )
 
+
+def _normalize_backtest_runtime_section(runtime: RuntimeConfig, backtest_raw: dict[str, Any]) -> None:
     runtime.backtest.random_seed = _as_int(runtime.backtest.random_seed, 42)
     runtime.backtest.leverage = _as_int(runtime.backtest.leverage, 3)
     runtime.backtest.data_source = str(
@@ -632,6 +637,8 @@ def _normalize_runtime_config(
     runtime.backtest.chunk_warmup_bars = max(0, _as_int(runtime.backtest.chunk_warmup_bars, 0))
     runtime.backtest.skip_ahead_enabled = _as_bool(runtime.backtest.skip_ahead_enabled, True)
 
+
+def _normalize_optimization_runtime_section(runtime: RuntimeConfig) -> None:
     runtime.optimization.walk_forward_folds = _as_int(runtime.optimization.walk_forward_folds, 3)
     runtime.optimization.overfit_penalty = _as_float(runtime.optimization.overfit_penalty, 0.5)
     runtime.optimization.max_workers = _as_int(runtime.optimization.max_workers, 4)
@@ -647,6 +654,8 @@ def _normalize_runtime_config(
         _as_int(getattr(runtime.optimization, "oos_days", 30), 30),
     )
 
+
+def _normalize_market_window_runtime_section(runtime: RuntimeConfig, live_raw: dict[str, Any], backtest_raw: dict[str, Any], market_window_raw: dict[str, Any]) -> None:
     deprecated_live_parity = (
         live_raw.get("market_window_parity_v2_enabled")
         if isinstance(live_raw, dict) and "market_window_parity_v2_enabled" in live_raw
@@ -685,6 +694,8 @@ def _normalize_runtime_config(
         or "logs/live/market_window_metrics.ndjson"
     )
 
+
+def _normalize_promotion_gate_runtime_section(runtime: RuntimeConfig) -> None:
     runtime.promotion_gate.days = _as_int(runtime.promotion_gate.days, 14)
     runtime.promotion_gate.max_order_rejects = _as_int(runtime.promotion_gate.max_order_rejects, 0)
     runtime.promotion_gate.max_order_timeouts = _as_int(
@@ -712,6 +723,32 @@ def _normalize_runtime_config(
     runtime.promotion_gate.strategy_profiles = normalized_profiles
 
 
+def _normalize_runtime_config(
+    runtime: RuntimeConfig,
+    *,
+    sections: dict[str, dict[str, Any]],
+) -> None:
+    storage_raw = sections["storage"]
+    exec_raw = sections["execution"]
+    live_raw = sections["live"]
+    backtest_raw = sections["backtest"]
+    market_window_raw = sections["market_window"]
+
+    _normalize_storage_runtime_section(runtime, storage_raw=storage_raw)
+    _normalize_trading_and_risk_runtime_section(runtime)
+    _normalize_execution_runtime_section(runtime, exec_raw=exec_raw)
+    _normalize_live_exchange_runtime_section(runtime)
+    _normalize_backtest_risk_free_runtime_section(runtime)
+    _normalize_live_runtime_section(runtime, live_raw=live_raw)
+    _normalize_backtest_runtime_section(runtime, backtest_raw=backtest_raw)
+    _normalize_optimization_runtime_section(runtime)
+    _normalize_market_window_runtime_section(
+        runtime,
+        live_raw=live_raw,
+        backtest_raw=backtest_raw,
+        market_window_raw=market_window_raw,
+    )
+    _normalize_promotion_gate_runtime_section(runtime)
 
 def _build_runtime_config_tree(
     *,
