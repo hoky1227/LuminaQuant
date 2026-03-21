@@ -4,6 +4,7 @@ import html
 import importlib
 import sys
 from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -1206,362 +1207,560 @@ def _deployment_scenario_curve_frame(payload: dict[str, Any], split: str = "oos"
     return merged.pivot_table(index="timestamp", columns="split", values="cumulative_return", aggfunc="last").sort_index()
 
 
-def render_exact_window_dashboard(*, standalone: bool = True) -> None:
-    if standalone:
-        st.set_page_config(layout="wide", page_title="LuminaQuant Exact-Window Suite")
-        st.title("LuminaQuant Exact-Window Validation Dashboard")
-    else:
-        st.header("Exact-Window Validation Dashboard")
-    st.markdown(_DASHBOARD_CSS, unsafe_allow_html=True)
 
-    bundle = load_exact_window_bundle()
-    decision = bundle.get("decision") or {}
-    summary = bundle.get("summary") or {}
-    memory_evidence = bundle.get("memory_evidence") or {}
-    queue_status = bundle.get("queue_status") or {}
-    next_iteration = bundle.get("next_iteration") or {}
-    details_frame = _details_rows_frame(bundle)
-    followup_frame = _followup_runs_frame(bundle)
-    registry_frame = _registry_frame(bundle, key="registry", source_label="canonical")
-    recovered_registry_frame = _registry_frame(
-        bundle,
-        key="recovered_registry",
-        source_label="recovered_archive",
+@dataclass(frozen=True)
+class _ExactWindowDashboardContext:
+    bundle: dict[str, Any]
+    decision: dict[str, Any]
+    summary: dict[str, Any]
+    memory_evidence: dict[str, Any]
+    queue_status: dict[str, Any]
+    next_iteration: dict[str, Any]
+    details_frame: pd.DataFrame
+    followup_frame: pd.DataFrame
+    registry_frame: pd.DataFrame
+    recovered_registry_frame: pd.DataFrame
+    pipeline_family_frame: pd.DataFrame
+    coverage_status: pd.DataFrame
+    warnings: list[str]
+    timeframe_rows: list[dict[str, Any]]
+
+
+@dataclass(frozen=True)
+class _ExactWindowDashboardSelection:
+    selected_timeframe: str
+    selected_row: dict[str, Any]
+    selected_best: dict[str, Any]
+    execution_profile: dict[str, Any]
+    portfolio: dict[str, Any]
+    selected_oos: dict[str, Any]
+    queue_rows: list[dict[str, Any]]
+    summary_frame: pd.DataFrame
+    metric_matrix: pd.DataFrame
+    mixed_asset_rows: pd.DataFrame
+    pure_metal_rows: pd.DataFrame
+    positive_oos: int
+    candidate_pool_rate: float
+    strict_rate: float
+    candidate_scope: pd.DataFrame
+    deployment_artifact: dict[str, Any]
+    deployment_scenarios_artifact: dict[str, Any]
+    deployment_rows: list[dict[str, Any]]
+    deployment_frame: pd.DataFrame
+    deployment_oos_metrics: dict[str, Any]
+    deployment_oos_curve: pd.DataFrame
+    deployment_scenario_frame: pd.DataFrame
+    deployment_scenario_curve: pd.DataFrame
+    deployment_split_metrics_frame: pd.DataFrame
+    deployment_scenario_count: int
+
+
+
+def _render_exact_window_card_grid(cards: list[tuple[str, str, str]]) -> None:
+    st.markdown(
+        '<div class="exact-window-card-grid">' + ''.join(_card_html(*card) for card in cards) + '</div>',
+        unsafe_allow_html=True,
     )
-    pipeline_family_frame = _pipeline_family_frame(bundle)
-    coverage_status = _coverage_status_frame(summary)
-    warnings = list(bundle.get("warnings") or [])
 
-    if warnings:
-        with st.expander("Artifact load warnings", expanded=False):
-            for warning in warnings:
-                st.warning(str(warning))
 
-    timeframe_rows = list(decision.get("timeframe_rows") or [])
-    if not timeframe_rows:
-        archive_payload = dict(bundle.get("archive_payload") or bundle.get("followup_status", {}).get("backtest_log_archive_latest") or {})
-        deployment_payload = dict(bundle.get("followup_status", {}).get("deployment_combo_latest") or {})
-        deployment_scenarios = dict(bundle.get("followup_status", {}).get("deployment_scenarios_latest") or {})
-        combined_registry = pd.concat(
-            [frame for frame in (registry_frame, recovered_registry_frame) if not frame.empty],
-            ignore_index=True,
-        ) if (not registry_frame.empty or not recovered_registry_frame.empty) else pd.DataFrame()
-        st.warning("Primary exact-window decision artifacts are missing. Showing saved metrics plus recovery/archive cockpit.")
-        recovery_cards = [
-            ("Canonical Runs", _format_value(len(registry_frame), "int"), "exact-window signature-backed registry snapshot"),
-            ("Recovered Runs", _format_value(len(recovered_registry_frame), "int"), "advisory archive rebuilt from logs"),
-            ("Pipeline Families", _format_value(len(pipeline_family_frame), "int"), "article-inspired strategy expansion thesis"),
-            ("Saved Candidates", _format_value(len(details_frame), "int"), "detail rows still available without decision bundle"),
-            ("Follow-up Snapshots", _format_value(len(followup_frame), "int"), "saved JSON/MD follow-up artifacts still available"),
-            ("Deployment Scenarios", _format_value(deployment_scenarios.get("scenario_count"), "int"), deployment_payload.get("scenario_id") or "unavailable"),
-        ]
-        st.markdown(
-            '<div class="exact-window-card-grid">' + ''.join(_card_html(*card) for card in recovery_cards) + '</div>',
-            unsafe_allow_html=True,
-        )
-        recovery_tabs = st.tabs(["Saved Metrics", "Candidates", "Registry", "Pipeline Thesis", "Diagnostics"])
-        with recovery_tabs[0]:
-            top_metrics = st.columns(4)
-            top_metrics[0].metric("Evaluated", _format_value(summary.get("evaluated_count"), "int"))
-            top_metrics[1].metric("Promoted", _format_value(summary.get("promoted_count"), "int"))
-            top_metrics[2].metric("Peak RSS MiB", _format_value(memory_evidence.get("peak_rss_mib"), "float"))
-            top_metrics[3].metric("Requested TF", _format_value(len(summary.get("execution_profile", {}).get("requested_timeframes") or []), "int"))
-            if summary:
-                with st.expander("Saved summary payload", expanded=False):
-                    st.json(summary)
-            fail_counts = pd.DataFrame((bundle.get("fail_analysis") or {}).get("counts_by_rejection_reason") or [])
-            if not fail_counts.empty:
-                st.caption("Saved rejection counts")
-                st.dataframe(_format_frame(fail_counts), use_container_width=True, hide_index=True)
-            if not coverage_status.empty:
-                st.caption("Saved symbol coverage")
-                st.dataframe(_format_frame(coverage_status), use_container_width=True, hide_index=True)
-        with recovery_tabs[1]:
-            if details_frame.empty:
-                st.info("No candidate detail rows available.")
-            else:
-                st.caption("Saved candidate leaderboard")
-                st.dataframe(
-                    _format_frame(
-                        _top_candidates(
-                            details_frame,
-                            columns=[
-                                "source_stage",
-                                "timeframe",
-                                "family",
-                                "strategy",
-                                "name",
-                                "asset_mix",
-                                "symbols",
-                                "val_return",
-                                "val_sharpe",
-                                "oos_return",
-                                "oos_sharpe",
-                                "oos_sortino",
-                                "oos_calmar",
-                                "oos_mdd",
-                                "oos_trades",
-                                "oos_pbo",
-                                "rejects",
-                            ],
-                            limit=30,
-                        )
-                    ),
-                    use_container_width=True,
-                    hide_index=True,
-                )
-        with recovery_tabs[2]:
-            if combined_registry.empty:
-                st.info("No canonical or recovered registry entries found.")
-            else:
-                st.caption("Canonical registry + recovered advisory archive")
-                st.dataframe(_format_frame(combined_registry), use_container_width=True, hide_index=True)
-            if followup_frame.empty:
-                st.info("No follow-up artifacts available.")
-            else:
-                st.caption("Follow-up / archive artifacts")
-                st.dataframe(_format_frame(followup_frame), use_container_width=True, hide_index=True)
-        with recovery_tabs[3]:
-            if pipeline_family_frame.empty:
-                st.info("No pipeline thesis manifest found.")
-            else:
-                st.caption("Article-inspired strategy family map")
-                st.dataframe(_format_frame(pipeline_family_frame), use_container_width=True, hide_index=True)
-            with st.expander("Pipeline manifest", expanded=False):
-                st.json(bundle.get("pipeline_manifest") or {})
-        with recovery_tabs[4]:
-            st.caption("Archive notes")
-            st.json(archive_payload)
-            st.caption("Deployment scenario placeholder")
-            st.json(
-                {
-                    "combo": deployment_payload,
-                    "scenarios": deployment_scenarios,
-                    "paths": bundle.get("paths"),
-                    "followup_status_root": bundle.get("followup_status_root"),
-                    "warnings": warnings,
-                }
-            )
+
+def _build_exact_window_dashboard_context(bundle: dict[str, Any]) -> _ExactWindowDashboardContext:
+    decision = dict(bundle.get('decision') or {})
+    summary = dict(bundle.get('summary') or {})
+    return _ExactWindowDashboardContext(
+        bundle=bundle,
+        decision=decision,
+        summary=summary,
+        memory_evidence=dict(bundle.get('memory_evidence') or {}),
+        queue_status=dict(bundle.get('queue_status') or {}),
+        next_iteration=dict(bundle.get('next_iteration') or {}),
+        details_frame=_details_rows_frame(bundle),
+        followup_frame=_followup_runs_frame(bundle),
+        registry_frame=_registry_frame(bundle, key='registry', source_label='canonical'),
+        recovered_registry_frame=_registry_frame(
+            bundle,
+            key='recovered_registry',
+            source_label='recovered_archive',
+        ),
+        pipeline_family_frame=_pipeline_family_frame(bundle),
+        coverage_status=_coverage_status_frame(summary),
+        warnings=list(bundle.get('warnings') or []),
+        timeframe_rows=list(decision.get('timeframe_rows') or []),
+    )
+
+
+
+def _render_exact_window_dashboard_warnings(context: _ExactWindowDashboardContext) -> None:
+    if not context.warnings:
         return
+    with st.expander('Artifact load warnings', expanded=False):
+        for warning in context.warnings:
+            st.warning(str(warning))
 
-    timeframe_options = [
-        str(row.get("timeframe"))
-        for row in sorted(timeframe_rows, key=lambda item: _timeframe_sort_key(str(item.get("timeframe") or "")))
+
+
+def _combined_exact_window_registry_frame(context: _ExactWindowDashboardContext) -> pd.DataFrame:
+    frames = [frame for frame in (context.registry_frame, context.recovered_registry_frame) if not frame.empty]
+    if not frames:
+        return pd.DataFrame()
+    return pd.concat(frames, ignore_index=True)
+
+
+
+def _render_exact_window_recovery_dashboard(context: _ExactWindowDashboardContext) -> None:
+    archive_payload = dict(
+        context.bundle.get('archive_payload')
+        or context.bundle.get('followup_status', {}).get('backtest_log_archive_latest')
+        or {}
+    )
+    deployment_payload = dict(context.bundle.get('followup_status', {}).get('deployment_combo_latest') or {})
+    deployment_scenarios = dict(context.bundle.get('followup_status', {}).get('deployment_scenarios_latest') or {})
+    combined_registry = _combined_exact_window_registry_frame(context)
+
+    st.warning('Primary exact-window decision artifacts are missing. Showing saved metrics plus recovery/archive cockpit.')
+    recovery_cards = [
+        ('Canonical Runs', _format_value(len(context.registry_frame), 'int'), 'exact-window signature-backed registry snapshot'),
+        ('Recovered Runs', _format_value(len(context.recovered_registry_frame), 'int'), 'advisory archive rebuilt from logs'),
+        ('Pipeline Families', _format_value(len(context.pipeline_family_frame), 'int'), 'article-inspired strategy expansion thesis'),
+        ('Saved Candidates', _format_value(len(context.details_frame), 'int'), 'detail rows still available without decision bundle'),
+        ('Follow-up Snapshots', _format_value(len(context.followup_frame), 'int'), 'saved JSON/MD follow-up artifacts still available'),
+        ('Deployment Scenarios', _format_value(deployment_scenarios.get('scenario_count'), 'int'), deployment_payload.get('scenario_id') or 'unavailable'),
     ]
-    default_timeframe = "30m" if "30m" in timeframe_options else timeframe_options[0]
+    _render_exact_window_card_grid(recovery_cards)
 
-    st.sidebar.header("Explorer")
-    selected_timeframe = st.sidebar.selectbox(
-        "Timeframe",
-        timeframe_options,
-        index=timeframe_options.index(default_timeframe),
-    )
-    leaderboard_mode = st.sidebar.selectbox(
-        "Leaderboard focus",
-        ["overall", "selected timeframe", "mixed assets", "metals"],
-        index=0,
-    )
-    selected_row = next(row for row in timeframe_rows if str(row.get("timeframe")) == selected_timeframe)
-    selected_best = dict(selected_row.get("best_row") or {})
-    deployment_artifact = dict(bundle.get("followup_status", {}).get("deployment_combo_latest") or {})
-    deployment_scenarios_artifact = dict(bundle.get("followup_status", {}).get("deployment_scenarios_latest") or {})
-    deployment_rows = _deployment_candidate_rows(bundle, decision)
-    deployment_frame_live = _deployment_component_frame(deployment_rows)
-    deployment_frame = (
-        _deployment_component_frame_from_payload(deployment_artifact)
-        if deployment_artifact
-        else deployment_frame_live
-    )
-    deployment_oos_metrics_live = _deployment_combo_metrics(deployment_rows, "oos")
-    deployment_oos_metrics = dict((deployment_artifact.get("metrics") or {}).get("oos") or deployment_oos_metrics_live)
-    deployment_oos_curve = (
-        _deployment_curve_frame_from_payload(deployment_artifact, "oos")
-        if deployment_artifact
-        else _deployment_combo_chart_frame(deployment_rows, "oos")
-    )
-    deployment_scenario_frame = _deployment_scenario_summary_frame(deployment_scenarios_artifact)
-    deployment_scenario_curve = _deployment_scenario_curve_frame(deployment_scenarios_artifact, "oos")
+    recovery_tabs = st.tabs(['Saved Metrics', 'Candidates', 'Registry', 'Pipeline Thesis', 'Diagnostics'])
+    with recovery_tabs[0]:
+        top_metrics = st.columns(4)
+        top_metrics[0].metric('Evaluated', _format_value(context.summary.get('evaluated_count'), 'int'))
+        top_metrics[1].metric('Promoted', _format_value(context.summary.get('promoted_count'), 'int'))
+        top_metrics[2].metric('Peak RSS MiB', _format_value(context.memory_evidence.get('peak_rss_mib'), 'float'))
+        top_metrics[3].metric(
+            'Requested TF',
+            _format_value(len(context.summary.get('execution_profile', {}).get('requested_timeframes') or []), 'int'),
+        )
+        if context.summary:
+            with st.expander('Saved summary payload', expanded=False):
+                st.json(context.summary)
+        fail_counts = pd.DataFrame((context.bundle.get('fail_analysis') or {}).get('counts_by_rejection_reason') or [])
+        if not fail_counts.empty:
+            st.caption('Saved rejection counts')
+            st.dataframe(_format_frame(fail_counts), use_container_width=True, hide_index=True)
+        if not context.coverage_status.empty:
+            st.caption('Saved symbol coverage')
+            st.dataframe(_format_frame(context.coverage_status), use_container_width=True, hide_index=True)
+
+    with recovery_tabs[1]:
+        if context.details_frame.empty:
+            st.info('No candidate detail rows available.')
+        else:
+            st.caption('Saved candidate leaderboard')
+            st.dataframe(
+                _format_frame(
+                    _top_candidates(
+                        context.details_frame,
+                        columns=[
+                            'source_stage',
+                            'timeframe',
+                            'family',
+                            'strategy',
+                            'name',
+                            'asset_mix',
+                            'symbols',
+                            'val_return',
+                            'val_sharpe',
+                            'oos_return',
+                            'oos_sharpe',
+                            'oos_sortino',
+                            'oos_calmar',
+                            'oos_mdd',
+                            'oos_trades',
+                            'oos_pbo',
+                            'rejects',
+                        ],
+                        limit=30,
+                    )
+                ),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+    with recovery_tabs[2]:
+        if combined_registry.empty:
+            st.info('No canonical or recovered registry entries found.')
+        else:
+            st.caption('Canonical registry + recovered advisory archive')
+            st.dataframe(_format_frame(combined_registry), use_container_width=True, hide_index=True)
+        if context.followup_frame.empty:
+            st.info('No follow-up artifacts available.')
+        else:
+            st.caption('Follow-up / archive artifacts')
+            st.dataframe(_format_frame(context.followup_frame), use_container_width=True, hide_index=True)
+
+    with recovery_tabs[3]:
+        if context.pipeline_family_frame.empty:
+            st.info('No pipeline thesis manifest found.')
+        else:
+            st.caption('Article-inspired strategy family map')
+            st.dataframe(_format_frame(context.pipeline_family_frame), use_container_width=True, hide_index=True)
+        with st.expander('Pipeline manifest', expanded=False):
+            st.json(context.bundle.get('pipeline_manifest') or {})
+
+    with recovery_tabs[4]:
+        st.caption('Archive notes')
+        st.json(archive_payload)
+        st.caption('Deployment scenario placeholder')
+        st.json(
+            {
+                'combo': deployment_payload,
+                'scenarios': deployment_scenarios,
+                'paths': context.bundle.get('paths'),
+                'followup_status_root': context.bundle.get('followup_status_root'),
+                'warnings': context.warnings,
+            }
+        )
+
+
+
+def _exact_window_timeframe_options(timeframe_rows: list[dict[str, Any]]) -> list[str]:
+    return [
+        str(row.get('timeframe'))
+        for row in sorted(timeframe_rows, key=lambda item: _timeframe_sort_key(str(item.get('timeframe') or '')))
+    ]
+
+
+
+def _default_exact_window_timeframe(timeframe_options: list[str]) -> str:
+    return '30m' if '30m' in timeframe_options else timeframe_options[0]
+
+
+
+def _select_exact_window_candidate_scope(
+    details_frame: pd.DataFrame,
+    *,
+    leaderboard_mode: str,
+    selected_timeframe: str,
+) -> pd.DataFrame:
+    if details_frame.empty:
+        return details_frame
+    if leaderboard_mode == 'selected timeframe':
+        return details_frame[details_frame['timeframe'] == selected_timeframe]
+    if leaderboard_mode == 'mixed assets':
+        return details_frame[details_frame['asset_mix'] == 'crypto-metal mix']
+    if leaderboard_mode == 'metals':
+        return details_frame[details_frame['asset_mix'].isin(['pure metal', 'crypto-metal mix'])]
+    return details_frame
+
+
+
+def _build_exact_window_deployment_split_metrics_frame(
+    deployment_artifact: dict[str, Any],
+    deployment_rows: list[dict[str, Any]],
+) -> pd.DataFrame:
     deployment_split_metric_rows: list[dict[str, Any]] = []
     for split in _SPLIT_ORDER:
-        split_metrics = dict((deployment_artifact.get("metrics") or {}).get(split) or {})
+        split_metrics = dict((deployment_artifact.get('metrics') or {}).get(split) or {})
         if not split_metrics and deployment_rows:
             split_metrics = _deployment_combo_metrics(deployment_rows, split)
         if not split_metrics:
             continue
         deployment_split_metric_rows.append(
             {
-                "split": split,
-                "return": split_metrics.get("return"),
-                "sharpe": split_metrics.get("sharpe"),
-                "sortino": split_metrics.get("sortino"),
-                "calmar": split_metrics.get("calmar"),
-                "max_drawdown": split_metrics.get("max_drawdown"),
-                "volatility": split_metrics.get("volatility"),
-                "trade_count": split_metrics.get("trade_count"),
-                "pbo": split_metrics.get("pbo"),
+                'split': split,
+                'return': split_metrics.get('return'),
+                'sharpe': split_metrics.get('sharpe'),
+                'sortino': split_metrics.get('sortino'),
+                'calmar': split_metrics.get('calmar'),
+                'max_drawdown': split_metrics.get('max_drawdown'),
+                'volatility': split_metrics.get('volatility'),
+                'trade_count': split_metrics.get('trade_count'),
+                'pbo': split_metrics.get('pbo'),
             }
         )
-    deployment_split_metrics_frame = pd.DataFrame(deployment_split_metric_rows)
-    deployment_scenario_count = int(
-        deployment_scenarios_artifact.get("scenario_count")
-        or len(list(deployment_scenarios_artifact.get("scenarios") or []))
+    return pd.DataFrame(deployment_split_metric_rows)
+
+
+
+def _build_exact_window_dashboard_selection(
+    context: _ExactWindowDashboardContext,
+    *,
+    selected_timeframe: str,
+    leaderboard_mode: str,
+) -> _ExactWindowDashboardSelection:
+    selected_row = next(row for row in context.timeframe_rows if str(row.get('timeframe')) == selected_timeframe)
+    selected_best = dict(selected_row.get('best_row') or {})
+    deployment_artifact = dict(context.bundle.get('followup_status', {}).get('deployment_combo_latest') or {})
+    deployment_scenarios_artifact = dict(context.bundle.get('followup_status', {}).get('deployment_scenarios_latest') or {})
+    deployment_rows = _deployment_candidate_rows(context.bundle, context.decision)
+    deployment_frame_live = _deployment_component_frame(deployment_rows)
+    deployment_frame = (
+        _deployment_component_frame_from_payload(deployment_artifact)
+        if deployment_artifact
+        else deployment_frame_live
+    )
+    deployment_oos_metrics_live = _deployment_combo_metrics(deployment_rows, 'oos')
+    deployment_oos_metrics = dict((deployment_artifact.get('metrics') or {}).get('oos') or deployment_oos_metrics_live)
+    deployment_oos_curve = (
+        _deployment_curve_frame_from_payload(deployment_artifact, 'oos')
+        if deployment_artifact
+        else _deployment_combo_chart_frame(deployment_rows, 'oos')
+    )
+    deployment_scenario_frame = _deployment_scenario_summary_frame(deployment_scenarios_artifact)
+    deployment_scenario_curve = _deployment_scenario_curve_frame(deployment_scenarios_artifact, 'oos')
+    execution_profile = dict(context.summary.get('execution_profile') or {})
+    portfolio = dict(context.summary.get('portfolio') or {})
+    selected_oos = dict(selected_best.get('oos') or {})
+    candidate_scope = _select_exact_window_candidate_scope(
+        context.details_frame,
+        leaderboard_mode=leaderboard_mode,
+        selected_timeframe=selected_timeframe,
+    )
+    return _ExactWindowDashboardSelection(
+        selected_timeframe=selected_timeframe,
+        selected_row=selected_row,
+        selected_best=selected_best,
+        execution_profile=execution_profile,
+        portfolio=portfolio,
+        selected_oos=selected_oos,
+        queue_rows=list(context.queue_status.get('queue') or []),
+        summary_frame=_timeframe_summary_frame(context.timeframe_rows),
+        metric_matrix=_metric_matrix_frame(context.timeframe_rows),
+        mixed_asset_rows=(
+            context.details_frame[context.details_frame['asset_mix'] == 'crypto-metal mix']
+            if not context.details_frame.empty and 'asset_mix' in context.details_frame.columns
+            else pd.DataFrame()
+        ),
+        pure_metal_rows=(
+            context.details_frame[context.details_frame['asset_mix'] == 'pure metal']
+            if not context.details_frame.empty and 'asset_mix' in context.details_frame.columns
+            else pd.DataFrame()
+        ),
+        positive_oos=(
+            int((context.details_frame.get('oos_return', pd.Series(dtype=float)).fillna(0.0) > 0.0).sum())
+            if not context.details_frame.empty
+            else 0
+        ),
+        candidate_pool_rate=(
+            float(context.decision.get('candidate_pool_total') or 0.0)
+            / max(1.0, float(context.decision.get('total_evaluated') or 0.0))
+        ),
+        strict_rate=(
+            float(context.decision.get('promoted_total') or 0.0)
+            / max(1.0, float(context.decision.get('total_evaluated') or 0.0))
+        ),
+        candidate_scope=candidate_scope,
+        deployment_artifact=deployment_artifact,
+        deployment_scenarios_artifact=deployment_scenarios_artifact,
+        deployment_rows=deployment_rows,
+        deployment_frame=deployment_frame,
+        deployment_oos_metrics=deployment_oos_metrics,
+        deployment_oos_curve=deployment_oos_curve,
+        deployment_scenario_frame=deployment_scenario_frame,
+        deployment_scenario_curve=deployment_scenario_curve,
+        deployment_split_metrics_frame=_build_exact_window_deployment_split_metrics_frame(
+            deployment_artifact,
+            deployment_rows,
+        ),
+        deployment_scenario_count=int(
+            deployment_scenarios_artifact.get('scenario_count')
+            or len(list(deployment_scenarios_artifact.get('scenarios') or []))
+        ),
     )
 
-    st.sidebar.caption(f"Decision generated: {decision.get('generated_at')}")
-    st.sidebar.metric("Strict Passes", int(decision.get("promoted_total") or 0))
-    st.sidebar.metric("Candidate Pool", int(decision.get("candidate_pool_total") or 0))
-    st.sidebar.metric("Total Evaluated", int(decision.get("total_evaluated") or 0))
-    st.sidebar.metric("Max Peak RSS (MiB)", f"{float(decision.get('max_peak_rss_mib') or 0.0):.1f}")
-    queue_rows = list(queue_status.get("queue") or [])
-    if queue_rows:
-        st.sidebar.subheader("Queue Snapshot")
-        for item in queue_rows:
+
+
+def _render_exact_window_sidebar(
+    *,
+    timeframe_options: list[str],
+    default_timeframe: str,
+) -> tuple[str, str]:
+    st.sidebar.header('Explorer')
+    selected_timeframe = st.sidebar.selectbox(
+        'Timeframe',
+        timeframe_options,
+        index=timeframe_options.index(default_timeframe),
+    )
+    leaderboard_mode = st.sidebar.selectbox(
+        'Leaderboard focus',
+        ['overall', 'selected timeframe', 'mixed assets', 'metals'],
+        index=0,
+    )
+    return selected_timeframe, leaderboard_mode
+
+
+
+def _render_exact_window_sidebar_summary(
+    context: _ExactWindowDashboardContext,
+    selection: _ExactWindowDashboardSelection,
+) -> None:
+    st.sidebar.caption(f"Decision generated: {context.decision.get('generated_at')}")
+    st.sidebar.metric('Strict Passes', int(context.decision.get('promoted_total') or 0))
+    st.sidebar.metric('Candidate Pool', int(context.decision.get('candidate_pool_total') or 0))
+    st.sidebar.metric('Total Evaluated', int(context.decision.get('total_evaluated') or 0))
+    st.sidebar.metric('Max Peak RSS (MiB)', f"{float(context.decision.get('max_peak_rss_mib') or 0.0):.1f}")
+    if selection.queue_rows:
+        st.sidebar.subheader('Queue Snapshot')
+        for item in selection.queue_rows:
             st.sidebar.write(f"- {item.get('timeframe')}: {item.get('status')} | run_id={item.get('run_id')}")
-    execution_profile = dict(summary.get("execution_profile") or {})
-    st.sidebar.caption(f"Requested symbols: {len(execution_profile.get('requested_symbols') or [])}")
-    st.sidebar.caption(f"Eligible symbols: {len(summary.get('eligible_symbols') or [])}")
-    st.sidebar.caption(f"Allow metals: {'yes' if execution_profile.get('allow_metals') else 'no'}")
+    st.sidebar.caption(f"Requested symbols: {len(selection.execution_profile.get('requested_symbols') or [])}")
+    st.sidebar.caption(f"Eligible symbols: {len(context.summary.get('eligible_symbols') or [])}")
+    st.sidebar.caption(f"Allow metals: {'yes' if selection.execution_profile.get('allow_metals') else 'no'}")
 
-    portfolio = dict(summary.get("portfolio") or {})
-    selected_oos = dict(selected_best.get("oos") or {})
-    candidate_pool_rate = (
-        float(decision.get("candidate_pool_total") or 0.0)
-        / max(1.0, float(decision.get("total_evaluated") or 0.0))
-    )
-    strict_rate = (
-        float(decision.get("promoted_total") or 0.0)
-        / max(1.0, float(decision.get("total_evaluated") or 0.0))
-    )
-    positive_oos = int((details_frame.get("oos_return", pd.Series(dtype=float)).fillna(0.0) > 0.0).sum()) if not details_frame.empty else 0
-    mixed_asset_rows = (
-        details_frame[details_frame["asset_mix"] == "crypto-metal mix"]
-        if not details_frame.empty and "asset_mix" in details_frame.columns
-        else pd.DataFrame()
-    )
-    pure_metal_rows = (
-        details_frame[details_frame["asset_mix"] == "pure metal"]
-        if not details_frame.empty and "asset_mix" in details_frame.columns
-        else pd.DataFrame()
-    )
 
-    st.markdown(_summary_banner(decision, bundle, summary), unsafe_allow_html=True)
+
+def _render_exact_window_primary_summary(
+    context: _ExactWindowDashboardContext,
+    selection: _ExactWindowDashboardSelection,
+) -> None:
+    st.markdown(_summary_banner(context.decision, context.bundle, context.summary), unsafe_allow_html=True)
     header_cards = [
-        ("Strict Passes", _format_value(decision.get("promoted_total"), "int"), "strictly promoted strategies under current gates"),
-        ("Strict Pass Rate", _format_value(strict_rate, "percent"), f"{int(decision.get('promoted_total') or 0)} / {int(decision.get('total_evaluated') or 0)}"),
-        ("Candidate Pool", _format_value(decision.get("candidate_pool_total"), "int"), str(decision.get("next_action") or "review queue")),
-        ("Pool Rate", _format_value(candidate_pool_rate, "percent"), "candidate-pool eligible / total evaluated"),
-        ("Total Evaluated", _format_value(decision.get("total_evaluated"), "int"), f"selected timeframe = {selected_timeframe}"),
-        ("Peak RSS", f"{float(decision.get('max_peak_rss_mib') or 0.0):.1f} MiB", "highest recorded exact-window memory sample"),
-        ("Positive OOS Candidates", _format_value(positive_oos, "int"), "full candidate set with positive OOS return"),
-        ("Selected OOS Return", _format_value(selected_oos.get("return"), "percent"), f"{selected_best.get('name') or 'no best row'}"),
-        ("Selected OOS Sharpe", _format_value(selected_oos.get("sharpe"), "float3"), f"PBO { _format_value(selected_oos.get('pbo'), 'float3') } | trades { _format_value(selected_oos.get('trade_count'), 'int') }"),
-        ("Portfolio OOS Return", _format_value((portfolio.get("oos") or {}).get("return"), "percent"), f"construction = {portfolio.get('construction_basis') or 'n/a'}"),
-        ("Portfolio OOS Sharpe", _format_value((portfolio.get("oos") or {}).get("sharpe"), "float3"), f"Portfolio PBO { _format_value((portfolio.get('oos') or {}).get('pbo'), 'float3') }"),
-        ("Mixed-Asset Rows", _format_value(len(mixed_asset_rows), "int"), "crypto/metal pairs in saved candidate details"),
-        ("Pure Metal Rows", _format_value(len(pure_metal_rows), "int"), "metal-only candidates in saved candidate details"),
+        ('Strict Passes', _format_value(context.decision.get('promoted_total'), 'int'), 'strictly promoted strategies under current gates'),
+        (
+            'Strict Pass Rate',
+            _format_value(selection.strict_rate, 'percent'),
+            f"{int(context.decision.get('promoted_total') or 0)} / {int(context.decision.get('total_evaluated') or 0)}",
+        ),
+        ('Candidate Pool', _format_value(context.decision.get('candidate_pool_total'), 'int'), str(context.decision.get('next_action') or 'review queue')),
+        ('Pool Rate', _format_value(selection.candidate_pool_rate, 'percent'), 'candidate-pool eligible / total evaluated'),
+        ('Total Evaluated', _format_value(context.decision.get('total_evaluated'), 'int'), f"selected timeframe = {selection.selected_timeframe}"),
+        ('Peak RSS', f"{float(context.decision.get('max_peak_rss_mib') or 0.0):.1f} MiB", 'highest recorded exact-window memory sample'),
+        ('Positive OOS Candidates', _format_value(selection.positive_oos, 'int'), 'full candidate set with positive OOS return'),
+        ('Selected OOS Return', _format_value(selection.selected_oos.get('return'), 'percent'), f"{selection.selected_best.get('name') or 'no best row'}"),
+        (
+            'Selected OOS Sharpe',
+            _format_value(selection.selected_oos.get('sharpe'), 'float3'),
+            f"PBO { _format_value(selection.selected_oos.get('pbo'), 'float3') } | trades { _format_value(selection.selected_oos.get('trade_count'), 'int') }",
+        ),
+        (
+            'Portfolio OOS Return',
+            _format_value((selection.portfolio.get('oos') or {}).get('return'), 'percent'),
+            f"construction = {selection.portfolio.get('construction_basis') or 'n/a'}",
+        ),
+        (
+            'Portfolio OOS Sharpe',
+            _format_value((selection.portfolio.get('oos') or {}).get('sharpe'), 'float3'),
+            f"Portfolio PBO { _format_value((selection.portfolio.get('oos') or {}).get('pbo'), 'float3') }",
+        ),
+        ('Mixed-Asset Rows', _format_value(len(selection.mixed_asset_rows), 'int'), 'crypto/metal pairs in saved candidate details'),
+        ('Pure Metal Rows', _format_value(len(selection.pure_metal_rows), 'int'), 'metal-only candidates in saved candidate details'),
     ]
-    st.markdown(
-        '<div class="exact-window-card-grid">' + ''.join(_card_html(*card) for card in header_cards) + '</div>',
-        unsafe_allow_html=True,
-    )
-    summary_frame = _timeframe_summary_frame(timeframe_rows)
-    metric_matrix = _metric_matrix_frame(timeframe_rows)
+    _render_exact_window_card_grid(header_cards)
 
-    st.subheader("Deployment / Portfolio Candidate Panel")
-    if deployment_frame.empty:
-        st.info("No deployment candidate panel available yet.")
-    else:
-        deployment_cards = [
-            ("Deployment Sleeves", _format_value(len(deployment_rows), "int"), "current composition = strict anchor + mixed-asset watchlist"),
-            ("Combo OOS Return", _format_value(deployment_oos_metrics.get("return"), "percent"), "equal-weight experimental blend"),
-            ("Combo OOS Sharpe", _format_value(deployment_oos_metrics.get("sharpe"), "float3"), f"PBO { _format_value(deployment_oos_metrics.get('pbo'), 'float3') }"),
-            ("Combo OOS Max DD", _format_value(deployment_oos_metrics.get("max_drawdown"), "percent"), f"trades { _format_value(deployment_oos_metrics.get('trade_count'), 'int') }"),
-            ("Saved Scenario", str(deployment_artifact.get("scenario_id") or "live"), str(deployment_artifact.get("generated_at") or "computed live")),
-            ("Scenario Count", _format_value(deployment_scenario_count, "int"), "saved deployment scenario variants"),
-        ]
-        st.markdown(
-            '<div class="exact-window-card-grid">' + ''.join(_card_html(*card) for card in deployment_cards) + '</div>',
-            unsafe_allow_html=True,
+
+
+def _render_exact_window_deployment_panel(selection: _ExactWindowDashboardSelection) -> None:
+    st.subheader('Deployment / Portfolio Candidate Panel')
+    if selection.deployment_frame.empty:
+        st.info('No deployment candidate panel available yet.')
+        return
+
+    deployment_cards = [
+        ('Deployment Sleeves', _format_value(len(selection.deployment_rows), 'int'), 'current composition = strict anchor + mixed-asset watchlist'),
+        ('Combo OOS Return', _format_value(selection.deployment_oos_metrics.get('return'), 'percent'), 'equal-weight experimental blend'),
+        (
+            'Combo OOS Sharpe',
+            _format_value(selection.deployment_oos_metrics.get('sharpe'), 'float3'),
+            f"PBO { _format_value(selection.deployment_oos_metrics.get('pbo'), 'float3') }",
+        ),
+        (
+            'Combo OOS Max DD',
+            _format_value(selection.deployment_oos_metrics.get('max_drawdown'), 'percent'),
+            f"trades { _format_value(selection.deployment_oos_metrics.get('trade_count'), 'int') }",
+        ),
+        ('Saved Scenario', str(selection.deployment_artifact.get('scenario_id') or 'live'), str(selection.deployment_artifact.get('generated_at') or 'computed live')),
+        ('Scenario Count', _format_value(selection.deployment_scenario_count, 'int'), 'saved deployment scenario variants'),
+    ]
+    _render_exact_window_card_grid(deployment_cards)
+    if selection.deployment_artifact:
+        st.caption(
+            f"Saved deployment artifact: {selection.deployment_artifact.get('label') or selection.deployment_artifact.get('scenario_id')} "
+            f"· generated {selection.deployment_artifact.get('generated_at')}"
         )
-        if deployment_artifact:
-            st.caption(
-                f"Saved deployment artifact: {deployment_artifact.get('label') or deployment_artifact.get('scenario_id')} "
-                f"· generated {deployment_artifact.get('generated_at')}"
-            )
-        dep_left, dep_right = st.columns((1.3, 1.7))
-        with dep_left:
-            st.caption("Component sleeves")
-            st.dataframe(_format_frame(deployment_frame), use_container_width=True, hide_index=True)
-        with dep_right:
-            st.caption("Experimental OOS overlap / staged blend")
-            if deployment_oos_curve.empty:
-                st.info("No OOS combo curve available.")
-            else:
-                st.line_chart(deployment_oos_curve, use_container_width=True)
+    dep_left, dep_right = st.columns((1.3, 1.7))
+    with dep_left:
+        st.caption('Component sleeves')
+        st.dataframe(_format_frame(selection.deployment_frame), use_container_width=True, hide_index=True)
+    with dep_right:
+        st.caption('Experimental OOS overlap / staged blend')
+        if selection.deployment_oos_curve.empty:
+            st.info('No OOS combo curve available.')
+        else:
+            st.line_chart(selection.deployment_oos_curve, use_container_width=True)
 
+
+
+def _render_exact_window_visual_cockpit(
+    context: _ExactWindowDashboardContext,
+    selection: _ExactWindowDashboardSelection,
+) -> None:
     command_top_left, command_top_right = st.columns((1.3, 1.1))
     with command_top_left:
-        st.subheader("Performance Map")
-        scatter_fig = _oos_scatter_figure(summary_frame)
+        st.subheader('Performance Map')
+        scatter_fig = _oos_scatter_figure(selection.summary_frame)
         if scatter_fig is None:
-            st.info("No OOS scatter view available.")
+            st.info('No OOS scatter view available.')
         else:
             st.plotly_chart(scatter_fig, use_container_width=True)
     with command_top_right:
-        st.subheader("Metric Heatmap")
-        heatmap_fig = _metric_heatmap_figure(metric_matrix)
+        st.subheader('Metric Heatmap')
+        heatmap_fig = _metric_heatmap_figure(selection.metric_matrix)
         if heatmap_fig is None:
-            st.info("No metric heatmap available.")
+            st.info('No metric heatmap available.')
         else:
             st.plotly_chart(heatmap_fig, use_container_width=True)
 
     command_bottom_left, command_bottom_mid, command_bottom_right = st.columns((1.0, 1.0, 1.15))
     with command_bottom_left:
-        st.subheader("Memory by Timeframe")
-        rss_fig = _rss_bar_figure(summary_frame)
+        st.subheader('Memory by Timeframe')
+        rss_fig = _rss_bar_figure(selection.summary_frame)
         if rss_fig is None:
-            st.info("No memory chart available.")
+            st.info('No memory chart available.')
         else:
             st.plotly_chart(rss_fig, use_container_width=True)
     with command_bottom_mid:
-        st.subheader("Window Timeline")
-        window_fig = _window_timeline_figure(summary)
+        st.subheader('Window Timeline')
+        window_fig = _window_timeline_figure(context.summary)
         if window_fig is None:
-            st.info("No window timeline available.")
+            st.info('No window timeline available.')
         else:
             st.plotly_chart(window_fig, use_container_width=True)
     with command_bottom_right:
-        st.subheader("Coverage Timeline")
-        coverage_fig = _coverage_timeline_figure(coverage_status)
+        st.subheader('Coverage Timeline')
+        coverage_fig = _coverage_timeline_figure(context.coverage_status)
         if coverage_fig is None:
-            st.info("No coverage timeline available.")
+            st.info('No coverage timeline available.')
         else:
             st.plotly_chart(coverage_fig, use_container_width=True)
 
+
+
+def _render_exact_window_control_strip(
+    context: _ExactWindowDashboardContext,
+    selection: _ExactWindowDashboardSelection,
+) -> None:
     control_left, control_mid, control_right = st.columns((1.2, 1.4, 1.4))
     with control_left:
         st.markdown(
             _panel_html(
-                "Execution profile",
-                "Windowing, requested symbols/timeframes, and whether this bundle was custom-windowed.",
+                'Execution profile',
+                'Windowing, requested symbols/timeframes, and whether this bundle was custom-windowed.',
                 [
-                    _status_chip("Custom windows", "yes" if execution_profile.get("custom_windows") else "no"),
-                    _status_chip("Allow metals", "yes" if execution_profile.get("allow_metals") else "no"),
-                    _status_chip("Requested TF", ", ".join(execution_profile.get("requested_timeframes") or [])),
+                    _status_chip('Custom windows', 'yes' if selection.execution_profile.get('custom_windows') else 'no'),
+                    _status_chip('Allow metals', 'yes' if selection.execution_profile.get('allow_metals') else 'no'),
+                    _status_chip('Requested TF', ', '.join(selection.execution_profile.get('requested_timeframes') or [])),
                 ],
             ),
             unsafe_allow_html=True,
         )
     with control_mid:
-        metals_blocker = bundle.get("followup_status", {}).get("metals_blocker_latest") or {}
+        metals_blocker = context.bundle.get('followup_status', {}).get('metals_blocker_latest') or {}
         st.markdown(
             _panel_html(
-                "Metal / mixed-asset status",
-                str(metals_blocker.get("reason") or "Metals allowed when requested; dashboard now surfaces blocker state explicitly."),
+                'Metal / mixed-asset status',
+                str(metals_blocker.get('reason') or 'Metals allowed when requested; dashboard now surfaces blocker state explicitly.'),
                 [
-                    _status_chip("Requested", len(metals_blocker.get("requested_symbols") or execution_profile.get("requested_symbols") or [])),
-                    _status_chip("Eligible", len(metals_blocker.get("eligible_symbols") or summary.get("eligible_symbols") or [])),
-                    _status_chip("Blocked metals", len(metals_blocker.get("blocked_metals") or [])),
+                    _status_chip('Requested', len(metals_blocker.get('requested_symbols') or selection.execution_profile.get('requested_symbols') or [])),
+                    _status_chip('Eligible', len(metals_blocker.get('eligible_symbols') or context.summary.get('eligible_symbols') or [])),
+                    _status_chip('Blocked metals', len(metals_blocker.get('blocked_metals') or [])),
                 ],
             ),
             unsafe_allow_html=True,
@@ -1569,443 +1768,569 @@ def render_exact_window_dashboard(*, standalone: bool = True) -> None:
     with control_right:
         st.markdown(
             _panel_html(
-                "Memory discipline",
-                "Heavy runs remain serialized and the page exposes run-level RSS evidence so the 8GB ceiling stays auditable.",
+                'Memory discipline',
+                'Heavy runs remain serialized and the page exposes run-level RSS evidence so the 8GB ceiling stays auditable.',
                 [
-                    _status_chip("Decision peak", f"{float(decision.get('max_peak_rss_mib') or 0.0):.1f} MiB"),
-                    _status_chip("Root memory status", (memory_evidence or {}).get("status") or "n/a"),
-                    _status_chip("Queue items", len(queue_rows)),
+                    _status_chip('Decision peak', f"{float(context.decision.get('max_peak_rss_mib') or 0.0):.1f} MiB"),
+                    _status_chip('Root memory status', (context.memory_evidence or {}).get('status') or 'n/a'),
+                    _status_chip('Queue items', len(selection.queue_rows)),
                 ],
             ),
             unsafe_allow_html=True,
         )
 
-    st.subheader("All Timeframes At a Glance")
-    st.markdown('<div class="exact-window-section-caption">Every timeframe, best candidate, risk/return profile, and rejection reason on one screen.</div>', unsafe_allow_html=True)
+
+
+def _render_exact_window_timeframe_overview(
+    context: _ExactWindowDashboardContext,
+    selection: _ExactWindowDashboardSelection,
+) -> None:
+    st.subheader('All Timeframes At a Glance')
+    st.markdown(
+        '<div class="exact-window-section-caption">Every timeframe, best candidate, risk/return profile, and rejection reason on one screen.</div>',
+        unsafe_allow_html=True,
+    )
     st.markdown(
         '<div class="exact-window-tf-grid">'
-        + ''.join(_timeframe_card_html(row) for row in sorted(timeframe_rows, key=lambda item: _timeframe_sort_key(str(item.get("timeframe") or ""))))
+        + ''.join(
+            _timeframe_card_html(row)
+            for row in sorted(context.timeframe_rows, key=lambda item: _timeframe_sort_key(str(item.get('timeframe') or '')))
+        )
         + '</div>',
         unsafe_allow_html=True,
     )
-    st.dataframe(_format_frame(summary_frame), use_container_width=True, hide_index=True)
+    st.dataframe(_format_frame(selection.summary_frame), use_container_width=True, hide_index=True)
 
     matrix_left, matrix_right = st.columns((1.4, 1.6))
     with matrix_left:
-        st.subheader("Metric Matrix")
-        if metric_matrix.empty:
-            st.info("No timeframe metric matrix available.")
+        st.subheader('Metric Matrix')
+        if selection.metric_matrix.empty:
+            st.info('No timeframe metric matrix available.')
         else:
-            st.dataframe(_format_frame(metric_matrix.reset_index()), use_container_width=True, hide_index=True)
+            st.dataframe(_format_frame(selection.metric_matrix.reset_index()), use_container_width=True, hide_index=True)
     with matrix_right:
-        st.subheader("Universe Coverage / Metals")
-        if coverage_status.empty:
-            st.info("No coverage table available.")
+        st.subheader('Universe Coverage / Metals')
+        if context.coverage_status.empty:
+            st.info('No coverage table available.')
         else:
-            st.dataframe(coverage_status, use_container_width=True, hide_index=True)
+            st.dataframe(context.coverage_status, use_container_width=True, hide_index=True)
 
+
+
+def _render_exact_window_candidate_analysis(
+    context: _ExactWindowDashboardContext,
+    selection: _ExactWindowDashboardSelection,
+) -> None:
     overview_left, overview_right = st.columns((3, 2))
     with overview_left:
-        st.subheader("Selection / Promotion Overview")
-        candidate_pool_frame = _candidate_pool_frame(decision)
+        st.subheader('Selection / Promotion Overview')
+        candidate_pool_frame = _candidate_pool_frame(context.decision)
         if candidate_pool_frame.empty:
-            st.info("No candidate-pool rows are currently saved.")
+            st.info('No candidate-pool rows are currently saved.')
         else:
             st.dataframe(_format_frame(candidate_pool_frame), use_container_width=True, hide_index=True)
     with overview_right:
-        st.subheader("Strict Pass Anchor")
-        strict_frame = _strict_pass_frame(decision)
+        st.subheader('Strict Pass Anchor')
+        strict_frame = _strict_pass_frame(context.decision)
         if strict_frame.empty:
-            st.info("No strict-pass strategy saved.")
+            st.info('No strict-pass strategy saved.')
         else:
             st.dataframe(_format_frame(strict_frame), use_container_width=True, hide_index=True)
 
-    st.subheader("Candidate Leaderboards")
-    candidate_scope = details_frame
-    if not details_frame.empty:
-        if leaderboard_mode == "selected timeframe":
-            candidate_scope = details_frame[details_frame["timeframe"] == selected_timeframe]
-        elif leaderboard_mode == "mixed assets":
-            candidate_scope = details_frame[details_frame["asset_mix"] == "crypto-metal mix"]
-        elif leaderboard_mode == "metals":
-            candidate_scope = details_frame[details_frame["asset_mix"].isin(["pure metal", "crypto-metal mix"])]
+    st.subheader('Candidate Leaderboards')
     board_left, board_mid, board_right = st.columns(3)
     with board_left:
-        st.caption("Top by OOS quality")
+        st.caption('Top by OOS quality')
         frame = (
-            candidate_scope.sort_values(["oos_sharpe", "oos_return"], ascending=[False, False])
-            if not candidate_scope.empty
+            selection.candidate_scope.sort_values(['oos_sharpe', 'oos_return'], ascending=[False, False])
+            if not selection.candidate_scope.empty
             else pd.DataFrame()
         )
         st.dataframe(
             _format_frame(
                 _top_candidates(
                     frame,
-                    columns=["timeframe", "asset_mix", "strategy", "name", "symbols", "oos_return", "oos_sharpe", "oos_sortino", "oos_calmar", "oos_mdd", "oos_pbo"],
+                    columns=['timeframe', 'asset_mix', 'strategy', 'name', 'symbols', 'oos_return', 'oos_sharpe', 'oos_sortino', 'oos_calmar', 'oos_mdd', 'oos_pbo'],
                 )
             ),
             use_container_width=True,
             hide_index=True,
         )
     with board_mid:
-        st.caption("Top by validation")
+        st.caption('Top by validation')
         frame = (
-            candidate_scope.sort_values(["val_sharpe", "val_return"], ascending=[False, False])
-            if not candidate_scope.empty
+            selection.candidate_scope.sort_values(['val_sharpe', 'val_return'], ascending=[False, False])
+            if not selection.candidate_scope.empty
             else pd.DataFrame()
         )
         st.dataframe(
             _format_frame(
                 _top_candidates(
                     frame,
-                    columns=["timeframe", "asset_mix", "strategy", "name", "symbols", "val_return", "val_sharpe", "val_pbo", "oos_return", "oos_sharpe"],
+                    columns=['timeframe', 'asset_mix', 'strategy', 'name', 'symbols', 'val_return', 'val_sharpe', 'val_pbo', 'oos_return', 'oos_sharpe'],
                 )
             ),
             use_container_width=True,
             hide_index=True,
         )
     with board_right:
-        st.caption("Top by execution realism")
+        st.caption('Top by execution realism')
         frame = (
-            candidate_scope.sort_values(["oos_trades", "oos_win_rate", "oos_avg_trade"], ascending=[False, False, False])
-            if not candidate_scope.empty
+            selection.candidate_scope.sort_values(['oos_trades', 'oos_win_rate', 'oos_avg_trade'], ascending=[False, False, False])
+            if not selection.candidate_scope.empty
             else pd.DataFrame()
         )
         st.dataframe(
             _format_frame(
                 _top_candidates(
                     frame,
-                    columns=["timeframe", "asset_mix", "strategy", "name", "symbols", "oos_trades", "oos_turnover", "oos_win_rate", "oos_avg_trade", "rejects"],
+                    columns=['timeframe', 'asset_mix', 'strategy', 'name', 'symbols', 'oos_trades', 'oos_turnover', 'oos_win_rate', 'oos_avg_trade', 'rejects'],
                 )
             ),
             use_container_width=True,
             hide_index=True,
         )
 
-    family_frame, mix_frame = _family_mix_frame(details_frame)
+    family_frame, mix_frame = _family_mix_frame(context.details_frame)
     mix_left, mix_right = st.columns(2)
     with mix_left:
-        st.subheader("Family / Timeframe Distribution")
+        st.subheader('Family / Timeframe Distribution')
         if family_frame.empty:
-            st.info("No family distribution available.")
+            st.info('No family distribution available.')
         else:
             st.dataframe(family_frame, use_container_width=True, hide_index=True)
     with mix_right:
-        st.subheader("Asset-Mix Distribution")
+        st.subheader('Asset-Mix Distribution')
         if mix_frame.empty:
-            st.info("No asset-mix distribution available.")
+            st.info('No asset-mix distribution available.')
         else:
             st.dataframe(mix_frame, use_container_width=True, hide_index=True)
 
-    fail_by_reason, fail_by_timeframe, fail_proposals = _fail_reason_summary(bundle)
+    fail_by_reason, fail_by_timeframe, fail_proposals = _fail_reason_summary(context.bundle)
     fail_left, fail_mid, fail_right = st.columns((1.2, 1.5, 2.1))
     with fail_left:
-        st.subheader("Reject Reasons")
+        st.subheader('Reject Reasons')
         if fail_by_reason.empty:
-            st.info("No fail analysis available.")
+            st.info('No fail analysis available.')
         else:
             st.dataframe(fail_by_reason, use_container_width=True, hide_index=True)
     with fail_mid:
-        st.subheader("Rejects by Timeframe")
+        st.subheader('Rejects by Timeframe')
         if fail_by_timeframe.empty:
-            st.info("No timeframe breakdown available.")
+            st.info('No timeframe breakdown available.')
         else:
             st.dataframe(fail_by_timeframe, use_container_width=True, hide_index=True)
     with fail_right:
-        st.subheader("Next-Step Proposals")
+        st.subheader('Next-Step Proposals')
         if fail_proposals.empty:
-            st.info("No proposals generated.")
+            st.info('No proposals generated.')
         else:
             st.dataframe(fail_proposals, use_container_width=True, hide_index=True)
 
-    if next_iteration:
-        with st.expander("Next Iteration Triage", expanded=True):
-            st.json(next_iteration)
+    if context.next_iteration:
+        with st.expander('Next Iteration Triage', expanded=True):
+            st.json(context.next_iteration)
 
-    st.subheader(f"Selected Timeframe Deep Dive — {selected_timeframe}")
+
+
+def _render_exact_window_selected_timeframe_summary(selection: _ExactWindowDashboardSelection) -> None:
+    st.subheader(f'Selected Timeframe Deep Dive — {selection.selected_timeframe}')
     selected_metrics = [
-        ("Evaluated", _format_value(selected_row.get("evaluated_count"), "int")),
-        ("Candidate Pool", _format_value(selected_row.get("candidate_pool_strategy_count"), "int")),
-        ("BTC Beating", _format_value(selected_row.get("btc_beating_strategy_count"), "int")),
-        ("Peak RSS", f"{float((selected_row.get('memory_evidence') or {}).get('peak_rss_mib') or 0.0):.1f} MiB"),
-        ("Validation Score", _format_value(selected_best.get("validation_score"), "float3")),
-        ("Timeframe Selection", _format_value(selected_best.get("timeframe_selection_score"), "float3")),
-        ("OOS Trades", _format_value(selected_oos.get("trade_count"), "int")),
-        ("OOS PBO", _format_value(selected_oos.get("pbo"), "float3")),
+        ('Evaluated', _format_value(selection.selected_row.get('evaluated_count'), 'int')),
+        ('Candidate Pool', _format_value(selection.selected_row.get('candidate_pool_strategy_count'), 'int')),
+        ('BTC Beating', _format_value(selection.selected_row.get('btc_beating_strategy_count'), 'int')),
+        ('Peak RSS', f"{float((selection.selected_row.get('memory_evidence') or {}).get('peak_rss_mib') or 0.0):.1f} MiB"),
+        ('Validation Score', _format_value(selection.selected_best.get('validation_score'), 'float3')),
+        ('Timeframe Selection', _format_value(selection.selected_best.get('timeframe_selection_score'), 'float3')),
+        ('OOS Trades', _format_value(selection.selected_oos.get('trade_count'), 'int')),
+        ('OOS PBO', _format_value(selection.selected_oos.get('pbo'), 'float3')),
     ]
-    st.markdown(
-        '<div class="exact-window-card-grid">'
-        + ''.join(_card_html(label, value, selected_best.get('strategy_class') or selected_best.get('name') or '—') for label, value in selected_metrics)
-        + '</div>',
-        unsafe_allow_html=True,
+    _render_exact_window_card_grid(
+        [
+            (
+                label,
+                value,
+                selection.selected_best.get('strategy_class') or selection.selected_best.get('name') or '—',
+            )
+            for label, value in selected_metrics
+        ]
     )
-    st.caption("Train / validation / OOS cockpit")
-    st.markdown(_split_cockpit_html(selected_best), unsafe_allow_html=True)
+    st.caption('Train / validation / OOS cockpit')
+    st.markdown(_split_cockpit_html(selection.selected_best), unsafe_allow_html=True)
 
+
+
+def _render_exact_window_overview_tab(selection: _ExactWindowDashboardSelection) -> None:
+    best_snapshot = _best_row_snapshot(selection.selected_best)
+    if best_snapshot.empty:
+        st.info('No best row available for this timeframe.')
+        return
+
+    st.dataframe(_format_frame(best_snapshot), use_container_width=True, hide_index=True)
+    left, right = st.columns((3, 2))
+    with left:
+        st.write('Symbols')
+        st.write(selection.selected_best.get('symbols') or [])
+        st.write('Rejection reasons')
+        st.write(selection.selected_best.get('rejection_reasons') or [])
+        st.write('Hard reject reasons')
+        st.json(selection.selected_best.get('hard_reject_reasons') or {})
+    with right:
+        st.write('Parameters')
+        st.json(selection.selected_best.get('params') or {})
+        st.write('Metadata')
+        st.json(selection.selected_best.get('metadata') or {})
+
+
+
+def _render_exact_window_deployment_tab(
+    context: _ExactWindowDashboardContext,
+    selection: _ExactWindowDashboardSelection,
+) -> None:
+    if selection.deployment_frame.empty:
+        st.info('No deployment panel available.')
+        return
+
+    if selection.deployment_artifact:
+        st.caption(
+            f"Primary deployment artifact: {selection.deployment_artifact.get('scenario_id')} · "
+            f"{selection.deployment_artifact.get('label')} · generated {selection.deployment_artifact.get('generated_at')}"
+        )
+    st.dataframe(_format_frame(selection.deployment_frame), use_container_width=True, hide_index=True)
+    dep_tab_left, dep_tab_right = st.columns((1.0, 1.6))
+    with dep_tab_left:
+        st.caption('Blend metrics by split')
+        st.dataframe(_format_frame(selection.deployment_split_metrics_frame), use_container_width=True, hide_index=True)
+    with dep_tab_right:
+        if selection.deployment_oos_curve.empty:
+            st.info('No OOS deployment blend curve available.')
+        else:
+            st.caption('Equal-weight OOS blend curve')
+            st.line_chart(selection.deployment_oos_curve, use_container_width=True)
+    if not selection.deployment_scenario_frame.empty:
+        scenario_left, scenario_right = st.columns((1.2, 1.6))
+        with scenario_left:
+            st.caption('Deployment scenario matrix')
+            st.dataframe(_format_frame(selection.deployment_scenario_frame), use_container_width=True, hide_index=True)
+        with scenario_right:
+            if selection.deployment_scenario_curve.empty:
+                st.info('No deployment scenario comparison curve available.')
+            else:
+                st.caption('Scenario comparison — OOS cumulative return')
+                st.line_chart(selection.deployment_scenario_curve, use_container_width=True)
+    if selection.deployment_artifact or selection.deployment_scenarios_artifact:
+        with st.expander('Deployment artifact paths', expanded=False):
+            st.json(
+                {
+                    'deployment_combo_json': context.bundle.get('followup_status_root') and str(Path(str(context.bundle.get('followup_status_root'))) / 'deployment_combo_latest.json'),
+                    'deployment_combo_md': context.bundle.get('followup_status_root') and str(Path(str(context.bundle.get('followup_status_root'))) / 'deployment_combo_latest.md'),
+                    'deployment_scenarios_json': context.bundle.get('followup_status_root') and str(Path(str(context.bundle.get('followup_status_root'))) / 'deployment_scenarios_latest.json'),
+                    'deployment_scenarios_md': context.bundle.get('followup_status_root') and str(Path(str(context.bundle.get('followup_status_root'))) / 'deployment_scenarios_latest.md'),
+                }
+            )
+
+
+
+def _render_exact_window_leaderboards_tab(selection: _ExactWindowDashboardSelection) -> None:
+    if selection.candidate_scope.empty:
+        st.info('No leaderboard rows available for this filter.')
+    else:
+        st.dataframe(_format_frame(selection.candidate_scope), use_container_width=True, hide_index=True)
+
+
+
+def _render_exact_window_time_series_tab(selection: _ExactWindowDashboardSelection) -> None:
+    cumulative = _chart_frame(selection.selected_best, 'cumulative_return')
+    raw_returns = _chart_frame(selection.selected_best, 'return')
+    drawdown = _chart_frame(selection.selected_best, 'drawdown')
+    if cumulative.empty:
+        st.info('Return streams not available for this timeframe.')
+        return
+
+    top, bottom = st.columns(2)
+    with top:
+        st.caption('Cumulative return by split')
+        st.line_chart(cumulative, use_container_width=True)
+    with bottom:
+        st.caption('Drawdown by split')
+        st.line_chart(drawdown, use_container_width=True)
+    st.caption('Raw periodic return by split')
+    st.line_chart(raw_returns, use_container_width=True)
+    with st.expander('Raw stream preview', expanded=False):
+        preview = pd.concat(
+            [_stream_frame((selection.selected_best.get('return_streams') or {}).get(split) or [], split) for split in _SPLIT_ORDER],
+            ignore_index=True,
+        )
+        st.dataframe(preview.tail(100), use_container_width=True, hide_index=True)
+
+
+
+def _render_exact_window_split_metrics_tab(selection: _ExactWindowDashboardSelection) -> None:
+    st.dataframe(_split_metrics_frame(selection.selected_best), use_container_width=True, hide_index=True)
+
+
+
+def _render_exact_window_portfolio_tab(summary: dict[str, Any]) -> None:
+    portfolio_metrics = _portfolio_metrics_frame(summary)
+    portfolio_weights = _portfolio_weights_frame(summary)
+    port_left, port_right = st.columns((2, 3))
+    with port_left:
+        if portfolio_metrics.empty:
+            st.info('No portfolio metrics available.')
+        else:
+            st.dataframe(portfolio_metrics, use_container_width=True, hide_index=True)
+    with port_right:
+        if portfolio_weights.empty:
+            st.info('No portfolio weights available.')
+        else:
+            st.dataframe(_format_frame(portfolio_weights), use_container_width=True, hide_index=True)
+    portfolio_curve = _portfolio_chart_frame(summary, 'cumulative_return')
+    portfolio_dd = _portfolio_chart_frame(summary, 'drawdown')
+    if not portfolio_curve.empty:
+        port_curve_col, port_dd_col = st.columns(2)
+        with port_curve_col:
+            st.caption('Portfolio cumulative return by split')
+            st.line_chart(portfolio_curve, use_container_width=True)
+        with port_dd_col:
+            st.caption('Portfolio drawdown by split')
+            st.line_chart(portfolio_dd, use_container_width=True)
+
+
+
+def _render_exact_window_monthly_hurdles_tab(selection: _ExactWindowDashboardSelection) -> None:
+    hurdle_frame = _monthly_hurdle_frame(selection.selected_best)
+    if hurdle_frame.empty:
+        st.info('No monthly hurdle data available.')
+        return
+
+    st.dataframe(_format_frame(hurdle_frame), use_container_width=True, hide_index=True)
+    hurdle_chart = hurdle_frame[['month', 'split', 'strategy_return', 'threshold', 'btc_buy_hold_return']].copy()
+    hurdle_chart['series'] = hurdle_chart['split'] + ' strategy'
+    strategy_pivot = hurdle_chart.pivot_table(index='month', columns='series', values='strategy_return', aggfunc='last')
+    threshold_pivot = hurdle_chart.pivot_table(index='month', columns='split', values='threshold', aggfunc='last')
+    threshold_pivot.columns = [f'{column} threshold' for column in threshold_pivot.columns]
+    btc_pivot = hurdle_chart.pivot_table(index='month', columns='split', values='btc_buy_hold_return', aggfunc='last')
+    btc_pivot.columns = [f'{column} btc' for column in btc_pivot.columns]
+    plot_frame = pd.concat([strategy_pivot, threshold_pivot, btc_pivot], axis=1).sort_index()
+    st.caption('Monthly hurdle comparison')
+    st.line_chart(plot_frame, use_container_width=True)
+
+
+
+def _render_exact_window_universe_tab(
+    context: _ExactWindowDashboardContext,
+) -> None:
+    st.write('Coverage table')
+    if context.coverage_status.empty:
+        st.info('No coverage table available.')
+    else:
+        st.dataframe(context.coverage_status, use_container_width=True, hide_index=True)
+    mixed_scope = context.details_frame[context.details_frame['asset_mix'] == 'crypto-metal mix'] if not context.details_frame.empty else pd.DataFrame()
+    metal_scope = context.details_frame[context.details_frame['asset_mix'].isin(['pure metal', 'crypto-metal mix'])] if not context.details_frame.empty else pd.DataFrame()
+    uni_left, uni_right = st.columns(2)
+    with uni_left:
+        st.caption('Mixed-asset candidates')
+        if mixed_scope.empty:
+            st.info('No saved crypto-metal candidates in current details bundle.')
+        else:
+            st.dataframe(
+                _format_frame(
+                    _top_candidates(
+                        mixed_scope.sort_values(['oos_sharpe', 'oos_return'], ascending=[False, False]),
+                        columns=['timeframe', 'strategy', 'name', 'symbols', 'val_return', 'oos_return', 'oos_sharpe', 'oos_pbo', 'oos_trades'],
+                    )
+                ),
+                use_container_width=True,
+                hide_index=True,
+            )
+    with uni_right:
+        st.caption('Metals blocker / notes')
+        st.json(context.bundle.get('followup_status', {}).get('metals_blocker_latest') or {})
+        if not metal_scope.empty:
+            st.caption('Metal-linked candidates')
+            st.dataframe(
+                _format_frame(
+                    _top_candidates(
+                        metal_scope.sort_values(['oos_sharpe', 'oos_return'], ascending=[False, False]),
+                        columns=['timeframe', 'asset_mix', 'strategy', 'name', 'symbols', 'oos_return', 'oos_sharpe', 'oos_pbo', 'rejects'],
+                    )
+                ),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+
+
+def _render_exact_window_followup_tab(context: _ExactWindowDashboardContext) -> None:
+    if context.followup_frame.empty:
+        st.info('No follow-up runs saved.')
+        return
+
+    st.dataframe(_format_frame(context.followup_frame), use_container_width=True, hide_index=True)
+    status_chart = context.followup_frame.assign(stage_name=context.followup_frame['stage']).set_index('stage_name')[['peak_rss_mib']].dropna()
+    if not status_chart.empty:
+        st.caption('Follow-up peak RSS (MiB)')
+        st.bar_chart(status_chart, use_container_width=True)
+
+
+
+def _render_exact_window_registry_tab(context: _ExactWindowDashboardContext) -> None:
+    archive_payload = context.bundle.get('followup_status', {}).get('backtest_log_archive_latest') or {}
+    if context.registry_frame.empty:
+        st.info('No run registry entries saved.')
+    else:
+        st.dataframe(_format_frame(context.registry_frame), use_container_width=True, hide_index=True)
+    with st.expander('Archived log ledger', expanded=False):
+        st.json(archive_payload)
+
+
+
+def _render_exact_window_rejects_tab(
+    context: _ExactWindowDashboardContext,
+    selection: _ExactWindowDashboardSelection,
+) -> None:
+    reject_frame = _reject_reason_frame(selection.selected_row)
+    if reject_frame.empty:
+        st.info('No reject-reason counts available.')
+    else:
+        st.dataframe(reject_frame, use_container_width=True, hide_index=True)
+    with st.expander('Root fail analysis', expanded=False):
+        st.json(context.bundle.get('fail_analysis') or {})
+
+
+
+def _render_exact_window_diagnostics_tab(
+    context: _ExactWindowDashboardContext,
+    selection: _ExactWindowDashboardSelection,
+) -> None:
+    path_frame = pd.DataFrame(
+        [
+            {
+                'summary_path': selection.selected_row.get('summary_path'),
+                'details_path': selection.selected_row.get('details_path'),
+                'fail_analysis_path': selection.selected_row.get('fail_analysis_path'),
+                'source_summary_path': selection.selected_best.get('source_summary_path'),
+                'source_details_path': selection.selected_best.get('source_details_path'),
+            }
+        ]
+    )
+    diag_left, diag_right = st.columns((2, 3))
+    with diag_left:
+        st.write('Artifact Paths')
+        st.dataframe(path_frame, use_container_width=True, hide_index=True)
+        st.write('Selected timeframe memory evidence')
+        st.json(selection.selected_row.get('memory_evidence') or {})
+        if context.memory_evidence:
+            with st.expander('Root latest memory evidence', expanded=False):
+                st.json(context.memory_evidence)
+    with diag_right:
+        st.write('Coverage')
+        coverage_frame = _coverage_frame(context.summary)
+        if coverage_frame.empty:
+            st.info('No coverage table available.')
+        else:
+            st.dataframe(coverage_frame, use_container_width=True, hide_index=True)
+        with st.expander('Execution Profile', expanded=False):
+            st.json(context.summary.get('execution_profile') or {})
+        with st.expander('Windows', expanded=False):
+            st.json(context.summary.get('windows') or {})
+        with st.expander('Bundle Paths', expanded=False):
+            st.json(
+                {
+                    'summary_generated_at': context.summary.get('generated_at'),
+                    'latest_pointer': context.bundle.get('latest_pointer'),
+                    'run_root': context.bundle.get('run_root'),
+                    'root_paths': context.bundle.get('paths'),
+                    'followup_status_root': context.bundle.get('followup_status_root'),
+                }
+            )
+
+
+
+def _render_exact_window_selected_timeframe_tabs(
+    context: _ExactWindowDashboardContext,
+    selection: _ExactWindowDashboardSelection,
+) -> None:
     tabs = st.tabs(
         [
-            "Overview",
-            "Deployment",
-            "Leaderboards",
-            "Time-Series",
-            "Split Metrics",
-            "Portfolio",
-            "Monthly Hurdles",
-            "Universe & Metals",
-            "Follow-up Runs",
-            "Run Registry",
-            "Reject Reasons",
-            "Diagnostics",
+            'Overview',
+            'Deployment',
+            'Leaderboards',
+            'Time-Series',
+            'Split Metrics',
+            'Portfolio',
+            'Monthly Hurdles',
+            'Universe & Metals',
+            'Follow-up Runs',
+            'Run Registry',
+            'Reject Reasons',
+            'Diagnostics',
         ]
     )
 
     with tabs[0]:
-        best_snapshot = _best_row_snapshot(selected_best)
-        if best_snapshot.empty:
-            st.info("No best row available for this timeframe.")
-        else:
-            st.dataframe(_format_frame(best_snapshot), use_container_width=True, hide_index=True)
-            left, right = st.columns((3, 2))
-            with left:
-                st.write("Symbols")
-                st.write(selected_best.get("symbols") or [])
-                st.write("Rejection reasons")
-                st.write(selected_best.get("rejection_reasons") or [])
-                st.write("Hard reject reasons")
-                st.json(selected_best.get("hard_reject_reasons") or {})
-            with right:
-                st.write("Parameters")
-                st.json(selected_best.get("params") or {})
-                st.write("Metadata")
-                st.json(selected_best.get("metadata") or {})
-
+        _render_exact_window_overview_tab(selection)
     with tabs[1]:
-        if deployment_frame.empty:
-            st.info("No deployment panel available.")
-        else:
-            if deployment_artifact:
-                st.caption(
-                    f"Primary deployment artifact: {deployment_artifact.get('scenario_id')} · "
-                    f"{deployment_artifact.get('label')} · generated {deployment_artifact.get('generated_at')}"
-                )
-            st.dataframe(_format_frame(deployment_frame), use_container_width=True, hide_index=True)
-            dep_tab_left, dep_tab_right = st.columns((1.0, 1.6))
-            with dep_tab_left:
-                st.caption("Blend metrics by split")
-                st.dataframe(_format_frame(deployment_split_metrics_frame), use_container_width=True, hide_index=True)
-            with dep_tab_right:
-                if deployment_oos_curve.empty:
-                    st.info("No OOS deployment blend curve available.")
-                else:
-                    st.caption("Equal-weight OOS blend curve")
-                    st.line_chart(deployment_oos_curve, use_container_width=True)
-            if not deployment_scenario_frame.empty:
-                scenario_left, scenario_right = st.columns((1.2, 1.6))
-                with scenario_left:
-                    st.caption("Deployment scenario matrix")
-                    st.dataframe(_format_frame(deployment_scenario_frame), use_container_width=True, hide_index=True)
-                with scenario_right:
-                    if deployment_scenario_curve.empty:
-                        st.info("No deployment scenario comparison curve available.")
-                    else:
-                        st.caption("Scenario comparison — OOS cumulative return")
-                        st.line_chart(deployment_scenario_curve, use_container_width=True)
-            if deployment_artifact or deployment_scenarios_artifact:
-                with st.expander("Deployment artifact paths", expanded=False):
-                    st.json(
-                        {
-                            "deployment_combo_json": bundle.get("followup_status_root") and str(Path(str(bundle.get("followup_status_root"))) / "deployment_combo_latest.json"),
-                            "deployment_combo_md": bundle.get("followup_status_root") and str(Path(str(bundle.get("followup_status_root"))) / "deployment_combo_latest.md"),
-                            "deployment_scenarios_json": bundle.get("followup_status_root") and str(Path(str(bundle.get("followup_status_root"))) / "deployment_scenarios_latest.json"),
-                            "deployment_scenarios_md": bundle.get("followup_status_root") and str(Path(str(bundle.get("followup_status_root"))) / "deployment_scenarios_latest.md"),
-                        }
-                    )
-
+        _render_exact_window_deployment_tab(context, selection)
     with tabs[2]:
-        if candidate_scope.empty:
-            st.info("No leaderboard rows available for this filter.")
-        else:
-            st.dataframe(_format_frame(candidate_scope), use_container_width=True, hide_index=True)
-
+        _render_exact_window_leaderboards_tab(selection)
     with tabs[3]:
-        cumulative = _chart_frame(selected_best, "cumulative_return")
-        raw_returns = _chart_frame(selected_best, "return")
-        drawdown = _chart_frame(selected_best, "drawdown")
-        if cumulative.empty:
-            st.info("Return streams not available for this timeframe.")
-        else:
-            top, bottom = st.columns(2)
-            with top:
-                st.caption("Cumulative return by split")
-                st.line_chart(cumulative, use_container_width=True)
-            with bottom:
-                st.caption("Drawdown by split")
-                st.line_chart(drawdown, use_container_width=True)
-            st.caption("Raw periodic return by split")
-            st.line_chart(raw_returns, use_container_width=True)
-            with st.expander("Raw stream preview", expanded=False):
-                preview = pd.concat(
-                    [_stream_frame((selected_best.get("return_streams") or {}).get(split) or [], split) for split in _SPLIT_ORDER],
-                    ignore_index=True,
-                )
-                st.dataframe(preview.tail(100), use_container_width=True, hide_index=True)
-
+        _render_exact_window_time_series_tab(selection)
     with tabs[4]:
-        split_metrics = _split_metrics_frame(selected_best)
-        st.dataframe(split_metrics, use_container_width=True, hide_index=True)
-
+        _render_exact_window_split_metrics_tab(selection)
     with tabs[5]:
-        portfolio_metrics = _portfolio_metrics_frame(summary)
-        portfolio_weights = _portfolio_weights_frame(summary)
-        port_left, port_right = st.columns((2, 3))
-        with port_left:
-            if portfolio_metrics.empty:
-                st.info("No portfolio metrics available.")
-            else:
-                st.dataframe(portfolio_metrics, use_container_width=True, hide_index=True)
-        with port_right:
-            if portfolio_weights.empty:
-                st.info("No portfolio weights available.")
-            else:
-                st.dataframe(_format_frame(portfolio_weights), use_container_width=True, hide_index=True)
-        portfolio_curve = _portfolio_chart_frame(summary, "cumulative_return")
-        portfolio_dd = _portfolio_chart_frame(summary, "drawdown")
-        if not portfolio_curve.empty:
-            port_curve_col, port_dd_col = st.columns(2)
-            with port_curve_col:
-                st.caption("Portfolio cumulative return by split")
-                st.line_chart(portfolio_curve, use_container_width=True)
-            with port_dd_col:
-                st.caption("Portfolio drawdown by split")
-                st.line_chart(portfolio_dd, use_container_width=True)
-
+        _render_exact_window_portfolio_tab(context.summary)
     with tabs[6]:
-        hurdle_frame = _monthly_hurdle_frame(selected_best)
-        if hurdle_frame.empty:
-            st.info("No monthly hurdle data available.")
-        else:
-            st.dataframe(_format_frame(hurdle_frame), use_container_width=True, hide_index=True)
-            hurdle_chart = hurdle_frame[["month", "split", "strategy_return", "threshold", "btc_buy_hold_return"]].copy()
-            hurdle_chart["series"] = hurdle_chart["split"] + " strategy"
-            strategy_pivot = hurdle_chart.pivot_table(index="month", columns="series", values="strategy_return", aggfunc="last")
-            threshold_pivot = hurdle_chart.pivot_table(index="month", columns="split", values="threshold", aggfunc="last")
-            threshold_pivot.columns = [f"{column} threshold" for column in threshold_pivot.columns]
-            btc_pivot = hurdle_chart.pivot_table(index="month", columns="split", values="btc_buy_hold_return", aggfunc="last")
-            btc_pivot.columns = [f"{column} btc" for column in btc_pivot.columns]
-            plot_frame = pd.concat([strategy_pivot, threshold_pivot, btc_pivot], axis=1).sort_index()
-            st.caption("Monthly hurdle comparison")
-            st.line_chart(plot_frame, use_container_width=True)
-
+        _render_exact_window_monthly_hurdles_tab(selection)
     with tabs[7]:
-        st.write("Coverage table")
-        if coverage_status.empty:
-            st.info("No coverage table available.")
-        else:
-            st.dataframe(coverage_status, use_container_width=True, hide_index=True)
-        mixed_scope = details_frame[details_frame["asset_mix"] == "crypto-metal mix"] if not details_frame.empty else pd.DataFrame()
-        metal_scope = details_frame[details_frame["asset_mix"].isin(["pure metal", "crypto-metal mix"])] if not details_frame.empty else pd.DataFrame()
-        uni_left, uni_right = st.columns(2)
-        with uni_left:
-            st.caption("Mixed-asset candidates")
-            if mixed_scope.empty:
-                st.info("No saved crypto-metal candidates in current details bundle.")
-            else:
-                st.dataframe(
-                    _format_frame(
-                        _top_candidates(
-                            mixed_scope.sort_values(["oos_sharpe", "oos_return"], ascending=[False, False]),
-                            columns=["timeframe", "strategy", "name", "symbols", "val_return", "oos_return", "oos_sharpe", "oos_pbo", "oos_trades"],
-                        )
-                    ),
-                    use_container_width=True,
-                    hide_index=True,
-                )
-        with uni_right:
-            st.caption("Metals blocker / notes")
-            st.json(bundle.get("followup_status", {}).get("metals_blocker_latest") or {})
-            if not metal_scope.empty:
-                st.caption("Metal-linked candidates")
-                st.dataframe(
-                    _format_frame(
-                        _top_candidates(
-                            metal_scope.sort_values(["oos_sharpe", "oos_return"], ascending=[False, False]),
-                            columns=["timeframe", "asset_mix", "strategy", "name", "symbols", "oos_return", "oos_sharpe", "oos_pbo", "rejects"],
-                        )
-                    ),
-                    use_container_width=True,
-                    hide_index=True,
-                )
-
+        _render_exact_window_universe_tab(context)
     with tabs[8]:
-        if followup_frame.empty:
-            st.info("No follow-up runs saved.")
-        else:
-            st.dataframe(_format_frame(followup_frame), use_container_width=True, hide_index=True)
-            status_chart = followup_frame.assign(stage_name=followup_frame["stage"]).set_index("stage_name")[["peak_rss_mib"]].dropna()
-            if not status_chart.empty:
-                st.caption("Follow-up peak RSS (MiB)")
-                st.bar_chart(status_chart, use_container_width=True)
-
+        _render_exact_window_followup_tab(context)
     with tabs[9]:
-        archive_payload = bundle.get("followup_status", {}).get("backtest_log_archive_latest") or {}
-        if registry_frame.empty:
-            st.info("No run registry entries saved.")
-        else:
-            st.dataframe(_format_frame(registry_frame), use_container_width=True, hide_index=True)
-        with st.expander("Archived log ledger", expanded=False):
-            st.json(archive_payload)
-
+        _render_exact_window_registry_tab(context)
     with tabs[10]:
-        reject_frame = _reject_reason_frame(selected_row)
-        if reject_frame.empty:
-            st.info("No reject-reason counts available.")
-        else:
-            st.dataframe(reject_frame, use_container_width=True, hide_index=True)
-        with st.expander("Root fail analysis", expanded=False):
-            st.json(bundle.get("fail_analysis") or {})
-
+        _render_exact_window_rejects_tab(context, selection)
     with tabs[11]:
-        path_frame = pd.DataFrame(
-            [
-                {
-                    "summary_path": selected_row.get("summary_path"),
-                    "details_path": selected_row.get("details_path"),
-                    "fail_analysis_path": selected_row.get("fail_analysis_path"),
-                    "source_summary_path": selected_best.get("source_summary_path"),
-                    "source_details_path": selected_best.get("source_details_path"),
-                }
-            ]
-        )
-        diag_left, diag_right = st.columns((2, 3))
-        with diag_left:
-            st.write("Artifact Paths")
-            st.dataframe(path_frame, use_container_width=True, hide_index=True)
-            st.write("Selected timeframe memory evidence")
-            st.json(selected_row.get("memory_evidence") or {})
-            if memory_evidence:
-                with st.expander("Root latest memory evidence", expanded=False):
-                    st.json(memory_evidence)
-        with diag_right:
-            st.write("Coverage")
-            coverage_frame = _coverage_frame(summary)
-            if coverage_frame.empty:
-                st.info("No coverage table available.")
-            else:
-                st.dataframe(coverage_frame, use_container_width=True, hide_index=True)
-            with st.expander("Execution Profile", expanded=False):
-                st.json(summary.get("execution_profile") or {})
-            with st.expander("Windows", expanded=False):
-                st.json(summary.get("windows") or {})
-            with st.expander("Bundle Paths", expanded=False):
-                st.json(
-                    {
-                        "summary_generated_at": summary.get("generated_at"),
-                        "latest_pointer": bundle.get("latest_pointer"),
-                        "run_root": bundle.get("run_root"),
-                        "root_paths": bundle.get("paths"),
-                        "followup_status_root": bundle.get("followup_status_root"),
-                    }
-                )
+        _render_exact_window_diagnostics_tab(context, selection)
+
+
+
+def render_exact_window_dashboard(*, standalone: bool = True) -> None:
+    if standalone:
+        st.set_page_config(layout='wide', page_title='LuminaQuant Exact-Window Suite')
+        st.title('LuminaQuant Exact-Window Validation Dashboard')
+    else:
+        st.header('Exact-Window Validation Dashboard')
+    st.markdown(_DASHBOARD_CSS, unsafe_allow_html=True)
+
+    context = _build_exact_window_dashboard_context(load_exact_window_bundle())
+    _render_exact_window_dashboard_warnings(context)
+
+    if not context.timeframe_rows:
+        _render_exact_window_recovery_dashboard(context)
+        return
+
+    timeframe_options = _exact_window_timeframe_options(context.timeframe_rows)
+    default_timeframe = _default_exact_window_timeframe(timeframe_options)
+    selected_timeframe, leaderboard_mode = _render_exact_window_sidebar(
+        timeframe_options=timeframe_options,
+        default_timeframe=default_timeframe,
+    )
+    selection = _build_exact_window_dashboard_selection(
+        context,
+        selected_timeframe=selected_timeframe,
+        leaderboard_mode=leaderboard_mode,
+    )
+
+    _render_exact_window_sidebar_summary(context, selection)
+    _render_exact_window_primary_summary(context, selection)
+    _render_exact_window_deployment_panel(selection)
+    _render_exact_window_visual_cockpit(context, selection)
+    _render_exact_window_control_strip(context, selection)
+    _render_exact_window_timeframe_overview(context, selection)
+    _render_exact_window_candidate_analysis(context, selection)
+    _render_exact_window_selected_timeframe_summary(selection)
+    _render_exact_window_selected_timeframe_tabs(context, selection)
 
 if __name__ == "__main__":
     render_exact_window_dashboard()
