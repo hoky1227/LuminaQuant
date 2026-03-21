@@ -82,10 +82,12 @@ def _current_research_market_data_settings(
                     getattr(BaseConfig, "MARKET_DATA_EXCHANGE", "binance") or "binance"
                 ),
             }
+    parquet_root = defaults.get("market_data_parquet_path", defaults.get("parquet_root", "data/market_parquet"))
+    market_exchange = defaults.get("market_data_exchange", defaults.get("exchange", "binance"))
     return {
         "symbols": canonicalize_symbol_list(list(defaults["symbols"])),
-        "parquet_root": str(defaults["market_data_parquet_path"] or "data/market_parquet"),
-        "exchange": str(defaults["market_data_exchange"] or "binance"),
+        "parquet_root": str(parquet_root or "data/market_parquet"),
+        "exchange": str(market_exchange or "binance"),
     }
 
 
