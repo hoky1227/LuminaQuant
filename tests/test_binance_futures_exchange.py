@@ -119,6 +119,36 @@ def test_exchange_normalizes_open_orders(monkeypatch) -> None:
     assert rows[0]["reduceOnly"] is False
 
 
+def test_exchange_exposes_side_aware_position_legs(monkeypatch) -> None:
+    _stub_exchange_bootstrap(monkeypatch)
+    exchange = BinanceFuturesExchange(MockConfig())
+    monkeypatch.setattr(
+        exchange,
+        "fetch_positions",
+        lambda symbol=None: [
+            {
+                "symbol": "BTC/USDT",
+                "positionAmt": 1.2,
+                "positionSide": "LONG",
+            },
+            {
+                "symbol": "BTC/USDT",
+                "positionAmt": 0.4,
+                "positionSide": "SHORT",
+            },
+            {
+                "symbol": "ETH/USDT",
+                "positionAmt": 0.0,
+                "positionSide": "LONG",
+            },
+        ],
+    )
+
+    legs = exchange.get_all_position_legs()
+
+    assert legs == {"BTC/USDT": {"LONG": 1.2, "SHORT": 0.4}}
+
+
 def test_exchange_bootstrap_does_not_silently_swallow_setup_failures(monkeypatch) -> None:
     _stub_exchange_bootstrap(monkeypatch)
 

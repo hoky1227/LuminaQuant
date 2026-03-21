@@ -76,7 +76,7 @@ class LiveTrader(TradingEngine):
         self.stop_file = str(stop_file or "")
         self.external_run_id = str(external_run_id or "")
         self.state_manager = StateManager()
-        self.risk_manager = RiskManager(self.config)  # NEW
+        self.risk_manager = RiskManager(self.config)
         self.audit_store: AuditStore = AuditStore(self.config.POSTGRES_DSN)
         self.run_id = self.audit_store.start_run(
             mode="live",
@@ -551,6 +551,16 @@ class LiveTrader(TradingEngine):
             )
         return tuple(rows)
 
+    def _best_available_position_legs(
+        self, exchange_position_legs: dict[str, dict[str, float]] | None = None
+    ) -> dict[str, dict[str, float]]:
+        if isinstance(exchange_position_legs, dict) and exchange_position_legs:
+            return dict(exchange_position_legs)
+        cached_legs = dict(getattr(self.runtime_cache, "position_legs", {}) or {})
+        if cached_legs:
+            return cached_legs
+        return dict(getattr(self.portfolio, "current_position_legs", {}) or {})
+
     def _append_outbox(self, event_type: str, payload: dict) -> None:
         item = {
             "event_type": str(event_type),
@@ -607,14 +617,12 @@ class LiveTrader(TradingEngine):
 
         local = self.portfolio.current_positions
         self.runtime_cache.update_positions(exchange_positions)
-        cached_legs = dict(getattr(self.runtime_cache, "position_legs", {}) or {})
-        portfolio_legs = dict(getattr(self.portfolio, "current_position_legs", {}) or {})
         if exchange_position_legs:
-            effective_position_legs = dict(exchange_position_legs)
+            effective_position_legs = self._best_available_position_legs(exchange_position_legs)
             self.runtime_cache.update_position_legs(effective_position_legs)
             self.portfolio.current_position_legs = dict(effective_position_legs)
         elif hedge_mode:
-            effective_position_legs = dict(cached_legs or portfolio_legs)
+            effective_position_legs = self._best_available_position_legs()
         else:
             effective_position_legs = {}
             self.runtime_cache.update_position_legs({})
@@ -737,12 +745,7 @@ class LiveTrader(TradingEngine):
             except Exception as exc:
                 self.logger.error("Flatten could not fetch position legs: %s", exc)
 
-        effective_legs = (
-            dict(legs)
-            if isinstance(legs, dict) and legs
-            else dict(getattr(self.runtime_cache, "position_legs", {}) or {})
-            or dict(getattr(self.portfolio, "current_position_legs", {}) or {})
-        )
+        effective_legs = self._best_available_position_legs(legs if isinstance(legs, dict) else None)
 
         for symbol in self.symbol_list:
             payload = effective_legs.get(symbol) if isinstance(effective_legs, dict) else None
