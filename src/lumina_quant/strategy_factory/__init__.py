@@ -35,6 +35,7 @@ __all__ = [
     "DEFAULT_ROBUST_SCORE_WEIGHTS",
     "DEFAULT_TIMEFRAMES",
     "StrategyCandidate",
+    "StrategySignalDispatcher",
     "allocate_portfolio_weights",
     "build_binance_futures_candidates",
     "build_candidate_manifest",
@@ -49,7 +50,6 @@ __all__ = [
     "robust_score_from_metrics",
     "select_diversified_shortlist",
     "strategy_family",
-    "StrategySignalDispatcher",
     "summarize_shortlist",
     "write_candidate_manifest",
 ]
