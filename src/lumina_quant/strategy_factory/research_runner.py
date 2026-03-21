@@ -4033,6 +4033,31 @@ def _apply_micro_range_expansion_strategy(
         exposures[s_idx] = np.where(active, breakout, 0.0)
 
 
+def _apply_alpha101_formula_strategy(
+    *,
+    params: Mapping[str, Any],
+    aligned: Mapping[str, np.ndarray],
+    symbols: Sequence[str],
+    exposures: np.ndarray,
+    meta: dict[str, Any],
+) -> None:
+    simulated = _simulate_event_driven_strategy_exposures(
+        _load_event_driven_strategy_impl("Alpha101FormulaStrategy"),
+        params=params,
+        aligned=aligned,
+        symbols=symbols,
+    )
+    exposures[:] = simulated
+    meta["event_driven_proxy"] = True
+    meta["formulaic_alpha101"] = True
+    meta["alpha_id"] = int(params.get("alpha_id", 101))
+    meta["alpha_param_override_count"] = len(
+        params.get("alpha_param_overrides")
+        if isinstance(params.get("alpha_param_overrides"), Mapping)
+        else {}
+    )
+
+
 def _wrap_strategy_handler(
     func,
     *,
@@ -4068,6 +4093,10 @@ def _wrap_strategy_handler(
 
 _STRATEGY_SIGNAL_DISPATCHER = StrategySignalDispatcher(
     handlers={
+        "Alpha101FormulaStrategy": _wrap_strategy_handler(
+            _apply_alpha101_formula_strategy,
+            include_meta=True,
+        ),
         "CompositeTrendStrategy": _wrap_strategy_handler(
             _apply_composite_trend_strategy,
             include_n=True,
@@ -5272,6 +5301,7 @@ def run_candidate_research(
 ) -> dict[str, Any]:
     """Evaluate candidate manifest into train/val/OOS report contract (v2)."""
     base_tf = _normalize_candidate_research_base_timeframe(base_timeframe)
+    market_data_settings = _current_research_market_data_settings()
     scoring = _resolve_research_run_scoring_config(
         score_config=score_config,
         stage1_keep_ratio=stage1_keep_ratio,
@@ -5305,6 +5335,7 @@ def run_candidate_research(
         allow_csv_fallback=bool(allow_csv_fallback),
         allow_synthetic_fallback=bool(allow_synthetic_fallback),
         min_bundle_bars=max(1, int(min_bundle_bars)),
+        market_data_settings=market_data_settings,
     )
     stage2_results = _select_stage2_results(
         adapted=adapted,

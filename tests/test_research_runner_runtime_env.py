@@ -140,6 +140,52 @@ def test_load_bundle_cache_uses_runtime_market_data_settings(
     assert captured["exchange"] == "kraken"
 
 
+def test_load_bundle_cache_honors_explicit_market_data_settings(
+    monkeypatch,
+):
+    captured: dict[str, object] = {}
+
+    def _stub_load_data_dict(
+        root_path,
+        *,
+        exchange,
+        symbol_list,
+        timeframe,
+        start_date=None,
+        end_date=None,
+        data_mode="legacy",
+    ):
+        captured.update(
+            {
+                "root_path": root_path,
+                "exchange": exchange,
+                "symbol_list": list(symbol_list),
+                "timeframe": timeframe,
+                "data_mode": data_mode,
+            }
+        )
+        return {}
+
+    monkeypatch.setattr(research_runner, "load_data_dict_from_parquet", _stub_load_data_dict)
+
+    with pytest.raises(research_runner.RawFirstDataMissingError):
+        research_runner._load_bundle_cache(
+            symbols=["ETH/USDT"],
+            timeframes=["1m"],
+            allow_csv_fallback=False,
+            allow_synthetic_fallback=False,
+            market_data_settings={
+                "symbols": ["BTC/USDT"],
+                "market_data_parquet_path": "explicit/runtime/root",
+                "market_data_exchange": "bybit",
+            },
+        )
+
+    assert captured["root_path"] == "explicit/runtime/root"
+    assert captured["exchange"] == "bybit"
+    assert captured["symbol_list"] == ["ETH/USDT"]
+
+
 def test_load_feature_cache_uses_runtime_market_data_settings(
     tmp_path: Path,
     monkeypatch,
@@ -173,6 +219,20 @@ def test_load_feature_cache_uses_runtime_market_data_settings(
     assert captured["db_path"] == "var/data/research_runtime"
     assert captured["exchange"] == "kraken"
     assert captured["symbol"] == "ETH/USDT"
+
+
+def test_current_research_market_data_settings_accepts_explicit_runtime_mapping():
+    settings = research_runner._current_research_market_data_settings(
+        {
+            "symbols": ["eth/usdt", "sol/usdt"],
+            "market_data_parquet_path": "explicit/runtime/root",
+            "market_data_exchange": "kraken",
+        }
+    )
+
+    assert settings["symbols"] == ["ETH/USDT", "SOL/USDT"]
+    assert settings["parquet_root"] == "explicit/runtime/root"
+    assert settings["exchange"] == "kraken"
 
 
 def test_resolve_feature_points_path_uses_runtime_market_data_path(

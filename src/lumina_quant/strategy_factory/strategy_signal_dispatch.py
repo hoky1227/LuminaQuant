@@ -41,6 +41,9 @@ class StrategySignalDispatcher:
         if n <= 0:
             empty = np.asarray([], dtype=float)
             return empty, empty, empty, {}
+        if not symbols:
+            empty = np.zeros(n, dtype=float)
+            return empty, empty, empty, {}
 
         exposures = np.zeros((len(symbols), n), dtype=float)
         returns = np.zeros((len(symbols), n), dtype=float)
