@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 import importlib
-from collections.abc import Mapping
-
-from lumina_quant.configuration.loader import load_yaml_config
 
 _RUNTIME_ACCESS_MODULE = "lumina_quant.configuration.runtime_access"
 _PUBLIC_NAMES = {
@@ -21,6 +18,8 @@ _PUBLIC_NAMES = {
 
 def load_config(config_path: str = "config.yaml") -> dict:
     """Load raw YAML config."""
+    from lumina_quant.configuration.loader import load_yaml_config
+
     return load_yaml_config(config_path=config_path)
 
 
