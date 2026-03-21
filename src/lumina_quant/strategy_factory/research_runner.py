@@ -1491,9 +1491,11 @@ class _ResidualBasketReversionConfig:
 
 def _resolve_residual_basket_reversion_config(
     params: Mapping[str, Any],
+    *,
+    residual_window_default: int = 48,
 ) -> _ResidualBasketReversionConfig:
     return _ResidualBasketReversionConfig(
-        residual_window=max(8, int(params.get("residual_window", 48))),
+        residual_window=max(8, int(params.get("residual_window", residual_window_default))),
         entry_z=float(params.get("entry_z", 1.8)),
         exit_z=max(0.0, float(params.get("exit_z", 0.4))),
         rebalance_bars=max(1, int(params.get("rebalance_bars", 2))),
@@ -1514,7 +1516,10 @@ def _apply_residual_basket_reversion_strategy(
     entry_gate: np.ndarray | None = None,
     session_gated: bool = False,
 ) -> None:
-    config = _resolve_residual_basket_reversion_config(params)
+    config = _resolve_residual_basket_reversion_config(
+        params,
+        residual_window_default=64 if session_gated else 48,
+    )
     btc_symbol = canonical_symbol(str(params.get("btc_symbol") or "BTC/USDT"))
     if btc_symbol not in symbols:
         btc_symbol = canonical_symbol(str(symbols[0]))
