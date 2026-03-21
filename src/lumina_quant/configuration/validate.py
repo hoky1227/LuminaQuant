@@ -67,8 +67,7 @@ def _validate_materializer_required_timeframes(runtime: RuntimeConfig) -> None:
     ]
 
 
-def validate_runtime_config(runtime: RuntimeConfig, *, for_live: bool = False) -> None:
-    """Validate runtime configuration invariants."""
+def _validate_storage_runtime_invariants(runtime: RuntimeConfig) -> None:
     storage_backend = str(runtime.storage.backend or "").strip().lower()
     if storage_backend not in {"parquet-postgres", "parquet", "local"}:
         raise ValueError("storage.backend must be one of: parquet-postgres, parquet, local.")
@@ -88,6 +87,8 @@ def validate_runtime_config(runtime: RuntimeConfig, *, for_live: bool = False) -
         raise ValueError("storage.materializer_base_timeframe must be '1s'.")
     _validate_materializer_required_timeframes(runtime)
 
+
+def _validate_trading_runtime_invariants(runtime: RuntimeConfig) -> None:
     if not runtime.trading.symbols:
         raise ValueError("No symbols configured in trading.symbols.")
     _validate_symbols(runtime.trading.symbols)
@@ -98,6 +99,8 @@ def validate_runtime_config(runtime: RuntimeConfig, *, for_live: bool = False) -
     if str(runtime.trading.timeframe).strip() not in configured_timeframes:
         raise ValueError("trading.timeframe must be included in trading.timeframes.")
 
+
+def _validate_live_mode_and_sources(runtime: RuntimeConfig) -> tuple[str, str]:
     mode = runtime.live.mode.strip().lower()
     if mode not in {"paper", "real"}:
         raise ValueError("live.mode must be one of: paper, real.")
@@ -114,6 +117,10 @@ def validate_runtime_config(runtime: RuntimeConfig, *, for_live: bool = False) -
     if order_state_source not in {"polling", "user_stream"}:
         raise ValueError("live.order_state_source must be one of: polling, user_stream.")
 
+    return market_data_source, order_state_source
+
+
+def _validate_live_exchange_runtime_invariants(runtime: RuntimeConfig, market_data_source: str, order_state_source: str) -> None:
     exchange = runtime.live.exchange
     if exchange.driver not in {"binance_futures", "binance_native", "mt5", "polymarket"}:
         raise ValueError(
@@ -190,6 +197,8 @@ def validate_runtime_config(runtime: RuntimeConfig, *, for_live: bool = False) -
     if exchange.leverage < 1 or exchange.leverage > 3:
         raise ValueError("live.exchange.leverage must be in range [1, 3].")
 
+
+def _validate_risk_and_execution_runtime_invariants(runtime: RuntimeConfig) -> None:
     if runtime.risk.risk_per_trade <= 0 or runtime.risk.risk_per_trade > 0.05:
         raise ValueError("risk.risk_per_trade must be in (0, 0.05].")
     if runtime.risk.max_daily_loss_pct <= 0 or runtime.risk.max_daily_loss_pct > 1:
@@ -207,6 +216,9 @@ def validate_runtime_config(runtime: RuntimeConfig, *, for_live: bool = False) -
         raise ValueError("execution.gpu_mode must be one of: auto, cpu, gpu, forced-gpu.")
     if float(getattr(runtime.execution, "gpu_vram_gb", 0.0)) < 0.0:
         raise ValueError("execution.gpu_vram_gb must be >= 0.")
+
+
+def _validate_backtest_runtime_invariants(runtime: RuntimeConfig) -> None:
     if str(getattr(runtime.backtest, "risk_free_mode", "us_treasury_constant")).strip().lower() not in {
         "zero",
         "us_treasury_constant",
@@ -260,6 +272,9 @@ def validate_runtime_config(runtime: RuntimeConfig, *, for_live: bool = False) -
         "legacy_1s",
     }:
         raise ValueError("backtest.mode must be one of: windowed, legacy_batch, legacy_1s.")
+
+
+def _validate_live_and_optimization_runtime_invariants(runtime: RuntimeConfig) -> None:
     if int(getattr(runtime.live, "poll_seconds", runtime.live.poll_interval)) < 1:
         raise ValueError("live.poll_seconds must be >= 1.")
     if int(getattr(runtime.live, "window_seconds", 20)) < 1:
@@ -291,6 +306,8 @@ def validate_runtime_config(runtime: RuntimeConfig, *, for_live: bool = False) -
     if int(getattr(runtime.optimization, "oos_days", 0)) < 1:
         raise ValueError("optimization.oos_days must be >= 1.")
 
+
+def _validate_promotion_gate_runtime_invariants(runtime: RuntimeConfig) -> None:
     if runtime.promotion_gate.days < 1:
         raise ValueError("promotion_gate.days must be >= 1.")
     if runtime.promotion_gate.max_order_rejects < 0:
@@ -302,6 +319,8 @@ def validate_runtime_config(runtime: RuntimeConfig, *, for_live: bool = False) -
     if runtime.promotion_gate.max_critical_errors < 0:
         raise ValueError("promotion_gate.max_critical_errors must be >= 0.")
 
+
+def _validate_market_window_parity_invariants(runtime: RuntimeConfig) -> None:
     deprecated_live_parity = getattr(runtime.live, "market_window_parity_v2_enabled", None)
     deprecated_backtest_parity = getattr(
         runtime.backtest,
@@ -318,6 +337,8 @@ def validate_runtime_config(runtime: RuntimeConfig, *, for_live: bool = False) -
             "must match; use market_window.parity_v2_enabled."
         )
 
+
+def _validate_strategy_profile_invariants(runtime: RuntimeConfig) -> None:
     allowed_profile_keys = {
         "days",
         "max_order_rejects",
@@ -352,6 +373,24 @@ def validate_runtime_config(runtime: RuntimeConfig, *, for_live: bool = False) -
                 raise ValueError(
                     f"promotion_gate.strategy_profiles.{strategy_name}.{metric_key} must be >= 0."
                 )
+
+
+def validate_runtime_config(runtime: RuntimeConfig, *, for_live: bool = False) -> None:
+    """Validate runtime configuration invariants."""
+    _validate_storage_runtime_invariants(runtime)
+    _validate_trading_runtime_invariants(runtime)
+    market_data_source, order_state_source = _validate_live_mode_and_sources(runtime)
+    _validate_live_exchange_runtime_invariants(
+        runtime,
+        market_data_source=market_data_source,
+        order_state_source=order_state_source,
+    )
+    _validate_risk_and_execution_runtime_invariants(runtime)
+    _validate_backtest_runtime_invariants(runtime)
+    _validate_live_and_optimization_runtime_invariants(runtime)
+    _validate_promotion_gate_runtime_invariants(runtime)
+    _validate_market_window_parity_invariants(runtime)
+    _validate_strategy_profile_invariants(runtime)
 
     if for_live and (not runtime.live.api_key or not runtime.live.secret_key):
         raise ValueError(
