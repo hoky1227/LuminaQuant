@@ -2097,6 +2097,293 @@ def _apply_multi_horizon_trend_exhaustion_fade_strategy(
         )
 
 
+@dataclass(frozen=True, slots=True)
+class _BreadthThrustFailureReversalConfig:
+    momentum_lookback: int
+    breadth_entry: float
+    breadth_exit: float
+    basket_return_floor: float
+    max_hold_bars: int
+    stop_loss_pct: float
+    allow_short: bool
+
+
+def _resolve_breadth_thrust_failure_reversal_config(
+    params: Mapping[str, Any],
+) -> _BreadthThrustFailureReversalConfig:
+    return _BreadthThrustFailureReversalConfig(
+        momentum_lookback=max(2, int(params.get("momentum_lookback", 16))),
+        breadth_entry=float(params.get("breadth_entry", 0.80)),
+        breadth_exit=float(params.get("breadth_exit", 0.55)),
+        basket_return_floor=float(params.get("basket_return_floor", 0.003)),
+        max_hold_bars=max(1, int(params.get("max_hold_bars", 8))),
+        stop_loss_pct=float(params.get("stop_loss_pct", 0.02)),
+        allow_short=bool(params.get("allow_short", True)),
+    )
+
+
+def _apply_breadth_thrust_failure_reversal_strategy(
+    *,
+    params: Mapping[str, Any],
+    aligned: Mapping[str, np.ndarray],
+    symbols: Sequence[str],
+    n: int,
+    exposures: np.ndarray,
+    meta: dict[str, Any],
+) -> None:
+    config = _resolve_breadth_thrust_failure_reversal_config(params)
+    close_map_np = {
+        symbol: np.asarray(aligned[f"{symbol}:close"], dtype=float)
+        for symbol in symbols
+    }
+
+    basket_state = 0.0
+    basket_entry = np.nan
+    hold_bars = 0
+    for idx in range(n):
+        close_map = {
+            symbol: float(close[idx])
+            for symbol, close in close_map_np.items()
+        }
+        basket_close = float(np.mean(list(close_map.values())))
+        if basket_state != 0.0 and np.isfinite(basket_entry):
+            hold_bars += 1
+            stop_long = (
+                basket_state > 0.0
+                and basket_close <= float(basket_entry) * (1.0 - config.stop_loss_pct)
+            )
+            stop_short = (
+                basket_state < 0.0
+                and basket_close >= float(basket_entry) * (1.0 + config.stop_loss_pct)
+            )
+            timeout_hit = hold_bars >= config.max_hold_bars
+            if stop_long or stop_short or timeout_hit:
+                basket_state = 0.0
+                basket_entry = np.nan
+                hold_bars = 0
+
+        if idx < config.momentum_lookback:
+            exposures[:, idx] = basket_state
+            continue
+
+        breadth_values: list[float] = []
+        basket_returns: list[float] = []
+        for close in close_map_np.values():
+            latest = float(close[idx])
+            base = float(close[idx - config.momentum_lookback])
+            if not np.isfinite(latest) or not np.isfinite(base) or base <= 0.0:
+                continue
+            ret = (latest / base) - 1.0
+            basket_returns.append(float(ret))
+            breadth_values.append(1.0 if ret > 0.0 else 0.0)
+        if not breadth_values:
+            exposures[:, idx] = basket_state
+            continue
+        breadth = float(np.mean(np.asarray(breadth_values, dtype=float)))
+        mean_ret = float(np.mean(np.asarray(basket_returns, dtype=float)))
+        if basket_state == 0.0:
+            if (
+                config.allow_short
+                and breadth >= config.breadth_entry
+                and mean_ret <= -config.basket_return_floor
+            ):
+                basket_state = -1.0
+                basket_entry = basket_close
+                hold_bars = 0
+            elif (
+                breadth <= (1.0 - config.breadth_entry)
+                and mean_ret >= config.basket_return_floor
+            ):
+                basket_state = 1.0
+                basket_entry = basket_close
+                hold_bars = 0
+        elif abs(breadth - 0.5) <= abs(config.breadth_exit - 0.5):
+            basket_state = 0.0
+            basket_entry = np.nan
+            hold_bars = 0
+        exposures[:, idx] = basket_state
+
+    meta["cross_sectional"] = True
+
+
+@dataclass(frozen=True, slots=True)
+class _LagConvergenceConfig:
+    lag_bars: int
+    entry_threshold: float
+    exit_threshold: float
+    stop_threshold: float
+    max_hold_bars: int
+
+
+def _resolve_lag_convergence_config(params: Mapping[str, Any]) -> _LagConvergenceConfig:
+    entry_threshold = float(params.get("entry_threshold", 0.015))
+    return _LagConvergenceConfig(
+        lag_bars=max(1, int(params.get("lag_bars", 3))),
+        entry_threshold=entry_threshold,
+        exit_threshold=max(0.0, float(params.get("exit_threshold", 0.004))),
+        stop_threshold=max(entry_threshold + 1e-9, float(params.get("stop_threshold", 0.05))),
+        max_hold_bars=max(1, int(params.get("max_hold_bars", 96))),
+    )
+
+
+def _lag_convergence_pair_positions(
+    *,
+    spread: np.ndarray,
+    n: int,
+    config: _LagConvergenceConfig,
+) -> tuple[np.ndarray, np.ndarray]:
+    x_pos = np.zeros(n, dtype=float)
+    y_pos = np.zeros(n, dtype=float)
+    mode = 0
+    bars_held = 0
+    for idx in range(n):
+        if idx < config.lag_bars:
+            continue
+        value = float(spread[idx])
+        if mode == 0:
+            if value <= -config.entry_threshold:
+                mode = 1
+                bars_held = 0
+            elif value >= config.entry_threshold:
+                mode = -1
+                bars_held = 0
+        else:
+            bars_held += 1
+            if (
+                abs(value) <= config.exit_threshold
+                or abs(value) >= config.stop_threshold
+                or bars_held >= config.max_hold_bars
+            ):
+                mode = 0
+                bars_held = 0
+        if mode == 1:
+            x_pos[idx] = 1.0
+            y_pos[idx] = -1.0
+        elif mode == -1:
+            x_pos[idx] = -1.0
+            y_pos[idx] = 1.0
+    return x_pos, y_pos
+
+
+def _apply_lag_convergence_strategy(
+    *,
+    params: Mapping[str, Any],
+    aligned: Mapping[str, np.ndarray],
+    symbols: Sequence[str],
+    n: int,
+    exposures: np.ndarray,
+) -> None:
+    symbol_x, symbol_y, x_idx, y_idx = _resolve_symbol_pair(symbols, params)
+    config = _resolve_lag_convergence_config(params)
+
+    x_close = np.asarray(aligned[f"{symbol_x}:close"], dtype=float)
+    y_close = np.asarray(aligned[f"{symbol_y}:close"], dtype=float)
+    x_base = np.roll(x_close, config.lag_bars)
+    y_base = np.roll(y_close, config.lag_bars)
+    x_base[: config.lag_bars] = x_close[: config.lag_bars]
+    y_base[: config.lag_bars] = y_close[: config.lag_bars]
+    mom_x = np.divide(
+        x_close,
+        np.clip(x_base, 1e-12, np.inf),
+        out=np.ones_like(x_close),
+    ) - 1.0
+    mom_y = np.divide(
+        y_close,
+        np.clip(y_base, 1e-12, np.inf),
+        out=np.ones_like(y_close),
+    ) - 1.0
+    spread = np.nan_to_num(mom_x - mom_y, nan=0.0)
+
+    x_pos, y_pos = _lag_convergence_pair_positions(
+        spread=spread,
+        n=n,
+        config=config,
+    )
+    exposures[x_idx] = x_pos
+    exposures[y_idx] = y_pos
+
+
+@dataclass(frozen=True, slots=True)
+class _PerpCrowdingCarryConfig:
+    window: int
+    mild_funding: float
+    extreme_funding: float
+    entry_threshold: float
+    exit_threshold: float
+    stop_loss_pct: float
+    max_hold_bars: int
+    allow_short: bool
+
+
+def _resolve_perp_crowding_carry_config(
+    params: Mapping[str, Any],
+) -> _PerpCrowdingCarryConfig:
+    return _PerpCrowdingCarryConfig(
+        window=int(params.get("window", 96)),
+        mild_funding=float(params.get("mild_funding", 0.0002)),
+        extreme_funding=float(params.get("extreme_funding", 0.0012)),
+        entry_threshold=float(params.get("entry_threshold", 0.30)),
+        exit_threshold=float(params.get("exit_threshold", 0.10)),
+        stop_loss_pct=float(params.get("stop_loss_pct", 0.02)),
+        max_hold_bars=int(params.get("max_hold_bars", 72)),
+        allow_short=bool(params.get("allow_short", True)),
+    )
+
+
+def _apply_perp_crowding_carry_strategy(
+    *,
+    params: Mapping[str, Any],
+    aligned: Mapping[str, np.ndarray],
+    symbols: Sequence[str],
+    exposures: np.ndarray,
+    meta: dict[str, Any],
+) -> None:
+    if not _resolve_feature_points_path().exists():
+        meta["missing_support_data"] = True
+        exposures[:] = 0.0
+        return
+
+    config = _resolve_perp_crowding_carry_config(params)
+    missing_symbols: list[str] = []
+    for s_idx, symbol in enumerate(symbols):
+        close = aligned[f"{symbol}:close"]
+        funding = aligned.get(f"{symbol}:funding_rate")
+        oi = aligned.get(f"{symbol}:open_interest")
+        liq_long = aligned.get(f"{symbol}:liquidation_long_notional")
+        liq_short = aligned.get(f"{symbol}:liquidation_short_notional")
+        if funding is None or oi is None or liq_long is None or liq_short is None:
+            missing_symbols.append(symbol)
+            continue
+        position, support = _perp_carry_position_series(
+            close=np.asarray(close, dtype=float),
+            funding_rate=np.asarray(funding, dtype=float),
+            open_interest=np.asarray(oi, dtype=float),
+            liquidation_long_notional=np.asarray(liq_long, dtype=float),
+            liquidation_short_notional=np.asarray(liq_short, dtype=float),
+            mark_price=None
+            if aligned.get(f"{symbol}:mark_price") is None
+            else np.asarray(aligned[f"{symbol}:mark_price"], dtype=float),
+            index_price=None
+            if aligned.get(f"{symbol}:index_price") is None
+            else np.asarray(aligned[f"{symbol}:index_price"], dtype=float),
+            window=config.window,
+            mild_funding=config.mild_funding,
+            extreme_funding=config.extreme_funding,
+            entry_threshold=config.entry_threshold,
+            exit_threshold=config.exit_threshold,
+            stop_loss_pct=config.stop_loss_pct,
+            max_hold_bars=config.max_hold_bars,
+            allow_short=config.allow_short,
+        )
+        exposures[s_idx] = position
+        if np.any(np.isfinite(support["crowding_score"])):
+            meta.setdefault("support_data_symbols", []).append(symbol)
+
+    if missing_symbols:
+        meta["missing_support_data"] = True
+        meta["missing_support_symbols"] = missing_symbols
+
+
 def _pair_spread_z(px: np.ndarray, py: np.ndarray, window: int = 96) -> np.ndarray:
     n = min(px.size, py.size)
     out = np.full(n, np.nan, dtype=float)
@@ -3756,68 +4043,14 @@ def _strategy_signal(
         )
 
     elif strategy_class == "BreadthThrustFailureReversalStrategy":
-        momentum_lookback = max(2, int(params.get("momentum_lookback", 16)))
-        breadth_entry = float(params.get("breadth_entry", 0.80))
-        breadth_exit = float(params.get("breadth_exit", 0.55))
-        basket_return_floor = float(params.get("basket_return_floor", 0.003))
-        max_hold_bars = max(1, int(params.get("max_hold_bars", 8)))
-        stop_loss_pct = float(params.get("stop_loss_pct", 0.02))
-        allow_short = bool(params.get("allow_short", True))
-
-        basket_state = 0.0
-        basket_entry = np.nan
-        hold_bars = 0
-        for idx in range(n):
-            close_map = {
-                symbol: float(np.asarray(aligned[f"{symbol}:close"], dtype=float)[idx])
-                for symbol in symbols
-            }
-            basket_close = float(np.mean(list(close_map.values())))
-            if basket_state != 0.0 and np.isfinite(basket_entry):
-                hold_bars += 1
-                stop_long = basket_state > 0.0 and basket_close <= float(basket_entry) * (1.0 - stop_loss_pct)
-                stop_short = basket_state < 0.0 and basket_close >= float(basket_entry) * (1.0 + stop_loss_pct)
-                timeout_hit = hold_bars >= max_hold_bars
-                if stop_long or stop_short or timeout_hit:
-                    basket_state = 0.0
-                    basket_entry = np.nan
-                    hold_bars = 0
-
-            if idx < momentum_lookback:
-                exposures[:, idx] = basket_state
-                continue
-
-            breadth_values: list[float] = []
-            basket_returns: list[float] = []
-            for symbol in symbols:
-                close_arr = np.asarray(aligned[f"{symbol}:close"], dtype=float)
-                latest = float(close_arr[idx])
-                base = float(close_arr[idx - momentum_lookback])
-                if not np.isfinite(latest) or not np.isfinite(base) or base <= 0.0:
-                    continue
-                ret = (latest / base) - 1.0
-                basket_returns.append(float(ret))
-                breadth_values.append(1.0 if ret > 0.0 else 0.0)
-            if not breadth_values:
-                exposures[:, idx] = basket_state
-                continue
-            breadth = float(np.mean(np.asarray(breadth_values, dtype=float)))
-            mean_ret = float(np.mean(np.asarray(basket_returns, dtype=float)))
-            if basket_state == 0.0:
-                if allow_short and breadth >= breadth_entry and mean_ret <= -basket_return_floor:
-                    basket_state = -1.0
-                    basket_entry = basket_close
-                    hold_bars = 0
-                elif breadth <= (1.0 - breadth_entry) and mean_ret >= basket_return_floor:
-                    basket_state = 1.0
-                    basket_entry = basket_close
-                    hold_bars = 0
-            elif abs(breadth - 0.5) <= abs(breadth_exit - 0.5):
-                basket_state = 0.0
-                basket_entry = np.nan
-                hold_bars = 0
-            exposures[:, idx] = basket_state
-        meta["cross_sectional"] = True
+        _apply_breadth_thrust_failure_reversal_strategy(
+            params=params,
+            aligned=aligned,
+            symbols=symbols,
+            n=n,
+            exposures=exposures,
+            meta=meta,
+        )
 
     elif strategy_class == "CrossAssetLiquidationContagionFadeStrategy":
         _apply_cross_asset_liquidation_contagion_fade_strategy(
@@ -3892,103 +4125,22 @@ def _strategy_signal(
             meta["event_driven_proxy_error"] = str(exc)
 
     elif strategy_class == "LagConvergenceStrategy" and len(symbols) >= 2:
-        symbol_x, symbol_y, x_idx, y_idx = _resolve_symbol_pair(symbols, params)
-
-        lag_bars = max(1, int(params.get("lag_bars", 3)))
-        entry_threshold = float(params.get("entry_threshold", 0.015))
-        exit_threshold = max(0.0, float(params.get("exit_threshold", 0.004)))
-        stop_threshold = max(entry_threshold + 1e-9, float(params.get("stop_threshold", 0.05)))
-        max_hold_bars = max(1, int(params.get("max_hold_bars", 96)))
-
-        x_close = np.asarray(aligned[f"{symbol_x}:close"], dtype=float)
-        y_close = np.asarray(aligned[f"{symbol_y}:close"], dtype=float)
-        x_base = np.roll(x_close, lag_bars)
-        y_base = np.roll(y_close, lag_bars)
-        x_base[:lag_bars] = x_close[:lag_bars]
-        y_base[:lag_bars] = y_close[:lag_bars]
-        mom_x = np.divide(
-            x_close,
-            np.clip(x_base, 1e-12, np.inf),
-            out=np.ones_like(x_close),
-        ) - 1.0
-        mom_y = np.divide(
-            y_close,
-            np.clip(y_base, 1e-12, np.inf),
-            out=np.ones_like(y_close),
-        ) - 1.0
-        spread = np.nan_to_num(mom_x - mom_y, nan=0.0)
-
-        x_pos = np.zeros(n, dtype=float)
-        y_pos = np.zeros(n, dtype=float)
-        mode = 0
-        bars_held = 0
-        for idx in range(n):
-            if idx < lag_bars:
-                continue
-            value = float(spread[idx])
-            if mode == 0:
-                if value <= -entry_threshold:
-                    mode = 1
-                    bars_held = 0
-                elif value >= entry_threshold:
-                    mode = -1
-                    bars_held = 0
-            else:
-                bars_held += 1
-                if abs(value) <= exit_threshold or abs(value) >= stop_threshold or bars_held >= max_hold_bars:
-                    mode = 0
-                    bars_held = 0
-            if mode == 1:
-                x_pos[idx] = 1.0
-                y_pos[idx] = -1.0
-            elif mode == -1:
-                x_pos[idx] = -1.0
-                y_pos[idx] = 1.0
-        exposures[x_idx] = x_pos
-        exposures[y_idx] = y_pos
+        _apply_lag_convergence_strategy(
+            params=params,
+            aligned=aligned,
+            symbols=symbols,
+            n=n,
+            exposures=exposures,
+        )
 
     elif strategy_class == "PerpCrowdingCarryStrategy":
-        if not _resolve_feature_points_path().exists():
-            meta["missing_support_data"] = True
-            exposures[:] = 0.0
-        else:
-            missing_symbols: list[str] = []
-            for s_idx, symbol in enumerate(symbols):
-                close = aligned[f"{symbol}:close"]
-                funding = aligned.get(f"{symbol}:funding_rate")
-                oi = aligned.get(f"{symbol}:open_interest")
-                liq_long = aligned.get(f"{symbol}:liquidation_long_notional")
-                liq_short = aligned.get(f"{symbol}:liquidation_short_notional")
-                if funding is None or oi is None or liq_long is None or liq_short is None:
-                    missing_symbols.append(symbol)
-                    continue
-                position, support = _perp_carry_position_series(
-                    close=np.asarray(close, dtype=float),
-                    funding_rate=np.asarray(funding, dtype=float),
-                    open_interest=np.asarray(oi, dtype=float),
-                    liquidation_long_notional=np.asarray(liq_long, dtype=float),
-                    liquidation_short_notional=np.asarray(liq_short, dtype=float),
-                    mark_price=None
-                    if aligned.get(f"{symbol}:mark_price") is None
-                    else np.asarray(aligned[f"{symbol}:mark_price"], dtype=float),
-                    index_price=None
-                    if aligned.get(f"{symbol}:index_price") is None
-                    else np.asarray(aligned[f"{symbol}:index_price"], dtype=float),
-                    window=int(params.get("window", 96)),
-                    mild_funding=float(params.get("mild_funding", 0.0002)),
-                    extreme_funding=float(params.get("extreme_funding", 0.0012)),
-                    entry_threshold=float(params.get("entry_threshold", 0.30)),
-                    exit_threshold=float(params.get("exit_threshold", 0.10)),
-                    stop_loss_pct=float(params.get("stop_loss_pct", 0.02)),
-                    max_hold_bars=int(params.get("max_hold_bars", 72)),
-                    allow_short=bool(params.get("allow_short", True)),
-                )
-                exposures[s_idx] = position
-                if np.any(np.isfinite(support["crowding_score"])):
-                    meta.setdefault("support_data_symbols", []).append(symbol)
-            if missing_symbols:
-                meta["missing_support_data"] = True
-                meta["missing_support_symbols"] = missing_symbols
+        _apply_perp_crowding_carry_strategy(
+            params=params,
+            aligned=aligned,
+            symbols=symbols,
+            exposures=exposures,
+            meta=meta,
+        )
 
     elif strategy_class == "MicroRangeExpansion1sStrategy":
         lookback = max(8, int(params.get("lookback", 30)))

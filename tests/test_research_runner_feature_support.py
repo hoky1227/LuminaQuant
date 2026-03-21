@@ -300,6 +300,135 @@ def test_lag_convergence_strategy_signal_trades_xpt_xpd_pair():
     assert np.any(turnover > 0.0)
 
 
+def test_breadth_thrust_failure_reversal_strategy_signal_produces_exposure():
+    length = 60
+    symbols = [f"S{idx}/USDT" for idx in range(5)]
+    aligned = {"datetime": _minute_datetimes(length)}
+    for idx, symbol in enumerate(symbols):
+        close = np.full(length, 100.0, dtype=float)
+        if idx < 4:
+            close[20:25] = np.linspace(100.0, 101.0, 5, dtype=float)
+            close[25:35] = 101.0
+        else:
+            close[20:25] = np.linspace(100.0, 88.0, 5, dtype=float)
+            close[25:35] = 88.0
+
+        if idx < 3:
+            close[35:40] = np.linspace(close[34], 102.0, 5, dtype=float)
+            close[40:] = 102.0
+        else:
+            close[35:40] = np.linspace(close[34], 98.0, 5, dtype=float)
+            close[40:] = 98.0
+
+        aligned[f"{symbol}:open"] = close
+        aligned[f"{symbol}:high"] = close + 0.2
+        aligned[f"{symbol}:low"] = close - 0.2
+        aligned[f"{symbol}:close"] = close
+        aligned[f"{symbol}:volume"] = np.full(length, 100.0, dtype=float)
+
+    candidate = {
+        "strategy_class": "BreadthThrustFailureReversalStrategy",
+        "params": {
+            "momentum_lookback": 4,
+            "breadth_entry": 0.8,
+            "breadth_exit": 0.6,
+            "basket_return_floor": 0.003,
+            "max_hold_bars": 20,
+            "stop_loss_pct": 0.05,
+            "allow_short": True,
+        },
+    }
+
+    _, turnover, exposure, meta = research_runner._strategy_signal(
+        candidate,
+        aligned=aligned,
+        symbols=symbols,
+    )
+
+    assert exposure.shape == (length,)
+    assert meta.get("cross_sectional") is True
+    assert np.any(np.abs(exposure) > 0.0)
+    assert np.any(turnover > 0.0)
+
+
+def test_perp_carry_preserves_default_config(monkeypatch):
+    captured: dict[str, float | int | bool] = {}
+
+    def _stub_perp_carry_position_series(
+        *,
+        close,
+        funding_rate,
+        open_interest,
+        liquidation_long_notional,
+        liquidation_short_notional,
+        mark_price,
+        index_price,
+        window,
+        mild_funding,
+        extreme_funding,
+        entry_threshold,
+        exit_threshold,
+        stop_loss_pct,
+        max_hold_bars,
+        allow_short,
+    ):
+        captured.update(
+            {
+                "window": int(window),
+                "mild_funding": float(mild_funding),
+                "extreme_funding": float(extreme_funding),
+                "entry_threshold": float(entry_threshold),
+                "exit_threshold": float(exit_threshold),
+                "stop_loss_pct": float(stop_loss_pct),
+                "max_hold_bars": int(max_hold_bars),
+                "allow_short": bool(allow_short),
+            }
+        )
+        shape = np.asarray(close, dtype=float).shape
+        return np.zeros(shape, dtype=float), {"crowding_score": np.zeros(shape, dtype=float)}
+
+    monkeypatch.setattr(research_runner, "_resolve_feature_points_path", lambda: Path(__file__))
+    monkeypatch.setattr(
+        research_runner,
+        "_perp_carry_position_series",
+        _stub_perp_carry_position_series,
+    )
+
+    length = 120
+    close = np.linspace(100.0, 104.0, length, dtype=float)
+    aligned = {
+        "datetime": _minute_datetimes(length),
+        "BTC/USDT:open": close - 0.1,
+        "BTC/USDT:high": close + 0.2,
+        "BTC/USDT:low": close - 0.2,
+        "BTC/USDT:close": close,
+        "BTC/USDT:volume": np.full(length, 120.0, dtype=float),
+        "BTC/USDT:funding_rate": np.full(length, 0.0001, dtype=float),
+        "BTC/USDT:open_interest": np.full(length, 1_000_000.0, dtype=float),
+        "BTC/USDT:liquidation_long_notional": np.full(length, 120_000.0, dtype=float),
+        "BTC/USDT:liquidation_short_notional": np.full(length, 20_000.0, dtype=float),
+        "BTC/USDT:mark_price": close * 1.001,
+        "BTC/USDT:index_price": close,
+    }
+
+    research_runner._strategy_signal(
+        {"strategy_class": "PerpCrowdingCarryStrategy", "params": {}},
+        aligned=aligned,
+        symbols=["BTC/USDT"],
+    )
+
+    assert captured == {
+        "window": 96,
+        "mild_funding": 0.0002,
+        "extreme_funding": 0.0012,
+        "entry_threshold": 0.3,
+        "exit_threshold": 0.1,
+        "stop_loss_pct": 0.02,
+        "max_hold_bars": 72,
+        "allow_short": True,
+    }
+
+
 def test_mean_reversion_std_strategy_signal_produces_exposure():
     length = 180
     close = np.full(length, 100.0, dtype=float)
