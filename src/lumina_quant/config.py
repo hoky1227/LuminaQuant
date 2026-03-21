@@ -20,6 +20,7 @@ OptimizationConfig = _runtime_access.OptimizationConfig
 current_market_data_runtime_settings = _runtime_access.current_market_data_runtime_settings
 export_runtime_dict = _runtime_access.export_runtime_dict
 load_current_runtime_config = _runtime_access.load_current_runtime_config
+seed_runtime_env_defaults = _runtime_access.seed_runtime_env_defaults
 
 
 def load_config(config_path: str = "config.yaml") -> dict:
@@ -36,5 +37,6 @@ __all__ = [
     "export_runtime_dict",
     "load_config",
     "load_current_runtime_config",
+    "seed_runtime_env_defaults",
     "os",
 ]

@@ -200,6 +200,19 @@ def load_current_runtime_config():
     return runtime
 
 
+def seed_runtime_env_defaults(
+    *,
+    environ: MutableMapping[str, str] | None = None,
+) -> dict[str, str]:
+    """Explicitly seed runtime-derived environment defaults."""
+    runtime = load_runtime_config(
+        config_path=_current_config_path(),
+        env=_runtime_env_without_auto_seeded_defaults(environ),
+    )
+    _refresh_seeded_runtime_env_defaults(runtime, environ=environ)
+    return dict(_SEEDED_RUNTIME_ENV_DEFAULTS)
+
+
 def current_market_data_runtime_settings() -> dict[str, object]:
     runtime = load_current_runtime_config()
     raw = load_yaml_config(config_path=_current_config_path())
@@ -228,8 +241,7 @@ _strip_auto_seeded_runtime_env_defaults(
 _CONFIG_PATH = os.getenv("LQ_CONFIG_PATH", "config.yaml")
 _ENV_BEFORE_RUNTIME_SEED = dict(os.environ)
 _RUNTIME = load_runtime_config(config_path=_CONFIG_PATH)
-_SEEDED_RUNTIME_ENV_DEFAULTS = _runtime_env_defaults(_RUNTIME)
-_seed_runtime_env_defaults(_RUNTIME)
+_SEEDED_RUNTIME_ENV_DEFAULTS: dict[str, str] = {}
 
 
 def _apply_config_values(config_cls: type, values: dict[str, object]) -> None:
