@@ -3851,6 +3851,179 @@ def _apply_funding_liquidation_crowding_fade_strategy(
         meta["missing_support_symbols"] = missing_symbols
 
 
+def _apply_vol_compression_vwap_reversion_strategy(
+    *,
+    params: Mapping[str, Any],
+    aligned: Mapping[str, np.ndarray],
+    symbols: Sequence[str],
+    exposures: np.ndarray,
+) -> None:
+    entry_z = float(params.get("entry_z", 1.5))
+    exit_z = float(params.get("exit_z", 0.35))
+    compression_pct = float(params.get("compression_percentile", 0.30))
+    comp_vol_ratio = float(
+        params.get("compression_vol_ratio", params.get("compression_threshold", 0.85))
+    )
+
+    for s_idx, symbol in enumerate(symbols):
+        close = aligned[f"{symbol}:close"]
+        high = aligned[f"{symbol}:high"]
+        low = aligned[f"{symbol}:low"]
+        volume = aligned[f"{symbol}:volume"]
+
+        dev_z = np.nan_to_num(
+            _vwap_dev_z(high, low, close, volume, window=60, z_window=120),
+            nan=0.0,
+        )
+        vr = np.nan_to_num(_vol_ratio_series(close, 12, 60), nan=0.0)
+        bw = np.nan_to_num(_rolling_z(np.abs(_returns_from_close(close)), 64), nan=0.0)
+        compression = (vr <= comp_vol_ratio) & (bw <= _normal_cdf(compression_pct) * 2.0)
+
+        pos = np.zeros(close.shape, dtype=float)
+        pos = np.where(compression & (dev_z <= -entry_z), 1.0, pos)
+        pos = np.where(compression & (dev_z >= entry_z), -1.0, pos)
+        pos = np.where(np.abs(dev_z) <= exit_z, 0.0, pos)
+        exposures[s_idx] = pos
+
+
+def _apply_leadlag_spillover_strategy(
+    *,
+    params: Mapping[str, Any],
+    aligned: Mapping[str, np.ndarray],
+    symbols: Sequence[str],
+    exposures: np.ndarray,
+) -> None:
+    leader_symbols = [symbol for symbol in symbols if symbol in _LEADERS]
+    laggards = [symbol for symbol in symbols if symbol not in _LEADERS and symbol not in _METALS]
+    entry_score = float(params.get("entry_score", params.get("entry_spillover", 0.35)))
+    exit_score = float(params.get("exit_score", params.get("exit_spillover", 0.08)))
+    lag_order = max(1, int(params.get("max_lag", 3)))
+
+    if not leader_symbols or not laggards:
+        return
+
+    n = exposures.shape[1]
+    leader_ret = np.zeros((len(leader_symbols), n), dtype=float)
+    for idx, sym in enumerate(leader_symbols):
+        leader_ret[idx] = _returns_from_close(aligned[f"{sym}:close"])
+    leader_mean = np.mean(leader_ret, axis=0)
+
+    decay = np.exp(-np.arange(1, lag_order + 1, dtype=float))
+    decay /= np.sum(decay)
+
+    for symbol in laggards:
+        s_idx = symbols.index(symbol)
+        pred = np.zeros(n, dtype=float)
+        for lag in range(1, lag_order + 1):
+            shifted = np.roll(leader_mean, lag)
+            pred += decay[lag - 1] * shifted
+        follower_ret = _returns_from_close(aligned[f"{symbol}:close"])
+        score = np.zeros(n, dtype=float)
+        sigma = _safe_std(follower_ret)
+        if sigma > 1e-12:
+            score = pred / sigma
+        pos = np.where(
+            score >= entry_score,
+            1.0,
+            np.where(score <= -entry_score, -1.0, 0.0),
+        )
+        pos = np.where(np.abs(score) <= exit_score, 0.0, pos)
+        exposures[s_idx] = pos
+
+
+def _apply_session_gated_residual_basket_reversion_strategy(
+    *,
+    params: Mapping[str, Any],
+    aligned: Mapping[str, np.ndarray],
+    symbols: Sequence[str],
+    exposures: np.ndarray,
+    meta: dict[str, Any],
+) -> None:
+    session_window_minutes = max(5, int(params.get("session_window_minutes", 30)))
+    transition_minutes = np.asarray((0, 480, 780), dtype=int)
+    minute_of_day = _minute_of_day(np.asarray(aligned["datetime"]))
+    session_gate = np.any(
+        np.abs(minute_of_day[:, None] - transition_minutes[None, :]) <= session_window_minutes,
+        axis=1,
+    )
+    _apply_residual_basket_reversion_strategy(
+        params=params,
+        aligned=aligned,
+        symbols=symbols,
+        exposures=exposures,
+        meta=meta,
+        entry_gate=session_gate,
+        session_gated=True,
+    )
+
+
+def _apply_pair_spread_strategy(
+    *,
+    strategy_class: str,
+    params: Mapping[str, Any],
+    aligned: Mapping[str, np.ndarray],
+    symbols: Sequence[str],
+    n: int,
+    exposures: np.ndarray,
+    meta: dict[str, Any],
+) -> None:
+    symbol_x, symbol_y, x_idx, y_idx = _resolve_symbol_pair(symbols, params)
+
+    try:
+        simulated = _simulate_event_driven_strategy_exposures(
+            _load_event_driven_strategy_impl(strategy_class),
+            params=params,
+            aligned=aligned,
+            symbols=(symbol_x, symbol_y),
+        )
+        exposures[x_idx] = simulated[0]
+        exposures[y_idx] = simulated[1]
+        meta["event_driven_proxy"] = True
+    except Exception as exc:
+        entry_z = float(params.get("entry_z", 2.0))
+        exit_z = float(params.get("exit_z", 0.35))
+        lookback = int(params.get("lookback_window", 96))
+        x_pos, y_pos = _pair_spread_fallback_exposures(
+            aligned=aligned,
+            symbol_x=symbol_x,
+            symbol_y=symbol_y,
+            length=n,
+            entry_z=entry_z,
+            exit_z=exit_z,
+            lookback=lookback,
+        )
+
+        exposures[x_idx] = x_pos
+        exposures[y_idx] = y_pos
+        meta["event_driven_proxy"] = False
+        meta["event_driven_proxy_error"] = str(exc)
+
+
+def _apply_micro_range_expansion_strategy(
+    *,
+    params: Mapping[str, Any],
+    aligned: Mapping[str, np.ndarray],
+    symbols: Sequence[str],
+    exposures: np.ndarray,
+) -> None:
+    lookback = max(8, int(params.get("lookback", 30)))
+    range_z_threshold = float(params.get("range_z_threshold", 1.5))
+    volume_z_threshold = float(params.get("volume_z_threshold", 1.0))
+
+    for s_idx, symbol in enumerate(symbols):
+        high = aligned[f"{symbol}:high"]
+        low = aligned[f"{symbol}:low"]
+        close = aligned[f"{symbol}:close"]
+        volume = aligned[f"{symbol}:volume"]
+        range_pct = np.divide(high - low, np.clip(close, 1e-12, np.inf))
+        range_z = np.nan_to_num(_rolling_z(range_pct, lookback), nan=0.0)
+        vol_z = np.nan_to_num(_rolling_z(volume, lookback), nan=0.0)
+        ret = _returns_from_close(close)
+        breakout = np.where(ret >= 0.0, 1.0, -1.0)
+        active = (range_z >= range_z_threshold) & (vol_z >= volume_z_threshold)
+        exposures[s_idx] = np.where(active, breakout, 0.0)
+
+
 def _strategy_signal(
     candidate: dict[str, Any],
     *,
@@ -3883,59 +4056,25 @@ def _strategy_signal(
             meta=meta,
         )
 
-    elif strategy_class in {"VolCompressionVWAPReversionStrategy", "VolCompressionVwapReversionStrategy", "VolatilityCompressionReversionStrategy"}:
-        entry_z = float(params.get("entry_z", 1.5))
-        exit_z = float(params.get("exit_z", 0.35))
-        compression_pct = float(params.get("compression_percentile", 0.30))
-        comp_vol_ratio = float(params.get("compression_vol_ratio", params.get("compression_threshold", 0.85)))
-
-        for s_idx, symbol in enumerate(symbols):
-            close = aligned[f"{symbol}:close"]
-            high = aligned[f"{symbol}:high"]
-            low = aligned[f"{symbol}:low"]
-            volume = aligned[f"{symbol}:volume"]
-
-            dev_z = np.nan_to_num(_vwap_dev_z(high, low, close, volume, window=60, z_window=120), nan=0.0)
-            vr = np.nan_to_num(_vol_ratio_series(close, 12, 60), nan=0.0)
-            bw = np.nan_to_num(_rolling_z(np.abs(_returns_from_close(close)), 64), nan=0.0)
-            compression = (vr <= comp_vol_ratio) & (bw <= _normal_cdf(compression_pct) * 2.0)
-
-            pos = np.zeros(close.shape, dtype=float)
-            pos = np.where(compression & (dev_z <= -entry_z), 1.0, pos)
-            pos = np.where(compression & (dev_z >= entry_z), -1.0, pos)
-            pos = np.where(np.abs(dev_z) <= exit_z, 0.0, pos)
-            exposures[s_idx] = pos
+    elif strategy_class in {
+        "VolCompressionVWAPReversionStrategy",
+        "VolCompressionVwapReversionStrategy",
+        "VolatilityCompressionReversionStrategy",
+    }:
+        _apply_vol_compression_vwap_reversion_strategy(
+            params=params,
+            aligned=aligned,
+            symbols=symbols,
+            exposures=exposures,
+        )
 
     elif strategy_class == "LeadLagSpilloverStrategy":
-        # Build leader lag predictor for non-leader assets only.
-        leader_symbols = [symbol for symbol in symbols if symbol in _LEADERS]
-        laggards = [symbol for symbol in symbols if symbol not in _LEADERS and symbol not in _METALS]
-        entry_score = float(params.get("entry_score", params.get("entry_spillover", 0.35)))
-        exit_score = float(params.get("exit_score", params.get("exit_spillover", 0.08)))
-        lag_order = max(1, int(params.get("max_lag", 3)))
-
-        if leader_symbols and laggards:
-            leader_ret = np.zeros((len(leader_symbols), n), dtype=float)
-            for idx, sym in enumerate(leader_symbols):
-                leader_ret[idx] = _returns_from_close(aligned[f"{sym}:close"])
-
-            decay = np.exp(-np.arange(1, lag_order + 1, dtype=float))
-            decay /= np.sum(decay)
-
-            for symbol in laggards:
-                s_idx = symbols.index(symbol)
-                pred = np.zeros(n, dtype=float)
-                for lag in range(1, lag_order + 1):
-                    shifted = np.roll(np.mean(leader_ret, axis=0), lag)
-                    pred += decay[lag - 1] * shifted
-                follower_ret = _returns_from_close(aligned[f"{symbol}:close"])
-                score = np.zeros(n, dtype=float)
-                sigma = _safe_std(follower_ret)
-                if sigma > 1e-12:
-                    score = pred / sigma
-                pos = np.where(score >= entry_score, 1.0, np.where(score <= -entry_score, -1.0, 0.0))
-                pos = np.where(np.abs(score) <= exit_score, 0.0, pos)
-                exposures[s_idx] = pos
+        _apply_leadlag_spillover_strategy(
+            params=params,
+            aligned=aligned,
+            symbols=symbols,
+            exposures=exposures,
+        )
 
     elif strategy_class == "TopCapTimeSeriesMomentumStrategy":
         _apply_topcap_tsmom_strategy(
@@ -4025,21 +4164,12 @@ def _strategy_signal(
         )
 
     elif strategy_class == "SessionGatedResidualBasketReversionStrategy":
-        session_window_minutes = max(5, int(params.get("session_window_minutes", 30)))
-        transition_minutes = np.asarray((0, 480, 780), dtype=int)
-        minute_of_day = _minute_of_day(np.asarray(aligned["datetime"]))
-        session_gate = np.any(
-            np.abs(minute_of_day[:, None] - transition_minutes[None, :]) <= session_window_minutes,
-            axis=1,
-        )
-        _apply_residual_basket_reversion_strategy(
+        _apply_session_gated_residual_basket_reversion_strategy(
             params=params,
             aligned=aligned,
             symbols=symbols,
             exposures=exposures,
             meta=meta,
-            entry_gate=session_gate,
-            session_gated=True,
         )
 
     elif strategy_class == "BreadthThrustFailureReversalStrategy":
@@ -4093,36 +4223,15 @@ def _strategy_signal(
         )
 
     elif strategy_class in {"PairSpreadZScoreStrategy", "PairTradingZScoreStrategy"} and len(symbols) >= 2:
-        symbol_x, symbol_y, x_idx, y_idx = _resolve_symbol_pair(symbols, params)
-
-        try:
-            simulated = _simulate_event_driven_strategy_exposures(
-                _load_event_driven_strategy_impl(strategy_class),
-                params=params,
-                aligned=aligned,
-                symbols=(symbol_x, symbol_y),
-            )
-            exposures[x_idx] = simulated[0]
-            exposures[y_idx] = simulated[1]
-            meta["event_driven_proxy"] = True
-        except Exception as exc:
-            entry_z = float(params.get("entry_z", 2.0))
-            exit_z = float(params.get("exit_z", 0.35))
-            lookback = int(params.get("lookback_window", 96))
-            x_pos, y_pos = _pair_spread_fallback_exposures(
-                aligned=aligned,
-                symbol_x=symbol_x,
-                symbol_y=symbol_y,
-                length=n,
-                entry_z=entry_z,
-                exit_z=exit_z,
-                lookback=lookback,
-            )
-
-            exposures[x_idx] = x_pos
-            exposures[y_idx] = y_pos
-            meta["event_driven_proxy"] = False
-            meta["event_driven_proxy_error"] = str(exc)
+        _apply_pair_spread_strategy(
+            strategy_class=strategy_class,
+            params=params,
+            aligned=aligned,
+            symbols=symbols,
+            n=n,
+            exposures=exposures,
+            meta=meta,
+        )
 
     elif strategy_class == "LagConvergenceStrategy" and len(symbols) >= 2:
         _apply_lag_convergence_strategy(
@@ -4143,21 +4252,12 @@ def _strategy_signal(
         )
 
     elif strategy_class == "MicroRangeExpansion1sStrategy":
-        lookback = max(8, int(params.get("lookback", 30)))
-        range_z_threshold = float(params.get("range_z_threshold", 1.5))
-        volume_z_threshold = float(params.get("volume_z_threshold", 1.0))
-        for s_idx, symbol in enumerate(symbols):
-            high = aligned[f"{symbol}:high"]
-            low = aligned[f"{symbol}:low"]
-            close = aligned[f"{symbol}:close"]
-            volume = aligned[f"{symbol}:volume"]
-            range_pct = np.divide(high - low, np.clip(close, 1e-12, np.inf))
-            range_z = np.nan_to_num(_rolling_z(range_pct, lookback), nan=0.0)
-            vol_z = np.nan_to_num(_rolling_z(volume, lookback), nan=0.0)
-            ret = _returns_from_close(close)
-            breakout = np.where(ret >= 0.0, 1.0, -1.0)
-            active = (range_z >= range_z_threshold) & (vol_z >= volume_z_threshold)
-            exposures[s_idx] = np.where(active, breakout, 0.0)
+        _apply_micro_range_expansion_strategy(
+            params=params,
+            aligned=aligned,
+            symbols=symbols,
+            exposures=exposures,
+        )
 
     else:
         # Generic fallback: momentum sign.

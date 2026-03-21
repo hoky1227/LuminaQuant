@@ -1861,6 +1861,44 @@ def test_pair_trading_strategy_signal_respects_reentry_buffer():
     assert not np.any(np.abs(returns_raw) > 0.0)
 
 
+def test_pair_trading_single_symbol_falls_back_to_generic_momentum():
+    length = 128
+    close = np.concatenate(
+        [
+            np.linspace(100.0, 101.0, 64, dtype=float),
+            np.linspace(101.0, 109.0, 64, dtype=float),
+        ]
+    )
+    aligned = {
+        "datetime": _minute_datetimes(length),
+        "BTC/USDT:open": close,
+        "BTC/USDT:high": close + 0.1,
+        "BTC/USDT:low": close - 0.1,
+        "BTC/USDT:close": close,
+        "BTC/USDT:volume": np.full(length, 1000.0, dtype=float),
+    }
+    candidate = {
+        "strategy_class": "PairTradingZScoreStrategy",
+        "params": {
+            "symbol_x": "BTC/USDT",
+            "symbol_y": "ETH/USDT",
+        },
+    }
+
+    _, _, exposure, meta = research_runner._strategy_signal(
+        candidate,
+        aligned=aligned,
+        symbols=["BTC/USDT"],
+    )
+
+    ret = research_runner._returns_from_close(close)
+    mom = np.nan_to_num(research_runner._rolling_z(ret, 64), nan=0.0)
+    expected = np.where(mom >= 0.4, 1.0, np.where(mom <= -0.4, -1.0, 0.0))
+
+    np.testing.assert_array_equal(exposure, expected)
+    assert meta == {}
+
+
 def test_alpha101_formula_strategy_signal_uses_event_driven_proxy():
     length = 96
     open_price = np.linspace(100.0, 112.0, length, dtype=float)
