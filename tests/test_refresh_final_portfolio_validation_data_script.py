@@ -132,7 +132,7 @@ def test_collect_live_raw_rows_reduces_limit_after_rate_limit(monkeypatch) -> No
     calls: list[int] = []
     state = {"attempt": 0}
 
-    monkeypatch.setattr(MODULE, "create_binance_exchange", lambda **kwargs: _Exchange())
+    monkeypatch.setattr(MODULE, "create_binance_futures_client", lambda **kwargs: _Exchange())
     monkeypatch.setattr(MODULE.time, "sleep", lambda *_args, **_kwargs: None)
 
     def _fetch(*, exchange, symbol, since_ms, limit, retries, base_wait_sec):

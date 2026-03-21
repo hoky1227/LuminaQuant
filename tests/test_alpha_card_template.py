@@ -24,7 +24,7 @@ def test_generate_alpha_card_uses_strategy_profile_and_writes_file():
           order_timeout: 10
           reconciliation_interval_sec: 30
           exchange:
-            driver: "ccxt"
+            driver: "binance_futures"
             name: "binance"
             market_type: "future"
             position_mode: "HEDGE"
@@ -73,7 +73,7 @@ def test_generate_alpha_card_requires_overwrite_flag_when_file_exists():
         live:
           mode: "paper"
           exchange:
-            driver: "ccxt"
+            driver: "binance_futures"
             name: "binance"
             market_type: "future"
             position_mode: "HEDGE"

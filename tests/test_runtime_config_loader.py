@@ -22,7 +22,7 @@ class TestRuntimeConfigLoader(unittest.TestCase):
             live:
               mode: "paper"
               exchange:
-                driver: "ccxt"
+                driver: "binance_futures"
                 name: "binance"
                 market_type: "future"
                 position_mode: "HEDGE"
@@ -49,7 +49,7 @@ class TestRuntimeConfigLoader(unittest.TestCase):
             live:
               mode: "real"
               exchange:
-                driver: "ccxt"
+                driver: "binance_futures"
                 name: "binance"
                 market_type: "future"
                 position_mode: "HEDGE"
@@ -76,7 +76,7 @@ class TestRuntimeConfigLoader(unittest.TestCase):
             live:
               mode: "paper"
               exchange:
-                driver: "ccxt"
+                driver: "binance_futures"
                 name: "binance"
                 market_type: "future"
                 position_mode: "HEDGE"
@@ -109,7 +109,7 @@ class TestRuntimeConfigLoader(unittest.TestCase):
             live:
               mode: "paper"
               exchange:
-                driver: "ccxt"
+                driver: "binance_futures"
                 name: "binance"
                 market_type: "future"
                 position_mode: "HEDGE"
@@ -143,7 +143,7 @@ class TestRuntimeConfigLoader(unittest.TestCase):
             live:
               mode: "paper"
               exchange:
-                driver: "ccxt"
+                driver: "binance_futures"
                 name: "binance"
                 market_type: "future"
                 position_mode: "HEDGE"
@@ -200,7 +200,7 @@ class TestRuntimeConfigLoader(unittest.TestCase):
             live:
               mode: "paper"
               exchange:
-                driver: "ccxt"
+                driver: "binance_futures"
                 name: "binance"
                 market_type: "future"
                 position_mode: "HEDGE"
@@ -219,7 +219,7 @@ class TestRuntimeConfigLoader(unittest.TestCase):
                     "live": {
                         "mode": "paper",
                         "exchange": {
-                            "driver": "ccxt",
+                            "driver": "binance_futures",
                             "name": "binance",
                             "market_type": "future",
                             "position_mode": "HEDGE",
@@ -245,7 +245,7 @@ class TestRuntimeConfigLoader(unittest.TestCase):
             live:
               mode: "paper"
               exchange:
-                driver: "ccxt"
+                driver: "binance_futures"
                 name: "binance"
                 market_type: "future"
                 position_mode: "HEDGE"
@@ -280,7 +280,7 @@ class TestRuntimeConfigLoader(unittest.TestCase):
             live:
               mode: "paper"
               exchange:
-                driver: "ccxt"
+                driver: "binance_futures"
                 name: "binance"
                 market_type: "future"
                 position_mode: "HEDGE"
@@ -313,7 +313,7 @@ class TestRuntimeConfigLoader(unittest.TestCase):
             live:
               mode: "paper"
               exchange:
-                driver: "ccxt"
+                driver: "binance_futures"
                 name: "binance"
                 market_type: "future"
                 position_mode: "HEDGE"

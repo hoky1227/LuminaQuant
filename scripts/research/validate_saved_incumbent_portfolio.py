@@ -10,7 +10,15 @@ from typing import Any
 
 import numpy as np
 
+from lumina_quant.backtesting.cli_contract import RawFirstDataMissingError
+from lumina_quant.config import BacktestConfig
 from lumina_quant.eval.exact_window_runtime import RSSGuard
+from lumina_quant.eval.final_validation import (
+    build_latest_anchored_split,
+    discover_latest_common_complete_timestamp,
+    required_feature_symbols,
+    required_symbol_timeframes,
+)
 from lumina_quant.portfolio_split_contract import (
     FOLLOWUP_ROOT,
     OOS_START,
@@ -21,8 +29,9 @@ from lumina_quant.portfolio_split_contract import (
     VAL_START,
     resolve_incumbent_bundle_path,
 )
-from lumina_quant.storage.parquet import normalize_symbol
+from lumina_quant.storage.parquet import normalize_symbol, timeframe_to_milliseconds
 from lumina_quant.strategy_factory.research_runner import run_candidate_research
+from lumina_quant.utils.risk_free import resolve_risk_free_config, sharpe_ratio, sortino_ratio
 
 FEATURE_REQUIRED_STRATEGIES = {"CompositeTrendStrategy", "PerpCrowdingCarryStrategy"}
 DEFAULT_REFRESH_REPORT = FOLLOWUP_ROOT / "final_portfolio_validation_data_refresh_latest.json"
@@ -84,21 +93,33 @@ def _aggregate_stream(stream: list[dict[str, Any]]) -> dict[str, dict[str, Any]]
     for idx, point in enumerate(list(stream or [])):
         token, sort_key = _timestamp_token(point, idx)
         if token not in bucket:
-            bucket[token] = {"sort_key": sort_key, "value": 0.0, "raw": point.get("datetime", point.get("t"))}
+            bucket[token] = {
+                "sort_key": sort_key,
+                "value": 0.0,
+                "raw": point.get("datetime", point.get("t")),
+            }
         bucket[token]["value"] += safe_float(point.get("v"), 0.0)
     return bucket
 
 
-def _aligned_arrays(lhs_stream: list[dict[str, Any]], rhs_stream: list[dict[str, Any]]) -> tuple[np.ndarray, np.ndarray]:
-    lhs = _aggregate_stream(lhs_stream)
-    rhs = _aggregate_stream(rhs_stream)
-    merged = {**lhs}
-    for token, row in rhs.items():
-        merged.setdefault(token, row)
-    ordered = [token for token, _ in sorted(merged.items(), key=lambda item: item[1]["sort_key"])]
-    lhs_values = np.asarray([safe_float((lhs.get(token) or {}).get("value"), 0.0) for token in ordered], dtype=float)
-    rhs_values = np.asarray([safe_float((rhs.get(token) or {}).get("value"), 0.0) for token in ordered], dtype=float)
-    return lhs_values, rhs_values
+def _stream_from_aggregate(aggregated: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for _token, row in sorted(aggregated.items(), key=lambda item: item[1]["sort_key"]):
+        payload = {"t": row["raw"], "v": float(row["value"])}
+        if isinstance(row["raw"], str):
+            payload["datetime"] = row["raw"]
+        out.append(payload)
+    return out
+
+
+def _concat_streams(lhs_stream: list[dict[str, Any]], rhs_stream: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    aggregated = _aggregate_stream(lhs_stream)
+    for token, row in _aggregate_stream(rhs_stream).items():
+        if token not in aggregated:
+            aggregated[token] = row
+        else:
+            aggregated[token]["value"] += float(row["value"])
+    return _stream_from_aggregate(aggregated)
 
 
 def _weighted_stream(rows: list[dict[str, Any]], split: str) -> list[dict[str, Any]]:
@@ -108,15 +129,46 @@ def _weighted_stream(rows: list[dict[str, Any]], split: str) -> list[dict[str, A
         for idx, point in enumerate(list(((row.get("return_streams") or {}).get(split)) or [])):
             token, sort_key = _timestamp_token(point, idx)
             if token not in bucket:
-                bucket[token] = {"sort_key": sort_key, "value": 0.0, "raw": point.get("datetime", point.get("t"))}
+                bucket[token] = {
+                    "sort_key": sort_key,
+                    "value": 0.0,
+                    "raw": point.get("datetime", point.get("t")),
+                }
             bucket[token]["value"] += weight * safe_float(point.get("v"), 0.0)
-    out: list[dict[str, Any]] = []
-    for token, row in sorted(bucket.items(), key=lambda item: item[1]["sort_key"]):
-        payload = {"t": row["raw"], "v": float(row["value"])}
-        if isinstance(row["raw"], str):
-            payload["datetime"] = row["raw"]
-        out.append(payload)
-    return out
+    return _stream_from_aggregate(bucket)
+
+
+def _aligned_arrays(
+    lhs_stream: list[dict[str, Any]],
+    rhs_stream: list[dict[str, Any]],
+) -> tuple[np.ndarray, np.ndarray]:
+    lhs = _aggregate_stream(lhs_stream)
+    rhs = _aggregate_stream(rhs_stream)
+    merged = {**lhs}
+    for token, row in rhs.items():
+        merged.setdefault(token, row)
+    ordered = [token for token, _ in sorted(merged.items(), key=lambda item: item[1]["sort_key"])]
+    lhs_values = np.asarray(
+        [safe_float((lhs.get(token) or {}).get("value"), 0.0) for token in ordered],
+        dtype=float,
+    )
+    rhs_values = np.asarray(
+        [safe_float((rhs.get(token) or {}).get("value"), 0.0) for token in ordered],
+        dtype=float,
+    )
+    return lhs_values, rhs_values
+
+
+def _stream_timestamps(stream: list[dict[str, Any]]) -> np.ndarray:
+    timestamps: list[Any] = []
+    for point in list(stream or []):
+        raw = point.get("datetime", point.get("t"))
+        dt = parse_utc(raw if isinstance(raw, str) else None)
+        if dt is None and isinstance(raw, (int, float)):
+            scale = 1000.0 if abs(float(raw)) >= 1e12 else 1.0
+            dt = datetime.fromtimestamp(float(raw) / scale, tz=UTC)
+        timestamps.append(dt if dt is not None else raw)
+    return np.asarray(timestamps, dtype=object)
 
 
 def _max_drawdown(returns: np.ndarray) -> float:
@@ -128,36 +180,64 @@ def _max_drawdown(returns: np.ndarray) -> float:
     return float(np.max(drawdown)) if drawdown.size else 0.0
 
 
-def _metrics(returns: np.ndarray, periods_per_year: int = 365) -> dict[str, float]:
+def _metrics(
+    returns: np.ndarray,
+    *,
+    periods_per_year: int = 365,
+    timestamps: np.ndarray | None = None,
+    metric_config: Any | None = None,
+) -> dict[str, float]:
     if returns.size == 0:
         return {
             "total_return": 0.0,
+            "return": 0.0,
             "cagr": 0.0,
             "sharpe": 0.0,
             "sortino": 0.0,
             "calmar": 0.0,
             "max_drawdown": 0.0,
             "volatility": 0.0,
+            "risk_free_annual": 0.0,
+            "risk_free_per_period": 0.0,
+            "sortino_target_annual": 0.0,
+            "sortino_target_per_period": 0.0,
         }
+    resolved_rf = resolve_risk_free_config(
+        metric_config or BacktestConfig,
+        periods_per_year=int(periods_per_year),
+        timestamps=timestamps,
+    )
     total_return = float(np.prod(1.0 + returns) - 1.0)
     years = max(1.0 / periods_per_year, returns.size / periods_per_year)
     cagr = float(math.exp(math.log1p(max(-0.999999, total_return)) / years) - 1.0)
-    mu = float(np.mean(returns))
     sigma = float(np.std(returns, ddof=1)) if returns.size > 1 else 0.0
-    sharpe = 0.0 if sigma <= 1e-12 else (mu / sigma) * math.sqrt(periods_per_year)
-    downside = returns[returns < 0.0]
-    dsigma = float(np.std(downside, ddof=1)) if downside.size > 1 else 0.0
-    sortino = 0.0 if dsigma <= 1e-12 else (mu / dsigma) * math.sqrt(periods_per_year)
     mdd = _max_drawdown(returns)
     calmar = 0.0 if mdd <= 1e-12 else cagr / mdd
     return {
         "total_return": total_return,
+        "return": total_return,
         "cagr": cagr,
-        "sharpe": sharpe,
-        "sortino": sortino,
-        "calmar": calmar,
-        "max_drawdown": mdd,
+        "sharpe": float(
+            sharpe_ratio(
+                returns,
+                periods_per_year=int(periods_per_year),
+                risk_free_per_period=float(resolved_rf.per_period_rate),
+            )
+        ),
+        "sortino": float(
+            sortino_ratio(
+                returns,
+                periods_per_year=int(periods_per_year),
+                target_per_period=float(resolved_rf.sortino_target_per_period),
+            )
+        ),
+        "calmar": float(calmar),
+        "max_drawdown": float(mdd),
         "volatility": float(sigma * math.sqrt(periods_per_year)),
+        "risk_free_annual": float(resolved_rf.annual_rate),
+        "risk_free_per_period": float(resolved_rf.per_period_rate),
+        "sortino_target_annual": float(resolved_rf.sortino_target_annual),
+        "sortino_target_per_period": float(resolved_rf.sortino_target_per_period),
     }
 
 
@@ -180,105 +260,125 @@ def build_validation_split(oos_end: datetime) -> dict[str, str]:
     }
 
 
-def _common_validation_end(*, refresh_payload: dict[str, Any], feature_symbols: list[str]) -> datetime:
-    candidates: list[datetime] = []
-    cutoff = parse_utc(refresh_payload.get("collection_cutoff_utc"))
-    if cutoff is not None:
-        candidates.append(cutoff)
+def _latest_complete_bucket_start(last_1s_dt: datetime, timeframe: str) -> datetime:
+    tf_ms = int(timeframe_to_milliseconds(timeframe))
+    last_ms = int(last_1s_dt.timestamp() * 1000)
+    if tf_ms <= 1_000:
+        return last_1s_dt.replace(microsecond=0)
+    adjusted = last_ms - (tf_ms - 1_000)
+    if adjusted < 0:
+        raise ValueError(f"Insufficient 1s history to derive a complete {timeframe} bucket.")
+    start_ms = (adjusted // tf_ms) * tf_ms
+    return datetime.fromtimestamp(start_ms / 1000.0, tz=UTC)
+
+
+def _latest_common_complete_time(
+    *,
+    refresh_payload: dict[str, Any],
+    required_pairs: list[tuple[str, str]],
+    feature_symbols: list[str],
+) -> tuple[datetime, list[dict[str, str]]]:
+    ohlcv_last: dict[str, datetime] = {}
     for row in list(refresh_payload.get("ohlcv_results") or []):
+        symbol = normalize_symbol(str(row.get("symbol") or ""))
         dt = parse_utc(row.get("after_ohlcv_max_utc"))
-        if dt is not None:
-            candidates.append(dt)
-    feature_rows = {str(row.get("symbol")): row for row in list(refresh_payload.get("feature_results") or [])}
-    for symbol in feature_symbols:
-        dt = parse_utc((feature_rows.get(symbol) or {}).get("last_timestamp_utc"))
-        if dt is not None:
-            candidates.append(dt)
-    if not candidates:
-        raise ValueError("no refreshed coverage timestamps available")
-    return min(candidates)
+        if symbol and dt is not None:
+            ohlcv_last[symbol] = dt
 
+    feature_last: dict[str, datetime] = {}
+    for row in list(refresh_payload.get("feature_results") or []):
+        symbol = normalize_symbol(str(row.get("symbol") or ""))
+        dt = parse_utc(row.get("last_timestamp_utc"))
+        if symbol and dt is not None:
+            feature_last[symbol] = dt
 
-def _component_summaries(rows: list[dict[str, Any]], oos_stream: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    out: list[dict[str, Any]] = []
-    for row in rows:
-        component_oos = dict(row.get("oos") or {})
-        lhs, rhs = _aligned_arrays(list(((row.get("return_streams") or {}).get("oos")) or []), oos_stream)
-        corr = 0.0
-        if lhs.size >= 8 and rhs.size >= 8:
-            sigma_l = float(np.std(lhs, ddof=1))
-            sigma_r = float(np.std(rhs, ddof=1))
-            if sigma_l > 1e-12 and sigma_r > 1e-12:
-                corr = float(np.corrcoef(lhs, rhs)[0, 1])
-                if not math.isfinite(corr):
-                    corr = 0.0
-        out.append(
-            {
-                "candidate_id": row.get("candidate_id"),
-                "name": row.get("name"),
-                "strategy_class": row.get("strategy_class"),
-                "timeframe": row.get("strategy_timeframe") or row.get("timeframe"),
-                "saved_weight": safe_float(row.get("_saved_weight"), 0.0),
-                "oos_total_return": safe_float(component_oos.get("total_return", component_oos.get("return")), 0.0),
-                "oos_sharpe": safe_float(component_oos.get("sharpe"), 0.0),
-                "oos_max_drawdown": safe_float(component_oos.get("max_drawdown", component_oos.get("mdd")), 0.0),
-                "oos_turnover": safe_float(component_oos.get("turnover"), 0.0),
-                "portfolio_oos_corr": corr,
-            }
+    candidates: list[tuple[datetime, dict[str, str]]] = []
+    for symbol, timeframe in required_pairs:
+        dt_1s = ohlcv_last.get(symbol)
+        if dt_1s is None:
+            raise ValueError(
+                f"Missing refreshed 1s coverage for {symbol} required by {timeframe} validation."
+            )
+        complete_dt = _latest_complete_bucket_start(dt_1s, timeframe)
+        candidates.append(
+            (
+                complete_dt,
+                {
+                    "source": "market_data",
+                    "symbol": symbol,
+                    "timeframe": timeframe,
+                    "last_complete_utc": iso_utc(complete_dt) or "",
+                },
+            )
         )
-    return out
 
-
-def _monthly_oos_returns(stream: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    monthly: dict[str, list[float]] = defaultdict(list)
-    for point in list(stream or []):
-        dt = parse_utc(point.get("datetime") if isinstance(point.get("datetime"), str) else None)
+    for symbol in list(feature_symbols or []):
+        dt = feature_last.get(normalize_symbol(symbol))
         if dt is None:
-            try:
-                dt = datetime.fromtimestamp(float(point.get("t")) / 1000.0, tz=UTC)
-            except Exception:
-                continue
-        monthly[dt.strftime("%Y-%m")].append(safe_float(point.get("v"), 0.0))
-    out = []
-    for month in sorted(monthly):
-        returns = np.asarray(monthly[month], dtype=float)
-        out.append({"month": month, "total_return": float(np.prod(1.0 + returns) - 1.0), "days": int(returns.size)})
-    return out
+            raise ValueError(f"Missing refreshed feature coverage for {symbol}.")
+        candidates.append(
+            (
+                dt,
+                {
+                    "source": "feature_points",
+                    "symbol": normalize_symbol(symbol),
+                    "timeframe": "feature",
+                    "last_complete_utc": iso_utc(dt) or "",
+                },
+            )
+        )
+
+    if not candidates:
+        raise ValueError("No refreshed real-data coverage candidates available.")
+    anchor_dt, _ = min(candidates, key=lambda item: item[0])
+    evidence = [item[1] for item in sorted(candidates, key=lambda item: item[0])]
+    return anchor_dt, evidence
 
 
-def _stream_end_utc(stream: list[dict[str, Any]]) -> datetime | None:
-    latest: datetime | None = None
-    for point in list(stream or []):
-        raw_datetime = point.get("datetime")
-        raw_t = point.get("t")
-        dt = parse_utc(raw_datetime if isinstance(raw_datetime, str) else (raw_t if isinstance(raw_t, str) else None))
-        if dt is None:
-            try:
-                dt = datetime.fromtimestamp(float(raw_t) / 1000.0, tz=UTC)
-            except Exception:
-                continue
-        latest = dt if latest is None else max(latest, dt)
-    return latest
+def _build_comparison(
+    saved_metrics: dict[str, Any],
+    refreshed_metrics: dict[str, Any],
+) -> dict[str, dict[str, float]]:
+    comparison: dict[str, dict[str, float]] = {}
+    for split in ("train", "val", "oos"):
+        saved_split = dict(saved_metrics.get(split) or {})
+        refreshed_split = dict(refreshed_metrics.get(split) or {})
+        comparison[split] = {
+            "total_return_delta": safe_float(refreshed_split.get("total_return"), 0.0)
+            - safe_float(saved_split.get("total_return"), 0.0),
+            "sharpe_delta": safe_float(refreshed_split.get("sharpe"), 0.0)
+            - safe_float(saved_split.get("sharpe"), 0.0),
+            "max_drawdown_delta": safe_float(refreshed_split.get("max_drawdown"), 0.0)
+            - safe_float(saved_split.get("max_drawdown"), 0.0),
+        }
+    return comparison
 
 
-def _stream_from_aggregate(aggregated: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
-    out: list[dict[str, Any]] = []
-    for token, row in sorted(aggregated.items(), key=lambda item: item[1]["sort_key"]):
-        payload = {"t": row["raw"], "v": float(row["value"])}
-        if isinstance(row["raw"], str):
-            payload["datetime"] = row["raw"]
-        out.append(payload)
-    return out
+def _required_symbol_timeframes(rows: list[dict[str, Any]]) -> list[tuple[str, str]]:
+    return sorted(required_symbol_timeframes(rows))
 
 
-def _concat_streams(lhs_stream: list[dict[str, Any]], rhs_stream: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    aggregated = _aggregate_stream(lhs_stream)
-    for token, row in _aggregate_stream(rhs_stream).items():
-        if token not in aggregated:
-            aggregated[token] = row
+def _saved_weight_rows(
+    refreshed_rows: list[dict[str, Any]],
+    saved_weights: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    by_id = {str(row.get("candidate_id") or ""): dict(row) for row in refreshed_rows}
+    by_name = {str(row.get("name") or ""): dict(row) for row in refreshed_rows}
+    resolved: list[dict[str, Any]] = []
+    missing: list[str] = []
+    for weight_row in saved_weights:
+        key_id = str(weight_row.get("candidate_id") or "")
+        key_name = str(weight_row.get("name") or "")
+        source = by_id.get(key_id) or by_name.get(key_name)
+        if source is None:
+            missing.append(key_id or key_name or "unknown")
             continue
-        aggregated[token]["value"] += float(row["value"])
-    return _stream_from_aggregate(aggregated)
+        row = dict(source)
+        row["_saved_weight"] = safe_float(weight_row.get("weight"), 0.0)
+        resolved.append(row)
+    if missing:
+        raise RuntimeError("saved incumbent weights missing refreshed candidates: " + ", ".join(missing))
+    return resolved
 
 
 def _daily_aggregate_stream(stream: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -291,7 +391,8 @@ def _daily_aggregate_stream(stream: list[dict[str, Any]]) -> list[dict[str, Any]
                 dt = parse_utc(raw_t)
             if dt is None:
                 try:
-                    dt = datetime.fromtimestamp(float(raw_t) / 1000.0, tz=UTC)
+                    scale = 1000.0 if abs(float(raw_t)) >= 1e12 else 1.0
+                    dt = datetime.fromtimestamp(float(raw_t) / scale, tz=UTC)
                 except Exception:
                     continue
         day_key = dt.strftime("%Y-%m-%d")
@@ -341,13 +442,20 @@ def _extend_saved_rows(
         return_streams["oos"] = combined_oos_stream
         combined["return_streams"] = return_streams
 
-        oos_returns = np.asarray([safe_float(point.get("v"), 0.0) for point in combined_oos_stream], dtype=float)
+        oos_returns = np.asarray(
+            [safe_float(point.get("v"), 0.0) for point in combined_oos_stream],
+            dtype=float,
+        )
         refreshed_oos = dict((refreshed or {}).get("oos") or {})
         saved_oos = dict(saved.get("oos") or {})
         combined["oos"] = {
             **saved_oos,
-            **_metrics(oos_returns),
-            "return": _metrics(oos_returns)["total_return"],
+            **_metrics(oos_returns, periods_per_year=365, timestamps=_stream_timestamps(combined_oos_stream)),
+            "return": _metrics(
+                oos_returns,
+                periods_per_year=365,
+                timestamps=_stream_timestamps(combined_oos_stream),
+            )["total_return"],
             "trade_count": safe_float(saved_oos.get("trade_count"), 0.0)
             + safe_float(refreshed_oos.get("trade_count"), 0.0),
             "turnover": safe_float(saved_oos.get("turnover"), 0.0)
@@ -360,98 +468,254 @@ def _extend_saved_rows(
     return combined_rows
 
 
-def _saved_weight_rows(refreshed_rows: list[dict[str, Any]], saved_weights: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    by_id = {str(row.get("candidate_id") or ""): dict(row) for row in refreshed_rows}
-    by_name = {str(row.get("name") or ""): dict(row) for row in refreshed_rows}
-    resolved: list[dict[str, Any]] = []
-    missing: list[str] = []
-    for weight_row in saved_weights:
-        key_id = str(weight_row.get("candidate_id") or "")
-        key_name = str(weight_row.get("name") or "")
-        source = by_id.get(key_id) or by_name.get(key_name)
-        if source is None:
-            missing.append(key_id or key_name or "unknown")
-            continue
-        row = dict(source)
-        row["_saved_weight"] = safe_float(weight_row.get("weight"), 0.0)
-        resolved.append(row)
-    if missing:
-        raise RuntimeError("saved incumbent weights missing refreshed candidates: " + ", ".join(missing))
-    return resolved
+def _component_summaries(rows: list[dict[str, Any]], oos_stream: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        component_oos = dict(row.get("oos") or {})
+        lhs, rhs = _aligned_arrays(
+            list(((row.get("return_streams") or {}).get("oos")) or []),
+            oos_stream,
+        )
+        corr = 0.0
+        if lhs.size >= 8 and rhs.size >= 8:
+            sigma_l = float(np.std(lhs, ddof=1))
+            sigma_r = float(np.std(rhs, ddof=1))
+            if sigma_l > 1e-12 and sigma_r > 1e-12:
+                corr = float(np.corrcoef(lhs, rhs)[0, 1])
+                if not math.isfinite(corr):
+                    corr = 0.0
+        out.append(
+            {
+                "candidate_id": row.get("candidate_id"),
+                "name": row.get("name"),
+                "strategy_class": row.get("strategy_class"),
+                "timeframe": row.get("strategy_timeframe") or row.get("timeframe"),
+                "saved_weight": safe_float(row.get("_saved_weight"), 0.0),
+                "oos_total_return": safe_float(
+                    component_oos.get("total_return", component_oos.get("return")),
+                    0.0,
+                ),
+                "oos_sharpe": safe_float(component_oos.get("sharpe"), 0.0),
+                "oos_max_drawdown": safe_float(
+                    component_oos.get("max_drawdown", component_oos.get("mdd")),
+                    0.0,
+                ),
+                "oos_turnover": safe_float(component_oos.get("turnover"), 0.0),
+                "portfolio_oos_corr": corr,
+            }
+        )
+    return out
 
 
-def evaluate_saved_weight_portfolio(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    streams = {split: _weighted_stream(rows, split) for split in ("train", "val", "oos")}
+def _monthly_oos_returns(stream: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    monthly: dict[str, list[float]] = defaultdict(list)
+    for point in list(stream or []):
+        dt = parse_utc(point.get("datetime") if isinstance(point.get("datetime"), str) else None)
+        if dt is None:
+            try:
+                dt = datetime.fromtimestamp(float(point.get("t")) / 1000.0, tz=UTC)
+            except Exception:
+                continue
+        monthly[dt.strftime("%Y-%m")].append(safe_float(point.get("v"), 0.0))
+    out = []
+    for month in sorted(monthly):
+        returns = np.asarray(monthly[month], dtype=float)
+        out.append(
+            {
+                "month": month,
+                "total_return": float(np.prod(1.0 + returns) - 1.0),
+                "days": int(returns.size),
+            }
+        )
+    return out
+
+
+def _stream_end_utc(stream: list[dict[str, Any]]) -> datetime | None:
+    latest: datetime | None = None
+    for point in list(stream or []):
+        raw_datetime = point.get("datetime")
+        raw_t = point.get("t")
+        dt = parse_utc(
+            raw_datetime if isinstance(raw_datetime, str) else (raw_t if isinstance(raw_t, str) else None)
+        )
+        if dt is None:
+            try:
+                scale = 1000.0 if abs(float(raw_t)) >= 1e12 else 1.0
+                dt = datetime.fromtimestamp(float(raw_t) / scale, tz=UTC)
+            except Exception:
+                continue
+        latest = dt if latest is None else max(latest, dt)
+    return latest
+
+
+def _run_strict_research(
+    *,
+    candidates: list[dict[str, Any]],
+    strategy_timeframes: list[str],
+    symbol_universe: list[str],
+    split: dict[str, str],
+    min_bundle_bars: int,
+) -> dict[str, Any]:
+    report = run_candidate_research(
+        candidates=candidates,
+        strategy_timeframes=strategy_timeframes,
+        symbol_universe=symbol_universe,
+        split=split,
+        stage1_keep_ratio=1.0,
+        max_candidates=len(candidates),
+        data_mode="raw-first",
+        allow_csv_fallback=False,
+        allow_synthetic_fallback=False,
+        min_bundle_bars=max(1, int(min_bundle_bars)),
+    )
+    data_sources = dict(report.get("data_sources") or {})
+    if list(data_sources.get("synthetic") or []):
+        raise RuntimeError("Strict validation unexpectedly used synthetic fallback.")
+    if list(data_sources.get("csv") or []):
+        raise RuntimeError("Strict validation unexpectedly used CSV fallback.")
+    return report
+
+
+def evaluate_saved_weight_portfolio(rows: list[dict[str, Any]], *, metric_config: Any | None = None) -> dict[str, Any]:
+    raw_streams = {split: _weighted_stream(rows, split) for split in ("train", "val", "oos")}
+    daily_streams = {split: _daily_aggregate_stream(stream) for split, stream in raw_streams.items()}
     metrics: dict[str, dict[str, Any]] = {}
-    for split, stream in streams.items():
+    weighted_component_summaries: dict[str, dict[str, float]] = {}
+    for split, stream in daily_streams.items():
         returns = np.asarray([safe_float(item.get("v"), 0.0) for item in stream], dtype=float)
-        metric = _metrics(returns)
-        metric["return"] = metric["total_return"]
-        metric["trade_count"] = float(sum(safe_float((row.get(split) or {}).get("trade_count"), 0.0) * safe_float(row.get("_saved_weight"), 0.0) for row in rows))
-        metric["turnover"] = float(sum(safe_float((row.get(split) or {}).get("turnover"), 0.0) * safe_float(row.get("_saved_weight"), 0.0) for row in rows))
-        metric["benchmark_corr"] = float(sum(safe_float((row.get(split) or {}).get("benchmark_corr"), 0.0) * safe_float(row.get("_saved_weight"), 0.0) for row in rows))
-        metrics[split] = metric
-    oos_returns = np.asarray([safe_float(item.get("v"), 0.0) for item in streams["oos"]], dtype=float)
-    weighted_turnover = metrics["oos"].get("turnover", 0.0)
-    weighted_cost = float(sum(safe_float((row.get("metadata") or {}).get("cost_rate"), 0.0005) * safe_float(row.get("_saved_weight"), 0.0) for row in rows))
+        metrics[split] = _metrics(
+            returns,
+            periods_per_year=365,
+            timestamps=_stream_timestamps(stream),
+            metric_config=metric_config,
+        )
+        weighted_component_summaries[split] = {
+            "trade_count": float(
+                sum(
+                    safe_float((row.get(split) or {}).get("trade_count"), 0.0)
+                    * safe_float(row.get("_saved_weight"), 0.0)
+                    for row in rows
+                )
+            ),
+            "turnover": float(
+                sum(
+                    safe_float((row.get(split) or {}).get("turnover"), 0.0)
+                    * safe_float(row.get("_saved_weight"), 0.0)
+                    for row in rows
+                )
+            ),
+            "benchmark_corr": float(
+                sum(
+                    safe_float((row.get(split) or {}).get("benchmark_corr"), 0.0)
+                    * safe_float(row.get("_saved_weight"), 0.0)
+                    for row in rows
+                )
+            ),
+        }
+    oos_returns = np.asarray(
+        [safe_float(item.get("v"), 0.0) for item in daily_streams["oos"]],
+        dtype=float,
+    )
+    oos_timestamps = _stream_timestamps(daily_streams["oos"])
+    weighted_turnover = weighted_component_summaries["oos"].get("turnover", 0.0)
+    weighted_cost = float(
+        sum(
+            safe_float((row.get("metadata") or {}).get("cost_rate"), 0.0005)
+            * safe_float(row.get("_saved_weight"), 0.0)
+            for row in rows
+        )
+    )
     cost_x2 = oos_returns - (max(0.0, 2.0 - 1.0) * weighted_turnover * weighted_cost)
     cost_x3 = oos_returns - (max(0.0, 3.0 - 1.0) * weighted_turnover * weighted_cost)
     sensitivity = {
-        "cost_stress": {"x2": _metrics(cost_x2), "x3": _metrics(cost_x3)},
+        "cost_stress": {
+            "x2": _metrics(cost_x2, periods_per_year=365, timestamps=oos_timestamps, metric_config=metric_config),
+            "x3": _metrics(cost_x3, periods_per_year=365, timestamps=oos_timestamps, metric_config=metric_config),
+        },
         "param_drift": {
-            "minus_10pct_signal": _metrics(oos_returns * 0.9),
-            "plus_10pct_signal": _metrics(oos_returns * 1.1),
+            "minus_10pct_signal": _metrics(
+                oos_returns * 0.9,
+                periods_per_year=365,
+                timestamps=oos_timestamps,
+                metric_config=metric_config,
+            ),
+            "plus_10pct_signal": _metrics(
+                oos_returns * 1.1,
+                periods_per_year=365,
+                timestamps=oos_timestamps,
+                metric_config=metric_config,
+            ),
         },
     }
     return {
         "portfolio_metrics": metrics,
-        "portfolio_return_streams": streams,
-        "component_rows": _component_summaries(rows, streams["oos"]),
-        "oos_monthly_returns": _monthly_oos_returns(streams["oos"]),
+        "weighted_component_summaries": weighted_component_summaries,
+        "portfolio_return_streams": raw_streams,
+        "portfolio_daily_return_streams": daily_streams,
+        "component_rows": _component_summaries(rows, raw_streams["oos"]),
+        "oos_monthly_returns": _monthly_oos_returns(daily_streams["oos"]),
         "sensitivity": sensitivity,
     }
 
 
 def build_markdown(payload: dict[str, Any]) -> str:
-    comparison = dict(payload.get("comparison_vs_saved_artifact") or {})
-    refreshed = dict(payload.get("refreshed_portfolio_metrics") or {})
-    saved = dict(payload.get("saved_portfolio_metrics") or {})
+    continuity = dict(payload.get("continuity_validation") or {})
+    exact = dict(payload.get("exact_window_final_validation") or {})
+    exact_metrics = dict((exact.get("portfolio_metrics") or {}).get("oos") or {})
+    saved_metrics = dict((payload.get("saved_portfolio_metrics") or {}).get("oos") or {})
+    comparison = dict(((exact.get("comparison_vs_saved_artifact") or {}).get("oos")) or {})
     lines = [
-        "# Final Portfolio Validation",
+        "# Portfolio Validation Suite",
         "",
         f"- generated_at: `{payload.get('generated_at')}`",
         f"- status: `{payload.get('status')}`",
-        f"- validation_oos_end: `{(payload.get('validation_split') or {}).get('oos_end')}`",
+        f"- latest_common_complete_utc: `{payload.get('latest_common_complete_utc')}`",
         f"- recommended_action: `{payload.get('recommended_action')}`",
         "",
-        "## OOS comparison",
+        "## Final exact-window validation",
         "",
-        "| Metric | Saved artifact | Refreshed | Delta |",
+        f"- validation_oos_end: `{(exact.get('validation_split') or {}).get('oos_end')}`",
+        f"- risk_free_source: `{exact_metrics.get('risk_free_annual')}` annual | per-period `{exact_metrics.get('risk_free_per_period')}`",
+        "",
+        "| Metric | Saved artifact | Exact-window refreshed | Delta |",
         "|---|---:|---:|---:|",
-        f"| total_return | {safe_float((saved.get('oos') or {}).get('total_return'), 0.0):.4%} | {safe_float((refreshed.get('oos') or {}).get('total_return'), 0.0):.4%} | {safe_float((comparison.get('oos') or {}).get('total_return_delta'), 0.0):.4%} |",
-        f"| sharpe | {safe_float((saved.get('oos') or {}).get('sharpe'), 0.0):.3f} | {safe_float((refreshed.get('oos') or {}).get('sharpe'), 0.0):.3f} | {safe_float((comparison.get('oos') or {}).get('sharpe_delta'), 0.0):.3f} |",
-        f"| max_drawdown | {safe_float((saved.get('oos') or {}).get('max_drawdown'), 0.0):.4%} | {safe_float((refreshed.get('oos') or {}).get('max_drawdown'), 0.0):.4%} | {safe_float((comparison.get('oos') or {}).get('max_drawdown_delta'), 0.0):.4%} |",
+        f"| total_return | {safe_float(saved_metrics.get('total_return'), 0.0):.4%} | {safe_float(exact_metrics.get('total_return'), 0.0):.4%} | {safe_float(comparison.get('total_return_delta'), 0.0):.4%} |",
+        f"| sharpe | {safe_float(saved_metrics.get('sharpe'), 0.0):.3f} | {safe_float(exact_metrics.get('sharpe'), 0.0):.3f} | {safe_float(comparison.get('sharpe_delta'), 0.0):.3f} |",
+        f"| sortino | {safe_float(saved_metrics.get('sortino'), 0.0):.3f} | {safe_float(exact_metrics.get('sortino'), 0.0):.3f} | n/a |",
+        f"| max_drawdown | {safe_float(saved_metrics.get('max_drawdown'), 0.0):.4%} | {safe_float(exact_metrics.get('max_drawdown'), 0.0):.4%} | {safe_float(comparison.get('max_drawdown_delta'), 0.0):.4%} |",
+        "",
+        "## Metric semantics",
+        "",
+        "- `portfolio_metrics` are true portfolio return-stream metrics.",
+        "- `weighted_component_summaries` are weighted component aggregates for turnover / trade_count / benchmark_corr and are not portfolio-return-derived metrics.",
+        "",
+        "## Continuity validation",
+        "",
+        f"- status: `{continuity.get('status')}`",
+        f"- extension_start: `{continuity.get('extension_start_utc')}`",
+        f"- extension_end: `{continuity.get('extension_end_utc')}`",
         "",
         "## Components",
         "",
         "| Name | Weight | OOS Return | OOS Sharpe | Portfolio Corr |",
         "|---|---:|---:|---:|---:|",
     ]
-    for row in list(payload.get("component_rows") or []):
+    for row in list(exact.get("component_rows") or []):
         lines.append(
             f"| `{row['name']}` | {safe_float(row.get('saved_weight'), 0.0):.2%} | {safe_float(row.get('oos_total_return'), 0.0):.4%} | {safe_float(row.get('oos_sharpe'), 0.0):.3f} | {safe_float(row.get('portfolio_oos_corr'), 0.0):.3f} |"
         )
-    lines.extend(["", "## OOS monthly returns", ""])
-    for row in list(payload.get("oos_monthly_returns") or []):
-        lines.append(f"- `{row['month']}` | return={safe_float(row.get('total_return'), 0.0):.4%} | days={int(row.get('days') or 0)}")
-    lines.extend(["", "## Sensitivity", "", "```json", json.dumps(payload.get("sensitivity") or {}, indent=2, sort_keys=True), "```"])
+    lines.extend(["", "## Coverage evidence", ""])
+    for item in list(payload.get("coverage_evidence") or []):
+        lines.append(
+            f"- `{item.get('source')}` `{item.get('symbol')}` `{item.get('timeframe')}` -> `{item.get('last_complete_utc')}`"
+        )
     if payload.get("error"):
         lines.extend(["", "## Error", "", f"- `{payload['error']}`"])
-    return "\\n".join(lines) + "\\n"
+    return "\n".join(lines) + "\n"
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Validate the saved incumbent portfolio on refreshed data.")
+    parser = argparse.ArgumentParser(description="Validate the saved incumbent portfolio on strict real data.")
     parser.add_argument("--bundle-path", default="")
     parser.add_argument("--portfolio-path", default=str(PORTFOLIO_CURRENT_OPTIMIZATION))
     parser.add_argument("--refresh-report", default=str(DEFAULT_REFRESH_REPORT))
@@ -479,7 +743,11 @@ def main(argv: list[str] | None = None) -> int:
 
     bundle_payload = json.loads(bundle_path.read_text(encoding="utf-8"))
     portfolio_payload = json.loads(portfolio_path.read_text(encoding="utf-8"))
-    refresh_payload = json.loads(refresh_report_path.read_text(encoding="utf-8"))
+    refresh_payload = (
+        json.loads(refresh_report_path.read_text(encoding="utf-8"))
+        if refresh_report_path.exists()
+        else {}
+    )
 
     selected_team = list(bundle_payload.get("selected_team") or bundle_payload.get("candidates") or [])
     if not selected_team:
@@ -503,18 +771,11 @@ def main(argv: list[str] | None = None) -> int:
             if str(row.get("strategy_timeframe") or row.get("timeframe") or "").strip()
         }
     )
-    feature_symbols = sorted(
-        {
-            normalize_symbol(str(symbol))
-            for row in selected_team
-            if str(row.get("strategy_class") or row.get("strategy") or "") in FEATURE_REQUIRED_STRATEGIES
-            for symbol in list(row.get("symbols") or [])
-            if str(symbol).strip()
-        }
+    feature_symbols = required_feature_symbols(
+        selected_team,
+        feature_required_strategies=FEATURE_REQUIRED_STRATEGIES,
     )
-
-    validation_end = _common_validation_end(refresh_payload=refresh_payload, feature_symbols=feature_symbols)
-    validation_split = build_validation_split(validation_end)
+    required_pairs = _required_symbol_timeframes(selected_team)
 
     guard = RSSGuard(
         log_path=Path(args.rss_log),
@@ -525,16 +786,17 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     payload: dict[str, Any] = {
-        "artifact_kind": "final_portfolio_validation",
+        "artifact_kind": "portfolio_validation_suite",
         "generated_at": datetime.now(UTC).isoformat(),
         "status": "completed",
         "error": None,
         "bundle_path": str(bundle_path),
         "portfolio_path": str(portfolio_path.resolve()),
-        "refresh_report_path": str(refresh_report_path.resolve()),
-        "validation_split": validation_split,
+        "refresh_report_path": str(refresh_report_path.resolve()) if refresh_report_path.exists() else None,
         "symbols": symbols,
         "timeframes": timeframes,
+        "coverage_evidence": [],
+        "saved_portfolio_metrics": dict(portfolio_payload.get("portfolio_metrics") or {}),
     }
 
     try:
@@ -545,78 +807,144 @@ def main(argv: list[str] | None = None) -> int:
         if saved_oos_end is None:
             raise RuntimeError("saved incumbent artifact is missing OOS return streams")
 
-        extension_start = saved_oos_end + timedelta(seconds=1)
-        if extension_start > validation_end:
-            refreshed_report = {
-                "generated_at": datetime.now(UTC).isoformat(),
-                "base_timeframe": "1s",
-                "symbol_universe": symbols,
-                "data_sources": {"parquet": [], "csv": [], "synthetic": []},
-                "candidates": [],
-                "extension_only": True,
-            }
-            weighted_rows = _saved_weight_rows(selected_team, saved_weights)
-        else:
-            extension_split = {
-                "train_start": iso_utc(extension_start),
-                "train_end": iso_utc(extension_start),
-                "val_start": iso_utc(extension_start),
-                "val_end": iso_utc(extension_start),
-                "oos_start": iso_utc(extension_start),
-                "oos_end": iso_utc(validation_end),
-            }
-            refreshed_report = run_candidate_research(
-                candidates=selected_team,
-                strategy_timeframes=timeframes,
-                symbol_universe=symbols,
-                split=extension_split,
-                stage1_keep_ratio=1.0,
-                max_candidates=len(selected_team),
+        continuity_validation: dict[str, Any]
+        continuity_evidence: list[dict[str, str]] = []
+        if refresh_payload:
+            continuity_end, continuity_evidence = _latest_common_complete_time(
+                refresh_payload=refresh_payload,
+                required_pairs=required_pairs,
+                feature_symbols=feature_symbols,
             )
-            refreshed_rows = list(refreshed_report.get("candidates") or [])
-            weighted_rows = _extend_saved_rows(selected_team, refreshed_rows, saved_weights)
-
-        evaluated = evaluate_saved_weight_portfolio(weighted_rows)
-
-        saved_metrics = dict(portfolio_payload.get("portfolio_metrics") or {})
-        refreshed_metrics = dict(evaluated.get("portfolio_metrics") or {})
-        comparison: dict[str, dict[str, float]] = {}
-        for split in ("train", "val", "oos"):
-            saved_split = dict(saved_metrics.get(split) or {})
-            refreshed_split = dict(refreshed_metrics.get(split) or {})
-            comparison[split] = {
-                "total_return_delta": safe_float(refreshed_split.get("total_return"), 0.0) - safe_float(saved_split.get("total_return"), 0.0),
-                "sharpe_delta": safe_float(refreshed_split.get("sharpe"), 0.0) - safe_float(saved_split.get("sharpe"), 0.0),
-                "max_drawdown_delta": safe_float(refreshed_split.get("max_drawdown"), 0.0) - safe_float(saved_split.get("max_drawdown"), 0.0),
+            extension_start = saved_oos_end + timedelta(seconds=1)
+            if extension_start <= continuity_end:
+                continuity_split = {
+                    "train_start": iso_utc(extension_start),
+                    "train_end": iso_utc(extension_start),
+                    "val_start": iso_utc(extension_start),
+                    "val_end": iso_utc(extension_start),
+                    "oos_start": iso_utc(extension_start),
+                    "oos_end": iso_utc(continuity_end),
+                }
+                continuity_report = _run_strict_research(
+                    candidates=selected_team,
+                    strategy_timeframes=timeframes,
+                    symbol_universe=symbols,
+                    split=continuity_split,
+                    min_bundle_bars=1,
+                )
+                continuity_rows = _extend_saved_rows(
+                    selected_team,
+                    list(continuity_report.get("candidates") or []),
+                    saved_weights,
+                )
+                continuity_eval = evaluate_saved_weight_portfolio(continuity_rows)
+                continuity_validation = {
+                    "status": "completed",
+                    "extension_start_utc": iso_utc(extension_start),
+                    "extension_end_utc": iso_utc(continuity_end),
+                    "candidate_report": {
+                        "generated_at": continuity_report.get("generated_at"),
+                        "data_sources": continuity_report.get("data_sources"),
+                        "candidate_count": len(list(continuity_report.get("candidates") or [])),
+                    },
+                    "portfolio_metrics": continuity_eval.get("portfolio_metrics"),
+                    "weighted_component_summaries": continuity_eval.get("weighted_component_summaries"),
+                }
+            else:
+                continuity_validation = {
+                    "status": "no_extension_needed",
+                    "extension_start_utc": iso_utc(extension_start),
+                    "extension_end_utc": iso_utc(continuity_end),
+                    "portfolio_metrics": None,
+                    "weighted_component_summaries": None,
+                }
+        else:
+            continuity_validation = {
+                "status": "artifact_missing",
+                "extension_start_utc": None,
+                "extension_end_utc": None,
+                "portfolio_metrics": None,
+                "weighted_component_summaries": None,
             }
 
-        oos_delta = comparison["oos"]
+        latest_common_complete, exact_coverage = discover_latest_common_complete_timestamp(
+            root_path=str(BacktestConfig.MARKET_DATA_PARQUET_PATH),
+            exchange=str(BacktestConfig.MARKET_DATA_EXCHANGE),
+            rows=selected_team,
+            feature_symbols=feature_symbols,
+            suite_start=parse_utc(TRAIN_START) or datetime(2025, 1, 1, tzinfo=UTC),
+        )
+        if latest_common_complete < saved_oos_end:
+            raise RawFirstDataMissingError(
+                "Latest common complete real-data timestamp predates the saved incumbent OOS end; final validation cannot proceed."
+            )
+        exact_split = build_latest_anchored_split(
+            saved_oos_end=saved_oos_end,
+            anchored_oos_end=latest_common_complete,
+        ).as_dict()
+        exact_report = _run_strict_research(
+            candidates=selected_team,
+            strategy_timeframes=timeframes,
+            symbol_universe=symbols,
+            split=exact_split,
+            min_bundle_bars=1,
+        )
+        exact_rows = _saved_weight_rows(list(exact_report.get("candidates") or []), saved_weights)
+        exact_eval = evaluate_saved_weight_portfolio(exact_rows)
+        exact_comparison = _build_comparison(
+            dict(portfolio_payload.get("portfolio_metrics") or {}),
+            dict(exact_eval.get("portfolio_metrics") or {}),
+        )
+        oos_delta = dict(exact_comparison.get("oos") or {})
         recommended_action = (
-            "Refreshed validation materially diverged from the saved incumbent; review data freshness and deployment assumptions before final sign-off."
-            if abs(safe_float(oos_delta.get("total_return_delta"), 0.0)) > 0.01 or abs(safe_float(oos_delta.get("sharpe_delta"), 0.0)) > 0.5
-            else "Saved incumbent remains directionally consistent on refreshed data; proceed with manual final review and evidence collation."
+            "Exact-window refreshed validation materially diverged from the saved incumbent; review data freshness and deployment assumptions before final sign-off."
+            if abs(safe_float(oos_delta.get("total_return_delta"), 0.0)) > 0.01
+            or abs(safe_float(oos_delta.get("sharpe_delta"), 0.0)) > 0.5
+            else "Exact-window refreshed validation remains directionally consistent with the saved incumbent; proceed with manual final review and evidence collation."
         )
 
         payload.update(
             {
+                "latest_common_complete_utc": iso_utc(latest_common_complete),
                 "recommended_action": recommended_action,
-                "refreshed_candidate_report": {
-                    "generated_at": refreshed_report.get("generated_at"),
-                    "base_timeframe": refreshed_report.get("base_timeframe"),
-                    "symbol_universe": refreshed_report.get("symbol_universe"),
-                    "data_sources": refreshed_report.get("data_sources"),
-                    "candidate_count": len(list(refreshed_report.get("candidates") or [])),
-                    "extension_only": True,
-                    "extension_start": iso_utc(extension_start),
-                    "saved_oos_end": iso_utc(saved_oos_end),
+                "coverage_evidence": [
+                    *continuity_evidence,
+                    *[
+                        {
+                            "source": "real_data",
+                            "symbol": info.symbol,
+                            "timeframe": info.timeframe,
+                            "last_complete_utc": info.end_utc or "",
+                        }
+                        for info in exact_coverage
+                    ],
+                ],
+                "continuity_validation": continuity_validation,
+                "exact_window_final_validation": {
+                    "status": "completed",
+                    "validation_split": exact_split,
+                    "latest_common_complete_utc": iso_utc(latest_common_complete),
+                    "candidate_report": {
+                        "generated_at": exact_report.get("generated_at"),
+                        "data_sources": exact_report.get("data_sources"),
+                        "candidate_count": len(list(exact_report.get("candidates") or [])),
+                    },
+                    "portfolio_metrics": exact_eval.get("portfolio_metrics"),
+                    "weighted_component_summaries": exact_eval.get("weighted_component_summaries"),
+                    "portfolio_daily_return_streams": exact_eval.get("portfolio_daily_return_streams"),
+                    "comparison_vs_saved_artifact": exact_comparison,
+                    "component_rows": exact_eval.get("component_rows"),
+                    "oos_monthly_returns": exact_eval.get("oos_monthly_returns"),
+                    "sensitivity": exact_eval.get("sensitivity"),
+                    "saved_weight_total": float(sum(safe_float(row.get("weight"), 0.0) for row in saved_weights)),
+                    "risk_free_reference": {
+                        "mode": getattr(BacktestConfig, "RISK_FREE_MODE", "us_treasury_constant"),
+                        "tenor": getattr(BacktestConfig, "RISK_FREE_TENOR", "3m"),
+                        "annual_rate": float(getattr(BacktestConfig, "RISK_FREE_ANNUAL", 0.0)),
+                        "sortino_target_mode": getattr(BacktestConfig, "SORTINO_TARGET_MODE", "same_as_rf"),
+                        "sortino_target_annual": float(getattr(BacktestConfig, "SORTINO_TARGET_ANNUAL", 0.0)),
+                    },
                 },
-                "saved_portfolio_metrics": saved_metrics,
-                "refreshed_portfolio_metrics": refreshed_metrics,
-                "comparison_vs_saved_artifact": comparison,
-                "component_rows": evaluated.get("component_rows"),
-                "oos_monthly_returns": evaluated.get("oos_monthly_returns"),
-                "sensitivity": evaluated.get("sensitivity"),
-                "saved_weight_total": float(sum(safe_float(row.get("weight"), 0.0) for row in saved_weights)),
             }
         )
         guard.checkpoint("completed", {"recommended_action": recommended_action})

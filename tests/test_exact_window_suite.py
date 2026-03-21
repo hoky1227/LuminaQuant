@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import textwrap
 
 import numpy as np
+import pytest
 
 from lumina_quant.eval.exact_window_suite import (
     _build_candidate_result_row,
@@ -12,6 +14,7 @@ from lumina_quant.eval.exact_window_suite import (
     _recent_three_month_two_pct_pass,
     aggregate_stream_by_period,
     half_open_slice_indices,
+    run_exact_window_suite,
     resolve_coverage_adaptive_windows,
 )
 
@@ -258,11 +261,54 @@ def test_resolve_coverage_adaptive_windows_accepts_35_day_full_metals_overlap(mo
         requested_oos_end_exclusive="2026-03-09",
         profile="metals",
     )
-
     assert resolved["total_days"] == 35
     assert resolved["allocation_days"]["train"] >= 16
     assert resolved["allocation_days"]["val"] >= 8
     assert resolved["allocation_days"]["oos"] >= 10
+
+
+def test_run_exact_window_suite_uses_runtime_config_defaults_when_symbols_are_omitted(
+    tmp_path,
+    monkeypatch,
+):
+    cfg = textwrap.dedent(
+        """
+        trading:
+          symbols: ["SOL/USDT", "ADA/USDT"]
+          timeframe: "15m"
+        storage:
+          market_data_parquet_path: "var/data/suite_runtime_exact_window"
+          market_data_exchange: "coinbase"
+        """
+    ).strip()
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(cfg, encoding="utf-8")
+
+    captured: dict[str, object] = {}
+
+    def _stub_discover_symbol_coverage(**kwargs):
+        captured.update(kwargs)
+        raise RuntimeError("stop-after-capture")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("LQ_CONFIG_PATH", str(cfg_path))
+    monkeypatch.setattr(
+        "lumina_quant.eval.exact_window_suite.discover_symbol_coverage",
+        _stub_discover_symbol_coverage,
+    )
+
+    with pytest.raises(RuntimeError, match="stop-after-capture"):
+        run_exact_window_suite(
+            output_dir=str(tmp_path / "out"),
+            score_config={"minimum_trade_count": 0},
+            timeframes=["4h"],
+            symbols=None,
+            chunk_days=7,
+        )
+
+    assert captured["symbols"] == ["SOL/USDT", "ADA/USDT"]
+    assert captured["root_path"] == "var/data/suite_runtime_exact_window"
+    assert captured["exchange"] == "coinbase"
 
 
 def test_build_candidate_result_row_preserves_candidate_provenance_fields():

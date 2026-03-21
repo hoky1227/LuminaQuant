@@ -88,10 +88,13 @@ jobs:
         uses: astral-sh/setup-uv@v6
 
       - name: Sync dependencies
-        run: uv sync --extra optimize --extra dev --extra live
+        run: uv sync --extra optimize --extra dev --extra live-binance
 
       - name: Ruff lint check
         run: uv run ruff check .
+
+      - name: Architecture gate (native Binance Futures / no-CCXT critical path)
+        run: bash scripts/ci/architecture_gate_binance_native.sh
 
       - name: Architecture gate (live data decoupling)
         run: bash scripts/ci/architecture_gate_live_data.sh
@@ -114,7 +117,24 @@ jobs:
             tests/test_market_window_parity_flag_validation.py \
             tests/test_run_backtest_data_mode_contract.py \
             tests/test_optimize_data_mode_contract.py \
-            tests/test_backtest_optimize_loader_entrypoint.py
+            tests/test_backtest_optimize_loader_entrypoint.py \
+            tests/test_collect_binance_aggtrades_raw.py \
+            tests/test_materialize_from_raw.py \
+            tests/test_market_data_loader_modes.py \
+            tests/test_raw_first_lineage.py \
+            tests/test_raw_first_lineage_contract.py \
+            tests/test_refresh_final_portfolio_validation_data_script.py
+
+      - name: Native Binance Futures + strict validation contract tests
+        run: |
+          uv run pytest -q \
+            tests/test_binance_futures_exchange.py \
+            tests/test_binance_futures_exchange_factory.py \
+            tests/test_no_ccxt_runtime_dependency.py \
+            tests/test_final_validation_helpers.py \
+            tests/test_validate_saved_incumbent_portfolio_script.py \
+            tests/test_risk_free_metrics.py \
+            tests/test_risk_free_metric_consistency.py
 
       - name: Architecture check
         run: uv run python scripts/check_architecture.py

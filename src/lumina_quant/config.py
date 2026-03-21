@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from collections.abc import MutableMapping
 from dataclasses import asdict
 from typing import ClassVar
 
@@ -29,394 +30,509 @@ def _as_bool(value, default: bool = False) -> bool:
     return default
 
 
-_CONFIG_PATH = os.getenv("LQ_CONFIG_PATH", "config.yaml")
-_RUNTIME = load_runtime_config(config_path=_CONFIG_PATH)
-os.environ.setdefault("LQ__STORAGE__BACKEND", str(_RUNTIME.storage.backend))
-os.environ.setdefault(
-    "LQ__STORAGE__MARKET_DATA_PARQUET_PATH",
-    str(_RUNTIME.storage.market_data_parquet_path or "data/market_parquet"),
-)
-os.environ.setdefault(
-    "LQ__STORAGE__WAL_MAX_BYTES",
-    str(int(getattr(_RUNTIME.storage, "wal_max_bytes", 268435456))),
-)
-os.environ.setdefault(
-    "LQ__STORAGE__WAL_COMPACT_ON_THRESHOLD",
-    "1" if bool(getattr(_RUNTIME.storage, "wal_compact_on_threshold", True)) else "0",
-)
-os.environ.setdefault(
-    "LQ__STORAGE__WAL_COMPACTION_INTERVAL_SECONDS",
-    str(int(getattr(_RUNTIME.storage, "wal_compaction_interval_seconds", 3600))),
-)
-os.environ.setdefault(
-    "LQ__STORAGE__COLLECTOR_PERIODIC_ENABLED",
-    "1" if bool(getattr(_RUNTIME.storage, "collector_periodic_enabled", True)) else "0",
-)
-os.environ.setdefault(
-    "LQ__STORAGE__COLLECTOR_POLL_SECONDS",
-    str(int(getattr(_RUNTIME.storage, "collector_poll_seconds", 2))),
-)
-os.environ.setdefault(
-    "LQ__STORAGE__COLLECTOR_BOOTSTRAP_LOOKBACK_HOURS",
-    str(int(getattr(_RUNTIME.storage, "collector_bootstrap_lookback_hours", 24))),
-)
-os.environ.setdefault(
-    "LQ__STORAGE__MATERIALIZER_PERIODIC_ENABLED",
-    "1" if bool(getattr(_RUNTIME.storage, "materializer_periodic_enabled", True)) else "0",
-)
-os.environ.setdefault(
-    "LQ__STORAGE__MATERIALIZER_POLL_SECONDS",
-    str(int(getattr(_RUNTIME.storage, "materializer_poll_seconds", 5))),
-)
-os.environ.setdefault(
-    "LQ__STORAGE__MATERIALIZER_BASE_TIMEFRAME",
-    str(getattr(_RUNTIME.storage, "materializer_base_timeframe", "1s") or "1s"),
-)
-os.environ.setdefault(
-    "LQ__STORAGE__MATERIALIZER_REQUIRED_TIMEFRAMES",
-    json.dumps(list(getattr(_RUNTIME.storage, "materializer_required_timeframes", ["1s"]))),
-)
-if str(_RUNTIME.storage.postgres_dsn or "").strip():
-    os.environ.setdefault(
-        str(_RUNTIME.storage.postgres_dsn_env or "LQ_POSTGRES_DSN"),
-        str(_RUNTIME.storage.postgres_dsn),
-    )
-os.environ.setdefault(
-    "LQ_GPU_MODE",
-    str(getattr(_RUNTIME.execution, "gpu_mode", _RUNTIME.execution.compute_backend) or "gpu"),
-)
-os.environ.setdefault(
-    "LQ_GPU_VRAM_GB",
-    str(float(getattr(_RUNTIME.execution, "gpu_vram_gb", 0.0))),
-)
-os.environ.setdefault(
-    "LQ__EXECUTION__GPU_MODE",
-    str(getattr(_RUNTIME.execution, "gpu_mode", _RUNTIME.execution.compute_backend) or "gpu"),
-)
-os.environ.setdefault(
-    "LQ__EXECUTION__GPU_VRAM_GB",
-    str(float(getattr(_RUNTIME.execution, "gpu_vram_gb", 0.0))),
-)
-os.environ.setdefault(
-    "LQ__BACKTEST__CHUNK_DAYS", str(int(getattr(_RUNTIME.backtest, "chunk_days", 2)))
-)
-os.environ.setdefault(
-    "LQ__BACKTEST__CHUNK_WARMUP_BARS",
-    str(int(getattr(_RUNTIME.backtest, "chunk_warmup_bars", 0))),
-)
-os.environ.setdefault(
-    "LQ__BACKTEST__SKIP_AHEAD_ENABLED",
-    "1" if bool(getattr(_RUNTIME.backtest, "skip_ahead_enabled", True)) else "0",
-)
-os.environ.setdefault(
-    "LQ__LIVE__POLL_SECONDS",
-    str(int(getattr(_RUNTIME.live, "poll_seconds", getattr(_RUNTIME.live, "poll_interval", 20)))),
-)
-os.environ.setdefault(
-    "LQ__LIVE__WINDOW_SECONDS",
-    str(int(getattr(_RUNTIME.live, "window_seconds", 20))),
-)
-os.environ.setdefault(
-    "LQ__LIVE__MARKET_DATA_SOURCE",
-    str(getattr(_RUNTIME.live, "market_data_source", "committed")),
-)
-os.environ.setdefault(
-    "LQ__LIVE__ORDER_STATE_SOURCE",
-    str(getattr(_RUNTIME.live, "order_state_source", "polling")),
-)
-os.environ.setdefault(
-    "LQ__LIVE__SHADOW_LIVE_ENABLED",
-    "1" if bool(getattr(_RUNTIME.live, "shadow_live_enabled", False)) else "0",
-)
-os.environ.setdefault(
-    "LQ__LIVE__RECONCILIATION_POLL_FALLBACK_ENABLED",
-    "1" if bool(getattr(_RUNTIME.live, "reconciliation_poll_fallback_enabled", True)) else "0",
-)
-os.environ.setdefault(
-    "LQ__LIVE__BOOK_TICKER_ENABLED",
-    "1" if bool(getattr(_RUNTIME.live, "book_ticker_enabled", False)) else "0",
-)
-os.environ.setdefault(
-    "LQ__LIVE__STARTUP_RECONCILIATION_HARD_FAIL",
-    "1" if bool(getattr(_RUNTIME.live, "startup_reconciliation_hard_fail", False)) else "0",
-)
-os.environ.setdefault(
-    "LQ__LIVE__MATERIALIZED_STALENESS_THRESHOLD_SECONDS",
-    str(int(getattr(_RUNTIME.live, "materialized_staleness_threshold_seconds", 45))),
-)
-os.environ.setdefault(
-    "LQ__LIVE__MATERIALIZED_STALENESS_ALERT_COOLDOWN_SECONDS",
-    str(int(getattr(_RUNTIME.live, "materialized_staleness_alert_cooldown_seconds", 60))),
-)
-os.environ.setdefault(
-    "LQ__BACKTEST__POLL_SECONDS",
-    str(int(getattr(_RUNTIME.backtest, "poll_seconds", 20))),
-)
-os.environ.setdefault(
-    "LQ__BACKTEST__WINDOW_SECONDS",
-    str(int(getattr(_RUNTIME.backtest, "window_seconds", 20))),
-)
-os.environ.setdefault(
-    "LQ__BACKTEST__DECISION_CADENCE_SECONDS",
-    str(int(getattr(_RUNTIME.backtest, "decision_cadence_seconds", 20))),
-)
-os.environ.setdefault(
-    "LQ__MARKET_WINDOW__PARITY_V2_ENABLED",
-    "1" if bool(getattr(_RUNTIME.market_window, "parity_v2_enabled", False)) else "0",
-)
-os.environ.setdefault(
-    "LQ__MARKET_WINDOW__METRICS_LOG_PATH",
-    str(
-        getattr(
-            _RUNTIME.market_window, "metrics_log_path", "logs/live/market_window_metrics.ndjson"
+def _bool_to_env(value: bool) -> str:
+    return "1" if bool(value) else "0"
+
+
+def _runtime_env_defaults(runtime) -> dict[str, str]:
+    storage = runtime.storage
+    execution = runtime.execution
+    backtest = runtime.backtest
+    live = runtime.live
+    market_window = runtime.market_window
+
+    defaults = {
+        "LQ__STORAGE__BACKEND": str(storage.backend),
+        "LQ__STORAGE__MARKET_DATA_PARQUET_PATH": str(
+            storage.market_data_parquet_path or "data/market_parquet"
+        ),
+        "LQ__STORAGE__WAL_MAX_BYTES": str(int(getattr(storage, "wal_max_bytes", 268435456))),
+        "LQ__STORAGE__WAL_COMPACT_ON_THRESHOLD": _bool_to_env(
+            bool(getattr(storage, "wal_compact_on_threshold", True))
+        ),
+        "LQ__STORAGE__WAL_COMPACTION_INTERVAL_SECONDS": str(
+            int(getattr(storage, "wal_compaction_interval_seconds", 3600))
+        ),
+        "LQ__STORAGE__COLLECTOR_PERIODIC_ENABLED": _bool_to_env(
+            bool(getattr(storage, "collector_periodic_enabled", True))
+        ),
+        "LQ__STORAGE__COLLECTOR_POLL_SECONDS": str(
+            int(getattr(storage, "collector_poll_seconds", 2))
+        ),
+        "LQ__STORAGE__COLLECTOR_BOOTSTRAP_LOOKBACK_HOURS": str(
+            int(getattr(storage, "collector_bootstrap_lookback_hours", 24))
+        ),
+        "LQ__STORAGE__MATERIALIZER_PERIODIC_ENABLED": _bool_to_env(
+            bool(getattr(storage, "materializer_periodic_enabled", True))
+        ),
+        "LQ__STORAGE__MATERIALIZER_POLL_SECONDS": str(
+            int(getattr(storage, "materializer_poll_seconds", 5))
+        ),
+        "LQ__STORAGE__MATERIALIZER_BASE_TIMEFRAME": str(
+            getattr(storage, "materializer_base_timeframe", "1s") or "1s"
+        ),
+        "LQ__STORAGE__MATERIALIZER_REQUIRED_TIMEFRAMES": json.dumps(
+            list(getattr(storage, "materializer_required_timeframes", ["1s"]))
+        ),
+        "LQ_GPU_MODE": str(getattr(execution, "gpu_mode", execution.compute_backend) or "gpu"),
+        "LQ_GPU_VRAM_GB": str(float(getattr(execution, "gpu_vram_gb", 0.0))),
+        "LQ__EXECUTION__GPU_MODE": str(
+            getattr(execution, "gpu_mode", execution.compute_backend) or "gpu"
+        ),
+        "LQ__EXECUTION__GPU_VRAM_GB": str(float(getattr(execution, "gpu_vram_gb", 0.0))),
+        "LQ__BACKTEST__CHUNK_DAYS": str(int(getattr(backtest, "chunk_days", 2))),
+        "LQ__BACKTEST__CHUNK_WARMUP_BARS": str(
+            int(getattr(backtest, "chunk_warmup_bars", 0))
+        ),
+        "LQ__BACKTEST__SKIP_AHEAD_ENABLED": _bool_to_env(
+            bool(getattr(backtest, "skip_ahead_enabled", True))
+        ),
+        "LQ__LIVE__POLL_SECONDS": str(
+            int(getattr(live, "poll_seconds", getattr(live, "poll_interval", 20)))
+        ),
+        "LQ__LIVE__WINDOW_SECONDS": str(int(getattr(live, "window_seconds", 20))),
+        "LQ__LIVE__MARKET_DATA_SOURCE": str(getattr(live, "market_data_source", "committed")),
+        "LQ__LIVE__ORDER_STATE_SOURCE": str(getattr(live, "order_state_source", "polling")),
+        "LQ__LIVE__SHADOW_LIVE_ENABLED": _bool_to_env(
+            bool(getattr(live, "shadow_live_enabled", False))
+        ),
+        "LQ__LIVE__RECONCILIATION_POLL_FALLBACK_ENABLED": _bool_to_env(
+            bool(getattr(live, "reconciliation_poll_fallback_enabled", True))
+        ),
+        "LQ__LIVE__BOOK_TICKER_ENABLED": _bool_to_env(
+            bool(getattr(live, "book_ticker_enabled", False))
+        ),
+        "LQ__LIVE__STARTUP_RECONCILIATION_HARD_FAIL": _bool_to_env(
+            bool(getattr(live, "startup_reconciliation_hard_fail", False))
+        ),
+        "LQ__LIVE__MATERIALIZED_STALENESS_THRESHOLD_SECONDS": str(
+            int(getattr(live, "materialized_staleness_threshold_seconds", 45))
+        ),
+        "LQ__LIVE__MATERIALIZED_STALENESS_ALERT_COOLDOWN_SECONDS": str(
+            int(getattr(live, "materialized_staleness_alert_cooldown_seconds", 60))
+        ),
+        "LQ__BACKTEST__POLL_SECONDS": str(int(getattr(backtest, "poll_seconds", 20))),
+        "LQ__BACKTEST__WINDOW_SECONDS": str(int(getattr(backtest, "window_seconds", 20))),
+        "LQ__BACKTEST__DECISION_CADENCE_SECONDS": str(
+            int(getattr(backtest, "decision_cadence_seconds", 20))
+        ),
+        "LQ__MARKET_WINDOW__PARITY_V2_ENABLED": _bool_to_env(
+            bool(getattr(market_window, "parity_v2_enabled", False))
+        ),
+        "LQ__MARKET_WINDOW__METRICS_LOG_PATH": str(
+            getattr(
+                market_window,
+                "metrics_log_path",
+                "logs/live/market_window_metrics.ndjson",
+            )
+            or "logs/live/market_window_metrics.ndjson"
+        ),
+    }
+    postgres_dsn = str(getattr(storage, "postgres_dsn", "") or "").strip()
+    if postgres_dsn:
+        defaults[str(getattr(storage, "postgres_dsn_env", "LQ_POSTGRES_DSN") or "LQ_POSTGRES_DSN")] = (
+            postgres_dsn
         )
-        or "logs/live/market_window_metrics.ndjson"
-    ),
+    return defaults
+
+
+def _seed_runtime_env_defaults(runtime, *, environ: MutableMapping[str, str] | None = None) -> None:
+    target = os.environ if environ is None else environ
+    for key, value in _runtime_env_defaults(runtime).items():
+        target.setdefault(key, value)
+
+
+def _current_config_path() -> str:
+    return str(os.getenv("LQ_CONFIG_PATH", "config.yaml") or "config.yaml")
+
+
+def _runtime_env_without_auto_seeded_defaults(
+    environ: MutableMapping[str, str] | None = None,
+) -> dict[str, str]:
+    source = os.environ if environ is None else environ
+    effective = dict(source)
+    _strip_auto_seeded_runtime_env_defaults(
+        effective,
+        seeded_defaults=_SEEDED_RUNTIME_ENV_DEFAULTS,
+        env_before_seed=_ENV_BEFORE_RUNTIME_SEED,
+    )
+    return effective
+
+
+def _strip_auto_seeded_runtime_env_defaults(
+    target: MutableMapping[str, str],
+    *,
+    seeded_defaults: MutableMapping[str, str] | dict[str, str],
+    env_before_seed: MutableMapping[str, str] | dict[str, str],
+) -> None:
+    for key, value in seeded_defaults.items():
+        if key in env_before_seed:
+            continue
+        if target.get(key) == value:
+            target.pop(key, None)
+
+
+def _refresh_seeded_runtime_env_defaults(
+    runtime, *, environ: MutableMapping[str, str] | None = None
+) -> None:
+    target = os.environ if environ is None else environ
+    next_defaults = _runtime_env_defaults(runtime)
+    _strip_auto_seeded_runtime_env_defaults(
+        target,
+        seeded_defaults=_SEEDED_RUNTIME_ENV_DEFAULTS,
+        env_before_seed=_ENV_BEFORE_RUNTIME_SEED,
+    )
+    for key, value in next_defaults.items():
+        if key in _ENV_BEFORE_RUNTIME_SEED:
+            target.setdefault(key, value)
+            continue
+        target.setdefault(key, value)
+    _SEEDED_RUNTIME_ENV_DEFAULTS.clear()
+    _SEEDED_RUNTIME_ENV_DEFAULTS.update(next_defaults)
+
+
+def load_current_runtime_config():
+    runtime = load_runtime_config(
+        config_path=_current_config_path(),
+        env=_runtime_env_without_auto_seeded_defaults(),
+    )
+    _refresh_seeded_runtime_env_defaults(runtime)
+    return runtime
+
+
+def current_market_data_runtime_settings() -> dict[str, object]:
+    runtime = load_current_runtime_config()
+    raw = load_yaml_config(config_path=_current_config_path())
+    trading_raw = raw.get("trading", {}) if isinstance(raw.get("trading", {}), dict) else {}
+    storage_raw = raw.get("storage", {}) if isinstance(raw.get("storage", {}), dict) else {}
+    return {
+        "symbols": list(trading_raw.get("symbols") or runtime.trading.symbols),
+        "market_data_parquet_path": str(
+            storage_raw.get("market_data_parquet_path")
+            or runtime.storage.market_data_parquet_path
+            or "data/market_parquet"
+        ),
+        "market_data_exchange": str(
+            storage_raw.get("market_data_exchange") or runtime.storage.market_data_exchange or "binance"
+        ),
+    }
+
+
+_PREVIOUS_ENV_BEFORE_RUNTIME_SEED = dict(globals().get("_ENV_BEFORE_RUNTIME_SEED", {}))
+_PREVIOUS_SEEDED_RUNTIME_ENV_DEFAULTS = dict(globals().get("_SEEDED_RUNTIME_ENV_DEFAULTS", {}))
+_strip_auto_seeded_runtime_env_defaults(
+    os.environ,
+    seeded_defaults=_PREVIOUS_SEEDED_RUNTIME_ENV_DEFAULTS,
+    env_before_seed=_PREVIOUS_ENV_BEFORE_RUNTIME_SEED,
 )
+_CONFIG_PATH = os.getenv("LQ_CONFIG_PATH", "config.yaml")
+_ENV_BEFORE_RUNTIME_SEED = dict(os.environ)
+_RUNTIME = load_runtime_config(config_path=_CONFIG_PATH)
+_SEEDED_RUNTIME_ENV_DEFAULTS = _runtime_env_defaults(_RUNTIME)
+_seed_runtime_env_defaults(_RUNTIME)
+
+
+def _apply_config_values(config_cls: type, values: dict[str, object]) -> None:
+    for key, value in values.items():
+        setattr(config_cls, key, value)
+
+
+def _base_config_values(runtime) -> dict[str, object]:
+    trading = runtime.trading
+    risk = runtime.risk
+    execution = runtime.execution
+    storage = runtime.storage
+    backtest = runtime.backtest
+    market_window = runtime.market_window
+    timeframe = str(trading.timeframe)
+    timeframes = list(getattr(trading, "timeframes", [])) or [timeframe]
+    gpu_mode = str(getattr(execution, "gpu_mode", execution.compute_backend) or "gpu").lower()
+    risk_free_annual = float(
+        getattr(backtest, "risk_free_annual", getattr(backtest, "risk_free_rate", 0.0))
+        or 0.0
+    )
+    return {
+        "LOG_LEVEL": runtime.system.log_level,
+        "SYMBOLS": list(trading.symbols),
+        "TIMEFRAME": timeframe,
+        "TIMEFRAMES": timeframes,
+        "INITIAL_CAPITAL": float(trading.initial_capital),
+        "TARGET_ALLOCATION": float(trading.target_allocation),
+        "MIN_TRADE_QTY": float(trading.min_trade_qty),
+        "RISK_PER_TRADE": float(risk.risk_per_trade),
+        "MAX_DAILY_LOSS_PCT": float(risk.max_daily_loss_pct),
+        "MAX_TOTAL_MARGIN_PCT": float(risk.max_total_margin_pct),
+        "MAX_SYMBOL_EXPOSURE_PCT": float(risk.max_symbol_exposure_pct),
+        "MAX_ORDER_VALUE": float(risk.max_order_value),
+        "DEFAULT_STOP_LOSS_PCT": float(risk.default_stop_loss_pct),
+        "MAX_INTRADAY_DRAWDOWN_PCT": float(risk.max_intraday_drawdown_pct),
+        "MAX_ROLLING_LOSS_PCT_1H": float(risk.max_rolling_loss_pct_1h),
+        "FREEZE_NEW_ENTRIES_ON_BREACH": bool(risk.freeze_new_entries_on_breach),
+        "AUTO_FLATTEN_ON_BREACH": bool(risk.auto_flatten_on_breach),
+        "MAKER_FEE_RATE": float(execution.maker_fee_rate),
+        "TAKER_FEE_RATE": float(execution.taker_fee_rate),
+        "SPREAD_RATE": float(execution.spread_rate),
+        "SLIPPAGE_RATE": float(execution.slippage_rate),
+        "FUNDING_RATE_PER_8H": float(execution.funding_rate_per_8h),
+        "FUNDING_INTERVAL_HOURS": int(execution.funding_interval_hours),
+        "MAINTENANCE_MARGIN_RATE": float(execution.maintenance_margin_rate),
+        "LIQUIDATION_BUFFER_RATE": float(execution.liquidation_buffer_rate),
+        "GPU_MODE": gpu_mode,
+        "GPU_VRAM_GB": float(getattr(execution, "gpu_vram_gb", 0.0)),
+        "COMPUTE_BACKEND": gpu_mode,
+        "STORAGE_BACKEND": storage.backend,
+        "STORAGE_MARKET_DATA_PARQUET_PATH": storage.market_data_parquet_path,
+        "MARKET_DATA_PARQUET_PATH": storage.market_data_parquet_path,
+        "MARKET_DATA_EXCHANGE": storage.market_data_exchange,
+        "POSTGRES_DSN_ENV": str(getattr(storage, "postgres_dsn_env", "LQ_POSTGRES_DSN")),
+        "POSTGRES_DSN": str(getattr(storage, "postgres_dsn", "") or ""),
+        "STORAGE_EXPORT_CSV": bool(storage.export_csv),
+        "WAL_MAX_BYTES": int(getattr(storage, "wal_max_bytes", 268435456)),
+        "WAL_COMPACT_ON_THRESHOLD": bool(getattr(storage, "wal_compact_on_threshold", True)),
+        "WAL_COMPACTION_INTERVAL_SECONDS": int(
+            getattr(storage, "wal_compaction_interval_seconds", 3600)
+        ),
+        "COLLECTOR_PERIODIC_ENABLED": bool(
+            getattr(storage, "collector_periodic_enabled", True)
+        ),
+        "COLLECTOR_POLL_SECONDS": int(getattr(storage, "collector_poll_seconds", 2)),
+        "COLLECTOR_BOOTSTRAP_LOOKBACK_HOURS": int(
+            getattr(storage, "collector_bootstrap_lookback_hours", 24)
+        ),
+        "MATERIALIZER_PERIODIC_ENABLED": bool(
+            getattr(storage, "materializer_periodic_enabled", True)
+        ),
+        "MATERIALIZER_POLL_SECONDS": int(getattr(storage, "materializer_poll_seconds", 5)),
+        "MATERIALIZER_BASE_TIMEFRAME": str(
+            getattr(storage, "materializer_base_timeframe", "1s") or "1s"
+        ).lower(),
+        "MATERIALIZER_REQUIRED_TIMEFRAMES": list(
+            getattr(storage, "materializer_required_timeframes", ["1s"])
+        )
+        or ["1s"],
+        "MARKET_WINDOW_PARITY_V2_ENABLED": bool(
+            getattr(market_window, "parity_v2_enabled", False)
+        ),
+        "MARKET_WINDOW_METRICS_LOG_PATH": str(
+            getattr(
+                market_window,
+                "metrics_log_path",
+                "logs/live/market_window_metrics.ndjson",
+            )
+            or "logs/live/market_window_metrics.ndjson"
+        ),
+        "RISK_FREE_MODE": str(
+            getattr(backtest, "risk_free_mode", "us_treasury_constant")
+            or "us_treasury_constant"
+        ).strip().lower(),
+        "RISK_FREE_TENOR": str(getattr(backtest, "risk_free_tenor", "3m") or "3m")
+        .strip()
+        .lower(),
+        "RISK_FREE_ANNUAL": risk_free_annual,
+        "RISK_FREE_SERIES_PATH": str(getattr(backtest, "risk_free_series_path", "") or ""),
+        "SORTINO_TARGET_MODE": str(
+            getattr(backtest, "sortino_target_mode", "same_as_rf") or "same_as_rf"
+        ).strip().lower(),
+        "SORTINO_TARGET_ANNUAL": float(
+            getattr(backtest, "sortino_target_annual", 0.0) or 0.0
+        ),
+    }
+
+
+def _backtest_config_values(runtime) -> dict[str, object]:
+    backtest = runtime.backtest
+    external = getattr(backtest, "external", None)
+    poll_seconds = int(getattr(backtest, "poll_seconds", 20))
+    window_seconds = int(getattr(backtest, "window_seconds", 20))
+    decision_cadence_seconds = int(getattr(backtest, "decision_cadence_seconds", 20))
+    risk_free_annual = float(getattr(backtest, "risk_free_annual", backtest.risk_free_rate))
+    return {
+        "START_DATE": backtest.start_date,
+        "END_DATE": backtest.end_date,
+        "MODE": str(getattr(backtest, "mode", "windowed") or "windowed"),
+        "DATA_SOURCE": str(getattr(backtest, "data_source", "auto") or "auto")
+        .strip()
+        .lower(),
+        "EXTERNAL_SOURCE_KIND": str(getattr(external, "source_kind", "csv") or "csv")
+        .strip()
+        .lower(),
+        "EXTERNAL_DATA_ROOT": str(getattr(external, "root_path", "") or ""),
+        "EXTERNAL_SYMBOL_MAP": dict(getattr(external, "symbol_map", {}) or {}),
+        "COMMISSION_RATE": float(backtest.commission_rate),
+        "SLIPPAGE_RATE": float(backtest.slippage_rate),
+        "ANNUAL_PERIODS": int(backtest.annual_periods),
+        "RISK_FREE_RATE": float(backtest.risk_free_rate),
+        "RISK_FREE_MODE": str(
+            getattr(backtest, "risk_free_mode", "us_treasury_constant")
+            or "us_treasury_constant"
+        ).strip().lower(),
+        "RISK_FREE_TENOR": str(getattr(backtest, "risk_free_tenor", "3m") or "3m")
+        .strip()
+        .lower(),
+        "RISK_FREE_ANNUAL": risk_free_annual,
+        "RISK_FREE_SERIES_PATH": str(getattr(backtest, "risk_free_series_path", "") or ""),
+        "SORTINO_TARGET_MODE": str(
+            getattr(backtest, "sortino_target_mode", "same_as_rf") or "same_as_rf"
+        ).strip().lower(),
+        "SORTINO_TARGET_ANNUAL": float(
+            getattr(backtest, "sortino_target_annual", risk_free_annual)
+        ),
+        "RANDOM_SEED": int(backtest.random_seed),
+        "PERSIST_OUTPUT": bool(backtest.persist_output),
+        "LEVERAGE": int(backtest.leverage),
+        "POLL_SECONDS": poll_seconds,
+        "WINDOW_SECONDS": window_seconds,
+        "DECISION_CADENCE_SECONDS": decision_cadence_seconds,
+        "BACKTEST_POLL_SECONDS": poll_seconds,
+        "BACKTEST_WINDOW_SECONDS": window_seconds,
+        "BACKTEST_DECISION_SECONDS": decision_cadence_seconds,
+        "CHUNK_DAYS": int(getattr(backtest, "chunk_days", 2)),
+        "CHUNK_WARMUP_BARS": int(getattr(backtest, "chunk_warmup_bars", 0)),
+        "SKIP_AHEAD_ENABLED": bool(getattr(backtest, "skip_ahead_enabled", True)),
+    }
+
+
+def _live_exchange_values(runtime) -> dict[str, str | int]:
+    exchange = runtime.live.exchange
+    return {
+        "driver": str(exchange.driver).lower(),
+        "name": str(exchange.name).lower(),
+        "market_type": str(exchange.market_type).lower(),
+        "position_mode": str(exchange.position_mode).upper(),
+        "margin_mode": str(exchange.margin_mode).lower(),
+        "leverage": int(exchange.leverage),
+    }
+
+
+def _live_polymarket_values(runtime) -> dict[str, object]:
+    polymarket = getattr(runtime.live, "polymarket", None)
+    return {
+        "POLYMARKET_HOST": str(getattr(polymarket, "host", "") or ""),
+        "POLYMARKET_GAMMA_HOST": str(getattr(polymarket, "gamma_host", "") or ""),
+        "POLYMARKET_DATA_HOST": str(getattr(polymarket, "data_host", "") or ""),
+        "POLYMARKET_MARKET_WS_URL": str(getattr(polymarket, "market_ws_url", "") or ""),
+        "POLYMARKET_USER_WS_URL": str(getattr(polymarket, "user_ws_url", "") or ""),
+        "POLYMARKET_CHAIN_ID": int(getattr(polymarket, "chain_id", 137) or 137),
+        "POLYMARKET_ASSET_IDS": list(getattr(polymarket, "asset_ids", []) or []),
+        "POLYMARKET_PRIVATE_KEY_ENV": str(
+            getattr(polymarket, "private_key_env", "POLYMARKET_PRIVATE_KEY")
+            or "POLYMARKET_PRIVATE_KEY"
+        ),
+        "POLYMARKET_API_KEY_ENV": str(
+            getattr(polymarket, "api_key_env", "POLYMARKET_API_KEY") or "POLYMARKET_API_KEY"
+        ),
+        "POLYMARKET_API_SECRET_ENV": str(
+            getattr(polymarket, "api_secret_env", "POLYMARKET_API_SECRET")
+            or "POLYMARKET_API_SECRET"
+        ),
+        "POLYMARKET_API_PASSPHRASE_ENV": str(
+            getattr(polymarket, "api_passphrase_env", "POLYMARKET_API_PASSPHRASE")
+            or "POLYMARKET_API_PASSPHRASE"
+        ),
+        "POLYMARKET_FUNDER": str(getattr(polymarket, "funder", "") or ""),
+        "POLYMARKET_SIGNATURE_TYPE": int(getattr(polymarket, "signature_type", 0) or 0),
+        "POLYMARKET_ALLOW_REAL_EXECUTION": bool(
+            getattr(polymarket, "allow_real_execution", False)
+        ),
+    }
+
+
+def _live_config_values(runtime) -> dict[str, object]:
+    live = runtime.live
+    external = getattr(live, "external", None)
+    exchange = _live_exchange_values(runtime)
+    poll_seconds = int(getattr(live, "poll_seconds", live.poll_interval))
+    window_seconds = int(getattr(live, "window_seconds", 20))
+    values = {
+        "BINANCE_API_KEY": live.api_key,
+        "BINANCE_SECRET_KEY": live.secret_key,
+        "TELEGRAM_BOT_TOKEN": live.telegram_bot_token,
+        "TELEGRAM_CHAT_ID": live.telegram_chat_id,
+        "MODE": str(live.mode).strip().lower(),
+        "MARKET_DATA_SOURCE": str(getattr(live, "market_data_source", "committed"))
+        .strip()
+        .lower(),
+        "ORDER_STATE_SOURCE": str(getattr(live, "order_state_source", "polling"))
+        .strip()
+        .lower(),
+        "EXTERNAL_DATA_SOURCE_KIND": str(getattr(external, "source_kind", "jsonl") or "jsonl")
+        .strip()
+        .lower(),
+        "EXTERNAL_DATA_PATH": str(getattr(external, "path", "") or ""),
+        "EXTERNAL_DATA_SCHEMA": str(
+            getattr(external, "schema", "market_window_v1") or "market_window_v1"
+        )
+        .strip()
+        .lower(),
+        "EXTERNAL_DATA_SYMBOL_MAP": dict(getattr(external, "symbol_map", {}) or {}),
+        "EXTERNAL_DATA_POLL_SECONDS": int(getattr(external, "poll_seconds", 2) or 2),
+        "EXTERNAL_DATA_ALLOW_STALE_SECONDS": int(
+            getattr(external, "allow_stale_seconds", 45) or 45
+        ),
+        "SHADOW_LIVE_ENABLED": bool(getattr(live, "shadow_live_enabled", False)),
+        "RECONCILIATION_POLL_FALLBACK_ENABLED": bool(
+            getattr(live, "reconciliation_poll_fallback_enabled", True)
+        ),
+        "BOOK_TICKER_ENABLED": bool(getattr(live, "book_ticker_enabled", False)),
+        "STARTUP_RECONCILIATION_HARD_FAIL": bool(
+            getattr(live, "startup_reconciliation_hard_fail", False)
+        ),
+        "IS_TESTNET": str(live.mode).strip().lower() != "real",
+        "REQUIRE_REAL_ENABLE_FLAG": bool(live.require_real_enable_flag),
+        "POLL_SECONDS": poll_seconds,
+        "POLL_INTERVAL": poll_seconds,
+        "LIVE_POLL_SECONDS": poll_seconds,
+        "WINDOW_SECONDS": window_seconds,
+        "INGEST_WINDOW_SECONDS": window_seconds,
+        "DECISION_CADENCE_SECONDS": int(getattr(live, "decision_cadence_seconds", 20)),
+        "MATERIALIZED_STALENESS_THRESHOLD_SECONDS": int(
+            getattr(live, "materialized_staleness_threshold_seconds", 45)
+        ),
+        "MATERIALIZED_STALENESS_ALERT_COOLDOWN_SECONDS": int(
+            getattr(live, "materialized_staleness_alert_cooldown_seconds", 60)
+        ),
+        "ORDER_TIMEOUT": int(live.order_timeout),
+        "HEARTBEAT_INTERVAL_SEC": int(live.heartbeat_interval_sec),
+        "RECONCILIATION_INTERVAL_SEC": int(live.reconciliation_interval_sec),
+        "EXCHANGE": exchange,
+        "EXCHANGE_ID": str(exchange["name"]),
+        "MARKET_TYPE": str(exchange["market_type"]),
+        "POSITION_MODE": str(exchange["position_mode"]),
+        "MARGIN_MODE": str(exchange["margin_mode"]),
+        "LEVERAGE": int(exchange["leverage"]),
+        "SYMBOL_LIMITS": dict(live.symbol_limits),
+        "MT5_MAGIC": int(live.mt5_magic),
+        "MT5_DEVIATION": int(live.mt5_deviation),
+        "MT5_BRIDGE_PYTHON": str(getattr(live, "mt5_bridge_python", "") or ""),
+        "MT5_BRIDGE_SCRIPT": str(
+            getattr(live, "mt5_bridge_script", "scripts/mt5_bridge_worker.py")
+            or "scripts/mt5_bridge_worker.py"
+        ),
+        "MT5_BRIDGE_USE_WSLPATH": bool(getattr(live, "mt5_bridge_use_wslpath", True)),
+    }
+    values.update(_live_polymarket_values(runtime))
+    return values
 
 
 class BaseConfig:
     """Shared configuration fields used by backtest and live modules."""
 
-    LOG_LEVEL = _RUNTIME.system.log_level
-    SYMBOLS = list(_RUNTIME.trading.symbols)
-    TIMEFRAME = _RUNTIME.trading.timeframe
-    TIMEFRAMES = list(getattr(_RUNTIME.trading, "timeframes", [])) or [str(TIMEFRAME)]
-    INITIAL_CAPITAL = float(_RUNTIME.trading.initial_capital)
-    TARGET_ALLOCATION = float(_RUNTIME.trading.target_allocation)
-    MIN_TRADE_QTY = float(_RUNTIME.trading.min_trade_qty)
-
-    RISK_PER_TRADE = float(_RUNTIME.risk.risk_per_trade)
-    MAX_DAILY_LOSS_PCT = float(_RUNTIME.risk.max_daily_loss_pct)
-    MAX_TOTAL_MARGIN_PCT = float(_RUNTIME.risk.max_total_margin_pct)
-    MAX_SYMBOL_EXPOSURE_PCT = float(_RUNTIME.risk.max_symbol_exposure_pct)
-    MAX_ORDER_VALUE = float(_RUNTIME.risk.max_order_value)
-    DEFAULT_STOP_LOSS_PCT = float(_RUNTIME.risk.default_stop_loss_pct)
-    MAX_INTRADAY_DRAWDOWN_PCT = float(_RUNTIME.risk.max_intraday_drawdown_pct)
-    MAX_ROLLING_LOSS_PCT_1H = float(_RUNTIME.risk.max_rolling_loss_pct_1h)
-    FREEZE_NEW_ENTRIES_ON_BREACH = bool(_RUNTIME.risk.freeze_new_entries_on_breach)
-    AUTO_FLATTEN_ON_BREACH = bool(_RUNTIME.risk.auto_flatten_on_breach)
-
-    MAKER_FEE_RATE = float(_RUNTIME.execution.maker_fee_rate)
-    TAKER_FEE_RATE = float(_RUNTIME.execution.taker_fee_rate)
-    SPREAD_RATE = float(_RUNTIME.execution.spread_rate)
-    SLIPPAGE_RATE = float(_RUNTIME.execution.slippage_rate)
-    FUNDING_RATE_PER_8H = float(_RUNTIME.execution.funding_rate_per_8h)
-    FUNDING_INTERVAL_HOURS = int(_RUNTIME.execution.funding_interval_hours)
-    MAINTENANCE_MARGIN_RATE = float(_RUNTIME.execution.maintenance_margin_rate)
-    LIQUIDATION_BUFFER_RATE = float(_RUNTIME.execution.liquidation_buffer_rate)
-    GPU_MODE = str(
-        getattr(_RUNTIME.execution, "gpu_mode", _RUNTIME.execution.compute_backend) or "gpu"
-    ).lower()
-    GPU_VRAM_GB = float(getattr(_RUNTIME.execution, "gpu_vram_gb", 0.0))
-    COMPUTE_BACKEND = GPU_MODE
-
-    STORAGE_BACKEND = _RUNTIME.storage.backend
-    STORAGE_MARKET_DATA_PARQUET_PATH = _RUNTIME.storage.market_data_parquet_path
-    MARKET_DATA_PARQUET_PATH = _RUNTIME.storage.market_data_parquet_path
-    MARKET_DATA_EXCHANGE = _RUNTIME.storage.market_data_exchange
-    POSTGRES_DSN_ENV = str(getattr(_RUNTIME.storage, "postgres_dsn_env", "LQ_POSTGRES_DSN"))
-    POSTGRES_DSN = str(getattr(_RUNTIME.storage, "postgres_dsn", "") or "")
-    STORAGE_EXPORT_CSV = bool(_RUNTIME.storage.export_csv)
-    WAL_MAX_BYTES = int(getattr(_RUNTIME.storage, "wal_max_bytes", 268435456))
-    WAL_COMPACT_ON_THRESHOLD = bool(getattr(_RUNTIME.storage, "wal_compact_on_threshold", True))
-    WAL_COMPACTION_INTERVAL_SECONDS = int(
-        getattr(_RUNTIME.storage, "wal_compaction_interval_seconds", 3600)
-    )
-    COLLECTOR_PERIODIC_ENABLED = bool(getattr(_RUNTIME.storage, "collector_periodic_enabled", True))
-    COLLECTOR_POLL_SECONDS = int(getattr(_RUNTIME.storage, "collector_poll_seconds", 2))
-    COLLECTOR_BOOTSTRAP_LOOKBACK_HOURS = int(
-        getattr(_RUNTIME.storage, "collector_bootstrap_lookback_hours", 24)
-    )
-    MATERIALIZER_PERIODIC_ENABLED = bool(
-        getattr(_RUNTIME.storage, "materializer_periodic_enabled", True)
-    )
-    MATERIALIZER_POLL_SECONDS = int(getattr(_RUNTIME.storage, "materializer_poll_seconds", 5))
-    MATERIALIZER_BASE_TIMEFRAME = str(
-        getattr(_RUNTIME.storage, "materializer_base_timeframe", "1s") or "1s"
-    ).lower()
-    MATERIALIZER_REQUIRED_TIMEFRAMES = list(
-        getattr(_RUNTIME.storage, "materializer_required_timeframes", ["1s"])
-    ) or ["1s"]
-
-    MARKET_WINDOW_PARITY_V2_ENABLED = bool(
-        getattr(_RUNTIME.market_window, "parity_v2_enabled", False)
-    )
-    MARKET_WINDOW_METRICS_LOG_PATH = str(
-        getattr(
-            _RUNTIME.market_window, "metrics_log_path", "logs/live/market_window_metrics.ndjson"
-        )
-        or "logs/live/market_window_metrics.ndjson"
-    )
-
 
 class BacktestConfig(BaseConfig):
     """Backtest configuration access."""
-
-    START_DATE = _RUNTIME.backtest.start_date
-    END_DATE = _RUNTIME.backtest.end_date
-    MODE = str(getattr(_RUNTIME.backtest, "mode", "windowed") or "windowed")
-    DATA_SOURCE = str(getattr(_RUNTIME.backtest, "data_source", "auto") or "auto").strip().lower()
-    EXTERNAL_SOURCE_KIND = str(
-        getattr(getattr(_RUNTIME.backtest, "external", object()), "source_kind", "csv") or "csv"
-    ).strip().lower()
-    EXTERNAL_DATA_ROOT = str(
-        getattr(getattr(_RUNTIME.backtest, "external", object()), "root_path", "") or ""
-    )
-    EXTERNAL_SYMBOL_MAP = dict(
-        getattr(getattr(_RUNTIME.backtest, "external", object()), "symbol_map", {}) or {}
-    )
-    COMMISSION_RATE = float(_RUNTIME.backtest.commission_rate)
-    SLIPPAGE_RATE = float(_RUNTIME.backtest.slippage_rate)
-    ANNUAL_PERIODS = int(_RUNTIME.backtest.annual_periods)
-    RISK_FREE_RATE = float(_RUNTIME.backtest.risk_free_rate)
-    RANDOM_SEED = int(_RUNTIME.backtest.random_seed)
-    PERSIST_OUTPUT = bool(_RUNTIME.backtest.persist_output)
-    LEVERAGE = int(_RUNTIME.backtest.leverage)
-    POLL_SECONDS = int(getattr(_RUNTIME.backtest, "poll_seconds", 20))
-    WINDOW_SECONDS = int(getattr(_RUNTIME.backtest, "window_seconds", 20))
-    DECISION_CADENCE_SECONDS = int(getattr(_RUNTIME.backtest, "decision_cadence_seconds", 20))
-    BACKTEST_POLL_SECONDS = POLL_SECONDS
-    BACKTEST_WINDOW_SECONDS = WINDOW_SECONDS
-    BACKTEST_DECISION_SECONDS = DECISION_CADENCE_SECONDS
-    CHUNK_DAYS = int(getattr(_RUNTIME.backtest, "chunk_days", 2))
-    CHUNK_WARMUP_BARS = int(getattr(_RUNTIME.backtest, "chunk_warmup_bars", 0))
-    SKIP_AHEAD_ENABLED = bool(getattr(_RUNTIME.backtest, "skip_ahead_enabled", True))
 
 
 class LiveConfig(BaseConfig):
     """Live configuration access with runtime validation helpers."""
 
-    BINANCE_API_KEY = _RUNTIME.live.api_key
-    BINANCE_SECRET_KEY = _RUNTIME.live.secret_key
-    TELEGRAM_BOT_TOKEN = _RUNTIME.live.telegram_bot_token
-    TELEGRAM_CHAT_ID = _RUNTIME.live.telegram_chat_id
-
-    MODE = str(_RUNTIME.live.mode).strip().lower()
-    MARKET_DATA_SOURCE = (
-        str(getattr(_RUNTIME.live, "market_data_source", "committed")).strip().lower()
-    )
-    ORDER_STATE_SOURCE = (
-        str(getattr(_RUNTIME.live, "order_state_source", "polling")).strip().lower()
-    )
-    EXTERNAL_DATA_SOURCE_KIND = str(
-        getattr(getattr(_RUNTIME.live, "external", object()), "source_kind", "jsonl")
-    ).strip().lower()
-    EXTERNAL_DATA_PATH = str(
-        getattr(getattr(_RUNTIME.live, "external", object()), "path", "") or ""
-    )
-    EXTERNAL_DATA_SCHEMA = str(
-        getattr(getattr(_RUNTIME.live, "external", object()), "schema", "market_window_v1")
-        or "market_window_v1"
-    ).strip().lower()
-    EXTERNAL_DATA_SYMBOL_MAP = dict(
-        getattr(getattr(_RUNTIME.live, "external", object()), "symbol_map", {}) or {}
-    )
-    EXTERNAL_DATA_POLL_SECONDS = int(
-        getattr(getattr(_RUNTIME.live, "external", object()), "poll_seconds", 2) or 2
-    )
-    EXTERNAL_DATA_ALLOW_STALE_SECONDS = int(
-        getattr(getattr(_RUNTIME.live, "external", object()), "allow_stale_seconds", 45) or 45
-    )
-    SHADOW_LIVE_ENABLED = bool(getattr(_RUNTIME.live, "shadow_live_enabled", False))
-    RECONCILIATION_POLL_FALLBACK_ENABLED = bool(
-        getattr(_RUNTIME.live, "reconciliation_poll_fallback_enabled", True)
-    )
-    BOOK_TICKER_ENABLED = bool(getattr(_RUNTIME.live, "book_ticker_enabled", False))
-    STARTUP_RECONCILIATION_HARD_FAIL = bool(
-        getattr(_RUNTIME.live, "startup_reconciliation_hard_fail", False)
-    )
-
-    IS_TESTNET = MODE != "real"
-    REQUIRE_REAL_ENABLE_FLAG = bool(_RUNTIME.live.require_real_enable_flag)
-    POLL_SECONDS = int(getattr(_RUNTIME.live, "poll_seconds", _RUNTIME.live.poll_interval))
-    POLL_INTERVAL = POLL_SECONDS
-    LIVE_POLL_SECONDS = POLL_SECONDS
-    WINDOW_SECONDS = int(getattr(_RUNTIME.live, "window_seconds", 20))
-    INGEST_WINDOW_SECONDS = WINDOW_SECONDS
-    DECISION_CADENCE_SECONDS = int(getattr(_RUNTIME.live, "decision_cadence_seconds", 20))
-    MATERIALIZED_STALENESS_THRESHOLD_SECONDS = int(
-        getattr(_RUNTIME.live, "materialized_staleness_threshold_seconds", 45)
-    )
-    MATERIALIZED_STALENESS_ALERT_COOLDOWN_SECONDS = int(
-        getattr(_RUNTIME.live, "materialized_staleness_alert_cooldown_seconds", 60)
-    )
-    ORDER_TIMEOUT = int(_RUNTIME.live.order_timeout)
-    HEARTBEAT_INTERVAL_SEC = int(_RUNTIME.live.heartbeat_interval_sec)
-    RECONCILIATION_INTERVAL_SEC = int(_RUNTIME.live.reconciliation_interval_sec)
-
-    EXCHANGE: ClassVar[dict[str, str | int]] = {
-        "driver": str(_RUNTIME.live.exchange.driver).lower(),
-        "name": str(_RUNTIME.live.exchange.name).lower(),
-        "market_type": str(_RUNTIME.live.exchange.market_type).lower(),
-        "position_mode": str(_RUNTIME.live.exchange.position_mode).upper(),
-        "margin_mode": str(_RUNTIME.live.exchange.margin_mode).lower(),
-        "leverage": int(_RUNTIME.live.exchange.leverage),
-    }
-    EXCHANGE_ID = str(EXCHANGE["name"])
-    MARKET_TYPE = str(EXCHANGE["market_type"])
-    POSITION_MODE = str(EXCHANGE["position_mode"])
-    MARGIN_MODE = str(EXCHANGE["margin_mode"])
-    LEVERAGE = int(EXCHANGE["leverage"])
-    SYMBOL_LIMITS = dict(_RUNTIME.live.symbol_limits)
-    MT5_MAGIC = int(_RUNTIME.live.mt5_magic)
-    MT5_DEVIATION = int(_RUNTIME.live.mt5_deviation)
-    MT5_BRIDGE_PYTHON = str(getattr(_RUNTIME.live, "mt5_bridge_python", "") or "")
-    MT5_BRIDGE_SCRIPT = str(
-        getattr(_RUNTIME.live, "mt5_bridge_script", "scripts/mt5_bridge_worker.py")
-        or "scripts/mt5_bridge_worker.py"
-    )
-    MT5_BRIDGE_USE_WSLPATH = bool(getattr(_RUNTIME.live, "mt5_bridge_use_wslpath", True))
-    POLYMARKET_HOST = str(
-        getattr(getattr(_RUNTIME.live, "polymarket", object()), "host", "") or ""
-    )
-    POLYMARKET_GAMMA_HOST = str(
-        getattr(getattr(_RUNTIME.live, "polymarket", object()), "gamma_host", "") or ""
-    )
-    POLYMARKET_DATA_HOST = str(
-        getattr(getattr(_RUNTIME.live, "polymarket", object()), "data_host", "") or ""
-    )
-    POLYMARKET_MARKET_WS_URL = str(
-        getattr(getattr(_RUNTIME.live, "polymarket", object()), "market_ws_url", "") or ""
-    )
-    POLYMARKET_USER_WS_URL = str(
-        getattr(getattr(_RUNTIME.live, "polymarket", object()), "user_ws_url", "") or ""
-    )
-    POLYMARKET_CHAIN_ID = int(
-        getattr(getattr(_RUNTIME.live, "polymarket", object()), "chain_id", 137) or 137
-    )
-    POLYMARKET_ASSET_IDS = list(
-        getattr(getattr(_RUNTIME.live, "polymarket", object()), "asset_ids", []) or []
-    )
-    POLYMARKET_PRIVATE_KEY_ENV = str(
-        getattr(getattr(_RUNTIME.live, "polymarket", object()), "private_key_env", "POLYMARKET_PRIVATE_KEY")
-        or "POLYMARKET_PRIVATE_KEY"
-    )
-    POLYMARKET_API_KEY_ENV = str(
-        getattr(getattr(_RUNTIME.live, "polymarket", object()), "api_key_env", "POLYMARKET_API_KEY")
-        or "POLYMARKET_API_KEY"
-    )
-    POLYMARKET_API_SECRET_ENV = str(
-        getattr(getattr(_RUNTIME.live, "polymarket", object()), "api_secret_env", "POLYMARKET_API_SECRET")
-        or "POLYMARKET_API_SECRET"
-    )
-    POLYMARKET_API_PASSPHRASE_ENV = str(
-        getattr(getattr(_RUNTIME.live, "polymarket", object()), "api_passphrase_env", "POLYMARKET_API_PASSPHRASE")
-        or "POLYMARKET_API_PASSPHRASE"
-    )
-    POLYMARKET_FUNDER = str(
-        getattr(getattr(_RUNTIME.live, "polymarket", object()), "funder", "") or ""
-    )
-    POLYMARKET_SIGNATURE_TYPE = int(
-        getattr(getattr(_RUNTIME.live, "polymarket", object()), "signature_type", 0) or 0
-    )
-    POLYMARKET_ALLOW_REAL_EXECUTION = bool(
-        getattr(getattr(_RUNTIME.live, "polymarket", object()), "allow_real_execution", False)
-    )
+    EXCHANGE: ClassVar[dict[str, str | int]]
 
     @classmethod
     def _as_runtime(cls):
-        runtime = load_runtime_config(config_path=os.getenv("LQ_CONFIG_PATH", "config.yaml"))
+        runtime = load_runtime_config(
+            config_path=_current_config_path(),
+            env=_runtime_env_without_auto_seeded_defaults(),
+        )
         runtime.live.mode = cls.MODE
         runtime.live.market_data_source = str(cls.MARKET_DATA_SOURCE)
         runtime.live.order_state_source = str(cls.ORDER_STATE_SOURCE)
@@ -508,18 +624,29 @@ class LiveConfig(BaseConfig):
 class OptimizationConfig:
     """Optimization configuration access."""
 
-    METHOD = _RUNTIME.optimization.method
-    STRATEGY_NAME = _RUNTIME.optimization.strategy
-    OPTUNA_CONFIG = dict(_RUNTIME.optimization.optuna)
-    GRID_CONFIG = dict(_RUNTIME.optimization.grid)
-    WALK_FORWARD_FOLDS = int(_RUNTIME.optimization.walk_forward_folds)
-    OVERFIT_PENALTY = float(_RUNTIME.optimization.overfit_penalty)
-    MAX_WORKERS = int(_RUNTIME.optimization.max_workers)
-    PERSIST_BEST_PARAMS = bool(_RUNTIME.optimization.persist_best_params)
-    VALIDATION_DAYS = int(getattr(_RUNTIME.optimization, "validation_days", 30))
-    OOS_DAYS = int(getattr(_RUNTIME.optimization, "oos_days", 30))
+
+def _optimization_config_values(runtime) -> dict[str, object]:
+    optimization = runtime.optimization
+    return {
+        "METHOD": optimization.method,
+        "STRATEGY_NAME": optimization.strategy,
+        "OPTUNA_CONFIG": dict(optimization.optuna),
+        "GRID_CONFIG": dict(optimization.grid),
+        "WALK_FORWARD_FOLDS": int(optimization.walk_forward_folds),
+        "OVERFIT_PENALTY": float(optimization.overfit_penalty),
+        "MAX_WORKERS": int(optimization.max_workers),
+        "PERSIST_BEST_PARAMS": bool(optimization.persist_best_params),
+        "VALIDATION_DAYS": int(getattr(optimization, "validation_days", 30)),
+        "OOS_DAYS": int(getattr(optimization, "oos_days", 30)),
+    }
+
+
+_apply_config_values(BaseConfig, _base_config_values(_RUNTIME))
+_apply_config_values(BacktestConfig, _backtest_config_values(_RUNTIME))
+_apply_config_values(LiveConfig, _live_config_values(_RUNTIME))
+_apply_config_values(OptimizationConfig, _optimization_config_values(_RUNTIME))
 
 
 def export_runtime_dict() -> dict:
     """Export the loaded typed runtime as a plain dictionary."""
-    return asdict(_RUNTIME)
+    return asdict(load_current_runtime_config())

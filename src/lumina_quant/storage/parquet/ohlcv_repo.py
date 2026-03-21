@@ -18,6 +18,7 @@ from lumina_quant.backtesting.cli_contract import (
     RawFirstStaleWindowError,
     normalize_data_mode,
 )
+from lumina_quant.data.raw_first_lineage import resample_1s_frame
 from lumina_quant.storage.wal.binary import BinaryWAL, WALRecord
 from lumina_quant.symbols import canonical_symbol
 
@@ -214,6 +215,12 @@ class ParquetMarketDataRepository:
         return datetime.fromtimestamp(int(ts_ms) / 1000.0, tz=UTC).strftime("%Y-%m")
 
     @staticmethod
+    def _partition_date_token(partition_date: str | date) -> str:
+        if isinstance(partition_date, date):
+            return partition_date.strftime("%Y-%m-%d")
+        return str(partition_date).strip()
+
+    @staticmethod
     def _iter_month_tokens(start: datetime, end: datetime) -> list[str]:
         cursor = datetime(start.year, start.month, 1)
         stop = datetime(end.year, end.month, 1)
@@ -258,17 +265,20 @@ class ParquetMarketDataRepository:
         symbol: str,
         partition_date: str | date,
     ) -> Path:
-        if isinstance(partition_date, date):
-            token = partition_date.strftime("%Y-%m-%d")
-        else:
-            token = str(partition_date).strip()
-        return self._raw_symbol_root(exchange=exchange, symbol=symbol) / f"date={token}" / "part-0000.parquet"
+        return (
+            self._raw_partition_path(
+                exchange=exchange,
+                symbol=symbol,
+                partition_date=partition_date,
+            )
+            / "part-0000.parquet"
+        )
 
     def raw_checkpoint_path(self, *, exchange: str, symbol: str) -> Path:
-        return self._raw_symbol_root(exchange=exchange, symbol=symbol) / "checkpoint.json"
+        return self._raw_checkpoint_path(exchange=exchange, symbol=symbol)
 
     def raw_wal_path(self, *, exchange: str, symbol: str) -> Path:
-        return self._raw_symbol_root(exchange=exchange, symbol=symbol) / "wal.bin"
+        return self._raw_wal_path(exchange=exchange, symbol=symbol)
 
     def _materialized_symbol_root(self, *, exchange: str, symbol: str) -> Path:
         return (
@@ -286,14 +296,11 @@ class ParquetMarketDataRepository:
         timeframe: str,
         partition_date: str | date,
     ) -> Path:
-        if isinstance(partition_date, date):
-            date_token = partition_date.strftime("%Y-%m-%d")
-        else:
-            date_token = str(partition_date).strip()
-        return (
-            self._materialized_symbol_root(exchange=exchange, symbol=symbol)
-            / f"timeframe={normalize_timeframe_token(timeframe)}"
-            / f"date={date_token}"
+        return self._materialized_date_root(
+            exchange=exchange,
+            symbol=symbol,
+            timeframe=timeframe,
+            partition_date=partition_date,
         )
 
     def materialized_manifest_path(
@@ -304,12 +311,12 @@ class ParquetMarketDataRepository:
         timeframe: str,
         partition_date: str | date,
     ) -> Path:
-        return self.materialized_partition_root(
+        return self._materialized_manifest_path(
             exchange=exchange,
             symbol=symbol,
             timeframe=timeframe,
             partition_date=partition_date,
-        ) / "manifest.json"
+        )
 
     @staticmethod
     def _date_token_from_ms(ts_ms: int) -> str:
@@ -434,22 +441,17 @@ class ParquetMarketDataRepository:
             .sort("datetime")
         )
 
-    def _raw_symbol_root(self, *, exchange: str, symbol: str) -> Path:
-        return (
-            self.root_path
-            / "market_data_raw_aggtrades"
-            / self._normalize_exchange(exchange)
-            / self._normalize_symbol_token(symbol)
-        )
-
     def _raw_partition_path(
         self,
         *,
         exchange: str,
         symbol: str,
-        partition_date: str,
+        partition_date: str | date,
     ) -> Path:
-        return self._raw_symbol_root(exchange=exchange, symbol=symbol) / f"date={partition_date}"
+        return self._raw_symbol_root(
+            exchange=exchange,
+            symbol=symbol,
+        ) / f"date={self._partition_date_token(partition_date)}"
 
     def _raw_wal_path(self, *, exchange: str, symbol: str) -> Path:
         return self._raw_symbol_root(exchange=exchange, symbol=symbol) / "wal.bin"
@@ -457,27 +459,19 @@ class ParquetMarketDataRepository:
     def _raw_checkpoint_path(self, *, exchange: str, symbol: str) -> Path:
         return self._raw_symbol_root(exchange=exchange, symbol=symbol) / "checkpoint.json"
 
-    def _materialized_symbol_root(self, *, exchange: str, symbol: str) -> Path:
-        return (
-            self.root_path
-            / "market_data_materialized"
-            / self._normalize_exchange(exchange)
-            / self._normalize_symbol_token(symbol)
-        )
-
     def _materialized_date_root(
         self,
         *,
         exchange: str,
         symbol: str,
         timeframe: str,
-        partition_date: str,
+        partition_date: str | date,
     ) -> Path:
         token = normalize_timeframe_token(timeframe)
         return (
             self._materialized_symbol_root(exchange=exchange, symbol=symbol)
             / f"timeframe={token}"
-            / f"date={partition_date}"
+            / f"date={self._partition_date_token(partition_date)}"
         )
 
     def _materialized_manifest_path(
@@ -486,7 +480,7 @@ class ParquetMarketDataRepository:
         exchange: str,
         symbol: str,
         timeframe: str,
-        partition_date: str,
+        partition_date: str | date,
     ) -> Path:
         return (
             self._materialized_date_root(
@@ -1638,6 +1632,39 @@ class ParquetMarketDataRepository:
             manifests = bounded
 
         if not manifests:
+            if token != "1s":
+                source_1s = self.load_committed_ohlcv_chunked(
+                    exchange=exchange,
+                    symbol=symbol,
+                    timeframe="1s",
+                    start_date=query_start,
+                    end_date=end_dt,
+                    chunk_days=chunk_days,
+                    warmup_bars=warmup_bars,
+                    staleness_threshold_seconds=staleness_threshold_seconds,
+                )
+                if source_1s.is_empty():
+                    raise RawFirstDataMissingError(
+                        f"No committed 1s rows available to rebuild {exchange}:{symbol}:{token}."
+                    )
+                latest_1s_ms = int(
+                    source_1s.select(pl.col("datetime").dt.epoch("ms").max().alias("ts")).item()
+                    or 0
+                )
+                rebuilt = resample_1s_frame(
+                    source_1s,
+                    timeframe=token,
+                    complete_through_ms=int(latest_1s_ms) + 999,
+                ).sort("datetime")
+                if end_dt is not None:
+                    rebuilt = rebuilt.filter(pl.col("datetime") <= end_dt)
+                if start_dt is not None and int(warmup_bars) <= 0:
+                    rebuilt = rebuilt.filter(pl.col("datetime") >= start_dt)
+                if rebuilt.is_empty():
+                    raise RawFirstDataMissingError(
+                        f"Committed 1s rows exist but could not rebuild {exchange}:{symbol}:{token}."
+                    )
+                return rebuilt
             raise RawFirstDataMissingError(
                 f"No committed manifests found for {exchange}:{symbol}:{token}."
             )
@@ -1942,16 +1969,42 @@ def load_data_dict_from_parquet(
 
     for symbol in list(symbol_list or []):
         if resolved_mode == "raw-first":
-            frame = repo.load_committed_ohlcv_chunked(
-                exchange=exchange,
-                symbol=symbol,
-                timeframe=timeframe,
-                start_date=start_date,
-                end_date=end_date,
-                chunk_days=chunk_days,
-                warmup_bars=warmup_bars,
-                staleness_threshold_seconds=staleness_threshold_seconds,
-            )
+            try:
+                frame = repo.load_committed_ohlcv_chunked(
+                    exchange=exchange,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    start_date=start_date,
+                    end_date=end_date,
+                    chunk_days=chunk_days,
+                    warmup_bars=warmup_bars,
+                    staleness_threshold_seconds=staleness_threshold_seconds,
+                )
+            except RawFirstDataMissingError:
+                from lumina_quant.services.materialize_from_raw import (
+                    materialize_raw_aggtrades_bundle,
+                )
+
+                materialize_raw_aggtrades_bundle(
+                    root_path=root_path,
+                    exchange=exchange,
+                    symbol=str(symbol),
+                    timeframes=[str(timeframe)],
+                    start_date=start_date,
+                    end_date=end_date,
+                    producer="load_data_dict_from_parquet",
+                    require_complete=True,
+                )
+                frame = repo.load_committed_ohlcv_chunked(
+                    exchange=exchange,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    start_date=start_date,
+                    end_date=end_date,
+                    chunk_days=chunk_days,
+                    warmup_bars=warmup_bars,
+                    staleness_threshold_seconds=staleness_threshold_seconds,
+                )
         else:
             frame = repo.load_ohlcv_chunked(
                 exchange=exchange,

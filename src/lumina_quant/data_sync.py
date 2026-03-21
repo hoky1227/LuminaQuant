@@ -13,7 +13,16 @@ import zipfile
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 from typing import Any
+
+import polars as pl
+from lumina_quant.backtesting.cli_contract import RawFirstDataMissingError
+from lumina_quant.data.raw_first_lineage import raw_aggtrades_to_1s_frame, resample_1s_frame
+from lumina_quant.exchanges.binance_futures_client import (
+    BinanceFuturesClientConfig,
+    BinanceFuturesRESTClient,
+)
 from lumina_quant.market_data import (
     connect_market_data_db,
     export_ohlcv_to_csv,
@@ -60,62 +69,23 @@ def parse_timestamp_input(value: str | int | float | None) -> int | None:
     return int(dt.timestamp() * 1000)
 
 
-def create_binance_exchange(
+def create_binance_futures_client(
     *,
     api_key: str = "",
     secret_key: str = "",
-    market_type: str = "spot",
+    market_type: str = "future",
     testnet: bool = False,
 ) -> Any:
-    """Create a configured Binance CCXT client."""
-    try:
-        import ccxt
-    except Exception as exc:
-        raise RuntimeError("ccxt is required to create a Binance exchange client.") from exc
-
-    exchange = ccxt.binance()
-    exchange.enableRateLimit = True
-    if api_key:
-        exchange.apiKey = api_key
-    if secret_key:
-        exchange.secret = secret_key
-    if str(market_type).lower() == "future":
-        options = dict(getattr(exchange, "options", {}) or {})
-        options["defaultType"] = "future"
-        exchange.options = options
-    if testnet:
-        exchange.set_sandbox_mode(True)
-    return exchange
-
-
-def _fetch_ohlcv_with_retry(
-    exchange: Any,
-    symbol: str,
-    timeframe: str,
-    *,
-    since_ms: int,
-    limit: int,
-    retries: int,
-    base_wait_sec: float,
-) -> list[list[float]]:
-    wait = max(0.1, float(base_wait_sec))
-    attempt = 0
-    while True:
-        try:
-            return exchange.fetch_ohlcv(symbol, timeframe, since=since_ms, limit=limit)
-        except Exception as exc:
-            attempt += 1
-            if attempt > max(0, int(retries)):
-                raise
-            message = str(exc)
-            ceiling = (
-                60.0
-                if "429" in message or "Too Many Requests" in message or "DDoSProtection" in message
-                else 10.0
-            )
-            time.sleep(wait)
-            wait = min(wait * 2.0, ceiling)
-
+    """Create a native Binance USDⓈ-M Futures REST client."""
+    if str(market_type or "future").strip().lower() != "future":
+        raise ValueError("Binance historical sync supports USDⓈ-M futures only.")
+    return BinanceFuturesRESTClient(
+        BinanceFuturesClientConfig(
+            api_key=str(api_key or ""),
+            secret_key=str(secret_key or ""),
+            testnet=bool(testnet),
+        )
+    )
 
 def _fetch_trades_with_retry(
     exchange: Any,
@@ -130,97 +100,33 @@ def _fetch_trades_with_retry(
     attempt = 0
     while True:
         try:
-            return list(exchange.fetch_trades(symbol, since=since_ms, limit=limit))
+            fetch_fn = getattr(exchange, "agg_trades", None)
+            if callable(fetch_fn):
+                rows = fetch_fn(
+                    symbol=symbol,
+                    start_time=int(since_ms),
+                    end_time=min(int(since_ms) + 3_599_999, _now_ms()),
+                    limit=max(1, min(int(limit), 1_000)),
+                )
+                return [
+                    {
+                        "id": int(row.get("a") or 0),
+                        "timestamp": int(row.get("T") or 0),
+                        "price": float(row.get("p") or 0.0),
+                        "amount": float(row.get("q") or 0.0),
+                        "side": "sell" if bool(row.get("m")) else "buy",
+                        "isBuyerMaker": bool(row.get("m")),
+                        "info": dict(row or {}),
+                    }
+                    for row in list(rows or [])
+                ]
+            return list(exchange.fetch_trades(symbol, since=since_ms, limit=limit) or [])
         except Exception:
             attempt += 1
             if attempt > max(0, int(retries)):
                 raise
             time.sleep(wait)
             wait = min(wait * 2.0, 10.0)
-
-
-def _normalize_trades_to_1s_ohlcv(
-    trades: Sequence[dict[str, Any]],
-    *,
-    cursor_ms: int,
-    until_ms: int,
-    previous_close: float | None,
-) -> tuple[list[tuple[float, float, float, float, float, float]], int | None, float | None]:
-    """Aggregate trades into 1-second OHLCV rows.
-
-    Missing seconds inside the observed trade span are forward-filled with
-    previous close and zero volume to keep a continuous 1s timeline.
-    """
-    buckets: dict[int, list[float]] = {}
-    last_trade_ts: int | None = None
-
-    for trade in trades:
-        ts_raw = trade.get("timestamp")
-        if ts_raw is None:
-            continue
-        ts = int(ts_raw)
-        if ts < int(cursor_ms):
-            continue
-        if ts > int(until_ms):
-            break
-
-        price_raw = trade.get("price")
-        if price_raw is None:
-            continue
-        price = float(price_raw)
-        if price <= 0.0:
-            continue
-
-        amount_raw = trade.get("amount")
-        volume = float(amount_raw) if amount_raw is not None else 0.0
-        if volume < 0.0:
-            volume = 0.0
-
-        sec_ts = (ts // 1000) * 1000
-        current = buckets.get(sec_ts)
-        if current is None:
-            buckets[sec_ts] = [price, price, price, price, volume]
-        else:
-            current[1] = max(current[1], price)
-            current[2] = min(current[2], price)
-            current[3] = price
-            current[4] += volume
-
-        if last_trade_ts is None or ts > last_trade_ts:
-            last_trade_ts = ts
-
-    if not buckets:
-        return [], last_trade_ts, previous_close
-
-    sorted_seconds = sorted(buckets.keys())
-    first_second = max((int(cursor_ms) // 1000) * 1000, sorted_seconds[0])
-    last_second = min((int(until_ms) // 1000) * 1000, sorted_seconds[-1])
-
-    out: list[tuple[float, float, float, float, float, float]] = []
-    prev_close = previous_close
-    sec = first_second
-    while sec <= last_second:
-        row = buckets.get(sec)
-        if row is None:
-            if prev_close is None:
-                sec += 1000
-                continue
-            o = prev_close
-            h = prev_close
-            low_price = prev_close
-            c = prev_close
-            v = 0.0
-        else:
-            o = float(row[0])
-            h = float(row[1])
-            low_price = float(row[2])
-            c = float(row[3])
-            v = float(row[4])
-            prev_close = c
-        out.append((float(sec), o, h, low_price, c, v))
-        sec += 1000
-
-    return out, last_trade_ts, prev_close
 
 
 def _date_from_ms(timestamp_ms: int) -> date:
@@ -284,122 +190,103 @@ def _download_zip_bytes(
             wait = min(wait * 2.0, 10.0)
 
 
-def _archive_rows_to_1s_ohlcv(
+def _archive_rows_to_raw_aggtrades(
     zip_blob: bytes,
     *,
-    market_type: str,
     cursor_ms: int,
     until_ms: int,
-    previous_close: float | None,
-) -> tuple[list[tuple[float, float, float, float, float, float]], float | None]:
-    """Convert Binance archive day file into 1-second OHLCV rows."""
-    buckets: dict[int, list[float]] = {}
-
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
     with zipfile.ZipFile(io.BytesIO(zip_blob)) as zf:
         names = zf.namelist()
         if not names:
-            return [], previous_close
+            return rows
         with zf.open(names[0], "r") as raw_file:
             text_file = io.TextIOWrapper(raw_file, encoding="utf-8")
             reader = csv.reader(text_file)
-            if str(market_type).strip().lower() == "future":
-                # aggTrades: agg_id,price,qty,first_id,last_id,timestamp,is_buyer_maker[,best_match]
-                for row in reader:
-                    if len(row) < 6:
-                        continue
-                    try:
-                        ts = int(row[5])
-                        price = float(row[1])
-                        qty = float(row[2])
-                    except Exception:
-                        continue
-                    if ts < int(cursor_ms) or ts > int(until_ms):
-                        continue
-                    sec_ts = (ts // 1000) * 1000
-                    current = buckets.get(sec_ts)
-                    if current is None:
-                        buckets[sec_ts] = [price, price, price, price, max(0.0, qty)]
-                    else:
-                        current[1] = max(current[1], price)
-                        current[2] = min(current[2], price)
-                        current[3] = price
-                        current[4] += max(0.0, qty)
+            for row in reader:
+                if len(row) < 7:
+                    continue
+                try:
+                    agg_trade_id = int(row[0])
+                    price = float(row[1])
+                    quantity = float(row[2])
+                    timestamp_ms = int(row[5])
+                except Exception:
+                    continue
+                if price <= 0.0 or quantity < 0.0:
+                    continue
+                if timestamp_ms < int(cursor_ms) or timestamp_ms > int(until_ms):
+                    continue
+                rows.append(
+                    {
+                        "agg_trade_id": agg_trade_id,
+                        "timestamp_ms": timestamp_ms,
+                        "price": price,
+                        "quantity": quantity,
+                        "is_buyer_maker": str(row[6]).strip().lower()
+                        in {"1", "true", "t", "yes"},
+                    }
+                )
+    rows.sort(key=lambda item: (int(item["timestamp_ms"]), int(item["agg_trade_id"])))
+    return rows
+
+
+def _frame_to_ohlcv_rows(frame: pl.DataFrame) -> list[tuple[float, float, float, float, float, float]]:
+    rows: list[tuple[float, float, float, float, float, float]] = []
+    for row in frame.to_dicts():
+        dt = row.get("datetime")
+        if dt is None:
+            continue
+        if isinstance(dt, datetime):
+            if dt.tzinfo is None:
+                timestamp_ms = int(dt.replace(tzinfo=UTC).timestamp() * 1000)
             else:
-                # spot klines 1s: open_time,open,high,low,close,volume,...
-                for row in reader:
-                    if len(row) < 6:
-                        continue
-                    try:
-                        ts = int(row[0])
-                        o = float(row[1])
-                        h = float(row[2])
-                        low_price = float(row[3])
-                        c = float(row[4])
-                        v = float(row[5])
-                    except Exception:
-                        continue
-                    if ts < int(cursor_ms) or ts > int(until_ms):
-                        continue
-                    buckets[ts] = [o, h, low_price, c, max(0.0, v)]
-
-    if not buckets:
-        return [], previous_close
-
-    sorted_seconds = sorted(buckets.keys())
-    first_second = max((int(cursor_ms) // 1000) * 1000, sorted_seconds[0])
-    last_second = min((int(until_ms) // 1000) * 1000, sorted_seconds[-1])
-
-    out: list[tuple[float, float, float, float, float, float]] = []
-    prev_close = previous_close
-    sec = first_second
-    while sec <= last_second:
-        row = buckets.get(sec)
-        if row is None:
-            if prev_close is None:
-                sec += 1000
-                continue
-            o = prev_close
-            h = prev_close
-            low_price = prev_close
-            c = prev_close
-            v = 0.0
+                timestamp_ms = int(dt.astimezone(UTC).timestamp() * 1000)
         else:
-            o = float(row[0])
-            h = float(row[1])
-            low_price = float(row[2])
-            c = float(row[3])
-            v = float(row[4])
-            prev_close = c
-        out.append((float(sec), o, h, low_price, c, v))
-        sec += 1000
+            timestamp_ms = int(dt)
+        rows.append(
+            (
+                float(timestamp_ms),
+                float(row.get("open") or 0.0),
+                float(row.get("high") or 0.0),
+                float(row.get("low") or 0.0),
+                float(row.get("close") or 0.0),
+                float(row.get("volume") or 0.0),
+            )
+        )
+    return rows
 
-    return out, prev_close
 
-
-def _normalize_ohlcv_batch(
-    batch: Sequence[Sequence[Any]],
+def _last_1s_close(
     *,
-    cursor_ms: int,
-    until_ms: int,
-) -> list[tuple[float, float, float, float, float, float]]:
-    out: list[tuple[float, float, float, float, float, float]] = []
-    last_ts = cursor_ms - 1
-    for row in batch:
-        if len(row) < 6:
-            continue
-        ts = int(row[0])
-        if ts < cursor_ms or ts <= last_ts:
-            continue
-        if ts > until_ms:
-            break
-        o = float(row[1])
-        h = float(row[2])
-        low_price = float(row[3])
-        c = float(row[4])
-        v = float(row[5])
-        out.append((float(ts), o, h, low_price, c, v))
-        last_ts = ts
-    return out
+    db_path: str,
+    exchange_id: str,
+    symbol: str,
+    before_ms: int,
+) -> float | None:
+    if int(before_ms) < 0:
+        return None
+    repo = None
+    try:
+        from lumina_quant.storage.parquet import ParquetMarketDataRepository
+
+        repo = ParquetMarketDataRepository(str(db_path))
+        frame = repo.load_ohlcv(
+            exchange=str(exchange_id).lower(),
+            symbol=normalize_symbol(symbol),
+            timeframe="1s",
+            start_date=datetime.fromtimestamp(int(before_ms) / 1000.0, tz=UTC),
+            end_date=datetime.fromtimestamp(int(before_ms) / 1000.0, tz=UTC),
+        )
+    except Exception:
+        return None
+    if frame is None or frame.is_empty():
+        return None
+    try:
+        return float(frame["close"][-1])
+    except Exception:
+        return None
 
 
 @dataclass(slots=True)
@@ -493,6 +380,48 @@ def _normalize_raw_trade_row(row: dict[str, Any], *, fallback_id: int = 0) -> di
     }
 
 
+def _archive_rows_to_raw_aggtrades(
+    zip_blob: bytes,
+    *,
+    cursor_ms: int,
+    until_ms: int,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    with zipfile.ZipFile(io.BytesIO(zip_blob)) as zf:
+        names = zf.namelist()
+        if not names:
+            return rows
+        with zf.open(names[0], "r") as raw_file:
+            text_file = io.TextIOWrapper(raw_file, encoding="utf-8")
+            reader = csv.reader(text_file)
+            for row in reader:
+                if len(row) < 7:
+                    continue
+                try:
+                    agg_trade_id = int(row[0])
+                    price = float(row[1])
+                    quantity = float(row[2])
+                    timestamp_ms = int(row[5])
+                except Exception:
+                    continue
+                if price <= 0.0 or quantity < 0.0:
+                    continue
+                if timestamp_ms < int(cursor_ms) or timestamp_ms > int(until_ms):
+                    continue
+                rows.append(
+                    {
+                        "agg_trade_id": agg_trade_id,
+                        "timestamp_ms": timestamp_ms,
+                        "price": price,
+                        "quantity": max(0.0, quantity),
+                        "is_buyer_maker": str(row[6]).strip().lower()
+                        in {"1", "true", "t", "yes"},
+                    }
+                )
+    rows.sort(key=lambda item: (int(item["timestamp_ms"]), int(item["agg_trade_id"])))
+    return rows
+
+
 def sync_symbol_aggtrades_raw(
     *,
     exchange: Any,
@@ -536,7 +465,115 @@ def sync_symbol_aggtrades_raw(
     first_ts = None
     last_ts = None
 
+    def _dedupe_new_rows(
+        rows: list[dict[str, Any]],
+        *,
+        cursor_ms: int,
+        last_trade_id_seen: int,
+    ) -> list[dict[str, Any]]:
+        normalized_rows: list[dict[str, Any]] = []
+        seen: set[tuple[int, int]] = set()
+        for item in rows:
+            ts = int(item["timestamp_ms"])
+            trade_id = int(item["agg_trade_id"])
+            if ts < int(cursor_ms) or ts > int(until):
+                continue
+            if ts == int(cursor_ms) and trade_id <= int(last_trade_id_seen):
+                continue
+            key = (ts, trade_id)
+            if key in seen:
+                continue
+            seen.add(key)
+            normalized_rows.append(item)
+        normalized_rows.sort(key=lambda item: (int(item["timestamp_ms"]), int(item["agg_trade_id"])))
+        return normalized_rows
+
+    def _commit_batch(rows: list[dict[str, Any]], *, observed_until_ms: int) -> None:
+        nonlocal fetched_rows, upserted_rows, first_ts, last_ts, last_trade_id, cursor
+        if not rows:
+            return
+        fetched_rows += len(rows)
+        upserted_rows += int(
+            repo.append_raw_aggtrades(
+                exchange=stream_exchange,
+                symbol=stream_symbol,
+                rows=rows,
+            )
+        )
+        first_batch_ts = int(rows[0]["timestamp_ms"])
+        first_ts = first_batch_ts if first_ts is None else min(first_ts, first_batch_ts)
+        last_ts = int(rows[-1]["timestamp_ms"])
+        last_trade_id = int(rows[-1]["agg_trade_id"])
+        cursor = int(last_ts)
+
+        checkpoint_payload = {
+            "exchange": stream_exchange,
+            "symbol": stream_symbol,
+            "last_timestamp_ms": int(last_ts),
+            "last_trade_id": int(last_trade_id),
+            "observed_until_ms": int(observed_until_ms),
+            "updated_at_utc": datetime.now(tz=UTC).isoformat(),
+            "batch_rows": len(rows),
+        }
+        repo.write_raw_checkpoint(
+            exchange=stream_exchange,
+            symbol=stream_symbol,
+            payload=checkpoint_payload,
+        )
+        repo.append_raw_wal_record(
+            exchange=stream_exchange,
+            symbol=stream_symbol,
+            payload={
+                "type": "aggtrades_raw_batch",
+                "cursor": int(cursor),
+                "rows": len(rows),
+                "last_timestamp_ms": int(last_ts),
+                "last_trade_id": int(last_trade_id),
+                "observed_until_ms": int(observed_until_ms),
+                "created_at_utc": datetime.now(tz=UTC).isoformat(),
+            },
+        )
+
     batch = 0
+    archive_cutoff_ms = min(int(until), int(_now_ms()) - (2 * 86_400_000))
+    if cursor <= archive_cutoff_ms:
+        for day_value in _iter_days(cursor, archive_cutoff_ms):
+            if batch >= max(1, int(max_batches)) or cursor > until:
+                break
+            batch += 1
+            day_start_ms, day_end_ms = _day_bounds_ms(day_value)
+            range_start = max(int(cursor), int(day_start_ms))
+            range_end = min(int(archive_cutoff_ms), int(day_end_ms), int(until))
+            if range_start > range_end:
+                continue
+
+            blob = _download_zip_bytes(
+                _binance_archive_url(stream_symbol, day_value, "future"),
+                retries=max(0, int(retries)),
+                base_wait_sec=float(base_wait_sec),
+            )
+            if blob is None:
+                continue
+            archive_rows = _archive_rows_to_raw_aggtrades(
+                blob,
+                cursor_ms=range_start,
+                until_ms=range_end,
+            )
+            deduped = _dedupe_new_rows(
+                archive_rows,
+                cursor_ms=int(cursor),
+                last_trade_id_seen=int(last_trade_id),
+            )
+            if not deduped:
+                cursor = max(int(cursor), int(range_end) + 1)
+                last_trade_id = -1
+                continue
+            _commit_batch(deduped, observed_until_ms=int(range_end))
+            cursor = max(int(cursor) + 1, int(range_end) + 1)
+            last_trade_id = -1
+            if last_ts is not None and int(last_ts) >= int(until):
+                break
+
     while cursor <= until and batch < max(1, int(max_batches)):
         batch += 1
         raw_trades = _fetch_trades_with_retry(
@@ -552,81 +589,27 @@ def sync_symbol_aggtrades_raw(
 
         normalized_rows: list[dict[str, Any]] = []
         max_seen_ts = int(cursor)
-        max_seen_id = int(last_trade_id)
         for index, row in enumerate(raw_trades, start=1):
             normalized = _normalize_raw_trade_row(dict(row or {}), fallback_id=index)
             if normalized is None:
                 continue
-            ts = int(normalized["timestamp_ms"])
-            trade_id = int(normalized["agg_trade_id"])
-            if ts < int(cursor):
-                continue
-            if ts > int(until):
-                continue
-            if ts == int(cursor) and trade_id <= int(last_trade_id):
-                continue
-            max_seen_ts = max(max_seen_ts, ts)
-            max_seen_id = trade_id if ts >= max_seen_ts else max_seen_id
+            max_seen_ts = max(max_seen_ts, int(normalized["timestamp_ms"]))
             normalized_rows.append(normalized)
 
-        if not normalized_rows:
-            cursor = max(cursor + 1, max_seen_ts + 1)
-            continue
-
-        normalized_rows.sort(key=lambda item: (int(item["timestamp_ms"]), int(item["agg_trade_id"])))
-        deduped: list[dict[str, Any]] = []
-        seen: set[tuple[int, int]] = set()
-        for item in normalized_rows:
-            key = (int(item["timestamp_ms"]), int(item["agg_trade_id"]))
-            if key in seen:
-                continue
-            seen.add(key)
-            deduped.append(item)
-
+        deduped = _dedupe_new_rows(
+            normalized_rows,
+            cursor_ms=int(cursor),
+            last_trade_id_seen=int(last_trade_id),
+        )
         if not deduped:
-            cursor = max(cursor + 1, max_seen_ts + 1)
+            cursor = max(int(cursor) + 1, int(max_seen_ts) + 1)
+            last_trade_id = -1
             continue
 
-        fetched_rows += len(deduped)
-        upserted_rows += int(
-            repo.append_raw_aggtrades(
-                exchange=stream_exchange,
-                symbol=stream_symbol,
-                rows=deduped,
-            )
-        )
-        first_ts = int(deduped[0]["timestamp_ms"]) if first_ts is None else min(first_ts, int(deduped[0]["timestamp_ms"]))
-        last_ts = int(deduped[-1]["timestamp_ms"])
-        last_trade_id = int(deduped[-1]["agg_trade_id"])
-        cursor = int(last_ts) + 1
+        _commit_batch(deduped, observed_until_ms=int(until))
+        cursor = int(last_ts or cursor) + 1
 
-        checkpoint_payload = {
-            "exchange": stream_exchange,
-            "symbol": stream_symbol,
-            "last_timestamp_ms": int(last_ts),
-            "last_trade_id": int(last_trade_id),
-            "updated_at_utc": datetime.now(tz=UTC).isoformat(),
-            "batch_rows": len(deduped),
-        }
-        repo.write_raw_checkpoint(
-            exchange=stream_exchange,
-            symbol=stream_symbol,
-            payload=checkpoint_payload,
-        )
-        repo.append_raw_wal_record(
-            exchange=stream_exchange,
-            symbol=stream_symbol,
-            payload={
-                "type": "aggtrades_raw_batch",
-                "cursor": int(cursor),
-                "rows": len(deduped),
-                "last_timestamp_ms": int(last_ts),
-                "last_trade_id": int(last_trade_id),
-                "created_at_utc": datetime.now(tz=UTC).isoformat(),
-            },
-        )
-
-        if int(last_ts) >= int(until):
+        if int(last_ts or 0) >= int(until) or len(deduped) < max(1, int(limit)):
             break
 
     return RawAggTradesSyncStats(
@@ -687,9 +670,9 @@ def _http_get_json(
 
 
 def normalize_aggtrade_row(trade: dict[str, Any]) -> dict[str, Any] | None:
-    """Normalize one CCXT trade payload into raw aggTrades storage schema."""
+    """Normalize one native Binance aggTrade payload into raw aggTrades schema."""
     payload = dict(trade or {})
-    ts_raw = payload.get("timestamp")
+    ts_raw = payload.get("timestamp_ms", payload.get("timestamp", payload.get("T")))
     if ts_raw is None:
         return None
     try:
@@ -699,14 +682,16 @@ def normalize_aggtrade_row(trade: dict[str, Any]) -> dict[str, Any] | None:
     if timestamp_ms <= 0:
         return None
 
-    price_raw = payload.get("price")
-    amount_raw = payload.get("amount")
+    price_raw = payload.get("price", payload.get("p"))
+    amount_raw = payload.get("amount", payload.get("quantity", payload.get("q")))
     if price_raw is None or amount_raw is None:
         return None
 
-    trade_id_raw = payload.get("id")
+    trade_id_raw = payload.get("agg_trade_id", payload.get("id"))
     if trade_id_raw is None:
         trade_id_raw = payload.get("tradeId")
+    if trade_id_raw is None:
+        trade_id_raw = payload.get("a")
     if trade_id_raw is None and isinstance(payload.get("info"), dict):
         trade_id_raw = payload["info"].get("a")
     if trade_id_raw is None:
@@ -715,6 +700,8 @@ def normalize_aggtrade_row(trade: dict[str, Any]) -> dict[str, Any] | None:
     side = str(payload.get("side", "")).strip().lower()
     info = payload.get("info") if isinstance(payload.get("info"), dict) else {}
     maker_raw = payload.get("maker")
+    if maker_raw is None:
+        maker_raw = payload.get("is_buyer_maker", payload.get("m"))
     if maker_raw is None:
         maker_raw = info.get("m")
     is_buyer_maker = bool(maker_raw) if maker_raw is not None else side == "sell"
@@ -1285,10 +1272,10 @@ def ensure_market_data_coverage(
     backend: str | None = None,
     export_csv_dir: str | None = None,
 ) -> list[SyncStats]:
-    """Ensure DB has OHLCV coverage for [since_ms, until_ms] across symbols.
+    """Ensure OHLCV coverage exists via native futures aggTrades raw-first lineage."""
+    from lumina_quant.services.materialize_from_raw import materialize_raw_aggtrades_bundle
+    from lumina_quant.storage.parquet import ParquetMarketDataRepository
 
-    Unlike tail-only sync, this fills both head and tail gaps.
-    """
     effective_until = int(until_ms) if until_ms is not None else _now_ms()
     effective_since = (
         int(since_ms)
@@ -1299,79 +1286,74 @@ def ensure_market_data_coverage(
     if effective_until < effective_since:
         effective_until = effective_since
 
-    tf_ms = timeframe_to_milliseconds(timeframe)
+    timeframe_token = normalize_timeframe_token(timeframe)
+    required_timeframes = ["1s"] if timeframe_token == "1s" else ["1s", timeframe_token]
+    repo = ParquetMarketDataRepository(str(db_path))
     summaries: list[SyncStats] = []
 
     for symbol in symbol_list:
         stream_symbol = normalize_symbol(symbol)
-        first_ts, last_ts, row_count = get_symbol_ohlcv_coverage(
+        raw_stats = sync_symbol_aggtrades_raw(
+            exchange=exchange,
             db_path=db_path,
             exchange_id=exchange_id,
             symbol=stream_symbol,
-            timeframe=timeframe,
-            backend=backend,
+            start_ms=int(effective_since),
+            end_ms=int(effective_until),
+            limit=limit,
+            max_batches=max_batches,
+            retries=retries,
+            base_wait_sec=base_wait_sec,
+            resume_from_checkpoint=not bool(force_full),
+        )
+        materialize_raw_aggtrades_bundle(
+            root_path=str(db_path),
+            exchange=str(exchange_id).strip().lower(),
+            symbol=stream_symbol,
+            timeframes=list(required_timeframes),
+            start_date=datetime.fromtimestamp(int(effective_since) / 1000.0, tz=UTC).isoformat(),
+            end_date=datetime.fromtimestamp(int(effective_until) / 1000.0, tz=UTC).isoformat(),
+            producer="ensure_market_data_coverage",
+            require_complete=True,
         )
 
-        windows: list[tuple[int, int]] = []
-        if force_full or row_count <= 0 or first_ts is None or last_ts is None:
-            windows.append((effective_since, effective_until))
-        else:
-            head_gap_end = min(effective_until, first_ts - tf_ms)
-            if effective_since <= head_gap_end:
-                windows.append((effective_since, head_gap_end))
-
-            tail_gap_start = max(effective_since, last_ts + tf_ms)
-            if tail_gap_start <= effective_until:
-                windows.append((tail_gap_start, effective_until))
-
-        fetched_rows = 0
-        upserted_rows = 0
-        for start_ms, end_ms in windows:
-            if start_ms > end_ms:
-                continue
-            part = sync_symbol_ohlcv(
-                exchange=exchange,
-                db_path=db_path,
-                exchange_id=exchange_id,
+        try:
+            frame = repo.load_committed_ohlcv_chunked(
+                exchange=str(exchange_id).strip().lower(),
                 symbol=stream_symbol,
-                timeframe=timeframe,
-                start_ms=start_ms,
-                end_ms=end_ms,
-                limit=limit,
-                max_batches=max_batches,
-                retries=retries,
-                base_wait_sec=base_wait_sec,
-                backend=backend,
+                timeframe=timeframe_token,
+                start_date=datetime.fromtimestamp(int(effective_since) / 1000.0, tz=UTC).isoformat(),
+                end_date=datetime.fromtimestamp(int(effective_until) / 1000.0, tz=UTC).isoformat(),
+                chunk_days=7,
+                warmup_bars=0,
+                staleness_threshold_seconds=None,
             )
-            fetched_rows += int(part.fetched_rows)
-            upserted_rows += int(part.upserted_rows)
+        except RawFirstDataMissingError:
+            frame = pl.DataFrame()
 
-        final_first, final_last, _ = get_symbol_ohlcv_coverage(
-            db_path=db_path,
-            exchange_id=exchange_id,
-            symbol=stream_symbol,
-            timeframe=timeframe,
-            backend=backend,
+        final_first = (
+            int(frame["datetime"].min().timestamp() * 1000) if not frame.is_empty() else None
+        )
+        final_last = (
+            int(frame["datetime"].max().timestamp() * 1000) if not frame.is_empty() else None
         )
         summaries.append(
             SyncStats(
                 symbol=stream_symbol,
-                fetched_rows=fetched_rows,
-                upserted_rows=upserted_rows,
+                fetched_rows=int(raw_stats.fetched_rows),
+                upserted_rows=int(frame.height),
                 first_timestamp_ms=final_first,
                 last_timestamp_ms=final_last,
             )
         )
 
         if export_csv_dir:
-            csv_path = f"{export_csv_dir}/{symbol_csv_filename(stream_symbol)}"
-            export_ohlcv_to_csv(
-                db_path,
-                exchange=str(exchange_id).lower(),
-                symbol=stream_symbol,
-                timeframe=timeframe,
-                csv_path=csv_path,
-            )
+            Path(export_csv_dir).mkdir(parents=True, exist_ok=True)
+            csv_path = Path(export_csv_dir) / symbol_csv_filename(stream_symbol)
+            if frame.is_empty():
+                csv_path.write_text("", encoding="utf-8")
+            else:
+                frame.write_csv(csv_path)
 
     return summaries
 
@@ -1391,190 +1373,120 @@ def sync_symbol_ohlcv(
     base_wait_sec: float = 0.5,
     backend: str | None = None,
 ) -> SyncStats:
-    """Synchronize one symbol OHLCV range into configured storage backend."""
+    """Synchronize one symbol OHLCV range using raw aggTrades as the source of truth."""
     _ = _is_local_storage(db_path, backend=backend)
-    conn = connect_market_data_db(db_path)
-    try:
-        timeframe_token = normalize_timeframe_token(timeframe)
-        tf_ms = timeframe_to_milliseconds(timeframe_token)
-        stream_symbol = normalize_symbol(symbol)
-        cursor = max(0, int(start_ms))
-        until = max(cursor, int(end_ms))
+    from lumina_quant.storage.parquet import ParquetMarketDataRepository
 
-        fetched_rows = 0
-        upserted_rows = 0
-        first_ts = None
-        last_ts = None
-        previous_close: float | None = None
-        use_trade_fallback = False
-        empty_trade_advance_ms = 86_400_000
+    timeframe_token = normalize_timeframe_token(timeframe)
+    stream_symbol = normalize_symbol(symbol)
+    cursor = max(0, int(start_ms))
+    until = max(cursor, int(end_ms))
 
-        is_one_second = timeframe_token == "1s"
-        exchange_name = str(getattr(exchange, "id", "")).strip().lower()
-        market_type = str(
-            (getattr(exchange, "options", {}) or {}).get("defaultType", "spot")
-        ).lower()
+    raw_sync = sync_symbol_aggtrades_raw(
+        exchange=exchange,
+        db_path=db_path,
+        exchange_id=exchange_id,
+        symbol=stream_symbol,
+        start_ms=cursor,
+        end_ms=until,
+        limit=limit,
+        max_batches=max_batches,
+        retries=retries,
+        base_wait_sec=base_wait_sec,
+        resume_from_checkpoint=False,
+    )
 
-        if is_one_second and "binance" in exchange_name:
-            # Binance archive is typically delayed; keep recent tail for API sync.
-            archive_until = min(until, _now_ms() - (2 * 86_400_000))
-            if cursor <= archive_until:
-                for day_value in _iter_days(cursor, archive_until):
-                    day_start_ms, day_end_ms = _day_bounds_ms(day_value)
-                    range_start = max(cursor, day_start_ms)
-                    range_end = min(archive_until, day_end_ms)
-                    if range_start > range_end:
-                        continue
+    repo = ParquetMarketDataRepository(str(db_path))
+    raw_frame = repo.load_raw_aggtrades(
+        exchange=str(exchange_id).lower(),
+        symbol=stream_symbol,
+        start_date=datetime.fromtimestamp(cursor / 1000.0, tz=UTC).isoformat(),
+        end_date=datetime.fromtimestamp(until / 1000.0, tz=UTC).isoformat(),
+    )
 
-                    url = _binance_archive_url(stream_symbol, day_value, market_type)
-                    blob = _download_zip_bytes(
-                        url,
-                        retries=retries,
-                        base_wait_sec=base_wait_sec,
-                    )
-                    if blob is None:
-                        continue
+    previous_close = _last_1s_close(
+        db_path=db_path,
+        exchange_id=str(exchange_id).lower(),
+        symbol=stream_symbol,
+        before_ms=int(cursor) - 1000,
+    )
+    frame_1s = raw_aggtrades_to_1s_frame(
+        raw_frame,
+        source=f"{exchange_id}:{stream_symbol}:sync_symbol_ohlcv",
+        range_start_ms=int(cursor),
+        range_end_ms=int(until),
+        previous_close=previous_close,
+        complete_through_ms=int(until),
+    )
+    if frame_1s.is_empty():
+        return SyncStats(
+            symbol=stream_symbol,
+            fetched_rows=int(raw_sync.fetched_rows),
+            upserted_rows=0,
+            first_timestamp_ms=None,
+            last_timestamp_ms=None,
+        )
 
-                    archive_rows, previous_close = _archive_rows_to_1s_ohlcv(
-                        blob,
-                        market_type=market_type,
-                        cursor_ms=range_start,
-                        until_ms=range_end,
-                        previous_close=previous_close,
-                    )
-                    if not archive_rows:
-                        continue
+    upserted_rows = int(
+        upsert_ohlcv_rows_1s(
+            db_path,
+            exchange=str(exchange_id).lower(),
+            symbol=stream_symbol,
+            rows=_frame_to_ohlcv_rows(frame_1s),
+            backend=backend,
+        )
+    )
 
-                    fetched_rows += len(archive_rows)
-                    if first_ts is None:
-                        first_ts = int(archive_rows[0][0])
-                    last_ts = int(archive_rows[-1][0])
-                    previous_close = float(archive_rows[-1][4])
-                    upserted_rows += upsert_ohlcv_rows_1s(
-                        db_path,
-                        exchange=str(exchange_id).lower(),
-                        symbol=stream_symbol,
-                        rows=archive_rows,
-                        backend=backend,
-                    )
-
-                    next_cursor = last_ts + 1000
-                    if next_cursor > cursor:
-                        cursor = next_cursor
-
-                if cursor <= archive_until:
-                    cursor = archive_until + 1000
-
-        batch_count = 0
-        while cursor <= until and batch_count < max(1, int(max_batches)):
-            batch_count += 1
-            normalized: list[tuple[float, float, float, float, float, float]] = []
-            last_trade_ts: int | None = None
-
-            if is_one_second:
-                if not use_trade_fallback:
-                    try:
-                        raw_rows = _fetch_ohlcv_with_retry(
-                            exchange,
-                            stream_symbol,
-                            timeframe_token,
-                            since_ms=cursor,
-                            limit=max(1, int(limit)),
-                            retries=retries,
-                            base_wait_sec=base_wait_sec,
-                        )
-                    except Exception:
-                        use_trade_fallback = True
-                        raw_rows = []
-                else:
-                    raw_rows = []
-
-                if raw_rows:
-                    normalized = _normalize_ohlcv_batch(raw_rows, cursor_ms=cursor, until_ms=until)
-                else:
-                    trades = _fetch_trades_with_retry(
-                        exchange,
-                        stream_symbol,
-                        since_ms=cursor,
-                        limit=max(1, int(limit)),
-                        retries=retries,
-                        base_wait_sec=base_wait_sec,
-                    )
-                    if not trades:
-                        cursor += empty_trade_advance_ms
-                        continue
-                    normalized, last_trade_ts, previous_close = _normalize_trades_to_1s_ohlcv(
-                        trades,
-                        cursor_ms=cursor,
-                        until_ms=until,
-                        previous_close=previous_close,
-                    )
-            else:
-                raw_rows = _fetch_ohlcv_with_retry(
-                    exchange,
-                    stream_symbol,
-                    timeframe_token,
-                    since_ms=cursor,
-                    limit=max(1, int(limit)),
-                    retries=retries,
-                    base_wait_sec=base_wait_sec,
-                )
-                if not raw_rows:
-                    break
-                normalized = _normalize_ohlcv_batch(raw_rows, cursor_ms=cursor, until_ms=until)
-
-            if not normalized:
-                if is_one_second and last_trade_ts is not None:
-                    cursor = max(cursor + 1000, int(last_trade_ts) + 1)
-                else:
-                    cursor += tf_ms
-                continue
-
-            fetched_rows += len(normalized)
-            if first_ts is None:
-                first_ts = int(normalized[0][0])
-            last_ts = int(normalized[-1][0])
-            previous_close = float(normalized[-1][4])
-
-            if is_one_second:
-                upserted_rows += upsert_ohlcv_rows_1s(
-                    db_path,
-                    exchange=str(exchange_id).lower(),
-                    symbol=stream_symbol,
-                    rows=normalized,
-                    backend=backend,
-                )
-            else:
-                upserted_rows += upsert_ohlcv_rows(
+    output_frame = frame_1s
+    if timeframe_token != "1s":
+        output_frame = resample_1s_frame(
+            frame_1s,
+            timeframe=timeframe_token,
+            complete_through_ms=int(until),
+        )
+        if output_frame.is_empty():
+            return SyncStats(
+                symbol=stream_symbol,
+                fetched_rows=int(raw_sync.fetched_rows),
+                upserted_rows=int(upserted_rows),
+                first_timestamp_ms=None,
+                last_timestamp_ms=None,
+            )
+        conn = connect_market_data_db(db_path)
+        try:
+            upserted_rows += int(
+                upsert_ohlcv_rows(
                     conn,
                     exchange=str(exchange_id).lower(),
                     symbol=stream_symbol,
                     timeframe=timeframe_token,
-                    rows=normalized,
-                    source="binance_sync",
+                    rows=_frame_to_ohlcv_rows(output_frame),
+                    source="binance_futures_raw_first",
                     db_path=db_path,
                     backend=backend,
                 )
+            )
+        finally:
+            conn.close()
 
-            next_cursor = last_ts + tf_ms
-            if next_cursor <= cursor:
-                cursor += tf_ms
-            else:
-                cursor = next_cursor
-
-            rate_limit_sec = float(getattr(exchange, "rateLimit", 0) or 0) / 1000.0
-            if rate_limit_sec > 0:
-                time.sleep(rate_limit_sec)
-
-        return SyncStats(
-            symbol=stream_symbol,
-            fetched_rows=fetched_rows,
-            upserted_rows=upserted_rows,
-            first_timestamp_ms=first_ts,
-            last_timestamp_ms=last_ts,
-        )
-    finally:
-        conn.close()
+    first_dt = output_frame["datetime"][0]
+    last_dt = output_frame["datetime"][-1]
+    first_ts = int(
+        (first_dt.replace(tzinfo=UTC) if first_dt.tzinfo is None else first_dt.astimezone(UTC)).timestamp()
+        * 1000
+    )
+    last_ts = int(
+        (last_dt.replace(tzinfo=UTC) if last_dt.tzinfo is None else last_dt.astimezone(UTC)).timestamp()
+        * 1000
+    )
+    row_count = int(output_frame.height)
+    return SyncStats(
+        symbol=stream_symbol,
+        fetched_rows=int(raw_sync.fetched_rows),
+        upserted_rows=int(upserted_rows),
+        first_timestamp_ms=first_ts if row_count > 0 else None,
+        last_timestamp_ms=last_ts if row_count > 0 else None,
+    )
 
 
 def sync_market_data(

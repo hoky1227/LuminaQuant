@@ -20,7 +20,7 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
     cat <<'EOF'
 Usage: bash run_bot.sh [start_live_session.sh options]
 
-Resilient wrapper around scripts/ops/start_live_session.sh.
+Resilient wrapper around `uv run lq live` via scripts/ops/start_live_session.sh.
 - First launch runs the full controlled startup flow
 - Crash restarts skip heavy prep steps
 - Graceful stop / clean exit does not restart

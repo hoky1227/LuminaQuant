@@ -18,7 +18,8 @@ from typing import Any
 
 import numpy as np
 import polars as pl
-from lumina_quant.config import BaseConfig
+from lumina_quant.backtesting.cli_contract import RawFirstDataMissingError
+from lumina_quant.config import BacktestConfig, BaseConfig, current_market_data_runtime_settings
 from lumina_quant.market_data import load_futures_feature_points_from_db
 from lumina_quant.storage.parquet import load_data_dict_from_parquet
 from lumina_quant.symbols import (
@@ -26,6 +27,11 @@ from lumina_quant.symbols import (
     canonical_symbol,
     canonicalize_symbol_list,
     normalize_strategy_timeframes,
+)
+from lumina_quant.utils.risk_free import (
+    resolve_risk_free_config,
+    sharpe_ratio as compute_sharpe_ratio,
+    sortino_ratio as compute_sortino_ratio,
 )
 
 _PERIODS_PER_YEAR = {
@@ -55,6 +61,25 @@ _FEATURE_POINT_COLUMNS: tuple[str, ...] = (
     "liquidation_long_notional",
     "liquidation_short_notional",
 )
+
+
+def _current_research_market_data_settings() -> dict[str, Any]:
+    try:
+        defaults = current_market_data_runtime_settings()
+    except FileNotFoundError:
+        defaults = {
+            "symbols": list(getattr(BaseConfig, "SYMBOLS", [])),
+            "market_data_parquet_path": str(
+                getattr(BaseConfig, "MARKET_DATA_PARQUET_PATH", "data/market_parquet")
+            ),
+            "market_data_exchange": str(getattr(BaseConfig, "MARKET_DATA_EXCHANGE", "binance") or "binance"),
+        }
+    return {
+        "symbols": canonicalize_symbol_list(list(defaults["symbols"])),
+        "parquet_root": str(defaults["market_data_parquet_path"] or "data/market_parquet"),
+        "exchange": str(defaults["market_data_exchange"] or "binance"),
+    }
+
 
 DEFAULT_RESEARCH_SCORING_CONFIG: dict[str, Any] = {
     "stage1_prefilter_weights": {
@@ -109,11 +134,11 @@ DEFAULT_RESEARCH_SCORING_CONFIG: dict[str, Any] = {
 
 def _resolve_feature_points_path() -> Path:
     candidates: list[Path] = []
+    defaults = _current_research_market_data_settings()
 
     for raw in (
-        getattr(BaseConfig, "MARKET_DATA_PARQUET_PATH", ""),
-        os.getenv("LQ__STORAGE__MARKET_DATA_PARQUET_PATH", ""),
         os.getenv("LQ_MARKET_PARQUET_PATH", ""),
+        defaults["parquet_root"],
         "data/market_parquet",
     ):
         token = str(raw or "").strip()
@@ -350,8 +375,9 @@ def _load_feature_cache(
     start_date: Any = None,
     end_date: Any = None,
 ) -> dict[str, pl.DataFrame]:
-    db_path = str(getattr(BaseConfig, "MARKET_DATA_PARQUET_PATH", "data/market_parquet"))
-    exchange = str(getattr(BaseConfig, "MARKET_DATA_EXCHANGE", "binance") or "binance")
+    defaults = _current_research_market_data_settings()
+    db_path = str(defaults["parquet_root"])
+    exchange = str(defaults["exchange"])
     cache: dict[str, pl.DataFrame] = {}
 
     for symbol in canonicalize_symbol_list(symbols):
@@ -813,6 +839,8 @@ def _compute_metrics(
     benchmark_returns: np.ndarray,
     periods_per_year: int,
     num_trials: int,
+    metric_config: Any | None = None,
+    timestamps: np.ndarray | None = None,
 ) -> dict[str, float]:
     if returns.size == 0:
         return {
@@ -838,18 +866,33 @@ def _compute_metrics(
             "deflated_sharpe": 0.0,
             "pbo": 1.0,
             "spa_pvalue": 1.0,
+            "risk_free_annual": 0.0,
+            "risk_free_per_period": 0.0,
+            "sortino_target_annual": 0.0,
+            "sortino_target_per_period": 0.0,
         }
 
+    resolved_rf = resolve_risk_free_config(
+        metric_config or BacktestConfig,
+        periods_per_year=periods_per_year,
+        timestamps=timestamps,
+        size=int(returns.size),
+    )
     total_return = float(np.prod(1.0 + returns) - 1.0)
     years = max(1.0 / float(periods_per_year), returns.size / float(periods_per_year))
     cagr = float(math.exp(math.log1p(max(-0.999999, total_return)) / years) - 1.0)
 
-    mean_r = _safe_mean(returns)
     sigma = _safe_std(returns)
-    sharpe = 0.0 if sigma <= 1e-12 else (mean_r / sigma) * math.sqrt(periods_per_year)
-    downside = returns[returns < 0.0]
-    downside_std = _safe_std(downside)
-    sortino = 0.0 if downside_std <= 1e-12 else (mean_r / downside_std) * math.sqrt(periods_per_year)
+    sharpe = compute_sharpe_ratio(
+        returns,
+        periods_per_year=periods_per_year,
+        risk_free_per_period=np.asarray(resolved_rf.periodic_rates, dtype=float),
+    )
+    sortino = compute_sortino_ratio(
+        returns,
+        periods_per_year=periods_per_year,
+        target_per_period=np.asarray(resolved_rf.periodic_sortino_targets, dtype=float),
+    )
 
     max_dd = _max_drawdown(returns)
     calmar = 0.0 if max_dd <= 1e-12 else cagr / max_dd
@@ -893,6 +936,10 @@ def _compute_metrics(
         "deflated_sharpe": float(_deflated_sharpe_ratio(returns, num_trials=num_trials)),
         "pbo": float(_approx_pbo(returns)),
         "spa_pvalue": float(_spa_like_pvalue(returns)),
+        "risk_free_annual": float(resolved_rf.annual_rate),
+        "risk_free_per_period": float(resolved_rf.per_period_rate),
+        "sortino_target_annual": float(resolved_rf.sortino_target_annual),
+        "sortino_target_per_period": float(resolved_rf.sortino_target_per_period),
     }
 
 
@@ -3288,6 +3335,8 @@ def _evaluate_candidate(
         benchmark_returns=train_bench,
         periods_per_year=periods_per_year,
         num_trials=candidate_count,
+        metric_config=BacktestConfig,
+        timestamps=timestamps[split_masks["train"]],
     )
     val_metrics = _compute_metrics(
         val_returns,
@@ -3296,6 +3345,8 @@ def _evaluate_candidate(
         benchmark_returns=val_bench,
         periods_per_year=periods_per_year,
         num_trials=candidate_count,
+        metric_config=BacktestConfig,
+        timestamps=timestamps[split_masks["val"]],
     )
     oos_metrics = _compute_metrics(
         oos_returns,
@@ -3304,6 +3355,8 @@ def _evaluate_candidate(
         benchmark_returns=oos_bench,
         periods_per_year=periods_per_year,
         num_trials=candidate_count,
+        metric_config=BacktestConfig,
+        timestamps=timestamps[split_masks["oos"]],
     )
 
     # Cost stress tests on OOS.
@@ -3318,6 +3371,8 @@ def _evaluate_candidate(
         benchmark_returns=oos_bench,
         periods_per_year=periods_per_year,
         num_trials=candidate_count,
+        metric_config=BacktestConfig,
+        timestamps=timestamps[split_masks["oos"]],
     )
     oos_stress_x3 = _compute_metrics(
         oos_x3,
@@ -3326,6 +3381,8 @@ def _evaluate_candidate(
         benchmark_returns=oos_bench,
         periods_per_year=periods_per_year,
         num_trials=candidate_count,
+        metric_config=BacktestConfig,
+        timestamps=timestamps[split_masks["oos"]],
     )
 
     hurdle_fields, passed, hard_reject = _hurdle_fields(
@@ -3556,12 +3613,17 @@ def _load_bundle_cache(
     timeframes: Sequence[str],
     start_date: Any = None,
     end_date: Any = None,
+    data_mode: str = "legacy",
+    allow_csv_fallback: bool = True,
+    allow_synthetic_fallback: bool = True,
+    min_bars: int = _MIN_BARS,
 ) -> tuple[dict[tuple[str, str], SeriesBundle], dict[str, list[str]]]:
     cache: dict[tuple[str, str], SeriesBundle] = {}
     source_map: dict[str, list[str]] = {"parquet": [], "csv": [], "synthetic": []}
 
-    parquet_root = str(getattr(BaseConfig, "MARKET_DATA_PARQUET_PATH", "data/market_parquet"))
-    exchange = str(getattr(BaseConfig, "MARKET_DATA_EXCHANGE", "binance") or "binance")
+    defaults = _current_research_market_data_settings()
+    parquet_root = str(defaults["parquet_root"])
+    exchange = str(defaults["exchange"])
 
     for timeframe in timeframes:
         loaded: dict[str, pl.DataFrame] = {}
@@ -3573,6 +3635,7 @@ def _load_bundle_cache(
                 timeframe=timeframe,
                 start_date=start_date,
                 end_date=end_date,
+                data_mode=str(data_mode or "legacy"),
             )
         except Exception:
             loaded = {}
@@ -3580,46 +3643,57 @@ def _load_bundle_cache(
         for symbol in symbols:
             key = (symbol, timeframe)
             frame = loaded.get(symbol)
-            if frame is not None and not frame.is_empty() and frame.height >= _MIN_BARS:
+            if frame is not None and not frame.is_empty() and frame.height >= max(1, int(min_bars)):
                 cache[key] = _frame_to_bundle(symbol, timeframe, frame)
                 source_map["parquet"].append(f"{symbol}@{timeframe}")
                 continue
 
-            # CSV fallback (compact token layout).
-            compact = symbol.replace("/", "")
-            csv_candidates = [
-                Path("data") / f"{compact}.csv",
-                Path("data") / f"{symbol}.csv",
-                Path("data") / f"{symbol.replace('/', '_')}.csv",
-            ]
-            csv_bundle: SeriesBundle | None = None
-            for csv_path in csv_candidates:
-                if not csv_path.exists():
-                    continue
-                try:
-                    frame_csv = _read_csv_ohlcv(csv_path)
-                except Exception:
-                    frame_csv = pl.DataFrame()
-                if not frame_csv.is_empty() and (start_date is not None or end_date is not None):
-                    start_bound = _coerce_utc_datetime(start_date)
-                    end_bound = _coerce_utc_datetime(end_date, end_of_day=True)
-                    if start_bound is not None:
-                        frame_csv = frame_csv.filter(
-                            pl.col("datetime") >= start_bound.replace(tzinfo=None)
-                        )
-                    if end_bound is not None:
-                        frame_csv = frame_csv.filter(
-                            pl.col("datetime") <= end_bound.replace(tzinfo=None)
-                        )
-                if frame_csv.is_empty() or frame_csv.height < _MIN_BARS:
-                    continue
-                csv_bundle = _frame_to_bundle(symbol, timeframe, frame_csv)
-                break
+            if not allow_csv_fallback and not allow_synthetic_fallback:
+                raise RawFirstDataMissingError(
+                    f"Real market data missing for {symbol}@{timeframe} in strict mode."
+                )
 
-            if csv_bundle is not None:
-                cache[key] = csv_bundle
-                source_map["csv"].append(f"{symbol}@{timeframe}")
-                continue
+            # CSV fallback (compact token layout).
+            if allow_csv_fallback:
+                compact = symbol.replace("/", "")
+                csv_candidates = [
+                    Path("data") / f"{compact}.csv",
+                    Path("data") / f"{symbol}.csv",
+                    Path("data") / f"{symbol.replace('/', '_')}.csv",
+                ]
+                csv_bundle: SeriesBundle | None = None
+                for csv_path in csv_candidates:
+                    if not csv_path.exists():
+                        continue
+                    try:
+                        frame_csv = _read_csv_ohlcv(csv_path)
+                    except Exception:
+                        frame_csv = pl.DataFrame()
+                    if not frame_csv.is_empty() and (start_date is not None or end_date is not None):
+                        start_bound = _coerce_utc_datetime(start_date)
+                        end_bound = _coerce_utc_datetime(end_date, end_of_day=True)
+                        if start_bound is not None:
+                            frame_csv = frame_csv.filter(
+                                pl.col("datetime") >= start_bound.replace(tzinfo=None)
+                            )
+                        if end_bound is not None:
+                            frame_csv = frame_csv.filter(
+                                pl.col("datetime") <= end_bound.replace(tzinfo=None)
+                            )
+                    if frame_csv.is_empty() or frame_csv.height < max(1, int(min_bars)):
+                        continue
+                    csv_bundle = _frame_to_bundle(symbol, timeframe, frame_csv)
+                    break
+
+                if csv_bundle is not None:
+                    cache[key] = csv_bundle
+                    source_map["csv"].append(f"{symbol}@{timeframe}")
+                    continue
+
+            if not allow_synthetic_fallback:
+                raise RawFirstDataMissingError(
+                    f"Synthetic fallback is disabled and real market data is missing for {symbol}@{timeframe}."
+                )
 
             cache[key] = _synthetic_bundle(symbol, timeframe, start_date=start_date, end_date=end_date)
             source_map["synthetic"].append(f"{symbol}@{timeframe}")
@@ -3676,6 +3750,10 @@ def run_candidate_research(
     max_candidates: int = 512,
     score_config: Mapping[str, Any] | None = None,
     split: Mapping[str, Any] | None = None,
+    data_mode: str = "legacy",
+    allow_csv_fallback: bool = True,
+    allow_synthetic_fallback: bool = True,
+    min_bundle_bars: int = _MIN_BARS,
 ) -> dict[str, Any]:
     """Evaluate candidate manifest into train/val/OOS report contract (v2)."""
     base_tf = str(base_timeframe).strip().lower() or "1s"
@@ -3712,7 +3790,9 @@ def run_candidate_research(
             "generated_at": datetime.now(UTC).isoformat(),
             "base_timeframe": base_tf,
             "strategy_timeframes": normalized_timeframes,
-            "symbol_universe": canonicalize_symbol_list(symbol_universe or BaseConfig.SYMBOLS),
+            "symbol_universe": canonicalize_symbol_list(
+                symbol_universe or _current_research_market_data_settings()["symbols"]
+            ),
             "split": empty_split,
             "candidates": [],
             "stage1": {
@@ -3735,7 +3815,9 @@ def run_candidate_research(
         required=CANONICAL_STRATEGY_TIMEFRAMES,
         strict_subset=True,
     )
-    universe = canonicalize_symbol_list(symbol_universe or BaseConfig.SYMBOLS)
+    universe = canonicalize_symbol_list(
+        symbol_universe or _current_research_market_data_settings()["symbols"]
+    )
 
     candidate_symbols = canonicalize_symbol_list(
         itertools.chain.from_iterable(list(row.get("symbols") or []) for row in adapted)
@@ -3756,6 +3838,10 @@ def run_candidate_research(
             **load_bundle_kwargs,
             start_date=_datetime_to_iso_z(load_start),
             end_date=_datetime_to_iso_z(load_end),
+            data_mode=str(data_mode or "legacy"),
+            allow_csv_fallback=bool(allow_csv_fallback),
+            allow_synthetic_fallback=bool(allow_synthetic_fallback),
+            min_bars=max(1, int(min_bundle_bars)),
         )
     except TypeError as exc:
         if "unexpected keyword argument" not in str(exc):
@@ -3828,6 +3914,8 @@ def run_candidate_research(
                 benchmark_returns=np.asarray([], dtype=float),
                 periods_per_year=int(_PERIODS_PER_YEAR.get(timeframe, 365)),
                 num_trials=max(1, len(adapted)),
+                metric_config=BacktestConfig,
+                timestamps=np.asarray([], dtype="datetime64[ms]"),
             )
             hurdles, passed, hard_reject = _hurdle_fields(
                 empty_metrics,
@@ -3999,7 +4087,7 @@ def build_default_candidate_rows(
     from lumina_quant.strategy_factory.candidate_library import build_binance_futures_candidates
 
     rows = build_binance_futures_candidates(
-        symbols=symbols or BaseConfig.SYMBOLS,
+        symbols=symbols or _current_research_market_data_settings()["symbols"],
         timeframes=timeframes or CANONICAL_STRATEGY_TIMEFRAMES,
     )
     out = [adapt_legacy_candidate(item.to_dict()) for item in rows]

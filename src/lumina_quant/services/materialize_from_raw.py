@@ -9,9 +9,12 @@ from typing import Any
 
 import polars as pl
 from lumina_quant.backtesting.cli_contract import RawFirstDataMissingError
-from lumina_quant.market_data import normalize_timeframe_token
+from lumina_quant.data.raw_first_lineage import (
+    normalize_timeframe_token,
+    raw_aggtrades_to_1s_frame,
+    resample_1s_frame,
+)
 from lumina_quant.storage.parquet import ParquetMarketDataRepository
-from lumina_quant.timeframe_aggregator import aggregate_1s_frame_to_timeframe
 
 _OHLCV_COLUMNS = ["datetime", "open", "high", "low", "close", "volume"]
 
@@ -52,45 +55,32 @@ def _empty_ohlcv_frame() -> pl.DataFrame:
     )
 
 
-def _to_1s_bars(raw_trades: pl.DataFrame) -> pl.DataFrame:
-    if raw_trades.is_empty():
-        return _empty_ohlcv_frame()
-
-    buckets = (
-        raw_trades.with_columns(((pl.col("timestamp_ms") // 1000) * 1000).alias("bucket_ms"))
-        .group_by("bucket_ms")
-        .agg(
-            [
-                pl.col("price").first().alias("open"),
-                pl.col("price").max().alias("high"),
-                pl.col("price").min().alias("low"),
-                pl.col("price").last().alias("close"),
-                pl.col("quantity").sum().alias("volume"),
-            ]
-        )
-        .sort("bucket_ms")
-        .with_columns(pl.from_epoch("bucket_ms", time_unit="ms").alias("datetime"))
-        .select(_OHLCV_COLUMNS)
-    )
-    if buckets.is_empty():
-        return _empty_ohlcv_frame()
-    return buckets.with_columns(
-        [
-            pl.col("datetime").cast(pl.Datetime(time_unit="ms")),
-            pl.col("open").cast(pl.Float64),
-            pl.col("high").cast(pl.Float64),
-            pl.col("low").cast(pl.Float64),
-            pl.col("close").cast(pl.Float64),
-            pl.col("volume").cast(pl.Float64),
-        ]
-    )
-
-
-def _resample_from_1s(frame_1s: pl.DataFrame, *, timeframe: str) -> pl.DataFrame:
+def _resample_from_1s(
+    frame_1s: pl.DataFrame,
+    *,
+    timeframe: str,
+    complete_through_ms: int,
+) -> pl.DataFrame:
     token = normalize_timeframe_token(timeframe)
-    if token == "1s":
-        return frame_1s.select(_OHLCV_COLUMNS)
-    return aggregate_1s_frame_to_timeframe(frame_1s, timeframe=token)
+    return resample_1s_frame(
+        frame_1s,
+        timeframe=token,
+        complete_through_ms=int(complete_through_ms),
+    ).select(_OHLCV_COLUMNS)
+
+
+def _coerce_timestamp_ms(value: Any) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        numeric = int(value)
+        if abs(numeric) < 100_000_000_000:
+            return numeric * 1000
+        return numeric
+    try:
+        return int(datetime.fromisoformat(str(value).replace("Z", "+00:00")).timestamp() * 1000)
+    except Exception:
+        return None
 
 
 def _load_raw_and_1s(
@@ -100,7 +90,7 @@ def _load_raw_and_1s(
     symbol: str,
     start_date: Any,
     end_date: Any,
-) -> tuple[pl.DataFrame, pl.DataFrame]:
+) -> tuple[pl.DataFrame, pl.DataFrame, int]:
     raw = repo.load_raw_aggtrades(
         exchange=exchange,
         symbol=symbol,
@@ -112,12 +102,26 @@ def _load_raw_and_1s(
             f"No raw aggTrades available for {exchange}:{symbol} in requested range."
         )
 
-    bars_1s = _to_1s_bars(raw)
+    checkpoint = repo.read_raw_checkpoint(exchange=exchange, symbol=symbol)
+    complete_through_ms = int(raw["timestamp_ms"].max() or 0)
+    observed_until_ms = _coerce_timestamp_ms(checkpoint.get("observed_until_ms"))
+    requested_end_ms = _coerce_timestamp_ms(end_date)
+    if observed_until_ms is not None:
+        complete_through_ms = min(int(complete_through_ms), int(observed_until_ms))
+    if requested_end_ms is not None:
+        complete_through_ms = min(int(complete_through_ms), int(requested_end_ms))
+    bars_1s = raw_aggtrades_to_1s_frame(
+        raw,
+        source=f"{exchange}:{symbol}:materializer",
+        range_start_ms=int(raw["timestamp_ms"].min() or 0),
+        range_end_ms=int(complete_through_ms),
+        complete_through_ms=int(complete_through_ms),
+    )
     if bars_1s.is_empty():
         raise RawFirstDataMissingError(
             f"Raw aggTrades could not be materialized into OHLCV for {exchange}:{symbol}:1s."
         )
-    return raw, bars_1s
+    return raw, bars_1s, int(complete_through_ms)
 
 
 def _write_materialized_frame(
@@ -130,6 +134,7 @@ def _write_materialized_frame(
     timeframe: str,
     producer: str,
     bundle_boundary_id: str,
+    complete_through_ms: int,
 ) -> list[MaterializedCommit]:
     token = normalize_timeframe_token(timeframe)
     if materialized.is_empty():
@@ -184,9 +189,9 @@ def _write_materialized_frame(
             "partition": str(partition_root),
             "window_start_ms": int(window_start_ms),
             "window_end_ms": int(window_end_ms),
-            "event_time_watermark_ms": int(window_end_ms),
+            "event_time_watermark_ms": int(complete_through_ms),
             "source_checkpoint_start": int(checkpoint_start),
-            "source_checkpoint_end": int(checkpoint_end),
+            "source_checkpoint_end": int(max(checkpoint_end, int(complete_through_ms))),
             "row_count": int(payload.height),
             "canonical_row_checksum": str(checksum),
             "data_files": [str(Path(f"commit={commit_id}") / "part-0000.parquet")],
@@ -235,7 +240,7 @@ def materialize_raw_aggtrades_bundle(
 ) -> MaterializedBundleResult:
     """Materialize required timeframe bundle from one raw load + one commit boundary."""
     repo = ParquetMarketDataRepository(root_path)
-    raw, bars_1s = _load_raw_and_1s(
+    raw, bars_1s, complete_through_ms = _load_raw_and_1s(
         repo=repo,
         exchange=exchange,
         symbol=symbol,
@@ -250,7 +255,11 @@ def materialize_raw_aggtrades_bundle(
     prepared: dict[str, pl.DataFrame] = {}
     missing: list[str] = []
     for timeframe in normalized_timeframes:
-        frame = _resample_from_1s(bars_1s, timeframe=timeframe)
+        frame = _resample_from_1s(
+            bars_1s,
+            timeframe=timeframe,
+            complete_through_ms=int(complete_through_ms),
+        )
         if frame.is_empty():
             missing.append(str(timeframe))
             continue
@@ -278,6 +287,7 @@ def materialize_raw_aggtrades_bundle(
             timeframe=str(timeframe),
             producer=str(producer),
             bundle_boundary_id=boundary_id,
+            complete_through_ms=int(complete_through_ms),
         )
 
     if require_complete and len(commits_by_timeframe) != len(normalized_timeframes):

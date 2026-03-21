@@ -222,7 +222,7 @@ def test_live_trader_strategy_decision_cadence_defaults_from_config(
         POSTGRES_DSN = ""
         TELEGRAM_BOT_TOKEN = ""
         TELEGRAM_CHAT_ID = ""
-        EXCHANGE = {"driver": "ccxt", "name": "binance", "market_type": "future"}
+        EXCHANGE = {"driver": "binance_futures", "name": "binance", "market_type": "future"}
         MODE = "paper"
         STORAGE_EXPORT_CSV = False
 

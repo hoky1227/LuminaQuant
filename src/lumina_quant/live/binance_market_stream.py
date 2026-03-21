@@ -1,14 +1,16 @@
-"""Binance live market stream client utilities (trade/aggTrade/bookTicker)."""
+"""Binance USDⓈ-M Futures live market stream client utilities."""
 
 from __future__ import annotations
 
 import json
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from threading import Event
-from collections.abc import Callable
 
 from lumina_quant.live.market_window_rolling import NormalizedTradeTick
+
+_FUTURES_WS_BASE_URL = "wss://fstream.binance.com"
 
 
 def normalize_stream_symbol(symbol: str) -> str:
@@ -46,10 +48,12 @@ class BinanceMarketStreamConfig:
     include_book_ticker: bool = False
     use_agg_trade: bool = True
     reconnect_delay_sec: float = 1.5
+    websocket_base_url: str = _FUTURES_WS_BASE_URL
+    max_connection_age_sec: float = 23 * 60 * 60
 
 
 class BinanceMarketStreamClient:
-    """Simple combined-stream websocket client for Binance market events."""
+    """Simple combined-stream websocket client for Binance USDⓈ-M Futures events."""
 
     def __init__(self, config: BinanceMarketStreamConfig) -> None:
         self.config = config
@@ -57,10 +61,9 @@ class BinanceMarketStreamClient:
     def build_streams(self) -> list[str]:
         """Return combined-stream endpoint tokens."""
         streams: list[str] = []
-        trade_channel = "aggTrade" if bool(self.config.use_agg_trade) else "trade"
         for symbol in list(self.config.symbols or []):
             compact = normalize_stream_symbol(symbol).replace("/", "").lower()
-            streams.append(f"{compact}@{trade_channel}")
+            streams.append(f"{compact}@aggTrade")
             if bool(self.config.include_book_ticker):
                 streams.append(f"{compact}@bookTicker")
         return streams
@@ -69,8 +72,9 @@ class BinanceMarketStreamClient:
         """Combined websocket URL for configured symbols/channels."""
         tokens = self.build_streams()
         if not tokens:
-            raise ValueError("No symbols configured for Binance market stream.")
-        return f"wss://stream.binance.com:9443/stream?streams={'/'.join(tokens)}"
+            raise ValueError("No symbols configured for Binance Futures market stream.")
+        base_url = str(self.config.websocket_base_url or _FUTURES_WS_BASE_URL).strip().rstrip("/")
+        return f"{base_url}/stream?streams={'/'.join(tokens)}"
 
     @staticmethod
     def parse_message(
@@ -86,7 +90,7 @@ class BinanceMarketStreamClient:
             return []
 
         event_type = str(data.get("e") or "").strip()
-        if event_type not in {"aggTrade", "trade"}:
+        if event_type != "aggTrade":
             return []
 
         symbol = normalize_stream_symbol(str(data.get("s") or ""))
@@ -96,7 +100,7 @@ class BinanceMarketStreamClient:
         if not symbol or price <= 0.0:
             return []
 
-        trade_id = data.get("a") if event_type == "aggTrade" else data.get("t")
+        trade_id = data.get("a")
         event_id = build_trade_event_id(
             source=event_type,
             symbol=symbol,
@@ -132,8 +136,11 @@ class BinanceMarketStreamClient:
         while not stop_event.is_set():
             try:
                 url = self.stream_url()
+                connected_at = time.monotonic()
                 with websockets.sync.client.connect(url, open_timeout=10, close_timeout=5) as ws:
                     while not stop_event.is_set():
+                        if time.monotonic() - connected_at >= max(60.0, float(self.config.max_connection_age_sec)):
+                            break
                         raw = ws.recv(timeout=1)
                         if raw is None:
                             continue

@@ -1,4 +1,4 @@
-"""Real Binance live market-data handler with in-memory rolling MARKET_WINDOW aggregation."""
+"""Real Binance Futures live market-data handler with rolling 1s aggregation."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from lumina_quant.live.market_window_rolling import NormalizedTradeTick, Rolling
 
 
 class BinanceLiveDataHandler:
-    """Live data handler backed by Binance trade/aggTrade streams."""
+    """Live data handler backed by Binance Futures aggTrade streams."""
 
     def __init__(
         self,
@@ -136,13 +136,21 @@ class BinanceLiveDataHandler:
         except Exception as exc:  # pragma: no cover - defensive live fatal
             self._publish_fatal(exc)
 
+    def _ws_base_url(self) -> str:
+        base = getattr(self.exchange, "websocket_base_url", "")
+        if str(base or "").strip():
+            return str(base).rstrip("/")
+        return "wss://fstream.binance.com"
+
     def _run_ws_loop(self) -> None:
-        config = BinanceMarketStreamConfig(
-            symbols=list(self.symbol_list),
-            include_book_ticker=bool(self._book_ticker_enabled),
-            use_agg_trade=True,
+        client = BinanceMarketStreamClient(
+            BinanceMarketStreamConfig(
+                symbols=list(self.symbol_list),
+                include_book_ticker=bool(self._book_ticker_enabled),
+                use_agg_trade=True,
+                websocket_base_url=self._ws_base_url(),
+            )
         )
-        client = BinanceMarketStreamClient(config)
 
         def _on_trade(tick: NormalizedTradeTick) -> None:
             self._ws_consecutive_errors = 0
@@ -151,6 +159,7 @@ class BinanceLiveDataHandler:
         def _on_error(exc: Exception) -> None:
             if self._shutdown.is_set() or not self.continue_backtest:
                 return
+            self._recover_gap_ticks()
             self._ws_consecutive_errors += 1
             if isinstance(exc, (ImportError, ModuleNotFoundError)):
                 self._publish_fatal(exc)
@@ -169,11 +178,21 @@ class BinanceLiveDataHandler:
             on_error=_on_error,
         )
 
+    def _recover_gap_ticks(self) -> None:
+        if self.exchange is None:
+            return
+        now_ms = int(time.time() * 1000)
+        for symbol in list(self.symbol_list):
+            for tick in self._fetch_symbol_ticks(symbol=symbol, until_ms=now_ms):
+                self._emit_from_tick(tick)
+        for event in self.aggregator.flush_until(now_ms=now_ms):
+            self._push_market_window(event)
+
     def _run_poll_loop(self) -> None:
         while self.continue_backtest and not self._shutdown.is_set():
             now_ms = int(time.time() * 1000)
             for symbol in list(self.symbol_list):
-                for tick in self._fetch_symbol_ticks(symbol=symbol):
+                for tick in self._fetch_symbol_ticks(symbol=symbol, until_ms=now_ms):
                     self._emit_from_tick(tick)
             for event in self.aggregator.flush_until(now_ms=now_ms):
                 self._push_market_window(event)
@@ -202,20 +221,26 @@ class BinanceLiveDataHandler:
         self.events.put(event)
 
     def _emit_from_tick(self, tick: NormalizedTradeTick) -> None:
+        key = str(tick.symbol)
+        next_cursor = int(tick.exchange_ts_ms) + 1
+        current_cursor = self._cursor_ms.get(key)
+        if current_cursor is None or int(current_cursor) < next_cursor:
+            self._cursor_ms[key] = next_cursor
         for event in self.aggregator.ingest(tick):
             self._push_market_window(event)
 
-    def _fetch_symbol_ticks(self, *, symbol: str) -> list[NormalizedTradeTick]:
+    def _fetch_symbol_ticks(
+        self,
+        *,
+        symbol: str,
+        until_ms: int | None = None,
+    ) -> list[NormalizedTradeTick]:
         fetch_fn = getattr(self.exchange, "fetch_trades", None)
         if not callable(fetch_fn):
-            inner = getattr(self.exchange, "exchange", None)
-            if inner is None:
-                return []
-            fetch_fn = getattr(inner, "fetch_trades", None)
-            if not callable(fetch_fn):
-                return []
+            return []
 
         since_ms = self._cursor_ms.get(symbol)
+        effective_until_ms = int(until_ms) if until_ms is not None else None
         try:
             rows = list(fetch_fn(symbol, since=since_ms, limit=500) or [])
         except TypeError:
@@ -231,6 +256,8 @@ class BinanceLiveDataHandler:
         for row in rows:
             tick = self._normalize_trade_row(symbol=symbol, row=dict(row or {}))
             if tick is None:
+                continue
+            if effective_until_ms is not None and int(tick.exchange_ts_ms) > int(effective_until_ms):
                 continue
             ticks.append(tick)
             if max_ts is None or int(tick.exchange_ts_ms) > int(max_ts):

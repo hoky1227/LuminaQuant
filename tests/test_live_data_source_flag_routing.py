@@ -16,11 +16,11 @@ def test_live_data_poll_routes_to_committed_by_default(monkeypatch):
 
     class _BinanceLive:
         def __init__(self, *args, **kwargs):
-            captured["handler"] = "binance_live"
+            captured["handler"] = "binance_futures"
             _ = (args, kwargs)
 
     monkeypatch.setattr(data_poll, "_committed_handler_cls", lambda: _Committed)
-    monkeypatch.setattr(data_poll, "_binance_live_handler_cls", lambda: _BinanceLive)
+    monkeypatch.setattr(data_poll, "_binance_futures_handler_cls", lambda: _BinanceLive)
 
     cfg = SimpleNamespace(MARKET_DATA_SOURCE="committed")
     _ = data_poll.LiveDataHandler(SimpleNamespace(), ["BTC/USDT"], cfg, SimpleNamespace())
@@ -28,7 +28,7 @@ def test_live_data_poll_routes_to_committed_by_default(monkeypatch):
     assert captured["symbols"] == ["BTC/USDT"]
 
 
-def test_live_data_poll_routes_to_binance_live_when_enabled(monkeypatch):
+def test_live_data_poll_routes_to_binance_futures_when_enabled(monkeypatch):
     captured = {}
 
     class _Committed:
@@ -38,20 +38,20 @@ def test_live_data_poll_routes_to_binance_live_when_enabled(monkeypatch):
 
     class _BinanceLive:
         def __init__(self, events, symbol_list, config, exchange, *, transport):
-            captured["handler"] = "binance_live"
+            captured["handler"] = "binance_futures"
             captured["transport"] = transport
             _ = (events, symbol_list, config, exchange)
 
     monkeypatch.setattr(data_poll, "_committed_handler_cls", lambda: _Committed)
-    monkeypatch.setattr(data_poll, "_binance_live_handler_cls", lambda: _BinanceLive)
+    monkeypatch.setattr(data_poll, "_binance_futures_handler_cls", lambda: _BinanceLive)
 
-    cfg = SimpleNamespace(MARKET_DATA_SOURCE="binance_live")
+    cfg = SimpleNamespace(MARKET_DATA_SOURCE="binance_futures")
     _ = data_poll.LiveDataHandler(SimpleNamespace(), ["BTC/USDT"], cfg, SimpleNamespace())
-    assert captured["handler"] == "binance_live"
+    assert captured["handler"] == "binance_futures"
     assert captured["transport"] == "poll"
 
 
-def test_live_data_ws_routes_to_binance_live_when_enabled(monkeypatch):
+def test_live_data_ws_routes_to_binance_futures_when_enabled(monkeypatch):
     captured = {}
 
     class _Committed:
@@ -61,16 +61,16 @@ def test_live_data_ws_routes_to_binance_live_when_enabled(monkeypatch):
 
     class _BinanceLive:
         def __init__(self, events, symbol_list, config, exchange, *, transport):
-            captured["handler"] = "binance_live"
+            captured["handler"] = "binance_futures"
             captured["transport"] = transport
             _ = (events, symbol_list, config, exchange)
 
     monkeypatch.setattr(data_ws, "_committed_handler_cls", lambda: _Committed)
-    monkeypatch.setattr(data_ws, "_binance_live_handler_cls", lambda: _BinanceLive)
+    monkeypatch.setattr(data_ws, "_binance_futures_handler_cls", lambda: _BinanceLive)
 
-    cfg = SimpleNamespace(MARKET_DATA_SOURCE="binance_live")
+    cfg = SimpleNamespace(MARKET_DATA_SOURCE="binance_futures")
     _ = data_ws.BinanceWebSocketDataHandler(SimpleNamespace(), ["BTC/USDT"], cfg, SimpleNamespace())
-    assert captured["handler"] == "binance_live"
+    assert captured["handler"] == "binance_futures"
     assert captured["transport"] == "ws"
 
 

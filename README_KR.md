@@ -25,7 +25,7 @@
 | **[선물 전략 팩토리](docs/kr/FUTURES_STRATEGY_FACTORY.md)** | 후보 생성, 가중치 기반 숏리스트, 단일-자산 조합 정책. |
 | **[스코어 설정 가이드](docs/kr/SCORING_CONFIG_GUIDE.md)** | 리서치/숏리스트/최적화 스크립트 공용 score-config 템플릿 사용법. |
 | **[대시보드 실시간 분석 리포트](docs/DASHBOARD_REALTIME_ANALYSIS_REPORT.md)** | 실시간 갱신 동작 개선 분석 및 구현 결과. |
-| **[거래소 가이드](docs/kr/EXCHANGES.md)** | **바이낸스(Binance)** (CCXT), **MetaTrader 5 (MT5)**, **Polymarket** 상세 설정법. |
+| **[거래소 가이드](docs/kr/EXCHANGES.md)** | **바이낸스 USDⓈ-M 선물**, **MetaTrader 5 (MT5)**, **Polymarket** 상세 설정법. |
 | **[외부 데이터 가이드](docs/kr/EXTERNAL_DATA.md)** | 사용자 보유 데이터를 백테스트/라이브에 연결하는 canonical contract 설명. |
 | **[최소 설치 프로필](docs/kr/MINIMAL_INSTALLS.md)** | 백테스트 전용 / 라이브 전용 설치를 위한 persona-oriented extras. |
 | **[거래 매뉴얼](docs/kr/TRADING_MANUAL.md)** | **실전 운용법**: 매수/매도, 레버리지, TP/SL, 트레일링 스탑. |
@@ -141,7 +141,7 @@ trading:
 
 **거래소 선택:**
 
-*   **바이낸스 (암호화폐)**: `driver: "ccxt"` 설정
+*   **바이낸스 USDⓈ-M 선물**: `driver: "binance_futures"` 설정
 *   **MetaTrader 5 (FX/주식)**: `driver: "mt5"` 설정
 
 *👉 상세한 인증/제공자 설정은 [거래소 가이드](docs/kr/EXCHANGES.md), [외부 데이터 가이드](docs/kr/EXTERNAL_DATA.md), [최소 설치 프로필](docs/kr/MINIMAL_INSTALLS.md)을 참고하세요.*
@@ -476,7 +476,7 @@ uv run lq live --stop-file /tmp/lq.stop
 
 - **이벤트 기반 코어**: 이벤트(`Market`, `Signal`, `Order`, `Fill`)를 순차적으로 처리하여 현실적인 체결을 시뮬레이션합니다.
 - **다중 자산 & 다중 거래소**:
-    - CCXT를 통한 바이낸스, 업비트 등 **암호화폐** 거래.
+    - native Binance USDⓈ-M Futures API를 통한 **암호화폐 선물** 거래.
     - MetaTrader 5를 통한 **FX, CFD, 주식** 거래.
 - **고급 백테스팅**: 슬리피지, 수수료 모델, 트레일링 스탑 로직 포함.
 - **최적화**: **Optuna**(베이지안 최적화)를 내장하여 최적의 전략 파라미터를 탐색.

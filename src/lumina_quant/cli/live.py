@@ -146,6 +146,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # 2. Setup
     symbol_list = list(LiveConfig.SYMBOLS)  # e.g. ['BTC/USDT'] from config.yaml
+    resolved_timeframe = str(LiveConfig.TIMEFRAME)
     strategy_params = {}
     default_strategy_name = (
         DEFAULT_WS_STRATEGY_NAME if transport == "ws" else DEFAULT_LIVE_STRATEGY_NAME
@@ -173,7 +174,7 @@ def main(argv: list[str] | None = None) -> int:
                 symbol_list = selected_symbols
             selected_timeframe = selection_cfg.get("strategy_timeframe")
             if selected_timeframe:
-                LiveConfig.TIMEFRAME = str(selected_timeframe)
+                resolved_timeframe = str(selected_timeframe)
             selected_params = selection_cfg.get("params")
             if isinstance(selected_params, dict):
                 strategy_params = dict(selected_params)
@@ -196,6 +197,7 @@ def main(argv: list[str] | None = None) -> int:
                 )
 
     LiveConfig.SYMBOLS = list(symbol_list)
+    LiveConfig.TIMEFRAME = str(resolved_timeframe)
     LiveConfig.validate()
 
     print(f"Mode: {'TESTNET/PAPER' if LiveConfig.IS_TESTNET else 'REAL TRADING'}")

@@ -24,7 +24,20 @@ def test_materialize_from_raw_produces_deterministic_committed_manifest(tmp_path
                 "quantity": 0.2,
                 "is_buyer_maker": True,
             },
+            {
+                "agg_trade_id": 3,
+                "timestamp_ms": 1_700_000_001_000,
+                "price": 101.0,
+                "quantity": 0.1,
+                "is_buyer_maker": False,
+            },
         ],
+    )
+
+    repo.write_raw_checkpoint(
+        exchange="binance",
+        symbol="BTC/USDT",
+        payload={"observed_until_ms": 1_700_000_000_999, "last_timestamp_ms": 1_700_000_000_500},
     )
 
     first = materialize_raw_aggtrades(

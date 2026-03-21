@@ -6,6 +6,11 @@ import math
 
 import numpy as np
 from lumina_quant.optimization.native_backend import evaluate_metrics_backend
+from lumina_quant.utils.risk_free import (
+    resolve_risk_free_config,
+    sharpe_ratio as compute_sharpe_ratio,
+    sortino_ratio as compute_sortino_ratio,
+)
 
 
 class PortfolioSizingService:
@@ -102,9 +107,28 @@ class PortfolioPerformanceService:
         if len(total_series) < 2:
             return [("Status", "Not enough data")]
 
+        if len(returns) == len(total_series) and len(returns) > 1:
+            returns = returns[1:]
+        if len(benchmark_returns) == len(total_series) and len(benchmark_returns) > 1:
+            benchmark_returns = benchmark_returns[1:]
+
         from lumina_quant.utils.performance import PerformanceMetrics
 
         periods = getattr(config, "ANNUAL_PERIODS", 252)
+        timestamps = None
+        for column in ("datetime", "time", "timestamp"):
+            if column in getattr(equity_curve, "columns", []):
+                try:
+                    timestamps = equity_curve[column].to_numpy()
+                except Exception:
+                    timestamps = None
+                break
+        resolved_rf = resolve_risk_free_config(
+            config,
+            periods_per_year=int(periods),
+            timestamps=timestamps,
+            size=len(returns),
+        )
 
         total_return = (total_series[-1] - total_series[0]) / total_series[0]
 
@@ -129,10 +153,18 @@ class PortfolioPerformanceService:
             PerformanceMetrics.annualized_volatility(returns, periods)
         )
         sharpe_ratio = PortfolioPerformanceService._safe_scalar(
-            PerformanceMetrics.sharpe_ratio(returns, periods=periods)
+            compute_sharpe_ratio(
+                returns,
+                periods_per_year=int(periods),
+                risk_free_per_period=np.asarray(resolved_rf.periodic_rates, dtype=float),
+            )
         )
         sortino_ratio = PortfolioPerformanceService._safe_scalar(
-            PerformanceMetrics.sortino_ratio(returns, periods=periods)
+            compute_sortino_ratio(
+                returns,
+                periods_per_year=int(periods),
+                target_per_period=np.asarray(resolved_rf.periodic_sortino_targets, dtype=float),
+            )
         )
 
         drawdown, max_dd_duration = PerformanceMetrics.drawdowns(total_series)
@@ -165,6 +197,8 @@ class PortfolioPerformanceService:
             ("Beta", "%0.4f" % beta),
             ("Information Ratio", "%0.4f" % info_ratio),
             ("Daily Win Rate", "%0.2f%%" % (win_rate * 100.0)),
+            ("Risk-Free Reference", f"{resolved_rf.mode}:{resolved_rf.tenor}"),
+            ("Risk-Free Annual", "%0.2f%%" % (float(resolved_rf.annual_rate) * 100.0)),
             ("Funding (Net)", "%0.4f" % float(total_funding_paid)),
             ("Liquidations", "%d" % int(liquidation_count)),
         ]

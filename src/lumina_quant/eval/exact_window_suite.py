@@ -12,7 +12,7 @@ from typing import Any
 import numpy as np
 import polars as pl
 
-from lumina_quant.config import BaseConfig
+from lumina_quant.config import current_market_data_runtime_settings
 from lumina_quant.market_data import load_data_dict_from_parquet
 from lumina_quant.strategy_factory.candidate_library import build_binance_futures_candidates
 from lumina_quant.strategy_factory import research_runner as rr
@@ -524,7 +524,7 @@ def _strict_load_frame(
         end_date=_to_naive_utc(end),
         chunk_days=max(1, int(chunk_days)),
         warmup_bars=0,
-        data_mode="legacy",
+        data_mode="raw-first",
     )
     return frames.get(symbol, pl.DataFrame())
 
@@ -916,8 +916,9 @@ def run_exact_window_suite(
     requested_oos_end_exclusive: str | datetime | None = None,
     progress_callback: Callable[[str, dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
-    root_path = str(getattr(BaseConfig, "MARKET_DATA_PARQUET_PATH", "data/market_parquet"))
-    exchange = str(getattr(BaseConfig, "MARKET_DATA_EXCHANGE", "binance") or "binance")
+    defaults = current_market_data_runtime_settings()
+    root_path = str(defaults["market_data_parquet_path"])
+    exchange = str(defaults["market_data_exchange"])
     resolved_windows = resolve_exact_window_suite_windows(
         train_start=train_start,
         val_start=val_start,
@@ -929,7 +930,7 @@ def run_exact_window_suite(
     oos_start = resolved_windows["oos_start"]
     requested_oos_end_exclusive = resolved_windows["requested_oos_end_exclusive"]
 
-    requested_symbols = canonicalize_symbol_list(list(symbols or BaseConfig.SYMBOLS))
+    requested_symbols = canonicalize_symbol_list(list(symbols or defaults["symbols"]))
     requested_timeframes_raw, requested_timeframes, excluded_requested_timeframes = (
         _resolve_low_ram_timeframes(list(timeframes or list(CANONICAL_STRATEGY_TIMEFRAMES)))
     )

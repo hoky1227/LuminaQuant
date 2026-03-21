@@ -104,4 +104,4 @@ class ExchangeInterface(ABC):
     def cancel_order(self, order_id, symbol=None): pass
 ```
 
-구현 예시는 `lumina_quant/exchanges/` 폴더 내의 `CCXTExchange`, `MT5Exchange`, 그리고 Phase 1 `PolymarketExchange`를 참고하세요.
+구현 예시는 `lumina_quant/exchanges/` 폴더 내의 `BinanceFuturesExchange`, `MT5Exchange`, 그리고 Phase 1 `PolymarketExchange`를 참고하세요.

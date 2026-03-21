@@ -1,4 +1,4 @@
-"""Binance user/account stream client for stream-driven order state projection."""
+"""Binance USDⓈ-M Futures user/account stream client."""
 
 from __future__ import annotations
 
@@ -9,10 +9,7 @@ from collections.abc import Callable
 
 
 class BinanceUserStreamClient:
-    """Best-effort Binance user stream client.
-
-    The client intentionally keeps request-plane logic separate from projection logic.
-    """
+    """Native Binance USDⓈ-M Futures user stream client."""
 
     def __init__(
         self,
@@ -62,14 +59,18 @@ class BinanceUserStreamClient:
             return
 
         while not self._stop.is_set():
+            listen_key: str | None = None
             try:
                 listen_key = self._create_listen_key()
                 if not listen_key:
-                    raise RuntimeError("Failed to obtain Binance listenKey.")
+                    raise RuntimeError("Failed to obtain Binance Futures listenKey.")
                 ws_url = self._build_ws_url(listen_key)
                 next_keepalive_monotonic = time.monotonic() + float(self.keepalive_interval_sec)
+                connected_at = time.monotonic()
                 with websockets.sync.client.connect(ws_url, open_timeout=10, close_timeout=5) as ws:
                     while not self._stop.is_set():
+                        if time.monotonic() - connected_at >= 23 * 60 * 60:
+                            break
                         try:
                             raw = ws.recv(timeout=1)
                         except TimeoutError:
@@ -78,8 +79,7 @@ class BinanceUserStreamClient:
                             next_keepalive_monotonic = time.monotonic() + float(
                                 self.keepalive_interval_sec
                             )
-                            if not self._keepalive_listen_key(listen_key):
-                                raise RuntimeError("Binance listenKey keepalive failed.")
+                            self._keepalive_listen_key(listen_key)
                         if raw is None:
                             continue
                         payload = json.loads(raw)
@@ -94,79 +94,90 @@ class BinanceUserStreamClient:
                 if self._stop.is_set():
                     break
                 time.sleep(self.reconnect_delay_sec)
+            finally:
+                if listen_key:
+                    try:
+                        self._close_listen_key(listen_key)
+                    except Exception:
+                        pass
+
+    def _ws_base_url(self) -> str:
+        for value in (
+            getattr(self.exchange, "websocket_base_url", None),
+            getattr(getattr(self.exchange, "rest_client", None), "ws_base_url", None),
+            getattr(getattr(self.exchange, "http", None), "config", None),
+        ):
+            if value is None:
+                continue
+            candidate = getattr(value, "websocket_base_url", value)
+            token = str(candidate or "").strip()
+            if token:
+                return token.rstrip("/")
+        return "wss://fstream.binance.com"
 
     def _build_ws_url(self, listen_key: str) -> str:
-        if self.market_type == "future":
-            return f"wss://fstream.binance.com/ws/{listen_key}"
-        return f"wss://stream.binance.com:9443/ws/{listen_key}"
+        return f"{self._ws_base_url()}/ws/{listen_key}"
 
     def _resolve_client(self):
         client = getattr(self.exchange, "_client", None)
         if callable(client):
             client = client()
         if client is None:
+            client = getattr(self.exchange, "rest_client", None)
+        if client is None:
+            client = getattr(self.exchange, "http", None)
+        if client is None:
             client = getattr(self.exchange, "exchange", None)
         return client
 
     def _create_listen_key(self) -> str | None:
-        # Best-effort across ccxt binance variants.
-        client = self._resolve_client()
-        if client is None:
-            return None
-
-        call_candidates = []
-        if self.market_type == "future":
-            call_candidates.extend(["fapiPrivatePostListenKey", "fapiprivate_post_listenkey"])
-        call_candidates.extend(
-            [
-                "privatePostUserDataStream",
-                "private_post_userdatastream",
-            ]
-        )
-
-        for name in call_candidates:
-            fn = getattr(client, name, None)
-            if not callable(fn):
+        for target in (self.exchange, self._resolve_client()):
+            if target is None:
                 continue
-            try:
-                payload = fn()
-            except Exception:
-                continue
-            if isinstance(payload, dict):
-                key = payload.get("listenKey")
-                if isinstance(key, str) and key:
-                    return key
+            for name in ("create_listen_key", "start_user_stream", "start_user_data_stream"):
+                fn = getattr(target, name, None)
+                if not callable(fn):
+                    continue
+                try:
+                    token = str(fn() or "").strip()
+                except Exception:
+                    continue
+                if token:
+                    return token
         return None
 
     def _keepalive_listen_key(self, listen_key: str) -> bool:
-        client = self._resolve_client()
-        if client is None:
-            return False
-        call_candidates = []
-        if self.market_type == "future":
-            call_candidates.extend(["fapiPrivatePutListenKey", "fapiprivate_put_listenkey"])
-        call_candidates.extend(
-            [
-                "privatePutUserDataStream",
-                "private_put_userdatastream",
-            ]
-        )
-        payload = {"listenKey": str(listen_key)}
-        for name in call_candidates:
-            fn = getattr(client, name, None)
-            if not callable(fn):
+        for target in (self.exchange, self._resolve_client()):
+            if target is None:
                 continue
-            try:
-                fn(payload)
-                return True
-            except TypeError:
+            for name in (
+                "keepalive_listen_key",
+                "keepalive_user_stream",
+                "keepalive_user_data_stream",
+            ):
+                fn = getattr(target, name, None)
+                if not callable(fn):
+                    continue
                 try:
-                    fn(str(listen_key))
-                    return True
+                    result = fn(str(listen_key))
                 except Exception:
                     continue
-            except Exception:
+                return result is not False
+        return False
+
+    def _close_listen_key(self, listen_key: str) -> bool:
+        for target in (self.exchange, self._resolve_client()):
+            if target is None:
                 continue
+            for name in ("close_listen_key", "close_user_stream", "close_user_data_stream"):
+                fn = getattr(target, name, None)
+                if not callable(fn):
+                    continue
+                try:
+                    result = fn(str(listen_key))
+                except Exception:
+                    continue
+                return result is not False
         return False
 
     @staticmethod
@@ -200,35 +211,6 @@ class BinanceUserStreamClient:
                 "balances": [dict(item or {}) for item in list(account.get("B") or [])],
                 "positions": [dict(item or {}) for item in list(account.get("P") or [])],
                 "reason": str(account.get("m") or ""),
-            }
-        if event_type == "executionReport":
-            return {
-                "event_type": "executionReport",
-                "exchange_ts_ms": int(payload.get("E") or 0),
-                "symbol": str(payload.get("s") or ""),
-                "order_id": str(payload.get("i") or ""),
-                "client_order_id": str(payload.get("c") or ""),
-                "exec_type": str(payload.get("x") or ""),
-                "order_status": str(payload.get("X") or ""),
-                "last_fill_qty": float(payload.get("l") or 0.0),
-                "cum_fill_qty": float(payload.get("z") or 0.0),
-                "last_fill_price": float(payload.get("L") or 0.0),
-                "trade_id": payload.get("t"),
-                "side": str(payload.get("S") or ""),
-            }
-        if event_type == "outboundAccountPosition":
-            return {
-                "event_type": "outboundAccountPosition",
-                "exchange_ts_ms": int(payload.get("E") or 0),
-                "balances": list(payload.get("B") or []),
-            }
-        if event_type == "balanceUpdate":
-            return {
-                "event_type": "balanceUpdate",
-                "exchange_ts_ms": int(payload.get("E") or 0),
-                "asset": str(payload.get("a") or ""),
-                "balance_delta": str(payload.get("d") or "0"),
-                "clear_time_ms": int(payload.get("T") or 0),
             }
         return None
 

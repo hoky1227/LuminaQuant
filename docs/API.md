@@ -110,7 +110,7 @@ class ExchangeInterface(ABC):
     def cancel_order(self, order_id, symbol=None): pass
 ```
 
-See `lumina_quant/exchanges/` for `CCXTExchange`, `MT5Exchange`, and the Phase 1 `PolymarketExchange` implementation.
+See `lumina_quant/exchanges/` for `BinanceFuturesExchange`, `MT5Exchange`, and the Phase 1 `PolymarketExchange` implementation.
 
 ## 4. Runtime Config Layer
 

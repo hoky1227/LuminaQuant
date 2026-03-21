@@ -192,16 +192,42 @@ def load_data_dict_from_parquet(
     missing_symbols: list[str] = []
     for symbol in list(symbol_list or []):
         if resolved_mode == "raw-first":
-            frame = repo.load_committed_ohlcv_chunked(
-                exchange=exchange,
-                symbol=symbol,
-                timeframe=timeframe,
-                start_date=start_date,
-                end_date=end_date,
-                chunk_days=chunk_days,
-                warmup_bars=warmup_bars,
-                staleness_threshold_seconds=staleness_threshold_seconds,
-            )
+            try:
+                frame = repo.load_committed_ohlcv_chunked(
+                    exchange=exchange,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    start_date=start_date,
+                    end_date=end_date,
+                    chunk_days=chunk_days,
+                    warmup_bars=warmup_bars,
+                    staleness_threshold_seconds=staleness_threshold_seconds,
+                )
+            except RawFirstDataMissingError:
+                from lumina_quant.services.materialize_from_raw import (
+                    materialize_raw_aggtrades_bundle,
+                )
+
+                materialize_raw_aggtrades_bundle(
+                    root_path=root_path,
+                    exchange=exchange,
+                    symbol=str(symbol),
+                    timeframes=[str(timeframe)],
+                    start_date=start_date,
+                    end_date=end_date,
+                    producer="load_data_dict_from_parquet",
+                    require_complete=True,
+                )
+                frame = repo.load_committed_ohlcv_chunked(
+                    exchange=exchange,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    start_date=start_date,
+                    end_date=end_date,
+                    chunk_days=chunk_days,
+                    warmup_bars=warmup_bars,
+                    staleness_threshold_seconds=staleness_threshold_seconds,
+                )
         else:
             frame = repo.load_ohlcv_chunked(
                 exchange=exchange,

@@ -275,3 +275,8 @@ var/scripts/*
 # Keep source package namespace even with root-level data/ ignores.
 !src/lumina_quant/data/
 !src/lumina_quant/data/**
+
+# Re-ignore generated artifacts inside explicitly tracked trees.
+src/lumina_quant/data/__pycache__/
+src/lumina_quant/data/**/*.pyc
+var/reports/memory/

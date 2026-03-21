@@ -36,7 +36,7 @@ def test_live_trader_drops_unknown_symbols_gracefully():
 
     trader = LiveTrader.__new__(LiveTrader)
     trader._audit_closed = True
-    trader.config = SimpleNamespace(EXCHANGE={"driver": "ccxt"})
+    trader.config = SimpleNamespace(EXCHANGE={"driver": "binance_futures"})
     trader.exchange = _Exchange()
     trader.logger = SimpleNamespace(warning=lambda message, *args: warnings.append(str(message)))
     trader.notifier = SimpleNamespace(send_message=lambda message: notifications.append(str(message)))

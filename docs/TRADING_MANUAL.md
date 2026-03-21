@@ -93,7 +93,7 @@ if self.mode == "LIVE":
     )
 ```
 
-#### Binance (CCXT)
+#### Binance USDⓈ-M Futures (Native)
 Similar to MT5, pass `stopLoss` or `takeProfit` if supported, or send separate OCO orders.
 ```python
 params = {
@@ -168,7 +168,7 @@ class TrailingStopStrategy(Strategy):
 
 ### Binance (Futures)
 Leverage is usually an account setting, but can be set via API.
-LuminaQuant's `CCXTExchange` does not auto-set leverage on connect.
+LuminaQuant now applies native Binance USDⓈ-M Futures leverage/margin/position-mode controls through the official futures API.
 
 **How to set it:**
 Add this to your strategy's `__init__` or `live_trader.py`:

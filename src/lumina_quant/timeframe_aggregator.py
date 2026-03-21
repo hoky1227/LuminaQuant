@@ -313,17 +313,33 @@ class TimeframeAggregator:
                     continue
 
 
-def aggregate_1s_frame_to_timeframe(frame_1s: pl.DataFrame, *, timeframe: str) -> pl.DataFrame:
-    """Aggregate a canonical 1-second OHLCV frame into a higher timeframe frame."""
-    token = normalize_timeframe_token(timeframe)
-    if frame_1s.is_empty():
-        return frame_1s
-    if token == "1s":
-        return frame_1s
-    tf_ms = int(timeframe_to_milliseconds(token))
-    return (
-        frame_1s.with_columns(pl.col("datetime").dt.epoch("ms").alias("ts_ms"))
-        .with_columns(((pl.col("ts_ms") // tf_ms) * tf_ms).alias("bucket_ms"))
+def resample_ohlcv_frame_to_timeframe(
+    frame: pl.DataFrame,
+    *,
+    source_timeframe: str,
+    timeframe: str,
+    drop_incomplete_last: bool = True,
+) -> pl.DataFrame:
+    """Resample lower-timeframe OHLCV into a higher timeframe deterministically."""
+    source_token = normalize_timeframe_token(source_timeframe)
+    target_token = normalize_timeframe_token(timeframe)
+    if frame.is_empty():
+        return frame
+    if source_token == target_token:
+        return frame.sort("datetime")
+
+    source_ms = int(timeframe_to_milliseconds(source_token))
+    target_ms = int(timeframe_to_milliseconds(target_token))
+    if target_ms < source_ms or (target_ms % source_ms) != 0:
+        raise ValueError(
+            f"Cannot resample {source_token} data upward into non-multiple timeframe {target_token}."
+        )
+
+    expected_count = max(1, target_ms // source_ms)
+    aggregated = (
+        frame.sort("datetime")
+        .with_columns(pl.col("datetime").dt.epoch("ms").alias("ts_ms"))
+        .with_columns(((pl.col("ts_ms") // target_ms) * target_ms).alias("bucket_ms"))
         .group_by("bucket_ms")
         .agg(
             [
@@ -332,9 +348,45 @@ def aggregate_1s_frame_to_timeframe(frame_1s: pl.DataFrame, *, timeframe: str) -
                 pl.col("low").min().alias("low"),
                 pl.col("close").last().alias("close"),
                 pl.col("volume").sum().alias("volume"),
+                pl.col("ts_ms").count().alias("source_count"),
+                pl.col("ts_ms").min().alias("source_first_ts_ms"),
+                pl.col("ts_ms").max().alias("source_last_ts_ms"),
             ]
         )
         .sort("bucket_ms")
-        .with_columns(pl.from_epoch("bucket_ms", time_unit="ms").alias("datetime"))
-        .select(["datetime", "open", "high", "low", "close", "volume"])
     )
+
+    if drop_incomplete_last:
+        aggregated = aggregated.filter(
+            (pl.col("source_count") >= expected_count)
+            & (pl.col("source_first_ts_ms") <= pl.col("bucket_ms"))
+            & (pl.col("source_last_ts_ms") >= (pl.col("bucket_ms") + target_ms - source_ms))
+        )
+
+    return aggregated.with_columns(
+        pl.from_epoch("bucket_ms", time_unit="ms").alias("datetime")
+    ).select(["datetime", "open", "high", "low", "close", "volume"])
+
+
+def resample_1s_frame(
+    frame_1s: pl.DataFrame,
+    *,
+    timeframe: str,
+    drop_incomplete_last: bool = True,
+) -> pl.DataFrame:
+    """Resample canonical 1-second OHLCV into a higher timeframe."""
+    token = normalize_timeframe_token(timeframe)
+    if token == "1s" or frame_1s.is_empty():
+        return frame_1s.sort("datetime")
+    return resample_ohlcv_frame_to_timeframe(
+        frame_1s,
+        source_timeframe="1s",
+        timeframe=token,
+        drop_incomplete_last=drop_incomplete_last,
+    )
+
+
+def aggregate_1s_frame_to_timeframe(frame_1s: pl.DataFrame, *, timeframe: str) -> pl.DataFrame:
+    """Aggregate a canonical 1-second OHLCV frame into a higher timeframe frame."""
+    token = normalize_timeframe_token(timeframe)
+    return resample_1s_frame(frame_1s, timeframe=token, drop_incomplete_last=True)

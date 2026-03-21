@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import argparse
-import json
 import csv
 import io
+import json
 import time
 import zipfile
 from dataclasses import asdict, dataclass
@@ -17,12 +17,13 @@ from lumina_quant.data.support_inventory import (
     build_strategy_support_inventory,
     write_strategy_support_inventory,
 )
+from lumina_quant.data.raw_first_lineage import raw_aggtrades_to_1s_frame
 from lumina_quant.data_sync import (
     _binance_archive_url,
     _day_bounds_ms,
     _download_zip_bytes,
     _iter_days,
-    create_binance_exchange,
+    create_binance_futures_client,
     fetch_aggtrades_batch,
     sync_futures_feature_points,
 )
@@ -252,66 +253,6 @@ def _archive_rows_to_raw_aggtrades(
     return rows
 
 
-def _raw_rows_to_1s_ohlcv(
-    rows: list[dict[str, Any]],
-    *,
-    cursor_ms: int,
-    until_ms: int,
-    previous_close: float | None,
-) -> tuple[list[tuple[float, float, float, float, float, float]], float | None]:
-    buckets: dict[int, list[float]] = {}
-    for row in list(rows or []):
-        try:
-            ts = int(row["timestamp_ms"])
-            price = float(row["price"])
-            quantity = float(row["quantity"])
-        except Exception:
-            continue
-        if ts < int(cursor_ms) or ts > int(until_ms):
-            continue
-        sec_ts = (ts // 1000) * 1000
-        current = buckets.get(sec_ts)
-        if current is None:
-            buckets[sec_ts] = [price, price, price, price, max(0.0, quantity)]
-        else:
-            current[1] = max(current[1], price)
-            current[2] = min(current[2], price)
-            current[3] = price
-            current[4] += max(0.0, quantity)
-
-    if not buckets:
-        return [], previous_close
-
-    sorted_seconds = sorted(buckets.keys())
-    first_second = max((int(cursor_ms) // 1000) * 1000, sorted_seconds[0])
-    last_second = min((int(until_ms) // 1000) * 1000, sorted_seconds[-1])
-
-    out: list[tuple[float, float, float, float, float, float]] = []
-    prev_close = previous_close
-    sec = first_second
-    while sec <= last_second:
-        row = buckets.get(sec)
-        if row is None:
-            if prev_close is None:
-                sec += 1000
-                continue
-            o = prev_close
-            h = prev_close
-            low_price = prev_close
-            c = prev_close
-            v = 0.0
-        else:
-            o = float(row[0])
-            h = float(row[1])
-            low_price = float(row[2])
-            c = float(row[3])
-            v = float(row[4])
-            prev_close = c
-        out.append((float(sec), o, h, low_price, c, v))
-        sec += 1000
-    return out, prev_close
-
-
 def _write_raw_checkpoint_for_rows(
     repo: ParquetMarketDataRepository,
     *,
@@ -319,6 +260,7 @@ def _write_raw_checkpoint_for_rows(
     symbol: str,
     rows: list[dict[str, Any]],
     source: str,
+    observed_until_ms: int,
 ) -> None:
     if not rows:
         return
@@ -332,6 +274,7 @@ def _write_raw_checkpoint_for_rows(
             "last_timestamp_ms": int(last["timestamp_ms"]),
             "last_trade_id": int(last["agg_trade_id"]),
             "last_agg_trade_id": int(last["agg_trade_id"]),
+            "observed_until_ms": int(observed_until_ms),
             "updated_at_utc": datetime.now(UTC).isoformat(),
             "source": str(source),
         },
@@ -344,6 +287,7 @@ def _write_raw_checkpoint_for_rows(
             "source": str(source),
             "last_timestamp_ms": int(last["timestamp_ms"]),
             "last_trade_id": int(last["agg_trade_id"]),
+            "observed_until_ms": int(observed_until_ms),
             "rows": len(rows),
             "created_at_utc": datetime.now(UTC).isoformat(),
         },
@@ -361,7 +305,7 @@ def _collect_live_raw_rows(
     base_wait_sec: float = 2.0,
     pause_sec: float = 0.1,
 ) -> list[dict[str, Any]]:
-    exchange = create_binance_exchange(market_type="future")
+    exchange = create_binance_futures_client(market_type="future")
     cursor = max(0, int(start_ms))
     until = max(cursor, int(end_ms))
     current_limit = max(1, int(limit))
@@ -503,14 +447,28 @@ def refresh_symbol_raw_first_ohlcv(
                 symbol=symbol,
                 rows=raw_rows,
                 source="binance_archive_backfill",
+                observed_until_ms=int(range_end),
             )
-            derived_rows, previous_close = _raw_rows_to_1s_ohlcv(
+            derived_frame = raw_aggtrades_to_1s_frame(
                 raw_rows,
-                cursor_ms=range_start,
-                until_ms=range_end,
+                source=f"{exchange_id}:{symbol}:archive",
+                range_start_ms=int(range_start),
+                range_end_ms=int(range_end),
                 previous_close=previous_close,
+                complete_through_ms=int(range_end),
             )
-            if derived_rows:
+            if not derived_frame.is_empty():
+                derived_rows = [
+                    (
+                        float(row["datetime"].replace(tzinfo=UTC).timestamp() * 1000),
+                        float(row["open"]),
+                        float(row["high"]),
+                        float(row["low"]),
+                        float(row["close"]),
+                        float(row["volume"]),
+                    )
+                    for row in derived_frame.to_dicts()
+                ]
                 derived_ohlcv_rows_upserted += upsert_ohlcv_rows_1s(
                     db_path,
                     exchange=str(exchange_id).lower(),
@@ -518,6 +476,7 @@ def refresh_symbol_raw_first_ohlcv(
                     rows=derived_rows,
                 )
                 after_max_utc = datetime.fromtimestamp(float(derived_rows[-1][0]) / 1000.0, tz=UTC)
+                previous_close = float(derived_rows[-1][4])
             live_start_ms = max(live_start_ms, int(raw_rows[-1]["timestamp_ms"]) + 1)
             if guard is not None:
                 guard.checkpoint(
@@ -552,15 +511,29 @@ def refresh_symbol_raw_first_ohlcv(
                 exchange_id=str(exchange_id).lower(),
                 symbol=symbol,
                 rows=live_rows,
-                source="binance_live_tail",
+                source="binance_futures_live_tail",
+                observed_until_ms=int(cutoff_ms),
             )
-            derived_rows, previous_close = _raw_rows_to_1s_ohlcv(
+            derived_frame = raw_aggtrades_to_1s_frame(
                 live_rows,
-                cursor_ms=live_start_ms,
-                until_ms=cutoff_ms,
+                source=f"{exchange_id}:{symbol}:rest_tail",
+                range_start_ms=int(live_start_ms),
+                range_end_ms=int(cutoff_ms),
                 previous_close=previous_close,
+                complete_through_ms=int(cutoff_ms),
             )
-            if derived_rows:
+            if not derived_frame.is_empty():
+                derived_rows = [
+                    (
+                        float(row["datetime"].replace(tzinfo=UTC).timestamp() * 1000),
+                        float(row["open"]),
+                        float(row["high"]),
+                        float(row["low"]),
+                        float(row["close"]),
+                        float(row["volume"]),
+                    )
+                    for row in derived_frame.to_dicts()
+                ]
                 derived_ohlcv_rows_upserted += upsert_ohlcv_rows_1s(
                     db_path,
                     exchange=str(exchange_id).lower(),
@@ -568,6 +541,7 @@ def refresh_symbol_raw_first_ohlcv(
                     rows=derived_rows,
                 )
                 after_max_utc = datetime.fromtimestamp(float(derived_rows[-1][0]) / 1000.0, tz=UTC)
+                previous_close = float(derived_rows[-1][4])
             if guard is not None:
                 guard.checkpoint(
                     "after_live_tail",
@@ -755,19 +729,21 @@ def main(argv: list[str] | None = None) -> int:
     repo = ParquetMarketDataRepository(str(args.db_path))
     guard = RSSGuard(
         log_path=Path(args.rss_log),
-        label="final_portfolio_validation_data_refresh",
+        label="continuity_validation_data_refresh",
         budget_bytes=max(1, int(args.memory_budget_bytes)),
         soft_limit_bytes=max(1, int(args.soft_rss_bytes)),
         hard_limit_bytes=max(1, int(args.memory_budget_bytes)),
     )
 
     payload: dict[str, Any] = {
-        "artifact_kind": "final_portfolio_validation_data_refresh",
+        "artifact_kind": "continuity_validation_data_refresh",
         "generated_at": datetime.now(UTC).isoformat(),
         "status": "completed",
         "error": None,
+        "validation_mode": "continuity_only_extension_refresh",
         "canonical_source": "binance_raw_aggtrades",
         "ohlcv_derivation": "derived_from_raw_aggtrades",
+        "final_signoff_source_of_truth": False,
         "collection_cutoff_utc": iso_utc(cutoff_dt),
         "portfolio_symbols": portfolio_symbols,
         "feature_symbols": feature_symbols,

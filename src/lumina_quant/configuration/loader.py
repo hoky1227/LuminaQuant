@@ -84,12 +84,20 @@ def _normalize_live_source(value: Any) -> str:
     token = str(value or "").strip().lower().replace("-", "_")
     if token in {"", "committed"}:
         return "committed"
-    if token in {"binance_live", "binance", "live"}:
-        return "binance_live"
+    if token in {"binance_futures", "binance_futures_live", "binance_live", "binance", "live"}:
+        return "binance_futures"
     if token in {"external", "custom"}:
         return "external"
     if token in {"polymarket_live", "polymarket"}:
         return "polymarket_live"
+    return token
+
+
+def _normalize_exchange_driver(driver: Any, *, exchange_name: Any = None) -> str:
+    token = str(driver or "").strip().lower().replace("-", "_")
+    name = str(exchange_name or "").strip().lower()
+    if token in {"", "binance_futures", "binance_native", "binance"}:
+        return "binance_futures" if name in {"", "binance"} else token
     return token
 
 
@@ -454,7 +462,32 @@ def build_runtime_config(data: dict[str, Any], env: Mapping[str, str]) -> Runtim
     runtime.execution.compute_backend = requested_gpu_mode
     runtime.execution.gpu_vram_gb = max(0.0, _as_float(runtime.execution.gpu_vram_gb, 0.0))
 
+    runtime.live.exchange.driver = _normalize_exchange_driver(
+        runtime.live.exchange.driver,
+        exchange_name=runtime.live.exchange.name,
+    )
     runtime.live.exchange.leverage = _as_int(runtime.live.exchange.leverage, 3)
+    runtime.backtest.risk_free_mode = str(
+        getattr(runtime.backtest, "risk_free_mode", "us_treasury_constant")
+        or "us_treasury_constant"
+    ).strip().lower()
+    runtime.backtest.risk_free_tenor = str(
+        getattr(runtime.backtest, "risk_free_tenor", "3m") or "3m"
+    ).strip().lower()
+    runtime.backtest.risk_free_annual = _as_float(
+        getattr(runtime.backtest, "risk_free_annual", runtime.backtest.risk_free_rate),
+        runtime.backtest.risk_free_rate,
+    )
+    runtime.backtest.risk_free_series_path = str(
+        getattr(runtime.backtest, "risk_free_series_path", "") or ""
+    ).strip()
+    runtime.backtest.sortino_target_mode = str(
+        getattr(runtime.backtest, "sortino_target_mode", "same_as_rf") or "same_as_rf"
+    ).strip().lower()
+    runtime.backtest.sortino_target_annual = _as_float(
+        getattr(runtime.backtest, "sortino_target_annual", runtime.backtest.risk_free_annual),
+        runtime.backtest.risk_free_annual,
+    )
     runtime.live.market_data_source = _normalize_live_source(
         getattr(runtime.live, "market_data_source", "committed")
     )

@@ -8,12 +8,12 @@ def get_exchange(config: object):
     exchange_config = getattr(config, "EXCHANGE", None)
     if not isinstance(exchange_config, dict):
         raise ValueError("EXCHANGE config must be a dictionary with a 'driver' field.")
-    driver = str(exchange_config.get("driver", "")).strip().lower()
+    driver = str(exchange_config.get("driver", "") or "").strip().lower()
 
-    if driver == "ccxt":
-        from .ccxt_exchange import CCXTExchange
+    if driver in {"binance_futures", "binance_native"}:
+        from .binance_futures_exchange import BinanceFuturesExchange
 
-        return CCXTExchange(config)
+        return BinanceFuturesExchange(config)
     if driver == "mt5":
         from .mt5_exchange import MT5Exchange
 

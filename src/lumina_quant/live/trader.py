@@ -2,6 +2,8 @@ import atexit
 import os
 import queue
 import time
+from copy import deepcopy
+from types import SimpleNamespace
 
 from lumina_quant.backtesting.cli_contract import RawFirstDataMissingError
 from lumina_quant.config import LiveConfig
@@ -26,6 +28,25 @@ class LiveDataFatalError(RuntimeError):
     """Raised when live data contract breach requires deterministic process exit."""
 
 
+def _snapshot_live_config(base_config, *, symbols) -> SimpleNamespace:
+    attrs: dict[str, object] = {}
+    for name in dir(base_config):
+        if name.startswith("_"):
+            continue
+        try:
+            value = getattr(base_config, name)
+        except Exception:
+            continue
+        if callable(value):
+            continue
+        try:
+            attrs[name] = deepcopy(value)
+        except Exception:
+            attrs[name] = value
+    attrs["SYMBOLS"] = list(symbols or [])
+    return SimpleNamespace(**attrs)
+
+
 class LiveTrader(TradingEngine):
     """The LiveTrader engine."""
 
@@ -44,10 +65,11 @@ class LiveTrader(TradingEngine):
         self.logger = setup_logging("LiveTrader")
         self._audit_closed = True
         self.run_id = None
-        self.symbol_list = symbol_list
+        self.symbol_list = list(symbol_list or [])
         self.events = queue.Queue()
-        self.config = LiveConfig
-        self.config.validate()
+        self._config_source = LiveConfig
+        self._config_source.validate()
+        self.config = _snapshot_live_config(self._config_source, symbols=self.symbol_list)
         default_strategy_name = getattr(strategy_cls, "__name__", strategy_cls.__class__.__name__)
         self.strategy_name = str(strategy_name or default_strategy_name)
         self.strategy_params = dict(strategy_params or {})
@@ -139,7 +161,8 @@ class LiveTrader(TradingEngine):
         self.symbol_list = self._filter_unavailable_symbols(self.symbol_list)
         if not self.symbol_list:
             raise RuntimeError("No tradable symbols are available on exchange after market sync.")
-        self.config.SYMBOLS = list(self.symbol_list)
+        self.config = _snapshot_live_config(self._config_source, symbols=self.symbol_list)
+        self.risk_manager.config = self.config
 
         # Initialize Handlers with Exchange
         self.data_handler = data_handler_cls(
@@ -227,9 +250,6 @@ class LiveTrader(TradingEngine):
 
     def _filter_unavailable_symbols(self, symbols):
         requested = [str(symbol) for symbol in list(symbols or [])]
-        exchange_driver = str(getattr(self.config, "EXCHANGE", {}).get("driver", "")).lower()
-        if exchange_driver != "ccxt":
-            return requested
 
         load_markets = getattr(self.exchange, "load_markets", None)
         if not callable(load_markets):
@@ -389,6 +409,15 @@ class LiveTrader(TradingEngine):
             self.execution_handler, "ingest_user_stream_event"
         ):
             self.execution_handler.ingest_user_stream_event(payload)
+            return
+
+        if event_type == "listenKeyExpired":
+            self.audit_store.log_risk_event(
+                self.run_id,
+                reason="USER_STREAM_LISTEN_KEY_EXPIRED",
+                details={"exchange_ts_ms": payload.get("exchange_ts_ms")},
+            )
+            self._activate_fallback_polling("listen_key_expired")
             return
 
         if event_type == "outboundAccountPosition":

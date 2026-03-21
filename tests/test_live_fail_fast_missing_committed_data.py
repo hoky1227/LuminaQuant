@@ -59,7 +59,7 @@ def _patch_entrypoint_env(monkeypatch, module, *, strategy_name: str):
     class _LiveConfig:
         SYMBOLS = ["BTC/USDT"]
         IS_TESTNET = True
-        EXCHANGE = {"driver": "ccxt", "name": "binance", "market_type": "future"}
+        EXCHANGE = {"driver": "binance_futures", "name": "binance", "market_type": "future"}
         TIMEFRAME = "1m"
         MATERIALIZED_STALENESS_THRESHOLD_SECONDS = 45
         MATERIALIZED_STALENESS_ALERT_COOLDOWN_SECONDS = 60
@@ -107,3 +107,69 @@ def test_run_live_ws_exits_with_code_2_on_fail_fast(monkeypatch):
     with pytest.raises(SystemExit) as exc:
         live_cli.main(["--transport", "ws", "--no-selection"])
     assert int(exc.value.code) == 2
+
+
+def test_selection_overrides_are_applied_before_live_config_validation(monkeypatch):
+    observed: dict[str, object] = {}
+    validate_calls: list[tuple[list[str], str]] = []
+
+    class _LiveConfig:
+        SYMBOLS = ["BTC/USDT"]
+        IS_TESTNET = True
+        EXCHANGE = {"driver": "binance_futures", "name": "binance", "market_type": "future"}
+        TIMEFRAME = "1m"
+        MARKET_DATA_SOURCE = "committed"
+        ORDER_STATE_SOURCE = "polling"
+        MATERIALIZED_STALENESS_THRESHOLD_SECONDS = 45
+        MATERIALIZED_STALENESS_ALERT_COOLDOWN_SECONDS = 60
+
+        @classmethod
+        def validate(cls):
+            validate_calls.append((list(cls.SYMBOLS), str(cls.TIMEFRAME)))
+            return None
+
+    class _Strategy:
+        __name__ = "MovingAverageCrossStrategy"
+
+    class _Trader:
+        def __init__(self, *args, **kwargs):
+            _ = args
+            observed["kwargs"] = kwargs
+            self.data_handler = SimpleNamespace(consume_fatal_error=lambda: None)
+
+        @staticmethod
+        def run():
+            return None
+
+    monkeypatch.setattr(live_cli, "LiveConfig", _LiveConfig)
+    monkeypatch.setattr(
+        live_cli,
+        "_strategy_helpers",
+        lambda: (
+            "MovingAverageCrossStrategy",
+            lambda include_opt_in=True: {"MovingAverageCrossStrategy": _Strategy},
+            lambda *_args, **_kwargs: _Strategy,
+        ),
+    )
+    monkeypatch.setattr(
+        live_cli,
+        "_runtime_classes",
+        lambda: (object, object, RuntimeError, _Trader),
+    )
+    monkeypatch.setattr(live_cli, "resolve_selection_file", lambda _path="": "fake-selection.json")
+    monkeypatch.setattr(live_cli, "load_selection_payload", lambda _path: {"ok": True})
+    monkeypatch.setattr(
+        live_cli,
+        "extract_selection_config",
+        lambda _payload: {
+            "candidate_name": "MovingAverageCrossStrategy",
+            "symbols": ["ETH/USDT", "SOL/USDT"],
+            "strategy_timeframe": "5m",
+            "params": {"fast": 3},
+        },
+    )
+
+    assert live_cli.main([]) == 0
+    assert validate_calls == [(["ETH/USDT", "SOL/USDT"], "5m")]
+    assert observed["kwargs"]["symbol_list"] == ["ETH/USDT", "SOL/USDT"]
+    assert observed["kwargs"]["strategy_params"] == {"fast": 3}

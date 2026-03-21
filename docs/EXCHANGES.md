@@ -1,55 +1,50 @@
 # Exchange Setup & Configuration
 
-LuminaQuant supports multiple exchanges through a unified interface. Currently supported drivers are **CCXT** (for Crypto) and **MetaTrader 5** (for Forex/Stocks).
-This branch also introduces **Phase 1 Polymarket support** for market-data + paper/shadow workflows.
+LuminaQuant supports multiple exchange drivers through a unified interface.
 
-## 1. Binance (via CCXT)
+For crypto, the production-critical path is now **native Binance USDⓈ-M Futures only**.
+CCXT is not required for Binance live trading, user streams, or historical market-data ingestion.
 
-LuminaQuant relies on the `ccxt` library to connect to over 100+ crypto exchanges, with first-class support for Binance.
+## 1. Binance USDⓈ-M Futures (native)
 
-### Prerequisites
-- Python `ccxt` package (installed via `uv sync`).
-- A Binance Account (Real or Testnet).
-- API Key and Secret Key.
+### Supported scope
+- native Futures REST market data
+- native Futures aggTrade historical ingestion
+- native Futures websocket aggTrade live market data
+- native Futures order placement / cancel / query
+- native Futures balances / positions / open orders
+- native Futures user data stream
+- native Futures leverage / margin / position-mode controls
 
 ### Configuration (`config.yaml`)
 
 ```yaml
 live:
   mode: "paper"  # paper|real
+  market_data_source: "binance_futures"  # committed|binance_futures|external|polymarket_live
+  order_state_source: "user_stream"   # polling|user_stream
   exchange:
-    driver: "ccxt"
+    driver: "binance_futures"
     name: "binance"
-    market_type: "future"   # spot|future
-    position_mode: "HEDGE"  # ONEWAY|HEDGE
-    margin_mode: "isolated" # isolated|cross
+    market_type: "future"
+    position_mode: "HEDGE"   # ONEWAY|HEDGE
+    margin_mode: "isolated"  # isolated|cross
     leverage: 3
 ```
 
-### Environment Variables (`.env`)
-Create a `.env` file in the project root:
+### Environment variables (`.env`)
 
 ```ini
 BINANCE_API_KEY=your_actual_api_key
 BINANCE_SECRET_KEY=your_actual_secret_key
 ```
 
-### Advanced Usage (Parameters)
-When executing orders in your strategy, you can pass CCXT-specific parameters via the `params` dictionary.
-
-```python
-# Example: Sending a Time-In-Force 'GTC' Limit Order
-self.execution_handler.execute_order(
-    OrderEvent(
-        symbol="BTC/USDT",
-        order_type="LMT",
-        quantity=0.1,
-        headers={"price": 50000}, # Config dependent
-        direction="BUY"
-    ),
-    params={"timeInForce": "GTC"} # Passed directly to ccxt.create_order
-)
-```
+### Notes
+- `live.exchange.market_type` must remain `future` for Binance.
+- Canonical raw market data is **aggTrades**.
+- 1s bars are derived from raw aggTrades.
+- Higher timeframes are resampled from real lower-timeframe data.
+- Final validation is real-data-only and latest-anchored; see `docs/FINAL_VALIDATION.md`.
 
 ---
 
@@ -58,13 +53,13 @@ self.execution_handler.execute_order(
 Direct integration with the MetaTrader 5 terminal allows trading Forex, CFDs, Stocks, and Futures.
 
 ### Prerequisites
-1.  **OS**: Windows (MT5 Python API is Windows-only).
-2.  **Software**: MetaTrader 5 Terminal installed and running.
-3.  **Account**: Logged into a Demo or Real account in the terminal.
-4.  **Settings**:
-    *   Go to **Tools -> Options -> Expert Advisors**.
-    *   Check ✅ **Allow algorithmic trading**.
-    *   Check ✅ **Allow DLL imports** (sometimes required depending on setup).
+1. **OS**: Windows (MT5 Python API is Windows-only).
+2. **Software**: MetaTrader 5 Terminal installed and running.
+3. **Account**: Logged into a Demo or Real account in the terminal.
+4. **Settings**:
+   - Tools -> Options -> Expert Advisors
+   - Allow algorithmic trading
+   - Allow DLL imports (if required by your setup)
 
 ### Configuration (`config.yaml`)
 
@@ -72,38 +67,11 @@ Direct integration with the MetaTrader 5 terminal allows trading Forex, CFDs, St
 live:
   exchange:
     driver: "mt5"
-    name: "metatrader" # This name is ignored by the mt5 driver
-  
-  # Default Order Settings
-  mt5_magic: 234000      # Unique ID for this bot's orders
-  mt5_deviation: 20      # Max slippage deviation in points
-  mt5_comment: "LuminaBot"
+    name: "metatrader"
+
+  mt5_magic: 234000
+  mt5_deviation: 20
 ```
-
-### Advanced Usage (Parameters)
-You can override global settings per-order using `params`.
-
-```python
-# Example: Sending an order with a custom Magic Number
-signal = SignalEvent(...)
-# In Execution Handler or via custom order creation:
-exchange.execute_order(
-    symbol="EURUSD",
-    type="market",
-    side="buy",
-    quantity=0.1,
-    params={
-        "magic": 999999,        # Override config magic
-        "deviation": 50,        # Override deviation
-        "comment": "SuperStrat" # Custom comment
-    }
-)
-```
-
-### Troubleshooting MT5
-- **"Not Connected"**: Ensure the MT5 Terminal is open and you are logged in.
-- **"IPC Error"**: Sometimes happens if MT5 is run as Administrator but Python is not, or vice versa. Run both with same permissions.
-- **Symbol Not Found**: Ensure the symbol (e.g., "EURUSD") is visible in the **Market Watch** window in MT5.
 
 ---
 
@@ -113,7 +81,7 @@ Current support is scoped to:
 - market-data ingestion
 - signal generation
 - paper/shadow execution lanes
-- experimental real order placement/cancel/open-order polling when `allow_real_execution: true` and the Polymarket credentials/private key are configured
+- experimental real order placement/cancel/open-order polling when `allow_real_execution: true`
 
 ### Configuration (`config.yaml`)
 
@@ -123,19 +91,4 @@ live:
   exchange:
     driver: "polymarket"
     name: "polymarket"
-  polymarket:
-    asset_ids:
-      - "asset-id-1"
-    host: "https://clob.polymarket.com"
-    gamma_host: "https://gamma-api.polymarket.com"
-    data_host: "https://data-api.polymarket.com"
-    market_ws_url: "wss://ws-subscriptions-clob.polymarket.com/ws/market"
-    user_ws_url: "wss://ws-subscriptions-clob.polymarket.com/ws/user"
-    allow_real_execution: false
 ```
-
-### Notes
-- Install with the `live-polymarket` extra.
-- Use canonical market-data / paper workflows first.
-- If you need custom upstream data instead of the official Polymarket feed, prefer `live.market_data_source: external` with the external-data guide.
-- Real execution remains experimental and should be treated as opt-in until broader reconciliation/position coverage is expanded.

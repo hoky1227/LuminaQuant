@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from lumina_quant.config import BaseConfig
+from lumina_quant.config import current_market_data_runtime_settings
 from lumina_quant.eval.exact_window_reporting import (
     DETAILS_LATEST,
     MEMORY_EVIDENCE_LATEST,
@@ -253,6 +253,7 @@ def _build_resolved_windows(
     args: argparse.Namespace,
     symbols: list[str],
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    defaults = current_market_data_runtime_settings()
     resolved_train_start = str(args.train_start or "").strip() or None
     resolved_val_start = str(args.val_start or "").strip() or None
     resolved_oos_start = str(args.oos_start or "").strip() or None
@@ -267,8 +268,8 @@ def _build_resolved_windows(
     ):
         adaptive = resolve_coverage_adaptive_windows(
             symbols=list(symbols or []),
-            root_path=str(getattr(BaseConfig, "MARKET_DATA_PARQUET_PATH", "data/market_parquet")),
-            exchange=str(getattr(BaseConfig, "MARKET_DATA_EXCHANGE", "binance") or "binance"),
+            root_path=str(defaults["market_data_parquet_path"]),
+            exchange=str(defaults["market_data_exchange"]),
             requested_oos_end_exclusive=resolved_requested_oos_end,
             profile=profile_token,
             chunk_days=max(7, int(args.chunk_days)),
@@ -445,8 +446,9 @@ def main(argv: list[str] | None = None) -> int:
     output_root = Path(args.output_dir).resolve()
     output_root.mkdir(parents=True, exist_ok=True)
     run_id = str(args.run_id or "").strip() or f"exact_window_{_utc_stamp()}"
+    defaults = current_market_data_runtime_settings()
     requested_timeframes = list(args.timeframes or [])
-    requested_symbols = list(args.symbols or [])
+    requested_symbols = list(args.symbols or defaults["symbols"])
     batch_timeframes = _resolve_batch_timeframes(requested_timeframes)
     batch_id = "-".join(batch_timeframes)
     adopt_run_dir = (

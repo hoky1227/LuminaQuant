@@ -119,6 +119,13 @@ backtest:
   commission_rate: 0.001  # 0.1%
   slippage_rate: 0.0005   # 0.05%
   annual_periods: 252     # Daily: 252, 1h: 252*24, 1m: 252*24*60
+  risk_free_rate: 0.0     # legacy alias; use the fields below for reporting
+  risk_free_mode: "us_treasury_constant"   # zero|us_treasury_constant|us_treasury_series
+  risk_free_tenor: "3m"
+  risk_free_annual: 0.0370  # US Treasury 3M reference (coupon-equivalent, 2026-03-18)
+  risk_free_series_path: ""
+  sortino_target_mode: "same_as_rf" # zero|same_as_rf|explicit
+  sortino_target_annual: 0.0
   random_seed: 42
   persist_output: false
   leverage: 3
@@ -141,16 +148,16 @@ backtest:
 # ------------------------------------------
 live:
   mode: "paper" # paper|real
-  market_data_source: "committed" # committed|binance_live|external|polymarket_live
+  market_data_source: "committed" # committed|binance_futures|external|polymarket_live
   order_state_source: "polling" # polling|user_stream
   shadow_live_enabled: false
   reconciliation_poll_fallback_enabled: true
   book_ticker_enabled: false
   startup_reconciliation_hard_fail: false
   exchange:
-    driver: "ccxt" # Options: "ccxt", "mt5"
-    name: "binance" # Specific exchange name for driver (e.g. "binance" for ccxt)
-    market_type: "future" # spot|future
+    driver: "binance_futures" # Options: "binance_futures", "mt5", "polymarket"
+    name: "binance" # Native Binance USDⓈ-M Futures exchange adapter
+    market_type: "future" # USDⓈ-M futures only
     position_mode: "HEDGE" # ONEWAY|HEDGE
     margin_mode: "isolated" # isolated|cross
     leverage: 3

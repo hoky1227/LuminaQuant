@@ -4,6 +4,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 MODULE_PATH = ROOT / "scripts" / "research" / "validate_saved_incumbent_portfolio.py"
 SPEC = importlib.util.spec_from_file_location("validate_saved_incumbent_portfolio", MODULE_PATH)
@@ -22,7 +24,7 @@ def test_build_validation_split_uses_canonical_boundaries() -> None:
     assert split["oos_end"] == "2026-03-17T23:59:59Z"
 
 
-def test_evaluate_saved_weight_portfolio_aggregates_weighted_streams() -> None:
+def test_evaluate_saved_weight_portfolio_separates_weighted_component_summaries() -> None:
     rows = [
         {
             "name": "a",
@@ -34,9 +36,12 @@ def test_evaluate_saved_weight_portfolio_aggregates_weighted_streams() -> None:
             "train": {"trade_count": 1, "turnover": 0.1, "benchmark_corr": 0.2},
             "val": {"trade_count": 1, "turnover": 0.1, "benchmark_corr": 0.2},
             "return_streams": {
-                "train": [{"t": 1_000, "v": 0.01}],
-                "val": [{"t": 2_000, "v": 0.02}],
-                "oos": [{"t": 3_000, "v": 0.03}, {"t": 4_000, "v": -0.01}],
+                "train": [{"datetime": "2026-01-01T00:00:00Z", "v": 0.01}],
+                "val": [{"datetime": "2026-02-01T00:00:00Z", "v": 0.02}],
+                "oos": [
+                    {"datetime": "2026-03-01T00:00:00Z", "v": 0.03},
+                    {"datetime": "2026-03-02T00:00:00Z", "v": -0.01},
+                ],
             },
             "metadata": {"cost_rate": 0.0005},
         },
@@ -50,9 +55,12 @@ def test_evaluate_saved_weight_portfolio_aggregates_weighted_streams() -> None:
             "train": {"trade_count": 2, "turnover": 0.2, "benchmark_corr": 0.1},
             "val": {"trade_count": 2, "turnover": 0.2, "benchmark_corr": 0.1},
             "return_streams": {
-                "train": [{"t": 1_000, "v": 0.02}],
-                "val": [{"t": 2_000, "v": 0.01}],
-                "oos": [{"t": 3_000, "v": 0.01}, {"t": 4_000, "v": 0.00}],
+                "train": [{"datetime": "2026-01-01T00:00:00Z", "v": 0.02}],
+                "val": [{"datetime": "2026-02-01T00:00:00Z", "v": 0.01}],
+                "oos": [
+                    {"datetime": "2026-03-01T00:00:00Z", "v": 0.01},
+                    {"datetime": "2026-03-02T00:00:00Z", "v": 0.00},
+                ],
             },
             "metadata": {"cost_rate": 0.001},
         },
@@ -60,23 +68,71 @@ def test_evaluate_saved_weight_portfolio_aggregates_weighted_streams() -> None:
 
     payload = MODULE.evaluate_saved_weight_portfolio(rows)
     oos = payload["portfolio_metrics"]["oos"]
+    weighted = payload["weighted_component_summaries"]["oos"]
     assert payload["component_rows"][0]["saved_weight"] == 0.6
     assert len(payload["oos_monthly_returns"]) == 1
     assert oos["total_return"] != 0.0
-    assert oos["turnover"] > 0.0
+    assert "turnover" not in oos
+    assert weighted["turnover"] > 0.0
 
 
-def test_common_validation_end_uses_minimum_refreshed_common_coverage() -> None:
+def test_latest_common_complete_time_uses_timeframe_complete_buckets() -> None:
     refresh_payload = {
-        "collection_cutoff_utc": "2026-03-19T09:30:29Z",
         "ohlcv_results": [
             {"symbol": "BTC/USDT", "after_ohlcv_max_utc": "2026-03-19T09:30:29Z"},
-            {"symbol": "ETH/USDT", "after_ohlcv_max_utc": "2026-03-19T09:30:10Z"},
+            {"symbol": "ETH/USDT", "after_ohlcv_max_utc": "2026-03-19T09:30:29Z"},
         ],
         "feature_results": [
-            {"symbol": "BTC/USDT", "last_timestamp_utc": "2026-03-19T09:30:00Z"},
+            {"symbol": "BTC/USDT", "last_timestamp_utc": "2026-03-19T08:59:00Z"},
         ],
     }
 
-    end = MODULE._common_validation_end(refresh_payload=refresh_payload, feature_symbols=["BTC/USDT"])
-    assert MODULE.iso_utc(end) == "2026-03-19T09:30:00Z"
+    anchored_end, evidence = MODULE._latest_common_complete_time(
+        refresh_payload=refresh_payload,
+        required_pairs=[("BTC/USDT", "1m"), ("ETH/USDT", "4h")],
+        feature_symbols=["BTC/USDT"],
+    )
+
+    assert MODULE.iso_utc(anchored_end) == "2026-03-19T04:00:00Z"
+    assert any(item["symbol"] == "ETH/USDT" and item["timeframe"] == "4h" for item in evidence)
+
+
+def test_run_strict_research_rejects_synthetic_fallback(monkeypatch) -> None:
+    monkeypatch.setattr(
+        MODULE,
+        "run_candidate_research",
+        lambda **_kwargs: {"data_sources": {"synthetic": ["BTC/USDT@1h"]}, "candidates": []},
+    )
+
+    with pytest.raises(RuntimeError, match="synthetic fallback"):
+        MODULE._run_strict_research(
+            candidates=[{"candidate_id": "c1", "symbols": ["BTC/USDT"], "strategy_timeframe": "1h"}],
+            strategy_timeframes=["1h"],
+            symbol_universe=["BTC/USDT"],
+            split={
+                "train_start": "2025-01-01T00:00:00Z",
+                "train_end": "2025-12-31T23:59:59Z",
+                "val_start": "2026-01-01T00:00:00Z",
+                "val_end": "2026-01-31T23:59:59Z",
+                "oos_start": "2026-02-01T00:00:00Z",
+                "oos_end": "2026-03-01T00:00:00Z",
+            },
+            min_bundle_bars=1,
+        )
+
+
+
+def test_build_latest_anchored_split_trims_from_left_when_latest_anchor_moves_forward() -> None:
+    saved_oos_end = MODULE.parse_utc("2026-03-17T23:59:59Z")
+    latest_common_end = MODULE.parse_utc("2026-03-19T23:59:59Z")
+    assert saved_oos_end is not None and latest_common_end is not None
+
+    shifted = MODULE.build_latest_anchored_split(
+        saved_oos_end=saved_oos_end,
+        anchored_oos_end=latest_common_end,
+    ).as_dict()
+
+    assert shifted["train_start"] == "2025-01-03T00:00:00Z"
+    assert shifted["val_start"] == "2026-01-03T00:00:00Z"
+    assert shifted["oos_start"] == "2026-02-03T00:00:00Z"
+    assert shifted["oos_end"] == "2026-03-19T23:59:59Z"

@@ -89,6 +89,8 @@ class MeanReversionStdStrategy(Strategy):
         allow_short=True,
         residualize_btc=False,
         btc_symbol=None,
+        min_residual_history_points=3,
+        residual_base_price=100.0,
     ):
         self.bars = bars
         self.events = events
@@ -112,6 +114,8 @@ class MeanReversionStdStrategy(Strategy):
         self.stop_loss_pct = float(resolved["stop_loss_pct"])
         self.allow_short = bool(resolved["allow_short"])
         self.residualize_btc = bool(resolved["residualize_btc"])
+        self.min_residual_history_points = int(min_residual_history_points)
+        self.residual_base_price = float(residual_base_price)
         default_btc = "BTC/USDT" if "BTC/USDT" in self.symbol_list else self.symbol_list[0]
         raw_btc_symbol = resolved["btc_symbol"]
         self.btc_symbol = str(raw_btc_symbol) if raw_btc_symbol else default_btc
@@ -201,7 +205,7 @@ class MeanReversionStdStrategy(Strategy):
         asset_prices = list(item.raw_history)
         btc_prices = list(btc_item.raw_history)
         history_len = min(len(asset_prices), len(btc_prices), self.window + 1)
-        if history_len < 3:
+        if history_len < self.min_residual_history_points:
             return None
         asset_tail = asset_prices[-history_len:]
         btc_tail = btc_prices[-history_len:]
@@ -229,7 +233,9 @@ class MeanReversionStdStrategy(Strategy):
             cov = sum((asset - mean_asset) * (btc - mean_btc) for asset, btc in zip(asset_rets, btc_rets, strict=True))
             beta = cov / btc_var
         residual_ret = asset_rets[-1] - (beta * btc_rets[-1])
-        base_price = item.residual_price if item.residual_price is not None else 100.0
+        base_price = (
+            item.residual_price if item.residual_price is not None else self.residual_base_price
+        )
         return max(1e-9, float(base_price) * (1.0 + float(residual_ret)))
 
     @staticmethod

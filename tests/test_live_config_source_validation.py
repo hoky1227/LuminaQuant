@@ -17,7 +17,7 @@ def _base_raw() -> dict:
             "market_data_source": "committed",
             "order_state_source": "polling",
             "exchange": {
-                "driver": "ccxt",
+                "driver": "binance_futures",
                 "name": "binance",
                 "market_type": "future",
                 "position_mode": "HEDGE",
@@ -28,7 +28,7 @@ def _base_raw() -> dict:
     }
 
 
-def test_validate_rejects_user_stream_without_binance_live_source():
+def test_validate_rejects_user_stream_without_binance_futures_source():
     raw = _base_raw()
     raw["live"]["order_state_source"] = "user_stream"
     raw["live"]["market_data_source"] = "committed"
@@ -37,18 +37,36 @@ def test_validate_rejects_user_stream_without_binance_live_source():
         validate_runtime_config(runtime)
 
 
-def test_validate_rejects_binance_live_on_non_binance_exchange():
+def test_validate_rejects_binance_futures_on_non_binance_exchange():
     raw = _base_raw()
-    raw["live"]["market_data_source"] = "binance_live"
+    raw["live"]["market_data_source"] = "binance_futures"
     raw["live"]["exchange"]["name"] = "kraken"
     runtime = build_runtime_config(raw, env={})
     with pytest.raises(ValueError):
         validate_runtime_config(runtime)
 
 
-def test_validate_accepts_binance_live_with_user_stream_on_ccxt_binance():
+def test_blank_driver_stays_invalid_on_non_binance_exchange():
     raw = _base_raw()
-    raw["live"]["market_data_source"] = "binance_live"
+    raw["live"]["exchange"]["driver"] = ""
+    raw["live"]["exchange"]["name"] = "kraken"
+    runtime = build_runtime_config(raw, env={})
+    assert runtime.live.exchange.driver == ""
+    with pytest.raises(ValueError):
+        validate_runtime_config(runtime)
+
+
+def test_blank_driver_normalizes_to_binance_futures_for_binance_exchange():
+    raw = _base_raw()
+    raw["live"]["exchange"]["driver"] = ""
+    runtime = build_runtime_config(raw, env={})
+    assert runtime.live.exchange.driver == "binance_futures"
+    validate_runtime_config(runtime)
+
+
+def test_validate_accepts_binance_futures_with_user_stream_on_binance_futures():
+    raw = _base_raw()
+    raw["live"]["market_data_source"] = "binance_futures"
     raw["live"]["order_state_source"] = "user_stream"
     runtime = build_runtime_config(raw, env={})
     validate_runtime_config(runtime)

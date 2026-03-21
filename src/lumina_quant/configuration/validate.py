@@ -105,9 +105,9 @@ def validate_runtime_config(runtime: RuntimeConfig, *, for_live: bool = False) -
     market_data_source = (
         str(getattr(runtime.live, "market_data_source", "committed")).strip().lower()
     )
-    if market_data_source not in {"committed", "binance_live", "external", "polymarket_live"}:
+    if market_data_source not in {"committed", "binance_futures", "external", "polymarket_live"}:
         raise ValueError(
-            "live.market_data_source must be one of: committed, binance_live, external, polymarket_live."
+            "live.market_data_source must be one of: committed, binance_futures, external, polymarket_live."
         )
 
     order_state_source = str(getattr(runtime.live, "order_state_source", "polling")).strip().lower()
@@ -115,8 +115,10 @@ def validate_runtime_config(runtime: RuntimeConfig, *, for_live: bool = False) -
         raise ValueError("live.order_state_source must be one of: polling, user_stream.")
 
     exchange = runtime.live.exchange
-    if exchange.driver not in {"ccxt", "mt5", "polymarket"}:
-        raise ValueError("live.exchange.driver must be 'ccxt', 'mt5', or 'polymarket'.")
+    if exchange.driver not in {"binance_futures", "binance_native", "mt5", "polymarket"}:
+        raise ValueError(
+            "live.exchange.driver must be 'binance_futures', 'binance_native', 'mt5', or 'polymarket'."
+        )
     if exchange.driver == "mt5":
         system_name = platform.system().lower()
         bridge_python = str(getattr(runtime.live, "mt5_bridge_python", "") or "").strip()
@@ -127,18 +129,26 @@ def validate_runtime_config(runtime: RuntimeConfig, *, for_live: bool = False) -
             )
     if exchange.market_type not in {"spot", "future"}:
         raise ValueError("live.exchange.market_type must be 'spot' or 'future'.")
-    if market_data_source == "binance_live":
-        if str(exchange.driver).lower() != "ccxt":
+    if str(exchange.driver).lower() in {"binance_futures", "binance_native"} and str(exchange.market_type).lower() != "future":
+        raise ValueError(
+            "Binance USDⓈ-M Futures integration supports live.exchange.market_type='future' only."
+        )
+    if market_data_source == "binance_futures":
+        if str(exchange.driver).lower() not in {"binance_futures", "binance_native"}:
             raise ValueError(
-                "live.market_data_source=binance_live requires live.exchange.driver='ccxt'."
+                "live.market_data_source=binance_futures requires live.exchange.driver='binance_futures'."
             )
         if str(exchange.name).lower() != "binance":
             raise ValueError(
-                "live.market_data_source=binance_live requires live.exchange.name='binance'."
+                "live.market_data_source=binance_futures requires live.exchange.name='binance'."
             )
-    if order_state_source == "user_stream" and market_data_source != "binance_live":
+        if str(exchange.market_type).lower() != "future":
+            raise ValueError(
+                "live.market_data_source=binance_futures requires live.exchange.market_type='future'."
+            )
+    if order_state_source == "user_stream" and market_data_source != "binance_futures":
         raise ValueError(
-            "live.order_state_source=user_stream requires live.market_data_source=binance_live."
+            "live.order_state_source=user_stream requires live.market_data_source=binance_futures."
         )
     if market_data_source == "external":
         external = runtime.live.external
@@ -197,6 +207,26 @@ def validate_runtime_config(runtime: RuntimeConfig, *, for_live: bool = False) -
         raise ValueError("execution.gpu_mode must be one of: auto, cpu, gpu, forced-gpu.")
     if float(getattr(runtime.execution, "gpu_vram_gb", 0.0)) < 0.0:
         raise ValueError("execution.gpu_vram_gb must be >= 0.")
+    if str(getattr(runtime.backtest, "risk_free_mode", "us_treasury_constant")).strip().lower() not in {
+        "zero",
+        "us_treasury_constant",
+        "us_treasury_series",
+    }:
+        raise ValueError(
+            "backtest.risk_free_mode must be one of: zero, us_treasury_constant, us_treasury_series."
+        )
+    if str(getattr(runtime.backtest, "sortino_target_mode", "same_as_rf")).strip().lower() not in {
+        "zero",
+        "same_as_rf",
+        "explicit",
+    }:
+        raise ValueError(
+            "backtest.sortino_target_mode must be one of: zero, same_as_rf, explicit."
+        )
+    if float(getattr(runtime.backtest, "risk_free_annual", 0.0)) <= -1.0:
+        raise ValueError("backtest.risk_free_annual must be > -1.0.")
+    if float(getattr(runtime.backtest, "sortino_target_annual", 0.0)) <= -1.0:
+        raise ValueError("backtest.sortino_target_annual must be > -1.0.")
     if runtime.backtest.leverage < 1 or runtime.backtest.leverage > 20:
         raise ValueError("backtest.leverage must be in range [1, 20].")
     if int(getattr(runtime.backtest, "poll_seconds", 1)) < 1:

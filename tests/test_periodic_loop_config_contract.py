@@ -19,7 +19,7 @@ def _base_payload() -> dict[str, object]:
         "live": {
             "mode": "paper",
             "exchange": {
-                "driver": "ccxt",
+                "driver": "binance_futures",
                 "name": "binance",
                 "market_type": "future",
                 "position_mode": "HEDGE",

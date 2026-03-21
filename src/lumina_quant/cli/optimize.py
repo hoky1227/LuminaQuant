@@ -267,6 +267,60 @@ TWO_STAGE_PREFILTER_FRACTION = min(
 )
 
 
+def _current_optimize_runtime_settings() -> dict[str, Any]:
+    data_mode = str(os.getenv("LQ_DATA_MODE", "raw-first") or "raw-first").strip().lower()
+    if data_mode not in {"raw-first", "legacy"}:
+        data_mode = "raw-first"
+    return {
+        "symbol_list": list(BaseConfig.SYMBOLS),
+        "market_db_path": str(BaseConfig.MARKET_DATA_PARQUET_PATH),
+        "market_db_exchange": str(BaseConfig.MARKET_DATA_EXCHANGE),
+        "market_db_backend": str(BaseConfig.STORAGE_BACKEND),
+        "base_timeframe": str(os.getenv("LQ_BASE_TIMEFRAME", "1s") or "1s").strip().lower(),
+        "strategy_timeframe": str(BaseConfig.TIMEFRAME),
+        "data_mode": data_mode,
+        "auto_collect_db": str(os.getenv("LQ_AUTO_COLLECT_DB", "0")).strip().lower()
+        not in {"0", "false", "no", "off"},
+        "backtest_mode": _normalize_backtest_mode(
+            os.getenv("LQ_BACKTEST_MODE", str(getattr(BacktestConfig, "MODE", "windowed"))),
+            default="windowed",
+        ),
+        "bt_chunk_days": max(
+            1,
+            _env_int("LQ__BACKTEST__CHUNK_DAYS", int(getattr(BacktestConfig, "CHUNK_DAYS", 2))),
+        ),
+        "bt_chunk_warmup_bars": max(
+            0,
+            _env_int(
+                "LQ__BACKTEST__CHUNK_WARMUP_BARS",
+                int(getattr(BacktestConfig, "CHUNK_WARMUP_BARS", 0)),
+            ),
+        ),
+        "backtest_poll_seconds": max(
+            1,
+            _env_int(
+                "LQ__BACKTEST__POLL_SECONDS",
+                int(getattr(BacktestConfig, "POLL_SECONDS", 20)),
+            ),
+        ),
+        "backtest_window_seconds": max(
+            1,
+            _env_int(
+                "LQ__BACKTEST__WINDOW_SECONDS",
+                int(getattr(BacktestConfig, "WINDOW_SECONDS", 20)),
+            ),
+        ),
+        "backtest_decision_cadence_seconds": max(
+            1,
+            _env_int(
+                "LQ__BACKTEST__DECISION_CADENCE_SECONDS",
+                int(getattr(BacktestConfig, "DECISION_CADENCE_SECONDS", 20)),
+            ),
+        ),
+        "max_workers": min(2, max(1, int(OptimizationConfig.MAX_WORKERS))),
+    }
+
+
 def _profile_add(key: str, elapsed: float) -> None:
     if not PROFILE_ENABLED:
         return
@@ -592,23 +646,26 @@ def _auto_collect_db_if_enabled(
     *,
     base_timeframe,
     auto_collect_db,
+    symbol_list,
+    market_db_backend,
+    start_date,
 ):
     source = str(data_source).strip().lower()
     if source not in {"auto", "db"}:
         return []
     if not bool(auto_collect_db):
         return []
-    if is_parquet_market_data_store(str(market_db_path), backend=str(MARKET_DB_BACKEND)):
+    if is_parquet_market_data_store(str(market_db_path), backend=str(market_db_backend)):
         print("[INFO] Auto collector skipped for parquet market-data backend.")
         return []
 
     sync_rows = _auto_collect_market_data(
-        symbol_list=list(SYMBOL_LIST),
+        symbol_list=list(symbol_list),
         timeframe=str(base_timeframe),
         db_path=str(market_db_path),
         exchange_id=str(market_exchange),
         market_type=str(LiveConfig.MARKET_TYPE),
-        since_dt=BASE_START,
+        since_dt=start_date,
         until_dt=None,
         api_key=str(LiveConfig.BINANCE_API_KEY or ""),
         secret_key=str(LiveConfig.BINANCE_SECRET_KEY or ""),
@@ -1121,11 +1178,30 @@ def run_walk_forward_fold(split):
 
 
 def main(argv: list[str] | None = None) -> int:
+    global SYMBOL_LIST, MARKET_DB_PATH, MARKET_DB_EXCHANGE, MARKET_DB_BACKEND
+    global BASE_TIMEFRAME, STRATEGY_TIMEFRAME, DATA_MODE, AUTO_COLLECT_DB, BACKTEST_MODE
+    global BT_CHUNK_DAYS, BT_CHUNK_WARMUP_BARS
+    global BACKTEST_POLL_SECONDS, BACKTEST_WINDOW_SECONDS, BACKTEST_DECISION_CADENCE_SECONDS
     global OPTUNA_TRIALS, MAX_WORKERS
     global ACTIVE_DATA_SOURCE, ACTIVE_DATA_MODE
     global ACTIVE_MARKET_DB_PATH, ACTIVE_MARKET_EXCHANGE, ACTIVE_BASE_TIMEFRAME
     global PARQUET_MODE, DATA_DICT, PARQUET_REPO
 
+    settings = _current_optimize_runtime_settings()
+    SYMBOL_LIST = list(settings["symbol_list"])
+    MARKET_DB_PATH = str(settings["market_db_path"])
+    MARKET_DB_EXCHANGE = str(settings["market_db_exchange"])
+    MARKET_DB_BACKEND = str(settings["market_db_backend"])
+    BASE_TIMEFRAME = str(settings["base_timeframe"])
+    STRATEGY_TIMEFRAME = str(settings["strategy_timeframe"])
+    DATA_MODE = str(settings["data_mode"])
+    AUTO_COLLECT_DB = bool(settings["auto_collect_db"])
+    BACKTEST_MODE = str(settings["backtest_mode"])
+    BT_CHUNK_DAYS = int(settings["bt_chunk_days"])
+    BT_CHUNK_WARMUP_BARS = int(settings["bt_chunk_warmup_bars"])
+    BACKTEST_POLL_SECONDS = int(settings["backtest_poll_seconds"])
+    BACKTEST_WINDOW_SECONDS = int(settings["backtest_window_seconds"])
+    BACKTEST_DECISION_CADENCE_SECONDS = int(settings["backtest_decision_cadence_seconds"])
     parser = argparse.ArgumentParser(description="Run LuminaQuant walk-forward optimization.")
     parser.add_argument(
         "--folds",
@@ -1153,7 +1229,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--data-mode",
         choices=["raw-first", "legacy"],
-        default=DATA_MODE,
+        default=str(settings["data_mode"]),
         help="Data contract mode. raw-first enforces committed manifest parquet input.",
     )
     parser.add_argument(
@@ -1169,17 +1245,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--market-db-path",
-        default=MARKET_DB_PATH,
+        default=str(settings["market_db_path"]),
         help="Market data parquet root path.",
     )
     parser.add_argument(
         "--market-exchange",
-        default=MARKET_DB_EXCHANGE,
+        default=str(settings["market_db_exchange"]),
         help="Exchange key used in OHLCV DB rows.",
     )
     parser.add_argument(
         "--base-timeframe",
-        default=BASE_TIMEFRAME,
+        default=str(settings["base_timeframe"]),
         help="Collection/load source timeframe. Use minimum resolution (recommended: 1s).",
     )
     parser.add_argument(
@@ -1212,7 +1288,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.n_trials is None:
         args.n_trials = int(OPTUNA_TRIALS)
     if args.max_workers is None:
-        args.max_workers = int(MAX_WORKERS)
+        args.max_workers = int(settings["max_workers"])
     args.base_timeframe = _enforce_1s_base_timeframe(str(args.base_timeframe))
     try:
         contract = resolve_data_contract(
@@ -1241,8 +1317,8 @@ def main(argv: list[str] | None = None) -> int:
             "market_db_path": str(args.market_db_path),
             "market_exchange": str(args.market_exchange),
             "base_timeframe": str(args.base_timeframe),
-            "strategy_timeframe": str(STRATEGY_TIMEFRAME),
-            "auto_collect_db": bool(not bool(args.no_auto_collect_db) and bool(AUTO_COLLECT_DB)),
+            "strategy_timeframe": str(settings["strategy_timeframe"]),
+            "auto_collect_db": bool(not bool(args.no_auto_collect_db) and bool(settings["auto_collect_db"])),
             "validation_days": int(max(0, int(args.validation_days))),
             "oos_days": int(max(0, int(args.oos_days))),
             "two_stage_enabled": bool(TWO_STAGE_ENABLED),
@@ -1271,7 +1347,10 @@ def main(argv: list[str] | None = None) -> int:
             market_db_path=args.market_db_path,
             market_exchange=args.market_exchange,
             base_timeframe=str(args.base_timeframe),
-            auto_collect_db=(not bool(args.no_auto_collect_db) and bool(AUTO_COLLECT_DB)),
+            auto_collect_db=(not bool(args.no_auto_collect_db) and bool(settings["auto_collect_db"])),
+            symbol_list=list(settings["symbol_list"]),
+            market_db_backend=str(settings["market_db_backend"]),
+            start_date=BASE_START,
         )
 
         ACTIVE_DATA_SOURCE = str(contract.data_source)
@@ -1281,7 +1360,7 @@ def main(argv: list[str] | None = None) -> int:
         ACTIVE_BASE_TIMEFRAME = str(args.base_timeframe)
         PARQUET_MODE = is_parquet_market_data_store(
             str(args.market_db_path),
-            backend=str(MARKET_DB_BACKEND),
+            backend=str(settings["market_db_backend"]),
         )
         if PARQUET_MODE and MAX_WORKERS != 1:
             print("[INFO] Parquet optimization enforces single worker (MAX_WORKERS=1).")
@@ -1294,7 +1373,7 @@ def main(argv: list[str] | None = None) -> int:
             data_start, data_end = _data_datetime_range_from_repo(
                 PARQUET_REPO,
                 str(args.market_exchange),
-                SYMBOL_LIST,
+                settings["symbol_list"],
                 data_mode=str(contract.data_mode),
                 timeframe=str(args.base_timeframe),
             )
@@ -1302,7 +1381,7 @@ def main(argv: list[str] | None = None) -> int:
             PARQUET_REPO = None
             DATA_DICT = load_all_data(
                 CSV_DIR,
-                SYMBOL_LIST,
+                settings["symbol_list"],
                 data_mode=str(contract.data_mode),
                 backtest_mode="windowed",
                 data_source=contract.data_source,
@@ -1340,7 +1419,7 @@ def main(argv: list[str] | None = None) -> int:
             data_start,
             data_end,
             args.oos_days,
-            BaseConfig.TIMEFRAME,
+            settings["strategy_timeframe"],
         )
         if in_sample_end is None or final_oos_start is None or final_oos_end is None:
             raise ValueError(
@@ -1362,7 +1441,7 @@ def main(argv: list[str] | None = None) -> int:
             oos_start=final_oos_start,
             oos_end=final_oos_end,
             validation_days=int(args.validation_days),
-            timeframe=BaseConfig.TIMEFRAME,
+            timeframe=settings["strategy_timeframe"],
         )
         if int(args.validation_days) > 0:
             if strict_recent_split is None:

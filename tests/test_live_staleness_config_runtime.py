@@ -14,7 +14,7 @@ def test_live_staleness_keys_are_runtime_loaded_via_config_module(tmp_path, monk
         live:
           mode: "paper"
           exchange:
-            driver: "ccxt"
+            driver: "binance_futures"
             name: "binance"
             market_type: "future"
             position_mode: "HEDGE"

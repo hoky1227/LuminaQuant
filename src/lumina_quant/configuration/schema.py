@@ -121,6 +121,12 @@ class BacktestRuntimeConfig:
     slippage_rate: float = 0.0005
     annual_periods: int = 252
     risk_free_rate: float = 0.0
+    risk_free_mode: str = "us_treasury_constant"
+    risk_free_tenor: str = "3m"
+    risk_free_annual: float = 0.0
+    risk_free_series_path: str = ""
+    sortino_target_mode: str = "same_as_rf"
+    sortino_target_annual: float = 0.0
     random_seed: int = 42
     persist_output: bool = True
     leverage: int = 3
@@ -142,7 +148,7 @@ class BacktestRuntimeConfig:
 class LiveExchangeConfig:
     """Live exchange settings."""
 
-    driver: str = "ccxt"
+    driver: str = "binance_futures"
     name: str = "binance"
     market_type: str = "future"
     position_mode: str = "HEDGE"

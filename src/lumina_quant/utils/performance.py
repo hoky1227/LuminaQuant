@@ -8,6 +8,19 @@ def _finite_array(values):
     return arr[np.isfinite(arr)]
 
 
+def _aligned_array(values, *, size: int, default: float = 0.0) -> np.ndarray:
+    if np.isscalar(values):
+        return np.full(int(size), float(values), dtype=np.float64)
+    arr = np.asarray(values, dtype=np.float64)
+    if arr.size != int(size):
+        raise ValueError("Aligned metric inputs must have matching lengths.")
+    if arr.size == 0:
+        return arr
+    arr = arr.copy()
+    arr[~np.isfinite(arr)] = float(default)
+    return arr
+
+
 def create_alpha_beta(strategy_returns, benchmark_returns, periods=252):
     """Calculates Alpha and Beta.
     Beta = Cov(Ra, Rb) / Var(Rb)
@@ -90,30 +103,43 @@ def create_annualized_volatility(returns, periods=252):
 
 def create_sharpe_ratio(returns, periods=252, risk_free=0.0):
     """Create the Sharpe ratio for the strategy."""
-    clean = _finite_array(returns)
+    raw = np.asarray(returns, dtype=np.float64)
+    if raw.size == 0:
+        return 0.0
+    rf = _aligned_array(risk_free, size=raw.size, default=0.0)
+    mask = np.isfinite(raw) & np.isfinite(rf)
+    clean = raw[mask]
     if clean.size == 0:
         return 0.0
+    excess = clean - rf[mask]
     std = np.std(clean)
     if std == 0 or not np.isfinite(std):
         return 0.0
-    sharpe = np.sqrt(periods) * (np.mean(clean) - risk_free) / std
+    sharpe = np.sqrt(periods) * np.mean(excess) / std
     if not np.isfinite(sharpe):
         return 0.0
     return sharpe
 
 
-def create_sortino_ratio(returns, periods=252, risk_free=0.0):
+def create_sortino_ratio(returns, periods=252, risk_free=0.0, target=None):
     """Create the Sortino ratio (Downside Risk only)."""
-    clean = _finite_array(returns)
+    raw = np.asarray(returns, dtype=np.float64)
+    if raw.size == 0:
+        return 0.0
+    target_values = risk_free if target is None else target
+    target_arr = _aligned_array(target_values, size=raw.size, default=0.0)
+    mask = np.isfinite(raw) & np.isfinite(target_arr)
+    clean = raw[mask]
     if clean.size == 0:
         return 0.0
-    downside_returns = clean[clean < 0]
+    target_clean = target_arr[mask]
+    downside_returns = clean[clean < target_clean] - target_clean[clean < target_clean]
     if downside_returns.size == 0:
         return 0.0
     downside_std = np.std(downside_returns)
     if downside_std == 0 or not np.isfinite(downside_std):
         return 0.0
-    sortino = np.sqrt(periods) * (np.mean(clean) - risk_free) / downside_std
+    sortino = np.sqrt(periods) * np.mean(clean - target_clean) / downside_std
     if not np.isfinite(sortino):
         return 0.0
     return sortino
@@ -184,8 +210,8 @@ class PerformanceMetrics:
         return create_sharpe_ratio(returns, periods=periods, risk_free=risk_free)
 
     @staticmethod
-    def sortino_ratio(returns, periods=252, risk_free=0.0) -> float:
-        return create_sortino_ratio(returns, periods=periods, risk_free=risk_free)
+    def sortino_ratio(returns, periods=252, risk_free=0.0, target=None) -> float:
+        return create_sortino_ratio(returns, periods=periods, risk_free=risk_free, target=target)
 
     @staticmethod
     def calmar_ratio(cagr, max_drawdown) -> float:

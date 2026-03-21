@@ -50,24 +50,20 @@ def _get_strategy_registry():
 
 # 3. Data Settings
 CSV_DIR = "data"
-SYMBOL_LIST = BaseConfig.SYMBOLS
-
-# 4. Dates
-try:
-    START_DATE = datetime.strptime(BacktestConfig.START_DATE, "%Y-%m-%d")
-except Exception:
-    START_DATE = datetime(2024, 1, 1)
-
-try:
-    END_DATE = (
-        datetime.strptime(BacktestConfig.END_DATE, "%Y-%m-%d") if BacktestConfig.END_DATE else None
-    )
-except Exception:
-    END_DATE = None
-
-MARKET_DB_PATH = BaseConfig.MARKET_DATA_PARQUET_PATH
-MARKET_DB_EXCHANGE = BaseConfig.MARKET_DATA_EXCHANGE
-MARKET_DB_BACKEND = BaseConfig.STORAGE_BACKEND
+# Compatibility shims for tests/legacy monkeypatching. Keep None by default so
+# runtime settings still resolve dynamically at call time.
+SYMBOL_LIST = None
+START_DATE = None
+END_DATE = None
+MARKET_DB_PATH = None
+MARKET_DB_EXCHANGE = None
+MARKET_DB_BACKEND = None
+BT_CHUNK_DAYS = None
+BT_CHUNK_WARMUP_BARS = None
+BACKTEST_POLL_SECONDS = None
+BACKTEST_WINDOW_SECONDS = None
+BACKTEST_DECISION_CADENCE_SECONDS = None
+BACKTEST_AUDIT_SNAPSHOT_SECONDS = None
 
 
 def _resolve_strategy_setup(*, log: bool) -> tuple[type, dict[str, Any]]:
@@ -139,15 +135,6 @@ def _normalize_timeframe_or_default(value, default):
         return str(default)
 
 
-BASE_TIMEFRAME = _normalize_timeframe_or_default(os.getenv("LQ_BASE_TIMEFRAME", "1s"), "1s")
-AUTO_COLLECT_DB = str(os.getenv("LQ_AUTO_COLLECT_DB", "0")).strip().lower() not in {
-    "0",
-    "false",
-    "no",
-    "off",
-}
-
-
 def _env_bool(name, default=False):
     raw = os.getenv(name)
     if raw is None:
@@ -172,48 +159,6 @@ def _env_int(name, default):
     except Exception:
         return int(default)
 
-
-BT_CHUNK_DAYS = max(
-    1,
-    _env_int("LQ__BACKTEST__CHUNK_DAYS", int(getattr(BacktestConfig, "CHUNK_DAYS", 2))),
-)
-BT_CHUNK_WARMUP_BARS = max(
-    0,
-    _env_int(
-        "LQ__BACKTEST__CHUNK_WARMUP_BARS",
-        int(getattr(BacktestConfig, "CHUNK_WARMUP_BARS", 0)),
-    ),
-)
-BACKTEST_POLL_SECONDS = max(
-    1,
-    _env_int(
-        "LQ__BACKTEST__POLL_SECONDS",
-        int(getattr(BacktestConfig, "POLL_SECONDS", 20)),
-    ),
-)
-BACKTEST_WINDOW_SECONDS = max(
-    1,
-    _env_int(
-        "LQ__BACKTEST__WINDOW_SECONDS",
-        int(getattr(BacktestConfig, "WINDOW_SECONDS", 20)),
-    ),
-)
-BACKTEST_DECISION_CADENCE_SECONDS = max(
-    1,
-    _env_int(
-        "LQ__BACKTEST__DECISION_CADENCE_SECONDS",
-        int(getattr(BacktestConfig, "DECISION_CADENCE_SECONDS", 20)),
-    ),
-)
-BACKTEST_AUDIT_SNAPSHOT_SECONDS = max(
-    1,
-    _env_int(
-        "LQ__BACKTEST__AUDIT_SNAPSHOT_SECONDS",
-        int(os.getenv("LQ_BACKTEST_AUDIT_SNAPSHOT_SECONDS", "60") or "60"),
-    ),
-)
-
-
 def _normalize_backtest_mode(value: str | None, default: str = "windowed") -> str:
     token = str(value or default).strip().lower()
     if token in {"windowed", "legacy_batch", "legacy_1s"}:
@@ -227,19 +172,136 @@ def _normalize_data_mode(value: str | None, default: str = "raw-first") -> str:
     except RawFirstDataMissingError:
         return str(default)
 
+def _parse_config_date(value, default):
+    try:
+        if value:
+            return datetime.strptime(value, "%Y-%m-%d")
+    except Exception:
+        return default
+    return default
 
-BACKTEST_MODE = _normalize_backtest_mode(
-    os.getenv("LQ_BACKTEST_MODE", str(getattr(BacktestConfig, "MODE", "windowed"))),
-    default="windowed",
-)
-DATA_MODE = _normalize_data_mode(
-    os.getenv("LQ_DATA_MODE", "raw-first"),
-    default="raw-first",
-)
-os.environ.setdefault(
-    "LQ__BACKTEST__DECISION_CADENCE_SECONDS",
-    str(int(BACKTEST_DECISION_CADENCE_SECONDS)),
-)
+
+def _current_backtest_runtime_settings() -> dict[str, Any]:
+    symbol_list_override = globals().get("SYMBOL_LIST")
+    start_date_override = globals().get("START_DATE")
+    end_date_override = globals().get("END_DATE")
+    market_db_path_override = globals().get("MARKET_DB_PATH")
+    market_db_exchange_override = globals().get("MARKET_DB_EXCHANGE")
+    market_db_backend_override = globals().get("MARKET_DB_BACKEND")
+    bt_chunk_days_override = globals().get("BT_CHUNK_DAYS")
+    bt_chunk_warmup_override = globals().get("BT_CHUNK_WARMUP_BARS")
+    backtest_poll_override = globals().get("BACKTEST_POLL_SECONDS")
+    backtest_window_override = globals().get("BACKTEST_WINDOW_SECONDS")
+    backtest_decision_override = globals().get("BACKTEST_DECISION_CADENCE_SECONDS")
+    backtest_audit_snapshot_override = globals().get("BACKTEST_AUDIT_SNAPSHOT_SECONDS")
+    start_date = (
+        start_date_override
+        if start_date_override is not None
+        else _parse_config_date(getattr(BacktestConfig, "START_DATE", None), datetime(2024, 1, 1))
+    )
+    end_date = (
+        end_date_override
+        if end_date_override is not None
+        else _parse_config_date(getattr(BacktestConfig, "END_DATE", None), None)
+    )
+    settings = {
+        "symbol_list": list(symbol_list_override) if symbol_list_override is not None else list(BaseConfig.SYMBOLS),
+        "start_date": start_date,
+        "end_date": end_date,
+        "market_db_path": (
+            str(market_db_path_override)
+            if market_db_path_override is not None
+            else str(BaseConfig.MARKET_DATA_PARQUET_PATH)
+        ),
+        "market_db_exchange": (
+            str(market_db_exchange_override)
+            if market_db_exchange_override is not None
+            else str(BaseConfig.MARKET_DATA_EXCHANGE)
+        ),
+        "market_db_backend": (
+            str(market_db_backend_override)
+            if market_db_backend_override is not None
+            else str(BaseConfig.STORAGE_BACKEND)
+        ),
+        "base_timeframe": _normalize_timeframe_or_default(os.getenv("LQ_BASE_TIMEFRAME", "1s"), "1s"),
+        "auto_collect_db": _env_bool("LQ_AUTO_COLLECT_DB", False),
+        "bt_chunk_days": (
+            max(1, int(bt_chunk_days_override))
+            if bt_chunk_days_override is not None
+            else max(
+                1,
+                _env_int("LQ__BACKTEST__CHUNK_DAYS", int(getattr(BacktestConfig, "CHUNK_DAYS", 2))),
+            )
+        ),
+        "bt_chunk_warmup_bars": (
+            max(0, int(bt_chunk_warmup_override))
+            if bt_chunk_warmup_override is not None
+            else max(
+                0,
+                _env_int(
+                    "LQ__BACKTEST__CHUNK_WARMUP_BARS",
+                    int(getattr(BacktestConfig, "CHUNK_WARMUP_BARS", 0)),
+                ),
+            )
+        ),
+        "backtest_poll_seconds": (
+            max(1, int(backtest_poll_override))
+            if backtest_poll_override is not None
+            else max(
+                1,
+                _env_int(
+                    "LQ__BACKTEST__POLL_SECONDS",
+                    int(getattr(BacktestConfig, "POLL_SECONDS", 20)),
+                ),
+            )
+        ),
+        "backtest_window_seconds": (
+            max(1, int(backtest_window_override))
+            if backtest_window_override is not None
+            else max(
+                1,
+                _env_int(
+                    "LQ__BACKTEST__WINDOW_SECONDS",
+                    int(getattr(BacktestConfig, "WINDOW_SECONDS", 20)),
+                ),
+            )
+        ),
+        "backtest_decision_cadence_seconds": (
+            max(1, int(backtest_decision_override))
+            if backtest_decision_override is not None
+            else max(
+                1,
+                _env_int(
+                    "LQ__BACKTEST__DECISION_CADENCE_SECONDS",
+                    int(getattr(BacktestConfig, "DECISION_CADENCE_SECONDS", 20)),
+                ),
+            )
+        ),
+        "backtest_audit_snapshot_seconds": (
+            max(1, int(backtest_audit_snapshot_override))
+            if backtest_audit_snapshot_override is not None
+            else max(
+                1,
+                _env_int(
+                    "LQ__BACKTEST__AUDIT_SNAPSHOT_SECONDS",
+                    int(os.getenv("LQ_BACKTEST_AUDIT_SNAPSHOT_SECONDS", "60") or "60"),
+                ),
+            )
+        ),
+        "backtest_mode": _normalize_backtest_mode(
+            os.getenv("LQ_BACKTEST_MODE", str(getattr(BacktestConfig, "MODE", "windowed"))),
+            default="windowed",
+        ),
+        "data_mode": _normalize_data_mode(
+            os.getenv("LQ_DATA_MODE", "raw-first"),
+            default="raw-first",
+        ),
+    }
+    os.environ.setdefault(
+        "LQ__BACKTEST__DECISION_CADENCE_SECONDS",
+        str(int(settings["backtest_decision_cadence_seconds"])),
+    )
+    return settings
 
 
 def _enforce_1s_base_timeframe(value: str) -> str:
@@ -282,6 +344,13 @@ def _load_data_dict(
     backtest_mode="windowed",
     auto_collect_db=True,
 ):
+    settings = _current_backtest_runtime_settings()
+    symbol_list = list(settings["symbol_list"])
+    start_date = settings["start_date"]
+    end_date = settings["end_date"]
+    market_db_backend = str(settings["market_db_backend"])
+    bt_chunk_days = int(settings["bt_chunk_days"])
+    bt_chunk_warmup_bars = int(settings["bt_chunk_warmup_bars"])
     contract = resolve_data_contract(
         data_mode=str(data_mode),
         backtest_mode=str(backtest_mode),
@@ -295,10 +364,10 @@ def _load_data_dict(
     if source == "external":
         data_dict = load_data_dict_from_external_root(
             str(external_data_root or market_db_path),
-            symbol_list=list(SYMBOL_LIST),
+            symbol_list=symbol_list,
             symbol_map=dict(external_symbol_map or {}),
-            start_date=START_DATE,
-            end_date=END_DATE,
+            start_date=start_date,
+            end_date=end_date,
         )
         if data_dict:
             return data_dict
@@ -309,7 +378,7 @@ def _load_data_dict(
 
     use_parquet = is_parquet_market_data_store(
         str(market_db_path),
-        backend=str(MARKET_DB_BACKEND),
+        backend=market_db_backend,
     )
     if contract.data_mode == "raw-first" and not use_parquet:
         raise RawFirstDataMissingError(
@@ -319,13 +388,13 @@ def _load_data_dict(
     if source in {"auto", "db"} and auto_collect_db and not use_parquet:
         try:
             sync_rows = _auto_collect_market_data(
-                symbol_list=list(SYMBOL_LIST),
+                symbol_list=symbol_list,
                 timeframe=str(base_timeframe),
                 db_path=str(market_db_path),
                 exchange_id=str(market_exchange),
                 market_type=str(LiveConfig.MARKET_TYPE),
-                since_dt=START_DATE,
-                until_dt=END_DATE,
+                since_dt=start_date,
+                until_dt=end_date,
                 api_key=str(LiveConfig.BINANCE_API_KEY or ""),
                 secret_key=str(LiveConfig.BINANCE_SECRET_KEY or ""),
                 testnet=bool(LiveConfig.IS_TESTNET),
@@ -358,28 +427,28 @@ def _load_data_dict(
         data_dict = load_data_dict_from_parquet(
             str(market_db_path),
             exchange=str(market_exchange),
-            symbol_list=list(SYMBOL_LIST),
+            symbol_list=symbol_list,
             timeframe=str(base_timeframe),
-            start_date=START_DATE,
-            end_date=END_DATE,
-            chunk_days=BT_CHUNK_DAYS,
-            warmup_bars=BT_CHUNK_WARMUP_BARS,
+            start_date=start_date,
+            end_date=end_date,
+            chunk_days=bt_chunk_days,
+            warmup_bars=bt_chunk_warmup_bars,
             data_mode=str(contract.data_mode),
         )
     else:
         data_dict = load_data_dict_from_db(
             market_db_path,
             exchange=market_exchange,
-            symbol_list=SYMBOL_LIST,
+            symbol_list=symbol_list,
             timeframe=str(base_timeframe),
-            start_date=START_DATE,
-            end_date=END_DATE,
-            backend=str(MARKET_DB_BACKEND),
+            start_date=start_date,
+            end_date=end_date,
+            backend=market_db_backend,
         )
     if data_dict:
-        missing = [symbol for symbol in SYMBOL_LIST if symbol not in data_dict]
+        missing = [symbol for symbol in symbol_list if symbol not in data_dict]
         print(
-            f"[INFO] Loaded {len(data_dict)}/{len(SYMBOL_LIST)} symbols from DB "
+            f"[INFO] Loaded {len(data_dict)}/{len(symbol_list)} symbols from DB "
             f"{market_db_path} (exchange={market_exchange}, timeframe={base_timeframe})."
         )
         if missing:
@@ -425,7 +494,9 @@ def _persist_backtest_audit_rows(audit_store, run_id, backtest, *, low_memory=Fa
     try:
         if bool(low_memory):
             points = list(getattr(backtest.portfolio, "_equity_points", []) or [])
-            snapshot_interval = max(1.0, float(BACKTEST_AUDIT_SNAPSHOT_SECONDS))
+            snapshot_interval = max(
+                1.0, float(_current_backtest_runtime_settings()["backtest_audit_snapshot_seconds"])
+            )
             last_snapshot_ts = None
             for ts_seconds, total_value in points:
                 total = _safe_float(total_value)
@@ -445,7 +516,7 @@ def _persist_backtest_audit_rows(audit_store, run_id, backtest, *, low_memory=Fa
                     cash=None,
                     metadata={
                         "source": "low_memory_equity_point",
-                        "snapshot_interval_seconds": int(BACKTEST_AUDIT_SNAPSHOT_SECONDS),
+                        "snapshot_interval_seconds": int(snapshot_interval),
                     },
                 )
                 equity_rows += 1
@@ -575,21 +646,47 @@ def _persist_low_memory_outputs(backtest, persist_output):
 
 def run(
     data_source="auto",
-    data_mode=DATA_MODE,
-    market_db_path=MARKET_DB_PATH,
-    market_exchange=MARKET_DB_EXCHANGE,
-    base_timeframe=BASE_TIMEFRAME,
+    data_mode=None,
+    market_db_path=None,
+    market_exchange=None,
+    base_timeframe=None,
     external_data_root="",
-    auto_collect_db=AUTO_COLLECT_DB,
+    auto_collect_db=None,
     run_id="",
     low_memory=None,
     persist_output=None,
-    backtest_mode=BACKTEST_MODE,
+    backtest_mode=None,
 ):
+    settings = _current_backtest_runtime_settings()
+    symbol_list = list(settings["symbol_list"])
+    start_date = settings["start_date"]
+    end_date = settings["end_date"]
+    market_db_path = (
+        str(settings["market_db_path"]) if market_db_path is None else str(market_db_path)
+    )
+    market_exchange = (
+        str(settings["market_db_exchange"]) if market_exchange is None else str(market_exchange)
+    )
+    market_db_backend = str(settings["market_db_backend"])
+    base_timeframe = (
+        str(settings["base_timeframe"]) if base_timeframe is None else str(base_timeframe)
+    )
+    auto_collect_db = (
+        bool(settings["auto_collect_db"]) if auto_collect_db is None else bool(auto_collect_db)
+    )
+    data_mode = str(settings["data_mode"]) if data_mode is None else str(data_mode)
+    backtest_mode = (
+        str(settings["backtest_mode"]) if backtest_mode is None else str(backtest_mode)
+    )
+    bt_chunk_days = int(settings["bt_chunk_days"])
+    bt_chunk_warmup_bars = int(settings["bt_chunk_warmup_bars"])
+    backtest_poll_seconds = int(settings["backtest_poll_seconds"])
+    backtest_window_seconds = int(settings["backtest_window_seconds"])
+    backtest_decision_cadence_seconds = int(settings["backtest_decision_cadence_seconds"])
     strategy_cls, strategy_params = _resolve_strategy_setup(log=True)
 
     print("------------------------------------------------")
-    print(f"Running Backtest for {SYMBOL_LIST}")
+    print(f"Running Backtest for {symbol_list}")
     print(f"Strategy: {strategy_cls.__name__}")
     print(f"Params: {strategy_params}")
     print("------------------------------------------------")
@@ -600,8 +697,8 @@ def run(
     execution_profile = _resolve_execution_profile(
         low_memory=low_memory,
         persist_output=persist_output,
-        start_date=START_DATE,
-        end_date=END_DATE,
+        start_date=start_date,
+        end_date=end_date,
     )
     contract = resolve_data_contract(
         data_mode=str(data_mode),
@@ -620,8 +717,8 @@ def run(
     )
     selected_data_handler_kwargs = (
         {
-            "backtest_poll_seconds": int(BACKTEST_POLL_SECONDS),
-            "backtest_window_seconds": int(BACKTEST_WINDOW_SECONDS),
+            "backtest_poll_seconds": backtest_poll_seconds,
+            "backtest_window_seconds": backtest_window_seconds,
         }
         if resolved_backtest_mode == "windowed"
         else {}
@@ -630,7 +727,7 @@ def run(
         audit_store.start_run(
             mode="backtest",
             metadata={
-                "symbols": list(SYMBOL_LIST),
+                "symbols": symbol_list,
                 "strategy": strategy_cls.__name__,
                 "params": strategy_params,
                 "data_source": str(resolved_data_source),
@@ -641,12 +738,12 @@ def run(
                 "base_timeframe": str(timeframe_token),
                 "strategy_timeframe": str(BaseConfig.TIMEFRAME),
                 "auto_collect_db": bool(auto_collect_db),
-                "backtest_poll_seconds": int(BACKTEST_POLL_SECONDS),
-                "backtest_window_seconds": int(BACKTEST_WINDOW_SECONDS),
-                "backtest_decision_cadence_seconds": int(BACKTEST_DECISION_CADENCE_SECONDS),
+                "backtest_poll_seconds": backtest_poll_seconds,
+                "backtest_window_seconds": backtest_window_seconds,
+                "backtest_decision_cadence_seconds": backtest_decision_cadence_seconds,
                 "backtest_mode": str(resolved_backtest_mode),
-                "chunk_days": int(BT_CHUNK_DAYS),
-                "chunk_warmup_bars": int(BT_CHUNK_WARMUP_BARS),
+                "chunk_days": bt_chunk_days,
+                "chunk_warmup_bars": bt_chunk_warmup_bars,
                 **execution_profile,
             },
             run_id=backtest_run_id,
@@ -657,7 +754,7 @@ def run(
     try:
         use_parquet = is_parquet_market_data_store(
             str(market_db_path),
-            backend=str(MARKET_DB_BACKEND),
+            backend=market_db_backend,
         )
         source_token = str(resolved_data_source).strip().lower()
         use_chunked_runner = bool(use_parquet and source_token in {"auto", "db"})
@@ -677,7 +774,7 @@ def run(
             )
 
         if use_chunked_runner:
-            if END_DATE is None:
+            if end_date is None:
                 raise RuntimeError(
                     "Chunked backtest requires an explicit END_DATE when using parquet backend."
                 )
@@ -686,24 +783,24 @@ def run(
                 return load_data_dict_from_parquet(
                     str(market_db_path),
                     exchange=str(market_exchange),
-                    symbol_list=list(SYMBOL_LIST),
+                    symbol_list=symbol_list,
                     timeframe=str(timeframe_token),
                     start_date=chunk_start,
                     end_date=chunk_end,
-                    chunk_days=max(1, int(BT_CHUNK_DAYS)),
-                    warmup_bars=max(0, int(BT_CHUNK_WARMUP_BARS)),
+                    chunk_days=bt_chunk_days,
+                    warmup_bars=bt_chunk_warmup_bars,
                     data_mode=resolved_data_mode,
                 )
 
             backtest = run_backtest_chunked(
                 csv_dir=CSV_DIR,
-                symbol_list=list(SYMBOL_LIST),
-                start_date=START_DATE,
-                end_date=END_DATE,
+                symbol_list=symbol_list,
+                start_date=start_date,
+                end_date=end_date,
                 strategy_cls=strategy_cls,
                 strategy_params=strategy_params,
                 data_loader=_chunk_loader,
-                chunk_days=max(1, int(BT_CHUNK_DAYS)),
+                chunk_days=bt_chunk_days,
                 strategy_timeframe=str(BaseConfig.TIMEFRAME),
                 data_handler_cls=selected_data_handler_cls,
                 execution_handler_cls=SimulatedExecutionHandler,
@@ -725,9 +822,9 @@ def run(
         else:
             backtest = Backtest(
                 csv_dir=CSV_DIR,
-                symbol_list=SYMBOL_LIST,
-                start_date=START_DATE,
-                end_date=END_DATE,
+                symbol_list=symbol_list,
+                start_date=start_date,
+                end_date=end_date,
                 data_handler_cls=selected_data_handler_cls,
                 execution_handler_cls=SimulatedExecutionHandler,
                 portfolio_cls=Portfolio,
@@ -790,10 +887,11 @@ def run(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run LuminaQuant backtest.")
+    settings = _current_backtest_runtime_settings()
     parser.add_argument(
         "--data-mode",
         choices=["raw-first", "legacy"],
-        default=DATA_MODE,
+        default=str(settings["data_mode"]),
         help="Data contract mode. raw-first requires committed manifest parquet windows.",
     )
     parser.add_argument(
@@ -804,7 +902,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--market-db-path",
-        default=MARKET_DB_PATH,
+        default=str(settings["market_db_path"]),
         help="Market data parquet root path.",
     )
     parser.add_argument(
@@ -814,18 +912,18 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--market-exchange",
-        default=MARKET_DB_EXCHANGE,
+        default=str(settings["market_db_exchange"]),
         help="Exchange key used in OHLCV DB rows.",
     )
     parser.add_argument(
         "--base-timeframe",
-        default=BASE_TIMEFRAME,
+        default=str(settings["base_timeframe"]),
         help="Collection/backtest source timeframe. Use the minimum resolution (recommended: 1s).",
     )
     parser.add_argument(
         "--backtest-mode",
         choices=["windowed", "legacy_batch", "legacy_1s"],
-        default=BACKTEST_MODE,
+        default=str(settings["backtest_mode"]),
         help="Backtest event model: windowed (default) or legacy modes.",
     )
     parser.add_argument(
@@ -878,7 +976,7 @@ def main(argv: list[str] | None = None) -> int:
             market_exchange=args.market_exchange,
             base_timeframe=_normalize_timeframe_or_default(args.base_timeframe, "1s"),
             external_data_root=args.external_data_root,
-            auto_collect_db=(not bool(args.no_auto_collect_db) and bool(AUTO_COLLECT_DB)),
+            auto_collect_db=(not bool(args.no_auto_collect_db) and bool(settings["auto_collect_db"])),
             run_id=args.run_id,
             low_memory=args.low_memory,
             persist_output=args.persist_output,

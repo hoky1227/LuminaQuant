@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-import time
 from datetime import UTC, datetime
 
 from lumina_quant.data_sync import (
-    create_binance_exchange,
+    create_binance_futures_client,
     ensure_market_data_coverage,
-    fetch_aggtrades_batch,
-    normalize_aggtrade_row,
     parse_timestamp_input,
+    sync_symbol_aggtrades_raw,
     sync_futures_feature_points,
 )
 from lumina_quant.storage.parquet import ParquetMarketDataRepository, normalize_symbol
@@ -46,7 +44,7 @@ def auto_collect_market_data(
 ) -> list[dict[str, int | str | None]]:
     """Ensure requested OHLCV coverage exists in parquet storage and return summary."""
     _ = legacy
-    exchange = create_binance_exchange(
+    exchange = create_binance_futures_client(
         api_key=api_key,
         secret_key=secret_key,
         market_type=market_type,
@@ -254,113 +252,39 @@ def collect_binance_aggtrades_raw(
             lookback_ms = max(1, int(bootstrap_lookback_hours)) * 60 * 60 * 1000
             start_cursor = max(0, int(end_cursor) - int(lookback_ms))
 
-    exchange = create_binance_exchange(
+    exchange = create_binance_futures_client(
         api_key=api_key,
         secret_key=secret_key,
         market_type=market_type,
         testnet=testnet,
     )
-    fetched_rows = 0
-    upserted_rows = 0
-    cursor = int(start_cursor)
-    last_timestamp_ms: int | None = None
-    last_agg_trade_id: int | None = None
-    throttle_sec = max(0.0, float(base_wait_sec) * 0.25)
-
     try:
-        batch_count = 0
-        while cursor <= end_cursor and batch_count < max(1, int(max_batches)):
-            batch_count += 1
-            batch = fetch_aggtrades_batch(
-                exchange=exchange,
-                symbol=normalized_symbol,
-                since_ms=int(cursor),
-                limit=max(1, int(limit)),
-                retries=max(0, int(retries)),
-                base_wait_sec=float(base_wait_sec),
-            )
-            normalized_batch: list[dict[str, object]] = []
-            for item in batch:
-                payload = dict(item or {})
-                if "timestamp_ms" in payload and "agg_trade_id" in payload:
-                    normalized_batch.append(payload)
-                    continue
-                parsed = normalize_aggtrade_row(payload)
-                if parsed is not None:
-                    normalized_batch.append(parsed)
-            batch = normalized_batch
-            if not batch:
-                break
-
-            filtered = [item for item in batch if int(item["timestamp_ms"]) <= int(end_cursor)]
-            if not filtered:
-                break
-
-            fetched_rows += len(filtered)
-            upserted_rows += int(
-                repo.append_raw_aggtrades(
-                    exchange=exchange_token,
-                    symbol=normalized_symbol,
-                    rows=filtered,
-                )
-            )
-            last_timestamp_ms = int(filtered[-1]["timestamp_ms"])
-            last_agg_trade_id = int(filtered[-1]["agg_trade_id"])
-            repo.write_raw_checkpoint(
-                exchange=exchange_token,
-                symbol=normalized_symbol,
-                payload={
-                    "symbol": normalized_symbol,
-                    "exchange": exchange_token,
-                    "last_timestamp_ms": int(last_timestamp_ms),
-                    "last_trade_id": int(last_agg_trade_id or 0),
-                    "last_agg_trade_id": int(last_agg_trade_id or 0),
-                    "updated_at_utc": datetime.now(UTC).isoformat(),
-                },
-            )
-            repo.append_raw_wal_record(
-                exchange=exchange_token,
-                symbol=normalized_symbol,
-                payload={
-                    "last_timestamp_ms": int(last_timestamp_ms),
-                    "last_trade_id": int(last_agg_trade_id),
-                    "last_agg_trade_id": int(last_agg_trade_id),
-                    "batch_rows": len(filtered),
-                    "updated_at_utc": datetime.now(UTC).isoformat(),
-                },
-            )
-            cursor = int(last_timestamp_ms) + 1
-            if throttle_sec > 0.0 and len(filtered) >= max(1, int(limit)) and cursor <= end_cursor:
-                time.sleep(throttle_sec)
-            if len(filtered) < max(1, int(limit)):
-                break
+        result = sync_symbol_aggtrades_raw(
+            exchange=exchange,
+            db_path=str(db_path),
+            exchange_id=exchange_token,
+            symbol=normalized_symbol,
+            start_ms=int(start_cursor),
+            end_ms=int(end_cursor),
+            limit=max(1, int(limit)),
+            max_batches=max(1, int(max_batches)),
+            retries=max(0, int(retries)),
+            base_wait_sec=float(base_wait_sec),
+            resume_from_checkpoint=True,
+        )
     finally:
         close_fn = getattr(exchange, "close", None)
         if callable(close_fn):
             close_fn()
-
-    if last_timestamp_ms is not None:
-        repo.write_raw_checkpoint(
-            exchange=exchange_token,
-            symbol=normalized_symbol,
-            payload={
-                "symbol": normalized_symbol,
-                "exchange": exchange_token,
-                "last_timestamp_ms": int(last_timestamp_ms),
-                "last_trade_id": int(last_agg_trade_id or 0),
-                "last_agg_trade_id": int(last_agg_trade_id or 0),
-                "updated_at_utc": datetime.now(UTC).isoformat(),
-            },
-        )
 
     return {
         "symbol": normalized_symbol,
         "exchange": exchange_token,
         "start_cursor_ms": int(start_cursor),
         "end_cursor_ms": int(end_cursor),
-        "fetched_rows": int(fetched_rows),
-        "upserted_rows": int(upserted_rows),
-        "last_timestamp_ms": last_timestamp_ms,
-        "last_trade_id": last_agg_trade_id,
-        "last_agg_trade_id": last_agg_trade_id,
+        "fetched_rows": int(result.fetched_rows),
+        "upserted_rows": int(result.upserted_rows),
+        "last_timestamp_ms": result.last_timestamp_ms,
+        "last_trade_id": result.checkpoint_trade_id,
+        "last_agg_trade_id": result.checkpoint_trade_id,
     }

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from lumina_quant.data_collector import collect_binance_aggtrades_raw
 from lumina_quant.storage.parquet import ParquetMarketDataRepository
 
@@ -10,43 +12,37 @@ class _ExchangeStub:
 
 
 def test_collect_binance_aggtrades_raw_checkpoint_resume(tmp_path, monkeypatch):
-    batches = {
-        0: [
-            {
-                "agg_trade_id": 1,
-                "timestamp_ms": 1_700_000_000_000,
-                "price": 100.0,
-                "quantity": 0.1,
-                "is_buyer_maker": False,
-            },
-            {
-                "agg_trade_id": 2,
-                "timestamp_ms": 1_700_000_001_000,
-                "price": 100.5,
-                "quantity": 0.2,
-                "is_buyer_maker": True,
-            },
-        ],
-        1_700_000_001_001: [
-            {
-                "agg_trade_id": 3,
-                "timestamp_ms": 1_700_000_002_000,
-                "price": 101.0,
-                "quantity": 0.3,
-                "is_buyer_maker": False,
-            },
-        ],
-    }
+    calls: list[int] = []
+    state = {"last": 0}
 
     monkeypatch.setattr(
-        "lumina_quant.data_collector.create_binance_exchange", lambda **_: _ExchangeStub()
+        "lumina_quant.data_collector.create_binance_futures_client", lambda **_: _ExchangeStub()
     )
 
-    def _fetch(*, exchange, symbol, since_ms, limit, retries, base_wait_sec):
-        _ = exchange, symbol, limit, retries, base_wait_sec
-        return list(batches.get(int(since_ms), []))
+    def _sync(**kwargs):
+        start_ms = int(kwargs["start_ms"])
+        calls.append(start_ms)
+        if start_ms == 0:
+            state["last"] = 1_700_000_001_000
+            return SimpleNamespace(
+                fetched_rows=2,
+                upserted_rows=2,
+                first_timestamp_ms=1_700_000_000_000,
+                last_timestamp_ms=1_700_000_001_000,
+                checkpoint_timestamp_ms=1_700_000_001_000,
+                checkpoint_trade_id=2,
+            )
+        state["last"] = 1_700_000_002_000
+        return SimpleNamespace(
+            fetched_rows=1,
+            upserted_rows=1,
+            first_timestamp_ms=1_700_000_002_000,
+            last_timestamp_ms=1_700_000_002_000,
+            checkpoint_timestamp_ms=1_700_000_002_000,
+            checkpoint_trade_id=3,
+        )
 
-    monkeypatch.setattr("lumina_quant.data_collector.fetch_aggtrades_batch", _fetch)
+    monkeypatch.setattr("lumina_quant.data_collector.sync_symbol_aggtrades_raw", _sync)
 
     first = collect_binance_aggtrades_raw(
         db_path=str(tmp_path),
@@ -58,6 +54,12 @@ def test_collect_binance_aggtrades_raw_checkpoint_resume(tmp_path, monkeypatch):
         max_batches=10,
     )
 
+    repo = ParquetMarketDataRepository(str(tmp_path))
+    repo.write_raw_checkpoint(
+        exchange="binance",
+        symbol="BTC/USDT",
+        payload={"last_timestamp_ms": state["last"], "last_trade_id": 2},
+    )
     second = collect_binance_aggtrades_raw(
         db_path=str(tmp_path),
         exchange_id="binance",
@@ -68,16 +70,10 @@ def test_collect_binance_aggtrades_raw_checkpoint_resume(tmp_path, monkeypatch):
         max_batches=10,
     )
 
-    repo = ParquetMarketDataRepository(str(tmp_path))
-    raw = repo.load_raw_aggtrades(exchange="binance", symbol="BTC/USDT")
-
+    assert calls == [0, 1_700_000_001_001]
     assert int(first["fetched_rows"]) == 2
     assert int(second["fetched_rows"]) == 1
-    assert raw.height == 3
-
-    checkpoint = repo.read_raw_checkpoint(exchange="binance", symbol="BTC/USDT")
-    last_id = checkpoint.get("last_trade_id", checkpoint.get("last_agg_trade_id"))
-    assert int(last_id) == 3
+    assert int(second["last_trade_id"]) == 3
 
 
 def test_collect_binance_aggtrades_raw_bootstrap_lookback_used_without_checkpoint(
@@ -86,15 +82,21 @@ def test_collect_binance_aggtrades_raw_bootstrap_lookback_used_without_checkpoin
     observed_since: list[int] = []
 
     monkeypatch.setattr(
-        "lumina_quant.data_collector.create_binance_exchange", lambda **_: _ExchangeStub()
+        "lumina_quant.data_collector.create_binance_futures_client", lambda **_: _ExchangeStub()
     )
 
-    def _fetch(*, exchange, symbol, since_ms, limit, retries, base_wait_sec):
-        _ = exchange, symbol, limit, retries, base_wait_sec
-        observed_since.append(int(since_ms))
-        return []
+    def _sync(**kwargs):
+        observed_since.append(int(kwargs["start_ms"]))
+        return SimpleNamespace(
+            fetched_rows=0,
+            upserted_rows=0,
+            first_timestamp_ms=None,
+            last_timestamp_ms=None,
+            checkpoint_timestamp_ms=None,
+            checkpoint_trade_id=None,
+        )
 
-    monkeypatch.setattr("lumina_quant.data_collector.fetch_aggtrades_batch", _fetch)
+    monkeypatch.setattr("lumina_quant.data_collector.sync_symbol_aggtrades_raw", _sync)
 
     until_ms = 1_700_000_010_000
     result = collect_binance_aggtrades_raw(
@@ -117,22 +119,34 @@ def test_collect_binance_aggtrades_raw_recovers_from_corrupt_partition(
     tmp_path, monkeypatch
 ):
     monkeypatch.setattr(
-        "lumina_quant.data_collector.create_binance_exchange", lambda **_: _ExchangeStub()
+        "lumina_quant.data_collector.create_binance_futures_client", lambda **_: _ExchangeStub()
     )
 
-    def _fetch(*, exchange, symbol, since_ms, limit, retries, base_wait_sec):
-        _ = exchange, symbol, since_ms, limit, retries, base_wait_sec
-        return [
-            {
-                "agg_trade_id": 10,
-                "timestamp_ms": 1_700_000_100_000,
-                "price": 100.0,
-                "quantity": 0.1,
-                "is_buyer_maker": False,
-            }
-        ]
+    def _sync(**kwargs):
+        repo = ParquetMarketDataRepository(str(tmp_path))
+        repo.append_raw_aggtrades(
+            exchange="binance",
+            symbol="BTC/USDT",
+            rows=[
+                {
+                    "agg_trade_id": 10,
+                    "timestamp_ms": 1_700_000_100_000,
+                    "price": 100.0,
+                    "quantity": 0.1,
+                    "is_buyer_maker": False,
+                }
+            ],
+        )
+        return SimpleNamespace(
+            fetched_rows=1,
+            upserted_rows=1,
+            first_timestamp_ms=1_700_000_100_000,
+            last_timestamp_ms=1_700_000_100_000,
+            checkpoint_timestamp_ms=1_700_000_100_000,
+            checkpoint_trade_id=10,
+        )
 
-    monkeypatch.setattr("lumina_quant.data_collector.fetch_aggtrades_batch", _fetch)
+    monkeypatch.setattr("lumina_quant.data_collector.sync_symbol_aggtrades_raw", _sync)
 
     corrupt_dir = (
         tmp_path

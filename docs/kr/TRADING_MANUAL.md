@@ -89,8 +89,8 @@ if self.mode == "LIVE":
     )
 ```
 
-#### 바이낸스 (Binance, CCXT)
-`ccxt`에서 지원하는 경우 `stopLoss` 또는 `takeProfit` 파라미터를 넘기거나, 별도의 OCO 주문을 전송해야 합니다.
+#### 바이낸스 USDⓈ-M Futures (Native)
+native Binance USDⓈ-M Futures 주문 파라미터(`stopPrice`, `activationPrice`, `callbackRate`, `reduceOnly`, `positionSide` 등)를 명시적으로 전달해야 합니다. 문서화되지 않은 Spot/OCO 동작은 사용하지 않습니다.
 
 ### 방법 B: Soft TP/SL (전략 측)
 *범용적인 방법입니다 (백테스트 및 실거래 모두 작동).*
@@ -158,7 +158,7 @@ class TrailingStopStrategy(Strategy):
 
 ### 바이낸스 (선물)
 레버리지는 보통 계정 설정이지만, API로 설정할 수도 있습니다.
-LuminaQuant의 `CCXTExchange`는 연결 시 자동으로 레버리지를 설정하지 않습니다.
+LuminaQuant는 공식 Binance USDⓈ-M Futures API를 통해 레버리지/마진/포지션 모드 설정을 적용합니다.
 
 **설정 방법:**
 전략의 `__init__`이나 `live_trader.py`에 다음을 추가하세요:

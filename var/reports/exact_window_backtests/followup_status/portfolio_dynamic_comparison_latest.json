@@ -17,12 +17,12 @@
     "causal_dynamic_portfolio"
   ],
   "current_one_shot_optimized": {
-    "bundle_path": "/tmp/pytest-of-hoky/pytest-6/test_write_dynamic_comparison_0/current_bundle.json",
+    "bundle_path": "/tmp/pytest-of-hoky/pytest-1/test_write_dynamic_comparison_0/current_bundle.json",
     "oos": {
       "sharpe": 2.0,
       "total_return": 0.05
     },
-    "path": "/tmp/pytest-of-hoky/pytest-6/test_write_dynamic_comparison_0/current_portfolio.json",
+    "path": "/tmp/pytest-of-hoky/pytest-1/test_write_dynamic_comparison_0/current_portfolio.json",
     "val": {
       "sharpe": 1.1,
       "total_return": 0.01

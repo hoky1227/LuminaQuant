@@ -296,7 +296,14 @@ def test_materializer_incremental_cycle_keeps_earlier_same_day_rows(tmp_path):
                 "price": 120.0,
                 "quantity": 0.3,
                 "is_buyer_maker": False,
-            }
+            },
+            {
+                "agg_trade_id": 4,
+                "timestamp_ms": int(datetime(2026, 3, 7, 10, 5, 1, 100_000, tzinfo=UTC).timestamp() * 1000),
+                "price": 121.0,
+                "quantity": 0.1,
+                "is_buyer_maker": True,
+            },
         ],
     )
 

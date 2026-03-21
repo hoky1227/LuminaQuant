@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import textwrap
 from pathlib import Path
 
 from lumina_quant.cli import exact_window as exact_window_cli
@@ -260,9 +261,97 @@ def test_exact_window_cli_derives_adaptive_windows_for_metal_profile(tmp_path: P
     assert captured["val_start"] == "2026-02-01T00:00:00+00:00"
     assert captured["oos_start"] == "2026-02-20T00:00:00+00:00"
     assert captured["requested_oos_end_exclusive"] == "2026-03-09T00:00:00+00:00"
-    manifest = json.loads((tmp_path / next(tmp_path.glob("exact_window_*/manifest.json")).relative_to(tmp_path)).read_text(encoding="utf-8"))
+    manifest = json.loads(
+        (
+            tmp_path / next(tmp_path.glob("exact_window_*/manifest.json")).relative_to(tmp_path)
+        ).read_text(encoding="utf-8")
+    )
     assert manifest["window_profile"] == "metals"
     assert manifest["adaptive_windows"]["profile"] == "metals"
+
+
+def test_exact_window_cli_uses_runtime_config_defaults_when_symbols_are_omitted(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+):
+    cfg = textwrap.dedent(
+        """
+        trading:
+          symbols: ["ETH/USDT", "XRP/USDT"]
+          timeframe: "5m"
+        storage:
+          market_data_parquet_path: "var/data/runtime_exact_window"
+          market_data_exchange: "kraken"
+        """
+    ).strip()
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(cfg, encoding="utf-8")
+    score_config_path = tmp_path / "score.json"
+    score_config_path.write_text("{}", encoding="utf-8")
+
+    adaptive_calls: dict[str, object] = {}
+    suite_calls: dict[str, object] = {}
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("LQ_CONFIG_PATH", str(cfg_path))
+    monkeypatch.setattr(exact_window_cli, "RSSGuard", _FakeGuard)
+    monkeypatch.setattr(
+        exact_window_cli,
+        "resolve_coverage_adaptive_windows",
+        lambda **kwargs: adaptive_calls.update(kwargs) or {
+            "profile": "coverage_adaptive",
+            "train_start": "2026-01-01T00:00:00+00:00",
+            "val_start": "2026-02-01T00:00:00+00:00",
+            "oos_start": "2026-02-20T00:00:00+00:00",
+            "requested_oos_end_exclusive": "2026-03-09T00:00:00+00:00",
+            "common_start": "2026-01-01T00:00:00+00:00",
+            "common_end": "2026-03-08T23:59:00+00:00",
+            "total_days": 67,
+            "allocation_days": {"train": 31, "val": 19, "oos": 17},
+        },
+    )
+
+    def _stub_suite(**kwargs):
+        suite_calls.update(kwargs)
+        return {
+            "eligible_symbols": ["ETH/USDT", "XRP/USDT"],
+            "best_per_strategy": [{"candidate_id": "c1", "promoted": False}],
+            "promoted_count": 0,
+            "portfolio": {"weights": []},
+        }
+
+    monkeypatch.setattr(exact_window_cli, "run_exact_window_suite", _stub_suite)
+    monkeypatch.setattr(
+        exact_window_cli,
+        "write_fail_analysis_bundle",
+        lambda **kwargs: {"json_latest": tmp_path / "exact_window_fail_analysis_latest.json"},
+    )
+    monkeypatch.setattr(
+        exact_window_cli,
+        "write_memory_evidence_bundle",
+        lambda **kwargs: {"json_latest": tmp_path / "exact_window_memory_evidence_latest.json"},
+    )
+
+    rc = exact_window_cli.main(
+        [
+            "--output-dir",
+            str(tmp_path),
+            "--timeframes",
+            "4h",
+            "--window-profile",
+            "coverage_adaptive",
+            "--score-config",
+            str(score_config_path),
+        ]
+    )
+
+    assert rc == 0
+    _ = json.loads(capsys.readouterr().out)
+    assert adaptive_calls["symbols"] == ["ETH/USDT", "XRP/USDT"]
+    assert adaptive_calls["root_path"] == "var/data/runtime_exact_window"
+    assert adaptive_calls["exchange"] == "kraken"
+    assert suite_calls["symbols"] == ["ETH/USDT", "XRP/USDT"]
 
 
 def test_exact_window_cli_accepts_timeframe_specific_adaptive_profile(tmp_path: Path, monkeypatch, capsys):

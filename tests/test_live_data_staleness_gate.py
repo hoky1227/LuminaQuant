@@ -104,7 +104,7 @@ def _build_trader(monkeypatch):
         POSTGRES_DSN = ""
         TELEGRAM_BOT_TOKEN = ""
         TELEGRAM_CHAT_ID = ""
-        EXCHANGE = {"driver": "ccxt", "name": "binance", "market_type": "future"}
+        EXCHANGE = {"driver": "binance_futures", "name": "binance", "market_type": "future"}
         MODE = "paper"
         STORAGE_EXPORT_CSV = False
         MATERIALIZED_STALENESS_THRESHOLD_SECONDS = 1

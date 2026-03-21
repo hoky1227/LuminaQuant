@@ -20,7 +20,7 @@ Use when you need walk-forward/Optuna optimization on top of backtest support.
 ```bash
 uv sync --extra live-binance --extra dev
 ```
-Includes `ccxt`, `requests`, and `websockets` for Binance live data / execution paths.
+Includes `websockets` for Binance Futures live streams; REST execution/data sync use the native stdlib client.
 
 ### Live MT5
 ```bash

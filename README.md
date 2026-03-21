@@ -21,12 +21,13 @@
 | **[Migration Guide](docs/MIGRATION_GUIDE_POSTGRES_PARQUET.md)** | Local-only migration to Parquet + PostgreSQL. |
 | **[GPU Auto Notes](docs/DESIGN_NOTES_GPU_AUTO.md)** | Polars GPU/CPU auto-selection and fallback design. |
 | **[Validation Report](docs/VALIDATION_REPORT.md)** | Verification + optimization report for core workflows. |
+| **[Final Validation Guide](docs/FINAL_VALIDATION.md)** | Real-data-only final validation vs continuity validation and raw-first lineage policy. |
 | **[Futures Strategy Factory](docs/FUTURES_STRATEGY_FACTORY.md)** | Candidate generation, weighted shortlist, and portfolio-set policy. |
 | **[Scoring Config Guide](docs/SCORING_CONFIG_GUIDE.md)** | Shared score-config template usage across research/shortlist/optimization scripts. |
 | **[Workflow Guide](docs/WORKFLOW.md)** | Private/Public branch operation and publish checklist. |
 | **[8GB Baseline Quickstart](docs/QUICKSTART_8GB_BASELINE.md)** | Minimal install/smoke/replay/shadow-live/dashboard/safe-stop/cleanup flow. |
 | **[Dashboard Realtime Report](docs/DASHBOARD_REALTIME_ANALYSIS_REPORT.md)** | Analysis + implementation report for live-refresh dashboard behavior. |
-| **[Exchange Guide](docs/EXCHANGES.md)** | Detailed setup for **Binance** (CCXT), **MetaTrader 5**, and **Polymarket**. |
+| **[Exchange Guide](docs/EXCHANGES.md)** | Detailed setup for **Binance USDⓈ-M Futures**, **MetaTrader 5**, and **Polymarket**. |
 | **[External Data Guide](docs/EXTERNAL_DATA.md)** | Canonical contracts for user-managed backtest/live data. |
 | **[Minimal Installs](docs/MINIMAL_INSTALLS.md)** | Persona-oriented extras for backtest-only / live-only installs. |
 | **[Trading Manual](docs/TRADING_MANUAL.md)** | **How-To**: Buy/Sell, Leverage, TP/SL, Trailing Stops. |
@@ -140,7 +141,7 @@ trading:
 
 **Choose Your Exchange:**
 
-*   **Binance (Crypto)**: Set `driver: "ccxt"`
+*   **Binance USDⓈ-M Futures**: Set `driver: "binance_futures"`
 *   **MetaTrader 5 (Forex/Stocks)**: Set `driver: "mt5"`
 
 *👉 See [Exchange Guide](docs/EXCHANGES.md), [External Data Guide](docs/EXTERNAL_DATA.md), and [Minimal Installs](docs/MINIMAL_INSTALLS.md) for provider setup, custom data formats, and minimal dependency profiles.*
@@ -310,7 +311,7 @@ lq-real-off
 Live migration flags (non-HFT incremental rollout):
 ```yaml
 live:
-  market_data_source: committed      # committed | binance_live
+  market_data_source: committed      # committed | binance_futures
   order_state_source: polling        # polling | user_stream
   shadow_live_enabled: false
   reconciliation_poll_fallback_enabled: true
@@ -418,7 +419,7 @@ bash scripts/ops/stop_live_session.sh
 uv run lq live --transport ws
 
 # Enable real Binance live stream source (config-driven)
-# set in config.yaml: live.market_data_source: binance_live
+# set in config.yaml: live.market_data_source: binance_futures
 # optional: live.order_state_source: user_stream
 uv run lq live --transport ws
 
@@ -550,7 +551,7 @@ uv run python scripts/quick_scan.py --profile quick --dry-run
 
 - **Event-Driven Core**: Simulates realistic execution by processing events (`Market`, `Signal`, `Order`, `Fill`) sequentially.
 - **Multi-Asset & Multi-Exchange**:
-    - Trade **Crypto** on Binance, Bybit, Upbit (via CCXT).
+    - Trade **Crypto** on native **Binance USDⓈ-M Futures**.
     - Trade **Forex, CFTs, Stocks** on MetaTrader 5.
 - **Advanced Backtesting**: Includes slippage, commission models, and trailing stop logic.
 - **Optimization**: Built-in Bayesian Optimization using **Optuna** to find the best strategy parameters.

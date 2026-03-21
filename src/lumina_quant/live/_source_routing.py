@@ -7,8 +7,8 @@ def resolve_market_data_source(config) -> str:
     """Normalize configured live market-data source into a stable token."""
     token = str(getattr(config, "MARKET_DATA_SOURCE", "committed") or "committed")
     token = token.strip().lower().replace("-", "_")
-    if token in {"binance_live", "binance", "live"}:
-        return "binance_live"
+    if token in {"binance_futures", "binance_futures_live", "binance_live", "binance", "live"}:
+        return "binance_futures"
     if token in {"external", "custom"}:
         return "external"
     if token in {"polymarket_live", "polymarket"}:
@@ -16,7 +16,7 @@ def resolve_market_data_source(config) -> str:
     return "committed"
 
 
-def binance_live_handler_cls():
+def binance_futures_handler_cls():
     from lumina_quant.live.data_binance_live import BinanceLiveDataHandler
 
     return BinanceLiveDataHandler
