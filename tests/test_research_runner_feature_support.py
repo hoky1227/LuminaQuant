@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import numpy as np
 import polars as pl
@@ -576,6 +577,143 @@ def test_basis_snapback_reversion_strategy_signal_produces_exposure():
     assert meta == {}
 
 
+def test_basis_snapback_reversion_preserves_default_window(monkeypatch):
+    windows: list[int] = []
+
+    def _stub_crowding_support_series(
+        *,
+        funding_rate,
+        open_interest,
+        mark_price,
+        index_price,
+        liquidation_long_notional,
+        liquidation_short_notional,
+        window=64,
+    ):
+        windows.append(int(window))
+        shape = np.asarray(mark_price, dtype=float).shape
+        return {"basis_z": np.zeros(shape, dtype=float)}
+
+    monkeypatch.setattr(research_runner, "_resolve_feature_points_path", lambda: Path(__file__))
+    monkeypatch.setattr(
+        research_runner,
+        "_crowding_support_series",
+        _stub_crowding_support_series,
+    )
+
+    length = 120
+    close = np.linspace(100.0, 104.0, length, dtype=float)
+    aligned = {
+        "datetime": _minute_datetimes(length),
+        "BTC/USDT:open": close - 0.1,
+        "BTC/USDT:high": close + 0.2,
+        "BTC/USDT:low": close - 0.2,
+        "BTC/USDT:close": close,
+        "BTC/USDT:volume": np.full(length, 120.0, dtype=float),
+        "BTC/USDT:mark_price": close * 1.001,
+        "BTC/USDT:index_price": close,
+    }
+
+    research_runner._strategy_signal(
+        {"strategy_class": "BasisSnapbackReversionStrategy", "params": {}},
+        aligned=aligned,
+        symbols=["BTC/USDT"],
+    )
+
+    assert windows == [96]
+
+
+def test_vol_of_vol_exhaustion_fade_strategy_signal_produces_exposure(monkeypatch):
+    def _stub_rolling_realized_vol(values, window):
+        realized = np.zeros(np.asarray(values, dtype=float).shape, dtype=float)
+        realized[60:67] = np.linspace(0.0, 3.0, 7, dtype=float)
+        return realized
+
+    def _stub_rolling_z(values, window):
+        out = np.zeros(np.asarray(values, dtype=float).shape, dtype=float)
+        if int(window) == 24:
+            out[60:65] = 2.0
+        elif int(window) == 12:
+            out[60:64] = -1.5
+            out[64:] = 0.5
+        return out
+
+    monkeypatch.setattr(research_runner, "_rolling_realized_vol", _stub_rolling_realized_vol)
+    monkeypatch.setattr(research_runner, "_rolling_z", _stub_rolling_z)
+
+    length = 120
+    close = np.full(length, 100.0, dtype=float)
+    close[64:] = 100.5
+    aligned = {
+        "datetime": _minute_datetimes(length),
+        "BTC/USDT:open": close - 0.1,
+        "BTC/USDT:high": close + 0.2,
+        "BTC/USDT:low": close - 0.2,
+        "BTC/USDT:close": close,
+        "BTC/USDT:volume": np.full(length, 120.0, dtype=float),
+    }
+    candidate = {
+        "strategy_class": "VolOfVolExhaustionFadeStrategy",
+        "params": {
+            "vol_window": 16,
+            "vol_z_window": 24,
+            "return_z_window": 12,
+            "vol_entry_z": 1.0,
+            "return_entry_z": 0.8,
+            "max_hold_bars": 8,
+            "stop_loss_pct": 0.03,
+            "allow_short": True,
+        },
+    }
+
+    _, turnover, exposure, meta = research_runner._strategy_signal(
+        candidate,
+        aligned=aligned,
+        symbols=["BTC/USDT"],
+    )
+
+    assert exposure.shape == (length,)
+    assert meta == {}
+    assert np.any(exposure > 0.0)
+    assert np.any(turnover > 0.0)
+
+
+def test_vol_of_vol_exhaustion_fade_preserves_default_windows(monkeypatch):
+    vol_windows: list[int] = []
+    z_windows: list[int] = []
+
+    def _stub_rolling_realized_vol(values, window):
+        vol_windows.append(int(window))
+        return np.zeros(np.asarray(values, dtype=float).shape, dtype=float)
+
+    def _stub_rolling_z(values, window):
+        z_windows.append(int(window))
+        return np.zeros(np.asarray(values, dtype=float).shape, dtype=float)
+
+    monkeypatch.setattr(research_runner, "_rolling_realized_vol", _stub_rolling_realized_vol)
+    monkeypatch.setattr(research_runner, "_rolling_z", _stub_rolling_z)
+
+    length = 120
+    close = np.linspace(100.0, 104.0, length, dtype=float)
+    aligned = {
+        "datetime": _minute_datetimes(length),
+        "BTC/USDT:open": close - 0.1,
+        "BTC/USDT:high": close + 0.2,
+        "BTC/USDT:low": close - 0.2,
+        "BTC/USDT:close": close,
+        "BTC/USDT:volume": np.full(length, 120.0, dtype=float),
+    }
+
+    research_runner._strategy_signal(
+        {"strategy_class": "VolOfVolExhaustionFadeStrategy", "params": {}},
+        aligned=aligned,
+        symbols=["BTC/USDT"],
+    )
+
+    assert vol_windows == [24]
+    assert z_windows == [48, 24]
+
+
 def test_residual_basket_reversion_strategy_signal_produces_exposure():
     length = 420
     btc_close = np.linspace(100.0, 120.0, length, dtype=float)
@@ -843,6 +981,40 @@ def test_multi_horizon_trend_exhaustion_fade_strategy_signal_produces_exposure()
     assert np.any(np.abs(exposure) > 0.0)
     assert np.any(turnover > 0.0)
     assert meta == {}
+
+
+def test_multi_horizon_trend_exhaustion_fade_preserves_default_short_window(monkeypatch):
+    windows: list[int] = []
+
+    def _stub_rolling_z(values, window):
+        windows.append(int(window))
+        return np.zeros(np.asarray(values, dtype=float).shape, dtype=float)
+
+    monkeypatch.setattr(research_runner, "_rolling_z", _stub_rolling_z)
+    monkeypatch.setattr(
+        research_runner,
+        "_composite_momentum_series",
+        lambda values, **kwargs: np.zeros(np.asarray(values, dtype=float).shape, dtype=float),
+    )
+
+    length = 120
+    close = np.linspace(100.0, 104.0, length, dtype=float)
+    aligned = {
+        "datetime": _minute_datetimes(length),
+        "BTC/USDT:open": close - 0.1,
+        "BTC/USDT:high": close + 0.2,
+        "BTC/USDT:low": close - 0.2,
+        "BTC/USDT:close": close,
+        "BTC/USDT:volume": np.full(length, 120.0, dtype=float),
+    }
+
+    research_runner._strategy_signal(
+        {"strategy_class": "MultiHorizonTrendExhaustionFadeStrategy", "params": {}},
+        aligned=aligned,
+        symbols=["BTC/USDT"],
+    )
+
+    assert windows == [16]
 
 
 def test_vwap_reversion_strategy_signal_produces_exposure():

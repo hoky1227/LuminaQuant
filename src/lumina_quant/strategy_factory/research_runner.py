@@ -1754,6 +1754,349 @@ def _apply_regime_breakout_candidate_strategy(
         )
 
 
+@dataclass(frozen=True, slots=True)
+class _BasisSnapbackReversionConfig:
+    window: int
+    entry_z: float
+    exit_z: float
+    max_hold_bars: int
+    stop_loss_pct: float
+    allow_short: bool
+
+
+def _resolve_basis_snapback_reversion_config(
+    params: Mapping[str, Any],
+) -> _BasisSnapbackReversionConfig:
+    return _BasisSnapbackReversionConfig(
+        window=int(params.get("window", 96)),
+        entry_z=float(params.get("entry_z", 1.8)),
+        exit_z=max(0.0, float(params.get("exit_z", 0.4))),
+        max_hold_bars=max(1, int(params.get("max_hold_bars", 12))),
+        stop_loss_pct=float(params.get("stop_loss_pct", 0.02)),
+        allow_short=bool(params.get("allow_short", True)),
+    )
+
+
+def _basis_snapback_reversion_position_series(
+    *,
+    close: np.ndarray,
+    basis_z: np.ndarray,
+    config: _BasisSnapbackReversionConfig,
+) -> np.ndarray:
+    position = np.zeros(close.shape, dtype=float)
+    mode = 0
+    entry_price: float | None = None
+    bars_held = 0
+
+    for idx in range(close.size):
+        close_i = float(close[idx])
+        z_i = float(basis_z[idx]) if np.isfinite(basis_z[idx]) else np.nan
+        if not np.isfinite(close_i):
+            position[idx] = float(mode)
+            continue
+        if mode == 1:
+            bars_held += 1
+            should_exit = (
+                (np.isfinite(z_i) and z_i >= -config.exit_z)
+                or (bars_held >= config.max_hold_bars)
+                or (
+                    entry_price is not None
+                    and close_i <= float(entry_price) * (1.0 - config.stop_loss_pct)
+                )
+            )
+            if should_exit:
+                mode = 0
+                entry_price = None
+                bars_held = 0
+            position[idx] = float(mode)
+            continue
+        if mode == -1:
+            bars_held += 1
+            should_exit = (
+                (np.isfinite(z_i) and z_i <= config.exit_z)
+                or (bars_held >= config.max_hold_bars)
+                or (
+                    entry_price is not None
+                    and close_i >= float(entry_price) * (1.0 + config.stop_loss_pct)
+                )
+            )
+            if should_exit:
+                mode = 0
+                entry_price = None
+                bars_held = 0
+            position[idx] = float(mode)
+            continue
+        if not np.isfinite(z_i):
+            position[idx] = 0.0
+            continue
+        if z_i <= -config.entry_z:
+            mode = 1
+            entry_price = close_i
+            bars_held = 0
+        elif config.allow_short and z_i >= config.entry_z:
+            mode = -1
+            entry_price = close_i
+            bars_held = 0
+        position[idx] = float(mode)
+
+    return position
+
+
+def _apply_basis_snapback_reversion_strategy(
+    *,
+    params: Mapping[str, Any],
+    aligned: Mapping[str, np.ndarray],
+    symbols: Sequence[str],
+    exposures: np.ndarray,
+    meta: dict[str, Any],
+) -> None:
+    if not _resolve_feature_points_path().exists():
+        meta["missing_support_data"] = True
+        exposures[:] = 0.0
+        return
+
+    config = _resolve_basis_snapback_reversion_config(params)
+    missing_symbols: list[str] = []
+    for s_idx, symbol in enumerate(symbols):
+        close = aligned[f"{symbol}:close"]
+        mark = aligned.get(f"{symbol}:mark_price")
+        index = aligned.get(f"{symbol}:index_price")
+        if mark is None or index is None:
+            missing_symbols.append(symbol)
+            continue
+        support = _crowding_support_series(
+            funding_rate=np.zeros(len(close), dtype=float),
+            open_interest=np.ones(len(close), dtype=float),
+            mark_price=np.asarray(mark, dtype=float),
+            index_price=np.asarray(index, dtype=float),
+            liquidation_long_notional=np.zeros(len(close), dtype=float),
+            liquidation_short_notional=np.zeros(len(close), dtype=float),
+            window=config.window,
+        )
+        exposures[s_idx] = _basis_snapback_reversion_position_series(
+            close=np.asarray(close, dtype=float),
+            basis_z=np.asarray(support["basis_z"], dtype=float),
+            config=config,
+        )
+
+    if missing_symbols:
+        meta["missing_support_data"] = True
+        meta["missing_support_symbols"] = missing_symbols
+
+
+@dataclass(frozen=True, slots=True)
+class _VolOfVolExhaustionFadeConfig:
+    vol_window: int
+    vol_z_window: int
+    return_z_window: int
+    vol_entry_z: float
+    return_entry_z: float
+    max_hold_bars: int
+    stop_loss_pct: float
+    allow_short: bool
+
+
+def _resolve_vol_of_vol_exhaustion_fade_config(
+    params: Mapping[str, Any],
+) -> _VolOfVolExhaustionFadeConfig:
+    return _VolOfVolExhaustionFadeConfig(
+        vol_window=max(8, int(params.get("vol_window", 24))),
+        vol_z_window=max(8, int(params.get("vol_z_window", 48))),
+        return_z_window=max(8, int(params.get("return_z_window", 24))),
+        vol_entry_z=float(params.get("vol_entry_z", 1.8)),
+        return_entry_z=float(params.get("return_entry_z", 1.2)),
+        max_hold_bars=max(1, int(params.get("max_hold_bars", 8))),
+        stop_loss_pct=float(params.get("stop_loss_pct", 0.02)),
+        allow_short=bool(params.get("allow_short", True)),
+    )
+
+
+def _vol_of_vol_exhaustion_fade_position_series(
+    *,
+    close: np.ndarray,
+    config: _VolOfVolExhaustionFadeConfig,
+) -> np.ndarray:
+    realized_vol = _rolling_realized_vol(close, config.vol_window)
+    vol_z = np.nan_to_num(
+        _rolling_z(np.nan_to_num(realized_vol, nan=0.0), config.vol_z_window),
+        nan=0.0,
+    )
+    return_z = np.nan_to_num(_rolling_z(close, config.return_z_window), nan=0.0)
+    position = np.zeros(close.shape, dtype=float)
+    mode = 0
+    entry_price: float | None = None
+    hold_bars = 0
+
+    for idx in range(close.size):
+        close_i = float(close[idx])
+        if not np.isfinite(close_i):
+            continue
+        if mode == 1 and entry_price is not None:
+            hold_bars += 1
+            stop_hit = close_i <= entry_price * (1.0 - config.stop_loss_pct)
+            revert_hit = float(return_z[idx]) >= 0.0
+            timeout_hit = hold_bars >= config.max_hold_bars
+            if stop_hit or revert_hit or timeout_hit:
+                mode = 0
+                entry_price = None
+                hold_bars = 0
+            else:
+                position[idx] = 1.0
+                continue
+        elif mode == -1 and entry_price is not None:
+            hold_bars += 1
+            stop_hit = close_i >= entry_price * (1.0 + config.stop_loss_pct)
+            revert_hit = float(return_z[idx]) <= 0.0
+            timeout_hit = hold_bars >= config.max_hold_bars
+            if stop_hit or revert_hit or timeout_hit:
+                mode = 0
+                entry_price = None
+                hold_bars = 0
+            else:
+                position[idx] = -1.0
+                continue
+
+        if mode == 0 and float(vol_z[idx]) >= config.vol_entry_z:
+            if float(return_z[idx]) <= -config.return_entry_z:
+                mode = 1
+                entry_price = close_i
+                hold_bars = 0
+                position[idx] = 1.0
+            elif config.allow_short and float(return_z[idx]) >= config.return_entry_z:
+                mode = -1
+                entry_price = close_i
+                hold_bars = 0
+                position[idx] = -1.0
+
+    return position
+
+
+def _apply_vol_of_vol_exhaustion_fade_strategy(
+    *,
+    params: Mapping[str, Any],
+    aligned: Mapping[str, np.ndarray],
+    symbols: Sequence[str],
+    exposures: np.ndarray,
+) -> None:
+    config = _resolve_vol_of_vol_exhaustion_fade_config(params)
+    for s_idx, symbol in enumerate(symbols):
+        exposures[s_idx] = _vol_of_vol_exhaustion_fade_position_series(
+            close=np.asarray(aligned[f"{symbol}:close"], dtype=float),
+            config=config,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class _MultiHorizonTrendExhaustionFadeConfig:
+    short_window: int
+    entry_z: float
+    exit_z: float
+    max_hold_bars: int
+    stop_loss_pct: float
+    allow_short: bool
+
+
+def _resolve_multi_horizon_trend_exhaustion_fade_config(
+    params: Mapping[str, Any],
+) -> _MultiHorizonTrendExhaustionFadeConfig:
+    return _MultiHorizonTrendExhaustionFadeConfig(
+        short_window=max(4, int(params.get("short_window", 16))),
+        entry_z=float(params.get("entry_z", 1.6)),
+        exit_z=max(0.0, float(params.get("exit_z", 0.3))),
+        max_hold_bars=max(1, int(params.get("max_hold_bars", 10))),
+        stop_loss_pct=float(params.get("stop_loss_pct", 0.02)),
+        allow_short=bool(params.get("allow_short", True)),
+    )
+
+
+def _multi_horizon_trend_exhaustion_fade_position_series(
+    *,
+    close: np.ndarray,
+    config: _MultiHorizonTrendExhaustionFadeConfig,
+) -> np.ndarray:
+    short_z = np.nan_to_num(_rolling_z(close, config.short_window), nan=0.0)
+    long_mom = _composite_momentum_series(
+        close,
+        windows=(8, 21, 55),
+        weights=(0.5, 0.3, 0.2),
+    )
+    position = np.zeros(close.shape, dtype=float)
+    mode = 0
+    entry_price: float | None = None
+    hold_bars = 0
+
+    for idx in range(close.size):
+        close_i = float(close[idx])
+        z_i = float(short_z[idx])
+        long_i = float(long_mom[idx]) if np.isfinite(long_mom[idx]) else 0.0
+        if not np.isfinite(close_i):
+            continue
+        if mode == 1:
+            hold_bars += 1
+            should_exit = (
+                z_i >= -config.exit_z
+                or long_i < 0.0
+                or hold_bars >= config.max_hold_bars
+                or (
+                    entry_price is not None
+                    and close_i <= float(entry_price) * (1.0 - config.stop_loss_pct)
+                )
+            )
+            if should_exit:
+                mode = 0
+                entry_price = None
+                hold_bars = 0
+            else:
+                position[idx] = 1.0
+                continue
+        elif mode == -1:
+            hold_bars += 1
+            should_exit = (
+                z_i <= config.exit_z
+                or long_i > 0.0
+                or hold_bars >= config.max_hold_bars
+                or (
+                    entry_price is not None
+                    and close_i >= float(entry_price) * (1.0 + config.stop_loss_pct)
+                )
+            )
+            if should_exit:
+                mode = 0
+                entry_price = None
+                hold_bars = 0
+            else:
+                position[idx] = -1.0
+                continue
+
+        if z_i >= config.entry_z and long_i <= 0.0 and config.allow_short:
+            mode = -1
+            entry_price = close_i
+            hold_bars = 0
+            position[idx] = -1.0
+        elif z_i <= -config.entry_z and long_i >= 0.0:
+            mode = 1
+            entry_price = close_i
+            hold_bars = 0
+            position[idx] = 1.0
+
+    return position
+
+
+def _apply_multi_horizon_trend_exhaustion_fade_strategy(
+    *,
+    params: Mapping[str, Any],
+    aligned: Mapping[str, np.ndarray],
+    symbols: Sequence[str],
+    exposures: np.ndarray,
+) -> None:
+    config = _resolve_multi_horizon_trend_exhaustion_fade_config(params)
+    for s_idx, symbol in enumerate(symbols):
+        exposures[s_idx] = _multi_horizon_trend_exhaustion_fade_position_series(
+            close=np.asarray(aligned[f"{symbol}:close"], dtype=float),
+            config=config,
+        )
+
+
 def _pair_spread_z(px: np.ndarray, py: np.ndarray, window: int = 96) -> np.ndarray:
     n = min(px.size, py.size)
     out = np.full(n, np.nan, dtype=float)
@@ -3369,153 +3712,21 @@ def _strategy_signal(
         )
 
     elif strategy_class == "BasisSnapbackReversionStrategy":
-        if not _resolve_feature_points_path().exists():
-            meta["missing_support_data"] = True
-            exposures[:] = 0.0
-        else:
-            missing_symbols: list[str] = []
-            for s_idx, symbol in enumerate(symbols):
-                close = aligned[f"{symbol}:close"]
-                mark = aligned.get(f"{symbol}:mark_price")
-                index = aligned.get(f"{symbol}:index_price")
-                if mark is None or index is None:
-                    missing_symbols.append(symbol)
-                    continue
-                support = _crowding_support_series(
-                    funding_rate=np.zeros(len(close), dtype=float),
-                    open_interest=np.ones(len(close), dtype=float),
-                    mark_price=np.asarray(mark, dtype=float),
-                    index_price=np.asarray(index, dtype=float),
-                    liquidation_long_notional=np.zeros(len(close), dtype=float),
-                    liquidation_short_notional=np.zeros(len(close), dtype=float),
-                    window=int(params.get("window", 96)),
-                )
-                basis_z = np.asarray(support["basis_z"], dtype=float)
-                close_arr = np.asarray(close, dtype=float)
-                entry_z = float(params.get("entry_z", 1.8))
-                exit_z = max(0.0, float(params.get("exit_z", 0.4)))
-                max_hold_bars = max(1, int(params.get("max_hold_bars", 12)))
-                stop_loss_pct = float(params.get("stop_loss_pct", 0.02))
-                allow_short = bool(params.get("allow_short", True))
-                position = np.zeros(close_arr.shape, dtype=float)
-                mode = 0
-                entry_price: float | None = None
-                bars_held = 0
-                for idx in range(close_arr.size):
-                    close_i = float(close_arr[idx])
-                    z_i = float(basis_z[idx]) if np.isfinite(basis_z[idx]) else np.nan
-                    if not np.isfinite(close_i):
-                        position[idx] = float(mode)
-                        continue
-                    if mode == 1:
-                        bars_held += 1
-                        should_exit = (
-                            (np.isfinite(z_i) and z_i >= -exit_z)
-                            or (bars_held >= max_hold_bars)
-                            or (
-                                entry_price is not None
-                                and close_i <= float(entry_price) * (1.0 - stop_loss_pct)
-                            )
-                        )
-                        if should_exit:
-                            mode = 0
-                            entry_price = None
-                            bars_held = 0
-                        position[idx] = float(mode)
-                        continue
-                    if mode == -1:
-                        bars_held += 1
-                        should_exit = (
-                            (np.isfinite(z_i) and z_i <= exit_z)
-                            or (bars_held >= max_hold_bars)
-                            or (
-                                entry_price is not None
-                                and close_i >= float(entry_price) * (1.0 + stop_loss_pct)
-                            )
-                        )
-                        if should_exit:
-                            mode = 0
-                            entry_price = None
-                            bars_held = 0
-                        position[idx] = float(mode)
-                        continue
-                    if not np.isfinite(z_i):
-                        position[idx] = 0.0
-                        continue
-                    if z_i <= -entry_z:
-                        mode = 1
-                        entry_price = close_i
-                        bars_held = 0
-                    elif allow_short and z_i >= entry_z:
-                        mode = -1
-                        entry_price = close_i
-                        bars_held = 0
-                    position[idx] = float(mode)
-                exposures[s_idx] = position
-            if missing_symbols:
-                meta["missing_support_data"] = True
-                meta["missing_support_symbols"] = missing_symbols
+        _apply_basis_snapback_reversion_strategy(
+            params=params,
+            aligned=aligned,
+            symbols=symbols,
+            exposures=exposures,
+            meta=meta,
+        )
 
     elif strategy_class == "VolOfVolExhaustionFadeStrategy":
-        vol_window = max(8, int(params.get("vol_window", 24)))
-        vol_z_window = max(8, int(params.get("vol_z_window", 48)))
-        return_z_window = max(8, int(params.get("return_z_window", 24)))
-        vol_entry_z = float(params.get("vol_entry_z", 1.8))
-        return_entry_z = float(params.get("return_entry_z", 1.2))
-        max_hold_bars = max(1, int(params.get("max_hold_bars", 8)))
-        stop_loss_pct = float(params.get("stop_loss_pct", 0.02))
-        allow_short = bool(params.get("allow_short", True))
-
-        for s_idx, symbol in enumerate(symbols):
-            close = np.asarray(aligned[f"{symbol}:close"], dtype=float)
-            realized_vol = _rolling_realized_vol(close, vol_window)
-            vol_z = np.nan_to_num(_rolling_z(np.nan_to_num(realized_vol, nan=0.0), vol_z_window), nan=0.0)
-            return_z = np.nan_to_num(_rolling_z(close, return_z_window), nan=0.0)
-            pos = np.zeros(close.shape, dtype=float)
-            mode = 0
-            entry_price: float | None = None
-            hold_bars = 0
-            for idx in range(close.size):
-                close_i = float(close[idx])
-                if not np.isfinite(close_i):
-                    continue
-                if mode == 1 and entry_price is not None:
-                    hold_bars += 1
-                    stop_hit = close_i <= entry_price * (1.0 - stop_loss_pct)
-                    revert_hit = float(return_z[idx]) >= 0.0
-                    timeout_hit = hold_bars >= max_hold_bars
-                    if stop_hit or revert_hit or timeout_hit:
-                        mode = 0
-                        entry_price = None
-                        hold_bars = 0
-                    else:
-                        pos[idx] = 1.0
-                        continue
-                elif mode == -1 and entry_price is not None:
-                    hold_bars += 1
-                    stop_hit = close_i >= entry_price * (1.0 + stop_loss_pct)
-                    revert_hit = float(return_z[idx]) <= 0.0
-                    timeout_hit = hold_bars >= max_hold_bars
-                    if stop_hit or revert_hit or timeout_hit:
-                        mode = 0
-                        entry_price = None
-                        hold_bars = 0
-                    else:
-                        pos[idx] = -1.0
-                        continue
-
-                if mode == 0 and float(vol_z[idx]) >= vol_entry_z:
-                    if float(return_z[idx]) <= -return_entry_z:
-                        mode = 1
-                        entry_price = close_i
-                        hold_bars = 0
-                        pos[idx] = 1.0
-                    elif allow_short and float(return_z[idx]) >= return_entry_z:
-                        mode = -1
-                        entry_price = close_i
-                        hold_bars = 0
-                        pos[idx] = -1.0
-            exposures[s_idx] = pos
+        _apply_vol_of_vol_exhaustion_fade_strategy(
+            params=params,
+            aligned=aligned,
+            symbols=symbols,
+            exposures=exposures,
+        )
 
     elif strategy_class == "ResidualBasketReversionStrategy":
         _apply_residual_basket_reversion_strategy(
@@ -3617,75 +3828,12 @@ def _strategy_signal(
         )
 
     elif strategy_class == "MultiHorizonTrendExhaustionFadeStrategy":
-        short_window = max(4, int(params.get("short_window", 16)))
-        entry_z = float(params.get("entry_z", 1.6))
-        exit_z = max(0.0, float(params.get("exit_z", 0.3)))
-        max_hold_bars = max(1, int(params.get("max_hold_bars", 10)))
-        stop_loss_pct = float(params.get("stop_loss_pct", 0.02))
-        allow_short = bool(params.get("allow_short", True))
-
-        for s_idx, symbol in enumerate(symbols):
-            close = np.asarray(aligned[f"{symbol}:close"], dtype=float)
-            short_z = np.nan_to_num(_rolling_z(close, short_window), nan=0.0)
-            long_mom = _composite_momentum_series(close, windows=(8, 21, 55), weights=(0.5, 0.3, 0.2))
-            pos = np.zeros(close.shape, dtype=float)
-            mode = 0
-            entry_price: float | None = None
-            hold_bars = 0
-            for idx in range(close.size):
-                close_i = float(close[idx])
-                z_i = float(short_z[idx])
-                long_i = float(long_mom[idx]) if np.isfinite(long_mom[idx]) else 0.0
-                if not np.isfinite(close_i):
-                    continue
-                if mode == 1:
-                    hold_bars += 1
-                    should_exit = (
-                        z_i >= -exit_z
-                        or long_i < 0.0
-                        or hold_bars >= max_hold_bars
-                        or (
-                            entry_price is not None
-                            and close_i <= float(entry_price) * (1.0 - stop_loss_pct)
-                        )
-                    )
-                    if should_exit:
-                        mode = 0
-                        entry_price = None
-                        hold_bars = 0
-                    else:
-                        pos[idx] = 1.0
-                        continue
-                elif mode == -1:
-                    hold_bars += 1
-                    should_exit = (
-                        z_i <= exit_z
-                        or long_i > 0.0
-                        or hold_bars >= max_hold_bars
-                        or (
-                            entry_price is not None
-                            and close_i >= float(entry_price) * (1.0 + stop_loss_pct)
-                        )
-                    )
-                    if should_exit:
-                        mode = 0
-                        entry_price = None
-                        hold_bars = 0
-                    else:
-                        pos[idx] = -1.0
-                        continue
-
-                if z_i >= entry_z and long_i <= 0.0 and allow_short:
-                    mode = -1
-                    entry_price = close_i
-                    hold_bars = 0
-                    pos[idx] = -1.0
-                elif z_i <= -entry_z and long_i >= 0.0:
-                    mode = 1
-                    entry_price = close_i
-                    hold_bars = 0
-                    pos[idx] = 1.0
-            exposures[s_idx] = pos
+        _apply_multi_horizon_trend_exhaustion_fade_strategy(
+            params=params,
+            aligned=aligned,
+            symbols=symbols,
+            exposures=exposures,
+        )
 
     elif strategy_class == "VwapReversionStrategy":
         _apply_vwap_reversion_strategy(
