@@ -131,6 +131,47 @@ class _HelperStreamlit:
         self.calls.append(("warning", value))
 
 
+class _CacheRecorder:
+    def __init__(self) -> None:
+        self.clear_calls = 0
+
+    def clear(self) -> None:
+        self.clear_calls += 1
+
+
+class _GhostCleanupStreamlit(_HelperStreamlit):
+    def __init__(self, *, button_results: list[bool]) -> None:
+        super().__init__()
+        self._button_results = list(button_results)
+        self.cache_data = _CacheRecorder()
+        self.session_state: dict[str, Any] = {}
+
+    def columns(self, count: int):
+        self.calls.append(("columns", count))
+        return tuple(self for _ in range(count))
+
+    def number_input(self, label: str, **kwargs: Any) -> Any:
+        self.calls.append(("number_input", label, kwargs))
+        return kwargs.get("value")
+
+    def selectbox(self, label: str, options: list[str], index: int = 0, **kwargs: Any) -> str:
+        self.calls.append(("selectbox", label, list(options), index, kwargs))
+        return options[index]
+
+    def button(self, label: str, **kwargs: Any) -> bool:
+        self.calls.append(("button", label, kwargs))
+        return self._button_results.pop(0) if self._button_results else False
+
+    def error(self, value: str) -> None:
+        self.calls.append(("error", value))
+
+    def info(self, value: str) -> None:
+        self.calls.append(("info", value))
+
+    def text_area(self, label: str, value: str, **kwargs: Any) -> None:
+        self.calls.append(("text_area", label, value, kwargs))
+
+
 
 def _package(name: str, path: str | None = None) -> types.ModuleType:
     module = types.ModuleType(name)
@@ -526,3 +567,39 @@ def test_build_live_job_launch_spec_adds_websocket_and_real_mode_controls(monkey
     assert spec.run_id == "run-live"
     assert spec.stop_file == "/tmp/run-live.stop"
     assert spec.metadata == {"runner_kind": "WebSocket (run_live_ws.py)"}
+
+
+def test_render_ghost_cleanup_section_records_dry_run_and_preserves_cache(monkeypatch) -> None:
+    module, _, _ = _load_dashboard_app(monkeypatch)
+    helper_st = _GhostCleanupStreamlit(button_results=[True, False])
+    captured: dict[str, Any] = {}
+
+    module.st = helper_st
+    monkeypatch.setattr(
+        module,
+        "_run_ghost_cleanup_script",
+        lambda **kwargs: captured.update(kwargs)
+        or {
+            "ok": True,
+            "elapsed_sec": 1.25,
+            "command": ["python", "ghost-cleanup"],
+            "payload": {"closed_runs": 2},
+            "output": "done",
+        },
+    )
+
+    module._render_ghost_cleanup_section(db_path="postgres://lumina", run_stale_sec=120)
+
+    assert captured == {
+        "dsn": "postgres://lumina",
+        "stale_sec": 300,
+        "startup_grace_sec": 90,
+        "close_status": "STOPPED",
+        "force_kill_stop_requested_after_sec": 0,
+        "apply_changes": False,
+    }
+    assert helper_st.cache_data.clear_calls == 0
+    assert helper_st.session_state["ghost_cleanup_last_result"]["mode"] == "dry_run"
+    assert ("success", "Ghost cleanup dry_run completed in 1.25s") in helper_st.calls
+    assert ("json", {"closed_runs": 2}) in helper_st.calls
+    assert any(call[0] == "text_area" and call[2] == "done" for call in helper_st.calls)

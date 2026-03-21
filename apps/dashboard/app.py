@@ -3216,6 +3216,90 @@ def _render_missing_equity_warning(df_equity, runner_initial_capital) -> None:
         )
 
 
+def _render_ghost_cleanup_section(*, db_path, run_stale_sec) -> None:
+    st.subheader("Ghost Cleanup")
+    st.caption(
+        "Close stale RUNNING runs and reconcile orphan workflow_jobs. "
+        "Use dry-run first, then apply."
+    )
+    cleanup_col_1, cleanup_col_2, cleanup_col_3, cleanup_col_4 = st.columns(4)
+    cleanup_stale_sec = cleanup_col_1.number_input(
+        "Stale Sec",
+        min_value=60,
+        max_value=86400,
+        value=max(300, int(run_stale_sec)),
+        step=30,
+        key="ghost_cleanup_stale_sec",
+    )
+    cleanup_startup_grace_sec = cleanup_col_2.number_input(
+        "Startup Grace Sec",
+        min_value=30,
+        max_value=7200,
+        value=90,
+        step=30,
+        key="ghost_cleanup_startup_grace_sec",
+    )
+    cleanup_close_status = cleanup_col_3.selectbox(
+        "Close Status",
+        ["STOPPED", "FAILED"],
+        index=0,
+        key="ghost_cleanup_close_status",
+    )
+    cleanup_force_kill_age = cleanup_col_4.number_input(
+        "Force Kill STOP_REQUESTED Age Sec",
+        min_value=0,
+        max_value=86400,
+        value=0,
+        step=30,
+        key="ghost_cleanup_force_kill_age",
+    )
+
+    cleanup_btn_col_1, cleanup_btn_col_2 = st.columns(2)
+    if cleanup_btn_col_1.button("Ghost Cleanup Dry-Run", use_container_width=True):
+        cleanup_result = _run_ghost_cleanup_script(
+            dsn=db_path,
+            stale_sec=cleanup_stale_sec,
+            startup_grace_sec=cleanup_startup_grace_sec,
+            close_status=cleanup_close_status,
+            force_kill_stop_requested_after_sec=cleanup_force_kill_age,
+            apply_changes=False,
+        )
+        cleanup_result["mode"] = "dry_run"
+        st.session_state["ghost_cleanup_last_result"] = cleanup_result
+
+    if cleanup_btn_col_2.button("Ghost Cleanup Apply", use_container_width=True):
+        cleanup_result = _run_ghost_cleanup_script(
+            dsn=db_path,
+            stale_sec=cleanup_stale_sec,
+            startup_grace_sec=cleanup_startup_grace_sec,
+            close_status=cleanup_close_status,
+            force_kill_stop_requested_after_sec=cleanup_force_kill_age,
+            apply_changes=True,
+        )
+        cleanup_result["mode"] = "apply"
+        st.session_state["ghost_cleanup_last_result"] = cleanup_result
+        st.cache_data.clear()
+
+    cleanup_result = st.session_state.get("ghost_cleanup_last_result")
+    if cleanup_result:
+        if cleanup_result.get("ok"):
+            st.success(
+                f"Ghost cleanup {cleanup_result.get('mode', 'run')} completed in "
+                f"{cleanup_result.get('elapsed_sec', 0.0):.2f}s"
+            )
+        else:
+            st.error(f"Ghost cleanup failed (returncode={cleanup_result.get('returncode')})")
+        st.caption(f"Command: {' '.join(cleanup_result.get('command', []))}")
+        if cleanup_result.get("payload") is not None:
+            st.json(cleanup_result["payload"])
+        st.text_area(
+            "Ghost Cleanup Output",
+            value=cleanup_result.get("output", ""),
+            height=240,
+            key="ghost_cleanup_output_view",
+        )
+
+
 def render_main_dashboard() -> None:
     st.sidebar.header("Configuration")
     data_source = st.sidebar.selectbox("Data Source", ["Auto", "Postgres", "CSV"])
@@ -4967,87 +5051,7 @@ def render_main_dashboard() -> None:
                 key="workflow_log_tail_view",
             )
 
-        st.subheader("Ghost Cleanup")
-        st.caption(
-            "Close stale RUNNING runs and reconcile orphan workflow_jobs. "
-            "Use dry-run first, then apply."
-        )
-        cleanup_col_1, cleanup_col_2, cleanup_col_3, cleanup_col_4 = st.columns(4)
-        cleanup_stale_sec = cleanup_col_1.number_input(
-            "Stale Sec",
-            min_value=60,
-            max_value=86400,
-            value=max(300, int(run_stale_sec)),
-            step=30,
-            key="ghost_cleanup_stale_sec",
-        )
-        cleanup_startup_grace_sec = cleanup_col_2.number_input(
-            "Startup Grace Sec",
-            min_value=30,
-            max_value=7200,
-            value=90,
-            step=30,
-            key="ghost_cleanup_startup_grace_sec",
-        )
-        cleanup_close_status = cleanup_col_3.selectbox(
-            "Close Status",
-            ["STOPPED", "FAILED"],
-            index=0,
-            key="ghost_cleanup_close_status",
-        )
-        cleanup_force_kill_age = cleanup_col_4.number_input(
-            "Force Kill STOP_REQUESTED Age Sec",
-            min_value=0,
-            max_value=86400,
-            value=0,
-            step=30,
-            key="ghost_cleanup_force_kill_age",
-        )
-
-        cleanup_btn_col_1, cleanup_btn_col_2 = st.columns(2)
-        if cleanup_btn_col_1.button("Ghost Cleanup Dry-Run", use_container_width=True):
-            cleanup_result = _run_ghost_cleanup_script(
-                dsn=db_path,
-                stale_sec=cleanup_stale_sec,
-                startup_grace_sec=cleanup_startup_grace_sec,
-                close_status=cleanup_close_status,
-                force_kill_stop_requested_after_sec=cleanup_force_kill_age,
-                apply_changes=False,
-            )
-            cleanup_result["mode"] = "dry_run"
-            st.session_state["ghost_cleanup_last_result"] = cleanup_result
-
-        if cleanup_btn_col_2.button("Ghost Cleanup Apply", use_container_width=True):
-            cleanup_result = _run_ghost_cleanup_script(
-                dsn=db_path,
-                stale_sec=cleanup_stale_sec,
-                startup_grace_sec=cleanup_startup_grace_sec,
-                close_status=cleanup_close_status,
-                force_kill_stop_requested_after_sec=cleanup_force_kill_age,
-                apply_changes=True,
-            )
-            cleanup_result["mode"] = "apply"
-            st.session_state["ghost_cleanup_last_result"] = cleanup_result
-            st.cache_data.clear()
-
-        cleanup_result = st.session_state.get("ghost_cleanup_last_result")
-        if cleanup_result:
-            if cleanup_result.get("ok"):
-                st.success(
-                    f"Ghost cleanup {cleanup_result.get('mode', 'run')} completed in "
-                    f"{cleanup_result.get('elapsed_sec', 0.0):.2f}s"
-                )
-            else:
-                st.error(f"Ghost cleanup failed (returncode={cleanup_result.get('returncode')})")
-            st.caption(f"Command: {' '.join(cleanup_result.get('command', []))}")
-            if cleanup_result.get("payload") is not None:
-                st.json(cleanup_result["payload"])
-            st.text_area(
-                "Ghost Cleanup Output",
-                value=cleanup_result.get("output", ""),
-                height=240,
-                key="ghost_cleanup_output_view",
-            )
+        _render_ghost_cleanup_section(db_path=db_path, run_stale_sec=run_stale_sec)
 
         _render_snapshot_report_section(
             summary=summary,
