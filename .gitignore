@@ -269,6 +269,7 @@ var/*
 var/reports/*.json
 var/reports/*.csv
 var/reports/*.ndjson
+var/reports/exact_window_backtests/
 var/reports/archive/
 var/scripts/*
 
