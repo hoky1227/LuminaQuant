@@ -172,7 +172,7 @@ def test_current_runtime_settings_ignore_auto_seeded_defaults_from_previous_conf
     }
 
 
-def test_config_module_defers_heavy_runtime_access_until_needed(tmp_path, monkeypatch):
+def test_config_module_reexports_runtime_access_module(tmp_path, monkeypatch):
     cfg_path = _write_config(tmp_path)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("LQ_CONFIG_PATH", cfg_path)
@@ -181,8 +181,7 @@ def test_config_module_defers_heavy_runtime_access_until_needed(tmp_path, monkey
 
     config_module = importlib.reload(config_module)
 
-    assert "lumina_quant.configuration.runtime_access" not in sys.modules
     assert config_module.load_config(cfg_path)["live"]["mode"] == "paper"
-    assert "lumina_quant.configuration.runtime_access" not in sys.modules
-    assert config_module.BaseConfig.TIMEFRAME == "5m"
     assert "lumina_quant.configuration.runtime_access" in sys.modules
+    assert config_module.BaseConfig.__module__ == "lumina_quant.configuration.runtime_access"
+    assert config_module.BaseConfig.TIMEFRAME == "5m"
