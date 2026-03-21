@@ -8,6 +8,7 @@ import subprocess
 import sys
 import time
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -667,6 +668,157 @@ def _annotate_run_health(runs_df, stale_after_sec=DEFAULT_RUN_STALE_SEC):
 def _build_stop_file_path(job_id):
     os.makedirs(WORKFLOW_CONTROL_DIR, exist_ok=True)
     return os.path.join(WORKFLOW_CONTROL_DIR, f"{job_id}.stop")
+
+
+@dataclass(frozen=True)
+class _ManagedJobLaunchSpec:
+    workflow: str
+    script_name: str
+    script_args: tuple[str, ...]
+    env_overrides: dict[str, str]
+    requested_mode: str | None
+    strategy: str | None
+    run_id: str | None
+    stop_file: str | None = None
+    metadata: dict[str, object] | None = None
+
+    def launch(self, *, db_path):
+        return _launch_managed_job(
+            db_path=db_path,
+            workflow=self.workflow,
+            script_name=self.script_name,
+            script_args=self.script_args,
+            env_overrides=self.env_overrides,
+            requested_mode=self.requested_mode,
+            strategy=self.strategy,
+            run_id=self.run_id,
+            stop_file=self.stop_file,
+            metadata=self.metadata,
+        )
+
+
+def _build_backtest_job_launch_spec(
+    *,
+    runner_data_source,
+    market_db_path,
+    market_exchange,
+    runner_env_overrides,
+    strategy_name,
+    backtest_run_id,
+    strategy_params_path,
+) -> _ManagedJobLaunchSpec:
+    return _ManagedJobLaunchSpec(
+        workflow="backtest",
+        script_name="run_backtest.py",
+        script_args=(
+            "--data-source",
+            runner_data_source,
+            "--market-db-path",
+            market_db_path,
+            "--market-exchange",
+            market_exchange,
+            "--run-id",
+            backtest_run_id,
+        ),
+        env_overrides=dict(runner_env_overrides),
+        requested_mode="backtest",
+        strategy=strategy_name,
+        run_id=backtest_run_id,
+        metadata={"strategy_params_path": strategy_params_path},
+    )
+
+
+def _build_optimize_job_launch_spec(
+    *,
+    optimize_folds,
+    optimize_trials,
+    optimize_workers,
+    runner_data_source,
+    market_db_path,
+    market_exchange,
+    persist_best_params,
+    runner_env_overrides,
+    strategy_name,
+    optimize_run_id,
+) -> _ManagedJobLaunchSpec:
+    optimize_args = [
+        "--folds",
+        str(int(optimize_folds)),
+        "--n-trials",
+        str(int(optimize_trials)),
+        "--max-workers",
+        str(int(optimize_workers)),
+        "--data-source",
+        runner_data_source,
+        "--market-db-path",
+        market_db_path,
+        "--market-exchange",
+        market_exchange,
+        "--run-id",
+        optimize_run_id,
+    ]
+    if persist_best_params:
+        optimize_args.append("--save-best-params")
+    return _ManagedJobLaunchSpec(
+        workflow="optimize",
+        script_name="optimize.py",
+        script_args=tuple(optimize_args),
+        env_overrides=dict(runner_env_overrides),
+        requested_mode="optimize",
+        strategy=strategy_name,
+        run_id=optimize_run_id,
+        metadata={
+            "folds": int(optimize_folds),
+            "n_trials": int(optimize_trials),
+            "max_workers": int(optimize_workers),
+        },
+    )
+
+
+def _build_live_job_launch_spec(
+    *,
+    runner_env_overrides,
+    live_mode,
+    market_exchange,
+    runner_leverage,
+    live_runner_kind,
+    live_strategy_name,
+    live_run_id,
+    stop_file,
+) -> _ManagedJobLaunchSpec:
+    live_script = "run_live.py"
+    live_workflow = "live"
+    if "WebSocket" in live_runner_kind:
+        live_script = "run_live_ws.py"
+        live_workflow = "live_ws"
+
+    live_args = [
+        "--strategy",
+        live_strategy_name,
+        "--run-id",
+        live_run_id,
+        "--stop-file",
+        stop_file,
+    ]
+    live_env = dict(runner_env_overrides)
+    live_env["LQ__LIVE__MODE"] = str(live_mode)
+    live_env["LQ__LIVE__EXCHANGE__NAME"] = str(market_exchange).lower()
+    live_env["LQ__LIVE__EXCHANGE__LEVERAGE"] = str(int(runner_leverage))
+    if live_mode == "real":
+        live_args.append("--enable-live-real")
+        live_env["LUMINA_ENABLE_LIVE_REAL"] = "true"
+
+    return _ManagedJobLaunchSpec(
+        workflow=live_workflow,
+        script_name=live_script,
+        script_args=tuple(live_args),
+        env_overrides=live_env,
+        requested_mode=live_mode,
+        strategy=live_strategy_name,
+        run_id=live_run_id,
+        stop_file=stop_file,
+        metadata={"runner_kind": live_runner_kind},
+    )
 
 
 def _launch_managed_job(
@@ -4673,26 +4825,16 @@ def render_main_dashboard() -> None:
             if st.button("Start Backtest Job", type="primary", use_container_width=True):
                 params_path = _save_strategy_params(strategy_name, strategy_params)
                 backtest_run_id = str(uuid.uuid4())
-                backtest_args = [
-                    "--data-source",
-                    runner_data_source,
-                    "--market-db-path",
-                    market_db_path,
-                    "--market-exchange",
-                    market_exchange,
-                    "--run-id",
-                    backtest_run_id,
-                ]
-                job_id = _launch_managed_job(
+                job_id = _build_backtest_job_launch_spec(
+                    runner_data_source=runner_data_source,
+                    market_db_path=market_db_path,
+                    market_exchange=market_exchange,
+                    runner_env_overrides=runner_env_overrides,
+                    strategy_name=strategy_name,
+                    backtest_run_id=backtest_run_id,
+                    strategy_params_path=params_path,
+                ).launch(
                     db_path=db_path,
-                    workflow="backtest",
-                    script_name="run_backtest.py",
-                    script_args=backtest_args,
-                    env_overrides=runner_env_overrides,
-                    requested_mode="backtest",
-                    strategy=strategy_name,
-                    run_id=backtest_run_id,
-                    metadata={"strategy_params_path": params_path},
                 )
                 st.success(f"Backtest job launched: {job_id}")
                 st.cache_data.clear()
@@ -4700,38 +4842,19 @@ def render_main_dashboard() -> None:
         with run_col_2:
             if st.button("Start Optimization Job", use_container_width=True):
                 optimize_run_id = str(uuid.uuid4())
-                optimize_args = [
-                    "--folds",
-                    str(int(optimize_folds)),
-                    "--n-trials",
-                    str(int(optimize_trials)),
-                    "--max-workers",
-                    str(int(optimize_workers)),
-                    "--data-source",
-                    runner_data_source,
-                    "--market-db-path",
-                    market_db_path,
-                    "--market-exchange",
-                    market_exchange,
-                    "--run-id",
-                    optimize_run_id,
-                ]
-                if persist_best_params:
-                    optimize_args.append("--save-best-params")
-                job_id = _launch_managed_job(
+                job_id = _build_optimize_job_launch_spec(
+                    optimize_folds=optimize_folds,
+                    optimize_trials=optimize_trials,
+                    optimize_workers=optimize_workers,
+                    runner_data_source=runner_data_source,
+                    market_db_path=market_db_path,
+                    market_exchange=market_exchange,
+                    persist_best_params=persist_best_params,
+                    runner_env_overrides=runner_env_overrides,
+                    strategy_name=strategy_name,
+                    optimize_run_id=optimize_run_id,
+                ).launch(
                     db_path=db_path,
-                    workflow="optimize",
-                    script_name="optimize.py",
-                    script_args=optimize_args,
-                    env_overrides=runner_env_overrides,
-                    requested_mode="optimize",
-                    strategy=strategy_name,
-                    run_id=optimize_run_id,
-                    metadata={
-                        "folds": int(optimize_folds),
-                        "n_trials": int(optimize_trials),
-                        "max_workers": int(optimize_workers),
-                    },
                 )
                 st.success(f"Optimization job launched: {job_id}")
                 st.cache_data.clear()
@@ -4743,39 +4866,17 @@ def render_main_dashboard() -> None:
             if st.button("Start Live Job", use_container_width=True, disabled=start_live_disabled):
                 live_run_id = str(uuid.uuid4())
                 stop_file = _build_stop_file_path(live_run_id)
-                live_script = "run_live.py"
-                live_workflow = "live"
-                if "WebSocket" in live_runner_kind:
-                    live_script = "run_live_ws.py"
-                    live_workflow = "live_ws"
-
-                live_args = [
-                    "--strategy",
-                    live_strategy_name,
-                    "--run-id",
-                    live_run_id,
-                    "--stop-file",
-                    stop_file,
-                ]
-                live_env = dict(runner_env_overrides)
-                live_env["LQ__LIVE__MODE"] = str(live_mode)
-                live_env["LQ__LIVE__EXCHANGE__NAME"] = str(market_exchange).lower()
-                live_env["LQ__LIVE__EXCHANGE__LEVERAGE"] = str(int(runner_leverage))
-                if live_mode == "real":
-                    live_args.append("--enable-live-real")
-                    live_env["LUMINA_ENABLE_LIVE_REAL"] = "true"
-
-                job_id = _launch_managed_job(
-                    db_path=db_path,
-                    workflow=live_workflow,
-                    script_name=live_script,
-                    script_args=live_args,
-                    env_overrides=live_env,
-                    requested_mode=live_mode,
-                    strategy=live_strategy_name,
-                    run_id=live_run_id,
+                job_id = _build_live_job_launch_spec(
+                    runner_env_overrides=runner_env_overrides,
+                    live_mode=live_mode,
+                    market_exchange=market_exchange,
+                    runner_leverage=runner_leverage,
+                    live_runner_kind=live_runner_kind,
+                    live_strategy_name=live_strategy_name,
+                    live_run_id=live_run_id,
                     stop_file=stop_file,
-                    metadata={"runner_kind": live_runner_kind},
+                ).launch(
+                    db_path=db_path,
                 )
                 st.success(f"Live job launched: {job_id}")
                 st.cache_data.clear()

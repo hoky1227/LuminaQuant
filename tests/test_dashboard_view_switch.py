@@ -429,3 +429,100 @@ def test_render_missing_equity_warning_only_when_equity_is_empty(monkeypatch) ->
     warnings = [call[1] for call in helper_st.calls if call[0] == "warning"]
     assert len(warnings) == 1
     assert "Configured initial equity is 1000.00." in warnings[0]
+
+
+def test_build_backtest_job_launch_spec_keeps_runner_and_metadata_fields(monkeypatch) -> None:
+    module, _, _ = _load_dashboard_app(monkeypatch)
+
+    spec = module._build_backtest_job_launch_spec(
+        runner_data_source="postgres",
+        market_db_path="/tmp/market",
+        market_exchange="binance",
+        runner_env_overrides={"LQ__RUNNER__TIMEFRAME": "5m"},
+        strategy_name="RsiStrategy",
+        backtest_run_id="run-backtest",
+        strategy_params_path="/tmp/params.json",
+    )
+
+    assert spec.workflow == "backtest"
+    assert spec.script_name == "run_backtest.py"
+    assert spec.script_args == (
+        "--data-source",
+        "postgres",
+        "--market-db-path",
+        "/tmp/market",
+        "--market-exchange",
+        "binance",
+        "--run-id",
+        "run-backtest",
+    )
+    assert spec.env_overrides == {"LQ__RUNNER__TIMEFRAME": "5m"}
+    assert spec.requested_mode == "backtest"
+    assert spec.strategy == "RsiStrategy"
+    assert spec.run_id == "run-backtest"
+    assert spec.metadata == {"strategy_params_path": "/tmp/params.json"}
+
+
+def test_build_optimize_job_launch_spec_includes_best_params_flag_and_int_metadata(monkeypatch) -> None:
+    module, _, _ = _load_dashboard_app(monkeypatch)
+
+    spec = module._build_optimize_job_launch_spec(
+        optimize_folds=4,
+        optimize_trials=25,
+        optimize_workers=3,
+        runner_data_source="csv",
+        market_db_path="/tmp/market",
+        market_exchange="binanceusdm",
+        persist_best_params=True,
+        runner_env_overrides={"LQ__RUNNER__SYMBOLS": "BTC/USDT"},
+        strategy_name="BreakoutStrategy",
+        optimize_run_id="run-opt",
+    )
+
+    assert spec.workflow == "optimize"
+    assert spec.script_name == "optimize.py"
+    assert spec.script_args[-1] == "--save-best-params"
+    assert spec.requested_mode == "optimize"
+    assert spec.strategy == "BreakoutStrategy"
+    assert spec.run_id == "run-opt"
+    assert spec.metadata == {"folds": 4, "n_trials": 25, "max_workers": 3}
+    assert spec.env_overrides == {"LQ__RUNNER__SYMBOLS": "BTC/USDT"}
+
+
+def test_build_live_job_launch_spec_adds_websocket_and_real_mode_controls(monkeypatch) -> None:
+    module, _, _ = _load_dashboard_app(monkeypatch)
+
+    spec = module._build_live_job_launch_spec(
+        runner_env_overrides={"LQ__RUNNER__TIMEFRAME": "1m"},
+        live_mode="real",
+        market_exchange="BINANCE",
+        runner_leverage=7,
+        live_runner_kind="WebSocket (run_live_ws.py)",
+        live_strategy_name="TrendStrategy",
+        live_run_id="run-live",
+        stop_file="/tmp/run-live.stop",
+    )
+
+    assert spec.workflow == "live_ws"
+    assert spec.script_name == "run_live_ws.py"
+    assert spec.script_args == (
+        "--strategy",
+        "TrendStrategy",
+        "--run-id",
+        "run-live",
+        "--stop-file",
+        "/tmp/run-live.stop",
+        "--enable-live-real",
+    )
+    assert spec.env_overrides == {
+        "LQ__RUNNER__TIMEFRAME": "1m",
+        "LQ__LIVE__MODE": "real",
+        "LQ__LIVE__EXCHANGE__NAME": "binance",
+        "LQ__LIVE__EXCHANGE__LEVERAGE": "7",
+        "LUMINA_ENABLE_LIVE_REAL": "true",
+    }
+    assert spec.requested_mode == "real"
+    assert spec.strategy == "TrendStrategy"
+    assert spec.run_id == "run-live"
+    assert spec.stop_file == "/tmp/run-live.stop"
+    assert spec.metadata == {"runner_kind": "WebSocket (run_live_ws.py)"}
