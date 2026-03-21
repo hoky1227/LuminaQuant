@@ -311,6 +311,165 @@ def test_run_exact_window_suite_uses_runtime_config_defaults_when_symbols_are_om
     assert captured["exchange"] == "coinbase"
 
 
+def test_run_exact_window_suite_emits_progress_and_summary_counts(tmp_path, monkeypatch):
+    class _Candidate:
+        def __init__(self, payload: dict[str, object]) -> None:
+            self._payload = payload
+
+        def to_dict(self) -> dict[str, object]:
+            return dict(self._payload)
+
+    class _FrameStub:
+        def is_empty(self) -> bool:
+            return False
+
+    timestamps = np.asarray(
+        [
+            np.datetime64("2026-01-01T00:00:00.000", "ms"),
+            np.datetime64("2026-01-02T00:00:00.000", "ms"),
+            np.datetime64("2026-01-03T00:00:00.000", "ms"),
+            np.datetime64("2026-01-04T00:00:00.000", "ms"),
+            np.datetime64("2026-01-05T00:00:00.000", "ms"),
+            np.datetime64("2026-01-06T00:00:00.000", "ms"),
+        ]
+    )
+    aligned = {
+        "datetime": timestamps,
+        "BTC/USDT:close": np.asarray([100.0, 101.0, 102.0, 103.0, 104.0, 105.0], dtype=float),
+        "benchmark_close": np.asarray([100.0, 100.5, 101.0, 101.5, 102.0, 102.5], dtype=float),
+    }
+    candidate = _Candidate(
+        {
+            "candidate_id": "cand-1",
+            "name": "rolling_breakout_4h_stub",
+            "strategy_class": "RollingBreakoutStrategy",
+            "family": "trend",
+            "timeframe": "4h",
+            "strategy_timeframe": "4h",
+            "symbols": ["BTC/USDT"],
+            "params": {"lookback": 24},
+        }
+    )
+    progress_events: list[tuple[str, dict[str, object]]] = []
+
+    monkeypatch.setattr(
+        "lumina_quant.eval.exact_window_suite.current_market_data_runtime_settings",
+        lambda: {
+            "market_data_parquet_path": "var/data/test_exact_window_suite",
+            "market_data_exchange": "binance",
+            "symbols": ["BTC/USDT"],
+        },
+    )
+    monkeypatch.setattr(
+        "lumina_quant.eval.exact_window_suite.discover_symbol_coverage",
+        lambda **kwargs: (
+            [
+                {
+                    "symbol": "BTC/USDT",
+                    "full_start_coverage": True,
+                    "coverage_end": "2026-01-06T00:00:00+00:00",
+                }
+            ],
+            ["BTC/USDT"],
+            datetime(2026, 1, 6, tzinfo=UTC),
+        ),
+    )
+    monkeypatch.setattr(
+        "lumina_quant.eval.exact_window_suite.build_binance_futures_candidates",
+        lambda **kwargs: [candidate],
+    )
+    monkeypatch.setattr(
+        "lumina_quant.eval.exact_window_suite._strict_load_frame",
+        lambda **kwargs: _FrameStub(),
+    )
+    monkeypatch.setattr(
+        "lumina_quant.eval.exact_window_suite.strict_align_bundles",
+        lambda **kwargs: aligned,
+    )
+    monkeypatch.setattr(
+        "lumina_quant.eval.exact_window_suite._monthly_btc_thresholds",
+        lambda **kwargs: {"2026-01": {"btc_buy_hold_return": 0.0, "threshold": 0.0}},
+    )
+    monkeypatch.setattr(
+        "lumina_quant.eval.exact_window_suite._validation_score",
+        lambda row, *, scoring_config: 1.0,
+    )
+    monkeypatch.setattr(
+        "lumina_quant.eval.exact_window_suite.rr._resolve_score_config",
+        lambda scope: {"minimum_trade_count": 0, "scope": scope},
+    )
+    monkeypatch.setattr(
+        "lumina_quant.eval.exact_window_suite.rr._candidate_cost_rate",
+        lambda candidate_row: 0.0,
+    )
+    monkeypatch.setattr(
+        "lumina_quant.eval.exact_window_suite.rr._strategy_signal",
+        lambda candidate_row, *, aligned, symbols: (
+            np.asarray([0.0, 0.01, 0.015, 0.01, 0.02, 0.01], dtype=float),
+            np.zeros(6, dtype=float),
+            np.asarray([0.0, 1.0, 1.0, 1.0, 1.0, 1.0], dtype=float),
+            {"stubbed": True},
+        ),
+    )
+
+    def _stub_compute_metrics(returns, **kwargs):
+        _ = kwargs
+        return {
+            "return": float(np.sum(np.asarray(returns, dtype=float))),
+            "sharpe": 1.25,
+            "trade_count": 6.0,
+            "pbo": 0.1,
+            "mdd": 0.05,
+            "deflated_sharpe": 0.7,
+        }
+
+    monkeypatch.setattr(
+        "lumina_quant.eval.exact_window_suite.rr._compute_metrics",
+        _stub_compute_metrics,
+    )
+    monkeypatch.setattr(
+        "lumina_quant.eval.exact_window_suite.rr._hurdle_fields",
+        lambda train, val, oos, *, scoring_config: (
+            {
+                "train": {"pass": True},
+                "val": {"pass": True},
+                "oos": {"pass": True},
+            },
+            None,
+            {},
+        ),
+    )
+
+    summary = run_exact_window_suite(
+        output_dir=str(tmp_path / "out"),
+        score_config={"minimum_trade_count": 0},
+        timeframes=["4h"],
+        symbols=["BTC/USDT"],
+        train_start="2026-01-01",
+        val_start="2026-01-03",
+        oos_start="2026-01-05",
+        requested_oos_end_exclusive="2026-01-07",
+        progress_callback=lambda event, payload: progress_events.append((event, dict(payload))),
+    )
+
+    assert [event for event, _ in progress_events] == [
+        "suite_start",
+        "timeframe_start",
+        "candidate_evaluated",
+        "timeframe_complete",
+        "suite_complete",
+    ]
+    assert summary["candidate_count"] == 1
+    assert summary["evaluated_count"] == 1
+    assert summary["promoted_count"] == 1
+    assert summary["candidate_pool_count"] == 1
+    assert summary["eligible_symbols"] == ["BTC/USDT"]
+    assert summary["best_per_strategy"][0]["candidate_id"] == "cand-1"
+    assert summary["best_per_strategy"][0]["metadata"]["stubbed"] is True
+    assert (tmp_path / "out" / "exact_window_suite_summary_latest.json").exists()
+    assert progress_events[-1][1]["promoted_count"] == 1
+
+
 def test_build_candidate_result_row_preserves_candidate_provenance_fields():
     row = _build_candidate_result_row(
         candidate={

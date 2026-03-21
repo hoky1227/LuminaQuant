@@ -5,6 +5,7 @@ import json
 import math
 from collections import defaultdict
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -902,20 +903,58 @@ def _render_markdown(summary: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def run_exact_window_suite(
+@dataclass(slots=True)
+class _ExactWindowSuitePlan:
+    root_path: str
+    exchange: str
+    chunk_days: int
+    allow_metals: bool
+    train_start: datetime
+    val_start: datetime
+    oos_start: datetime
+    requested_oos_end_exclusive: datetime
+    actual_oos_end_exclusive: datetime
+    actual_max_timestamp: datetime
+    requested_symbols: list[str]
+    eligible_symbols: list[str]
+    excluded_symbols: list[str]
+    coverage_rows: list[dict[str, Any]]
+    requested_timeframes_raw: list[str]
+    normalized_timeframes: list[str]
+    excluded_requested_timeframes: list[str]
+    candidates: list[dict[str, Any]]
+    resolved_scoring: dict[str, Any]
+    periods: dict[str, tuple[datetime, datetime]]
+    feature_start: str
+    feature_end: str
+
+    @property
+    def candidate_count(self) -> int:
+        return len(self.candidates)
+
+
+def _emit_exact_window_progress(
+    progress_callback: Callable[[str, dict[str, Any]], None] | None,
+    event: str,
+    payload: dict[str, Any],
+) -> None:
+    if progress_callback is not None:
+        progress_callback(event, payload)
+
+
+def _resolve_exact_window_suite_plan(
     *,
-    output_dir: str = "var/reports/exact_window_backtests",
-    score_config: dict[str, Any] | None = None,
-    timeframes: list[str] | None = None,
-    symbols: list[str] | None = None,
-    chunk_days: int = 7,
-    allow_metals: bool = False,
-    train_start: str | datetime | None = None,
-    val_start: str | datetime | None = None,
-    oos_start: str | datetime | None = None,
-    requested_oos_end_exclusive: str | datetime | None = None,
-    progress_callback: Callable[[str, dict[str, Any]], None] | None = None,
-) -> dict[str, Any]:
+    output_dir: str,
+    score_config: dict[str, Any] | None,
+    timeframes: list[str] | None,
+    symbols: list[str] | None,
+    chunk_days: int,
+    allow_metals: bool,
+    train_start: str | datetime | None,
+    val_start: str | datetime | None,
+    oos_start: str | datetime | None,
+    requested_oos_end_exclusive: str | datetime | None,
+) -> _ExactWindowSuitePlan:
     defaults = current_market_data_runtime_settings()
     root_path = str(defaults["market_data_parquet_path"])
     exchange = str(defaults["market_data_exchange"])
@@ -925,31 +964,33 @@ def run_exact_window_suite(
         oos_start=oos_start,
         requested_oos_end_exclusive=requested_oos_end_exclusive,
     )
-    train_start = resolved_windows["train_start"]
-    val_start = resolved_windows["val_start"]
-    oos_start = resolved_windows["oos_start"]
-    requested_oos_end_exclusive = resolved_windows["requested_oos_end_exclusive"]
-
     requested_symbols = canonicalize_symbol_list(list(symbols or defaults["symbols"]))
     requested_timeframes_raw, requested_timeframes, excluded_requested_timeframes = (
         _resolve_low_ram_timeframes(list(timeframes or list(CANONICAL_STRATEGY_TIMEFRAMES)))
     )
+    normalized_timeframes = list(requested_timeframes)
+    clamped_chunk_days = max(7, int(chunk_days))
     coverage_rows, _full_start_symbols, common_end = discover_symbol_coverage(
         symbols=requested_symbols,
         root_path=root_path,
         exchange=exchange,
-        suite_start=train_start,
-        requested_oos_end_exclusive=requested_oos_end_exclusive,
-        chunk_days=max(7, int(chunk_days)),
+        suite_start=resolved_windows["train_start"],
+        requested_oos_end_exclusive=resolved_windows["requested_oos_end_exclusive"],
+        chunk_days=clamped_chunk_days,
     )
     if common_end is None:
         raise RuntimeError("No symbol has full coverage from train start through the requested window.")
-    actual_max_timestamp = min(common_end, requested_oos_end_exclusive - timedelta(milliseconds=1))
+    actual_max_timestamp = min(
+        common_end,
+        resolved_windows["requested_oos_end_exclusive"] - timedelta(milliseconds=1),
+    )
     actual_oos_end_exclusive = actual_max_timestamp + timedelta(milliseconds=1)
     eligible_symbols = [
         row["symbol"]
         for row in coverage_rows
-        if row["full_start_coverage"] and row.get("coverage_end") and parse_utc_datetime(row["coverage_end"]) >= actual_max_timestamp
+        if row["full_start_coverage"]
+        and row.get("coverage_end")
+        and parse_utc_datetime(row["coverage_end"]) >= actual_max_timestamp
     ]
     if not allow_metals:
         eligible_symbols = [
@@ -959,198 +1000,326 @@ def run_exact_window_suite(
     if not eligible_symbols:
         raise RuntimeError("No eligible symbols remain after full-coverage filtering.")
 
-    normalized_timeframes = list(requested_timeframes)
-    candidates = [item.to_dict() for item in build_binance_futures_candidates(timeframes=normalized_timeframes, symbols=eligible_symbols)]
-    candidates = [row for row in candidates if str(row.get("strategy_class")) not in LOW_RAM_EXCLUDED_STRATEGIES]
+    candidates = [
+        item.to_dict()
+        for item in build_binance_futures_candidates(
+            timeframes=normalized_timeframes,
+            symbols=eligible_symbols,
+        )
+    ]
+    candidates = [
+        row
+        for row in candidates
+        if str(row.get("strategy_class")) not in LOW_RAM_EXCLUDED_STRATEGIES
+    ]
     _assert_low_ram_exclusions(candidates, row_kind="candidate")
-    candidate_count = len(candidates)
-    if candidate_count <= 0:
+    if not candidates:
         raise RuntimeError("No candidates generated for exact-window suite.")
 
     scoring_scope = None
     if isinstance(score_config, dict):
         scoring_scope = dict(score_config.get("candidate_research") or score_config)
     resolved_scoring = rr._resolve_score_config(scoring_scope)
-    feature_start = train_start.isoformat().replace("+00:00", "Z")
-    feature_end = actual_max_timestamp.isoformat().replace("+00:00", "Z")
-    feature_symbol_cache: dict[str, pl.DataFrame] = {}
-    results: list[dict[str, Any]] = []
-    periods = _split_periods(
-        train_start=train_start,
-        val_start=val_start,
-        oos_start=oos_start,
+
+    return _ExactWindowSuitePlan(
+        root_path=root_path,
+        exchange=exchange,
+        chunk_days=clamped_chunk_days,
+        allow_metals=bool(allow_metals),
+        train_start=resolved_windows["train_start"],
+        val_start=resolved_windows["val_start"],
+        oos_start=resolved_windows["oos_start"],
+        requested_oos_end_exclusive=resolved_windows["requested_oos_end_exclusive"],
         actual_oos_end_exclusive=actual_oos_end_exclusive,
+        actual_max_timestamp=actual_max_timestamp,
+        requested_symbols=requested_symbols,
+        eligible_symbols=eligible_symbols,
+        excluded_symbols=excluded_symbols,
+        coverage_rows=coverage_rows,
+        requested_timeframes_raw=requested_timeframes_raw,
+        normalized_timeframes=normalized_timeframes,
+        excluded_requested_timeframes=excluded_requested_timeframes,
+        candidates=candidates,
+        resolved_scoring=resolved_scoring,
+        periods=_split_periods(
+            train_start=resolved_windows["train_start"],
+            val_start=resolved_windows["val_start"],
+            oos_start=resolved_windows["oos_start"],
+            actual_oos_end_exclusive=actual_oos_end_exclusive,
+        ),
+        feature_start=resolved_windows["train_start"].isoformat().replace("+00:00", "Z"),
+        feature_end=actual_max_timestamp.isoformat().replace("+00:00", "Z"),
     )
 
-    if progress_callback is not None:
-        progress_callback(
-            "suite_start",
+
+def _resolve_exact_window_aligned_bundle(
+    plan: _ExactWindowSuitePlan,
+    *,
+    candidate: dict[str, Any],
+    timeframe: str,
+    symbols_for_candidate: list[str],
+    benchmark_frame: pl.DataFrame,
+    feature_symbol_cache: dict[str, pl.DataFrame],
+    aligned_cache: dict[tuple[str, ...], dict[str, np.ndarray] | None],
+) -> dict[str, np.ndarray] | None:
+    cache_key = tuple(symbols_for_candidate)
+    if cache_key in aligned_cache:
+        return aligned_cache[cache_key]
+
+    symbol_frames: dict[str, pl.DataFrame] = {}
+    for symbol in symbols_for_candidate:
+        frame = _strict_load_frame(
+            root_path=plan.root_path,
+            exchange=plan.exchange,
+            symbol=symbol,
+            timeframe=timeframe,
+            start=plan.train_start,
+            end=plan.actual_oos_end_exclusive,
+            chunk_days=max(1, int(plan.chunk_days)),
+        )
+        if frame.is_empty():
+            aligned_cache[cache_key] = None
+            return None
+        symbol_frames[symbol] = frame
+
+    feature_subset: dict[str, pl.DataFrame] = {}
+    strategy_class = str(candidate.get("strategy_class") or "")
+    if strategy_class in FEATURE_REQUIRED_STRATEGIES:
+        for symbol in symbols_for_candidate:
+            if symbol not in feature_symbol_cache:
+                feature_symbol_cache[symbol] = rr._load_feature_cache(
+                    symbols=[symbol],
+                    start_date=plan.feature_start,
+                    end_date=plan.feature_end,
+                ).get(symbol, pl.DataFrame())
+            feature_subset[symbol] = feature_symbol_cache[symbol]
+
+    aligned_cache[cache_key] = strict_align_bundles(
+        symbol_frames=symbol_frames,
+        feature_cache=feature_subset,
+        benchmark_frame=benchmark_frame,
+        window_start=plan.train_start,
+        window_end_exclusive=plan.actual_oos_end_exclusive,
+        timeframe=timeframe,
+    )
+    return aligned_cache[cache_key]
+
+
+def _evaluate_exact_window_candidate(
+    plan: _ExactWindowSuitePlan,
+    *,
+    candidate: dict[str, Any],
+    timeframe: str,
+    benchmark_frame: pl.DataFrame,
+    feature_symbol_cache: dict[str, pl.DataFrame],
+    aligned_cache: dict[tuple[str, ...], dict[str, np.ndarray] | None],
+) -> dict[str, Any] | None:
+    symbols_for_candidate = canonicalize_symbol_list(list(candidate.get("symbols") or []))
+    if any(symbol not in plan.eligible_symbols for symbol in symbols_for_candidate):
+        return None
+
+    aligned = _resolve_exact_window_aligned_bundle(
+        plan,
+        candidate=candidate,
+        timeframe=timeframe,
+        symbols_for_candidate=symbols_for_candidate,
+        benchmark_frame=benchmark_frame,
+        feature_symbol_cache=feature_symbol_cache,
+        aligned_cache=aligned_cache,
+    )
+    if aligned is None:
+        return None
+
+    returns_raw, turnover, exposure, meta = rr._strategy_signal(
+        candidate,
+        aligned=aligned,
+        symbols=symbols_for_candidate,
+    )
+    timestamps = np.asarray(aligned["datetime"], dtype="datetime64[ms]")
+    cost_rate = rr._candidate_cost_rate(candidate)
+    turnover_array = np.asarray(turnover, dtype=float)
+    exposure_array = np.asarray(exposure, dtype=float)
+    returns = np.asarray(returns_raw, dtype=float) - (turnover_array * cost_rate)
+    bench_close = (
+        np.asarray(aligned["benchmark_close"], dtype=float)
+        if "benchmark_close" in aligned
+        else np.zeros_like(returns)
+    )
+    benchmark_returns = (
+        rr._returns_from_close(bench_close) if bench_close.size else np.zeros_like(returns)
+    )
+    slices = {
+        name: half_open_slice_indices(timestamps, start, end)
+        for name, (start, end) in plan.periods.items()
+    }
+    if any((sl.stop - sl.start) <= 0 for sl in slices.values()):
+        return None
+
+    metrics: dict[str, dict[str, Any]] = {}
+    streams: dict[str, list[dict[str, Any]]] = {}
+    for name, sl in slices.items():
+        metrics[name] = rr._compute_metrics(
+            returns[sl],
+            turnover=turnover_array[sl],
+            exposure=exposure_array[sl],
+            benchmark_returns=np.asarray(benchmark_returns, dtype=float)[sl],
+            periods_per_year=int(rr._PERIODS_PER_YEAR.get(timeframe, 365)),
+            num_trials=max(1, plan.candidate_count),
+        )
+        streams[name] = _daily_stream_from_timestamps(timestamps[sl], returns[sl])
+
+    hurdles, _, hard_reject = rr._hurdle_fields(
+        metrics["train"],
+        metrics["val"],
+        metrics["oos"],
+        scoring_config=plan.resolved_scoring,
+    )
+    return _build_candidate_result_row(
+        candidate=candidate,
+        timeframe=timeframe,
+        symbols_for_candidate=symbols_for_candidate,
+        metrics=metrics,
+        hurdles=hurdles,
+        hard_reject=hard_reject,
+        streams=streams,
+        cost_rate=float(cost_rate),
+        runtime_metadata=dict(meta or {}),
+    )
+
+
+def _evaluate_exact_window_timeframe(
+    plan: _ExactWindowSuitePlan,
+    *,
+    timeframe: str,
+    tf_candidates: list[dict[str, Any]],
+    progress_callback: Callable[[str, dict[str, Any]], None] | None,
+    evaluated_so_far: int,
+) -> list[dict[str, Any]]:
+    benchmark_frame = _strict_load_frame(
+        root_path=plan.root_path,
+        exchange=plan.exchange,
+        symbol="BTC/USDT",
+        timeframe=timeframe,
+        start=plan.train_start,
+        end=plan.actual_oos_end_exclusive,
+        chunk_days=max(1, int(plan.chunk_days)),
+    )
+    feature_symbol_cache: dict[str, pl.DataFrame] = {}
+    aligned_cache: dict[tuple[str, ...], dict[str, np.ndarray] | None] = {}
+    timeframe_results: list[dict[str, Any]] = []
+
+    for index, candidate in enumerate(tf_candidates, start=1):
+        result_row = _evaluate_exact_window_candidate(
+            plan,
+            candidate=candidate,
+            timeframe=timeframe,
+            benchmark_frame=benchmark_frame,
+            feature_symbol_cache=feature_symbol_cache,
+            aligned_cache=aligned_cache,
+        )
+        if result_row is None:
+            continue
+        timeframe_results.append(result_row)
+        _emit_exact_window_progress(
+            progress_callback,
+            "candidate_evaluated",
             {
-                "candidate_count": candidate_count,
-                "requested_timeframes": normalized_timeframes,
-                "eligible_symbols": eligible_symbols,
+                "timeframe": timeframe,
+                "candidate_index": index,
+                "candidate_count": len(tf_candidates),
+                "strategy_class": str(candidate.get("strategy_class") or ""),
+                "evaluated_count": evaluated_so_far + len(timeframe_results),
             },
         )
 
-    for timeframe in sorted({str(row.get("strategy_timeframe") or row.get("timeframe") or "1m") for row in candidates}):
-        tf_candidates = [row for row in candidates if str(row.get("strategy_timeframe") or row.get("timeframe") or "1m") == timeframe]
-        benchmark_frame = _strict_load_frame(
-            root_path=root_path,
-            exchange=exchange,
-            symbol="BTC/USDT",
-            timeframe=timeframe,
-            start=train_start,
-            end=actual_oos_end_exclusive,
-            chunk_days=max(1, int(chunk_days)),
-        )
-        if progress_callback is not None:
-            progress_callback(
-                "timeframe_start",
-                {
-                    "timeframe": timeframe,
-                    "candidate_count": len(tf_candidates),
-                },
-            )
-        aligned_cache: dict[tuple[str, ...], dict[str, np.ndarray] | None] = {}
-        for index, candidate in enumerate(tf_candidates, start=1):
-            symbols_for_candidate = canonicalize_symbol_list(list(candidate.get("symbols") or []))
-            if any(symbol not in eligible_symbols for symbol in symbols_for_candidate):
-                continue
-            strategy_class = str(candidate.get("strategy_class") or "")
-            needs_features = strategy_class in FEATURE_REQUIRED_STRATEGIES
-            cache_key = tuple(symbols_for_candidate)
-            aligned = aligned_cache.get(cache_key)
-            if cache_key not in aligned_cache:
-                symbol_frames: dict[str, pl.DataFrame] = {}
-                for symbol in symbols_for_candidate:
-                    frame = _strict_load_frame(
-                        root_path=root_path,
-                        exchange=exchange,
-                        symbol=symbol,
-                        timeframe=timeframe,
-                        start=train_start,
-                        end=actual_oos_end_exclusive,
-                        chunk_days=max(1, int(chunk_days)),
-                    )
-                    if frame.is_empty():
-                        symbol_frames = {}
-                        break
-                    symbol_frames[symbol] = frame
-                if not symbol_frames:
-                    aligned_cache[cache_key] = None
-                    continue
-                feature_subset: dict[str, pl.DataFrame] = {}
-                if needs_features:
-                    for symbol in symbols_for_candidate:
-                        if symbol not in feature_symbol_cache:
-                            feature_symbol_cache[symbol] = rr._load_feature_cache(
-                                symbols=[symbol],
-                                start_date=feature_start,
-                                end_date=feature_end,
-                            ).get(symbol, pl.DataFrame())
-                        feature_subset[symbol] = feature_symbol_cache[symbol]
-                aligned = strict_align_bundles(
-                    symbol_frames=symbol_frames,
-                    feature_cache=feature_subset,
-                    benchmark_frame=benchmark_frame,
-                    window_start=train_start,
-                    window_end_exclusive=actual_oos_end_exclusive,
-                    timeframe=timeframe,
-                )
-                aligned_cache[cache_key] = aligned
-            if aligned is None:
-                continue
-            returns_raw, turnover, exposure, meta = rr._strategy_signal(candidate, aligned=aligned, symbols=symbols_for_candidate)
-            timestamps = np.asarray(aligned["datetime"], dtype="datetime64[ms]")
-            cost_rate = rr._candidate_cost_rate(candidate)
-            returns = np.asarray(returns_raw, dtype=float) - (np.asarray(turnover, dtype=float) * cost_rate)
-            bench_close = (
-                np.asarray(aligned["benchmark_close"], dtype=float)
-                if "benchmark_close" in aligned
-                else np.zeros_like(returns)
-            )
-            benchmark_returns = rr._returns_from_close(bench_close) if bench_close.size else np.zeros_like(returns)
-            slices = {name: half_open_slice_indices(timestamps, start, end) for name, (start, end) in periods.items()}
-            if any((sl.stop - sl.start) <= 0 for sl in slices.values()):
-                continue
-            metrics = {}
-            streams = {}
-            for name, sl in slices.items():
-                metrics[name] = rr._compute_metrics(
-                    returns[sl],
-                    turnover=np.asarray(turnover, dtype=float)[sl],
-                    exposure=np.asarray(exposure, dtype=float)[sl],
-                    benchmark_returns=np.asarray(benchmark_returns, dtype=float)[sl],
-                    periods_per_year=int(rr._PERIODS_PER_YEAR.get(timeframe, 365)),
-                    num_trials=max(1, candidate_count),
-                )
-                streams[name] = _daily_stream_from_timestamps(timestamps[sl], returns[sl])
-            hurdles, _, hard_reject = rr._hurdle_fields(
-                metrics["train"],
-                metrics["val"],
-                metrics["oos"],
-                scoring_config=resolved_scoring,
-            )
-            results.append(
-                _build_candidate_result_row(
-                    candidate=candidate,
-                    timeframe=timeframe,
-                    symbols_for_candidate=symbols_for_candidate,
-                    metrics=metrics,
-                    hurdles=hurdles,
-                    hard_reject=hard_reject,
-                    streams=streams,
-                    cost_rate=float(cost_rate),
-                    runtime_metadata=dict(meta or {}),
-                )
-            )
-            if progress_callback is not None:
-                progress_callback(
-                    "candidate_evaluated",
-                    {
-                        "timeframe": timeframe,
-                        "candidate_index": index,
-                        "candidate_count": len(tf_candidates),
-                        "strategy_class": str(candidate.get("strategy_class") or ""),
-                        "evaluated_count": len(results),
-                    },
-                )
-        if progress_callback is not None:
-            progress_callback(
-                "timeframe_complete",
-                {
-                    "timeframe": timeframe,
-                    "candidate_count": len(tf_candidates),
-                    "evaluated_count": len(results),
-                },
-            )
-        feature_symbol_cache.clear()
-        gc.collect()
+    feature_symbol_cache.clear()
+    gc.collect()
+    return timeframe_results
 
-    if not results:
-        raise RuntimeError("Exact-window suite produced no evaluated candidates.")
-    _assert_low_ram_exclusions(results, row_kind="result")
 
-    thresholds = _monthly_btc_thresholds(
-        root_path=root_path,
-        exchange=exchange,
-        window_start=val_start,
-        actual_oos_end_exclusive=actual_oos_end_exclusive,
+def _evaluate_exact_window_candidates(
+    plan: _ExactWindowSuitePlan,
+    *,
+    progress_callback: Callable[[str, dict[str, Any]], None] | None,
+) -> list[dict[str, Any]]:
+    results: list[dict[str, Any]] = []
+    timeframes = sorted(
+        {
+            str(row.get("strategy_timeframe") or row.get("timeframe") or "1m")
+            for row in plan.candidates
+        }
     )
+    for timeframe in timeframes:
+        tf_candidates = [
+            row
+            for row in plan.candidates
+            if str(row.get("strategy_timeframe") or row.get("timeframe") or "1m") == timeframe
+        ]
+        _emit_exact_window_progress(
+            progress_callback,
+            "timeframe_start",
+            {
+                "timeframe": timeframe,
+                "candidate_count": len(tf_candidates),
+            },
+        )
+        timeframe_results = _evaluate_exact_window_timeframe(
+            plan,
+            timeframe=timeframe,
+            tf_candidates=tf_candidates,
+            progress_callback=progress_callback,
+            evaluated_so_far=len(results),
+        )
+        results.extend(timeframe_results)
+        _emit_exact_window_progress(
+            progress_callback,
+            "timeframe_complete",
+            {
+                "timeframe": timeframe,
+                "candidate_count": len(tf_candidates),
+                "evaluated_count": len(results),
+            },
+        )
+    return results
 
+
+def _select_exact_window_best_by_strategy(
+    results: list[dict[str, Any]],
+    *,
+    resolved_scoring: dict[str, Any],
+    thresholds: dict[str, dict[str, float]],
+) -> list[dict[str, Any]]:
     best_by_strategy: list[dict[str, Any]] = []
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in results:
         grouped[str(row.get("strategy_class"))].append(row)
 
     for strategy_class, rows in sorted(grouped.items()):
-        ranked = sorted(rows, key=lambda item: _validation_score(item, scoring_config=resolved_scoring), reverse=True)
+        ranked = sorted(
+            rows,
+            key=lambda item: _validation_score(item, scoring_config=resolved_scoring),
+            reverse=True,
+        )
         top = dict(ranked[0])
         top["validation_score"] = _validation_score(top, scoring_config=resolved_scoring)
-        val_months = _monthly_hurdle_rows(list((top.get("return_streams") or {}).get("val") or []), thresholds)
-        oos_months = _monthly_hurdle_rows(list((top.get("return_streams") or {}).get("oos") or []), thresholds)
-        val_hurdle_pass = all(bool(row.get("strict_pass")) for row in val_months if str(row.get("month", "")).startswith("2026-01"))
-        val_btc_hurdle_pass = all(bool(row.get("btc_pass")) for row in val_months if str(row.get("month", "")).startswith("2026-01"))
+        val_months = _monthly_hurdle_rows(
+            list((top.get("return_streams") or {}).get("val") or []),
+            thresholds,
+        )
+        oos_months = _monthly_hurdle_rows(
+            list((top.get("return_streams") or {}).get("oos") or []),
+            thresholds,
+        )
+        val_hurdle_pass = all(
+            bool(row.get("strict_pass"))
+            for row in val_months
+            if str(row.get("month", "")).startswith("2026-01")
+        )
+        val_btc_hurdle_pass = all(
+            bool(row.get("btc_pass"))
+            for row in val_months
+            if str(row.get("month", "")).startswith("2026-01")
+        )
         oos_btc_hurdle_pass = all(bool(row.get("btc_pass")) for row in oos_months)
         recent_three_months = _latest_three_month_rows(val_months, oos_months)
         recent_three_month_two_pct_pass = _recent_three_month_two_pct_pass(val_months, oos_months)
@@ -1165,23 +1334,38 @@ def run_exact_window_suite(
         top["recent_three_month_two_pct_pass"] = bool(recent_three_month_two_pct_pass)
         top["promoted"] = train_pass and val_pass and bool(val_hurdle_pass)
         top["btc_beating_candidate"] = train_pass and val_pass and bool(val_btc_hurdle_pass)
-        top["three_month_two_pct_candidate"] = train_pass and val_pass and bool(recent_three_month_two_pct_pass)
+        top["three_month_two_pct_candidate"] = (
+            train_pass and val_pass and bool(recent_three_month_two_pct_pass)
+        )
         top["candidate_pool_eligible"] = bool(
             top.get("promoted")
             or top.get("btc_beating_candidate")
             or top.get("three_month_two_pct_candidate")
         )
         best_by_strategy.append(top)
+    return best_by_strategy
 
+
+def _build_exact_window_portfolio(best_by_strategy: list[dict[str, Any]]) -> dict[str, Any]:
     weights = _portfolio_weights(best_by_strategy)
     for row in weights:
         cid = str(row.get("candidate_id"))
-        source = next((item for item in best_by_strategy if str(item.get("candidate_id")) == cid), None)
+        source = next(
+            (
+                item
+                for item in best_by_strategy
+                if str(item.get("candidate_id")) == cid
+            ),
+            None,
+        )
         if source is not None:
             row["oos_return"] = float((source.get("oos") or {}).get("return", 0.0))
             row["oos_sharpe"] = float((source.get("oos") or {}).get("sharpe", 0.0))
-    portfolio_streams = {split: _portfolio_stream(best_by_strategy, weights, split) for split in ("train", "val", "oos")}
-    portfolio = {
+    portfolio_streams = {
+        split: _portfolio_stream(best_by_strategy, weights, split)
+        for split in ("train", "val", "oos")
+    }
+    return {
         "construction_basis": weights[0].get("basis") if weights else "none",
         "selection": {
             "fit_split": "val",
@@ -1192,74 +1376,100 @@ def run_exact_window_suite(
         "train": _metrics_daily(_daily_returns_array(portfolio_streams["train"])),
         "val": _metrics_daily(_daily_returns_array(portfolio_streams["val"])),
         "oos": _metrics_daily(_daily_returns_array(portfolio_streams["oos"])),
-        "monthly_hurdle": _monthly_hurdle_rows(portfolio_streams["oos"], thresholds),
+        "monthly_hurdle": [],
         "return_streams": portfolio_streams,
     }
 
-    out_dir = Path(output_dir).resolve()
-    out_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    summary = {
+
+def _build_exact_window_suite_summary(
+    plan: _ExactWindowSuitePlan,
+    *,
+    results: list[dict[str, Any]],
+    best_by_strategy: list[dict[str, Any]],
+    portfolio: dict[str, Any],
+    thresholds: dict[str, dict[str, float]],
+) -> dict[str, Any]:
+    portfolio["monthly_hurdle"] = _monthly_hurdle_rows(portfolio["return_streams"]["oos"], thresholds)
+    return {
         "generated_at": datetime.now(UTC).isoformat(),
         "windows": {
-            "train_start": train_start.isoformat(),
-            "train_end_exclusive": val_start.isoformat(),
-            "val_start": val_start.isoformat(),
-            "val_end_exclusive": oos_start.isoformat(),
-            "requested_oos_end_exclusive": requested_oos_end_exclusive.isoformat(),
-            "actual_oos_end_exclusive": actual_oos_end_exclusive.isoformat(),
-            "actual_max_timestamp": actual_max_timestamp.isoformat(),
+            "train_start": plan.train_start.isoformat(),
+            "train_end_exclusive": plan.val_start.isoformat(),
+            "val_start": plan.val_start.isoformat(),
+            "val_end_exclusive": plan.oos_start.isoformat(),
+            "requested_oos_end_exclusive": plan.requested_oos_end_exclusive.isoformat(),
+            "actual_oos_end_exclusive": plan.actual_oos_end_exclusive.isoformat(),
+            "actual_max_timestamp": plan.actual_max_timestamp.isoformat(),
         },
         "execution_profile": {
-            "requested_symbols": requested_symbols,
-            "requested_timeframes_raw": requested_timeframes_raw,
-            "requested_timeframes": normalized_timeframes,
+            "requested_symbols": plan.requested_symbols,
+            "requested_timeframes_raw": plan.requested_timeframes_raw,
+            "requested_timeframes": plan.normalized_timeframes,
             "low_ram_profile": True,
-            "allow_metals": bool(allow_metals),
+            "allow_metals": bool(plan.allow_metals),
             "custom_windows": bool(
-                train_start != parse_utc_datetime(DEFAULT_TRAIN_START)
-                or val_start != parse_utc_datetime(DEFAULT_VAL_START)
-                or oos_start != parse_utc_datetime(DEFAULT_OOS_START)
-                or requested_oos_end_exclusive != parse_utc_datetime(DEFAULT_REQUESTED_OOS_END)
+                plan.train_start != parse_utc_datetime(DEFAULT_TRAIN_START)
+                or plan.val_start != parse_utc_datetime(DEFAULT_VAL_START)
+                or plan.oos_start != parse_utc_datetime(DEFAULT_OOS_START)
+                or plan.requested_oos_end_exclusive != parse_utc_datetime(DEFAULT_REQUESTED_OOS_END)
             ),
         },
-        "eligible_symbols": eligible_symbols,
-        "excluded_symbols": excluded_symbols,
-        "coverage": coverage_rows,
-        "candidate_count": candidate_count,
+        "eligible_symbols": plan.eligible_symbols,
+        "excluded_symbols": plan.excluded_symbols,
+        "coverage": plan.coverage_rows,
+        "candidate_count": plan.candidate_count,
         "evaluated_count": len(results),
         "promoted_count": sum(1 for row in best_by_strategy if bool(row.get("promoted"))),
-        "btc_beating_candidate_count": sum(1 for row in best_by_strategy if bool(row.get("btc_beating_candidate"))),
+        "btc_beating_candidate_count": sum(
+            1 for row in best_by_strategy if bool(row.get("btc_beating_candidate"))
+        ),
         "three_month_two_pct_candidate_count": sum(
-            1 for row in best_by_strategy if bool(row.get("three_month_two_pct_candidate"))
+            1
+            for row in best_by_strategy
+            if bool(row.get("three_month_two_pct_candidate"))
         ),
         "provisional_candidate_count": sum(
-            1 for row in best_by_strategy if bool(row.get("candidate_pool_eligible")) and not bool(row.get("promoted"))
+            1
+            for row in best_by_strategy
+            if bool(row.get("candidate_pool_eligible")) and not bool(row.get("promoted"))
         ),
-        "candidate_pool_count": sum(1 for row in best_by_strategy if bool(row.get("candidate_pool_eligible"))),
+        "candidate_pool_count": sum(
+            1 for row in best_by_strategy if bool(row.get("candidate_pool_eligible"))
+        ),
         "best_per_strategy": best_by_strategy,
         "portfolio": portfolio,
         "monthly_thresholds": thresholds,
         "notes": {
             "local_data_gap": (
                 None
-                if actual_oos_end_exclusive >= requested_oos_end_exclusive
+                if plan.actual_oos_end_exclusive >= plan.requested_oos_end_exclusive
                 else (
                     "Requested OOS through "
-                    f"{(requested_oos_end_exclusive - timedelta(milliseconds=1)).isoformat()} inclusive, "
+                    f"{(plan.requested_oos_end_exclusive - timedelta(milliseconds=1)).isoformat()} inclusive, "
                     "but local on-disk market data ends on "
-                    f"{actual_max_timestamp.isoformat()}, so the suite clamps to the actual last available timestamp."
+                    f"{plan.actual_max_timestamp.isoformat()}, so the suite clamps to the actual last available timestamp."
                 )
             ),
             "low_ram_exclusions": sorted(LOW_RAM_EXCLUDED_STRATEGIES),
             "timeframe_exclusions": sorted(LOW_RAM_EXCLUDED_TIMEFRAMES),
-            "requested_timeframes_excluded": excluded_requested_timeframes,
+            "requested_timeframes_excluded": plan.excluded_requested_timeframes,
             "strict_low_ram_exclusion": True,
-            "metals_allowed": bool(allow_metals),
+            "metals_allowed": bool(plan.allow_metals),
             "candidate_pool_policy": "Strict promoted strategies stay primary. If none are promoted, keep provisional shortlist candidates that either beat BTC on the validation month or deliver at least 2% in each of the latest three months.",
             "manual_profile": "Use a higher-timeframe/core-symbol profile when RAM is constrained; this run reports only the explicitly requested symbol/timeframe slice.",
         },
     }
+
+
+def _write_exact_window_suite_artifacts(
+    *,
+    output_dir: str,
+    summary: dict[str, Any],
+    results: list[dict[str, Any]],
+) -> tuple[Path, Path]:
+    out_dir = Path(output_dir).resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     summary_path = out_dir / f"exact_window_suite_summary_{stamp}.json"
     latest_path = out_dir / "exact_window_suite_summary_latest.json"
     details_path = out_dir / f"exact_window_candidate_details_{stamp}.json"
@@ -1273,14 +1483,82 @@ def run_exact_window_suite(
     markdown = _render_markdown(summary)
     md_path.write_text(markdown, encoding="utf-8")
     md_latest.write_text(markdown, encoding="utf-8")
-    if progress_callback is not None:
-        progress_callback(
-            "suite_complete",
-            {
-                "evaluated_count": len(results),
-                "promoted_count": int(summary.get("promoted_count") or 0),
-                "summary_path": str(summary_path),
-                "details_path": str(details_path),
-            },
-        )
+    return summary_path, details_path
+
+
+def run_exact_window_suite(
+    *,
+    output_dir: str = "var/reports/exact_window_backtests",
+    score_config: dict[str, Any] | None = None,
+    timeframes: list[str] | None = None,
+    symbols: list[str] | None = None,
+    chunk_days: int = 7,
+    allow_metals: bool = False,
+    train_start: str | datetime | None = None,
+    val_start: str | datetime | None = None,
+    oos_start: str | datetime | None = None,
+    requested_oos_end_exclusive: str | datetime | None = None,
+    progress_callback: Callable[[str, dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
+    plan = _resolve_exact_window_suite_plan(
+        output_dir=output_dir,
+        score_config=score_config,
+        timeframes=timeframes,
+        symbols=symbols,
+        chunk_days=chunk_days,
+        allow_metals=allow_metals,
+        train_start=train_start,
+        val_start=val_start,
+        oos_start=oos_start,
+        requested_oos_end_exclusive=requested_oos_end_exclusive,
+    )
+    _emit_exact_window_progress(
+        progress_callback,
+        "suite_start",
+        {
+            "candidate_count": plan.candidate_count,
+            "requested_timeframes": plan.normalized_timeframes,
+            "eligible_symbols": plan.eligible_symbols,
+        },
+    )
+    results = _evaluate_exact_window_candidates(plan, progress_callback=progress_callback)
+
+    if not results:
+        raise RuntimeError("Exact-window suite produced no evaluated candidates.")
+    _assert_low_ram_exclusions(results, row_kind="result")
+
+    thresholds = _monthly_btc_thresholds(
+        root_path=plan.root_path,
+        exchange=plan.exchange,
+        window_start=plan.val_start,
+        actual_oos_end_exclusive=plan.actual_oos_end_exclusive,
+    )
+    best_by_strategy = _select_exact_window_best_by_strategy(
+        results,
+        resolved_scoring=plan.resolved_scoring,
+        thresholds=thresholds,
+    )
+    portfolio = _build_exact_window_portfolio(best_by_strategy)
+    summary = _build_exact_window_suite_summary(
+        plan,
+        results=results,
+        best_by_strategy=best_by_strategy,
+        portfolio=portfolio,
+        thresholds=thresholds,
+    )
+    summary_path, details_path = _write_exact_window_suite_artifacts(
+        output_dir=output_dir,
+        summary=summary,
+        results=results,
+    )
+    _emit_exact_window_progress(
+        progress_callback,
+        "suite_complete",
+        {
+            "evaluated_count": len(results),
+            "promoted_count": int(summary.get("promoted_count") or 0),
+            "summary_path": str(summary_path),
+            "details_path": str(details_path),
+        },
+    )
     return summary
