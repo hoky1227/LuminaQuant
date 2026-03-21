@@ -2236,6 +2236,387 @@ def _apply_mean_reversion_std_strategy(
         meta["btc_symbol"] = config.btc_symbol
 
 
+@dataclass(frozen=True, slots=True)
+class _ShockReversionFadeConfig:
+    volume_window: int
+    range_window: int
+    volume_shock_z: float
+    range_shock_z: float
+    return_shock_pct: float
+    revert_fraction: float
+    max_hold_bars: int
+    stop_loss_pct: float
+    allow_short: bool
+
+
+def _resolve_shock_reversion_fade_config(
+    params: Mapping[str, Any],
+    *,
+    volume_window_default: int,
+    range_window_default: int,
+    volume_shock_z_default: float,
+    range_shock_z_default: float,
+    return_shock_pct_default: float,
+    revert_fraction_default: float,
+) -> _ShockReversionFadeConfig:
+    return _ShockReversionFadeConfig(
+        volume_window=max(8, int(params.get("volume_window", volume_window_default))),
+        range_window=max(8, int(params.get("range_window", range_window_default))),
+        volume_shock_z=float(params.get("volume_shock_z", volume_shock_z_default)),
+        range_shock_z=float(params.get("range_shock_z", range_shock_z_default)),
+        return_shock_pct=max(1e-6, float(params.get("return_shock_pct", return_shock_pct_default))),
+        revert_fraction=min(0.95, max(0.10, float(params.get("revert_fraction", revert_fraction_default)))),
+        max_hold_bars=max(1, int(params.get("max_hold_bars", 12))),
+        stop_loss_pct=float(params.get("stop_loss_pct", 0.02)),
+        allow_short=bool(params.get("allow_short", True)),
+    )
+
+
+def _range_pct_from_prev_close(
+    *,
+    close: np.ndarray,
+    high: np.ndarray,
+    low: np.ndarray,
+) -> np.ndarray:
+    prev_close = np.r_[close[0], close[:-1]]
+    return np.divide(
+        high - low,
+        np.clip(prev_close, 1e-12, np.inf),
+        out=np.zeros_like(close),
+        where=np.isfinite(prev_close),
+    )
+
+
+def _shock_reversion_support_series(
+    *,
+    close: np.ndarray,
+    high: np.ndarray,
+    low: np.ndarray,
+    volume: np.ndarray,
+    config: _ShockReversionFadeConfig,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    returns = _returns_from_close(close)
+    range_pct = _range_pct_from_prev_close(close=close, high=high, low=low)
+    vol_z = np.nan_to_num(_rolling_z(np.nan_to_num(volume, nan=0.0), config.volume_window), nan=0.0)
+    range_z = np.nan_to_num(_rolling_z(np.nan_to_num(range_pct, nan=0.0), config.range_window), nan=0.0)
+    return returns, vol_z, range_z
+
+
+def _shock_reversion_position_series(
+    *,
+    close: np.ndarray,
+    returns: np.ndarray,
+    vol_z: np.ndarray,
+    range_z: np.ndarray,
+    config: _ShockReversionFadeConfig,
+    entry_gate: np.ndarray | None = None,
+) -> np.ndarray:
+    pos = np.zeros(close.shape, dtype=float)
+    mode = 0
+    entry_price: float | None = None
+    target_price: float | None = None
+    hold_bars = 0
+    gate = np.ones(close.shape, dtype=bool) if entry_gate is None else np.asarray(entry_gate, dtype=bool)
+
+    for idx in range(close.size):
+        close_i = float(close[idx])
+        if not np.isfinite(close_i):
+            continue
+
+        ret_i = float(returns[idx]) if np.isfinite(returns[idx]) else 0.0
+        shock_ok = gate[idx] and float(vol_z[idx]) >= config.volume_shock_z and float(range_z[idx]) >= config.range_shock_z
+
+        if mode == 1 and entry_price is not None and target_price is not None:
+            hold_bars += 1
+            stop_hit = close_i <= entry_price * (1.0 - config.stop_loss_pct)
+            revert_hit = close_i >= target_price
+            timeout_hit = hold_bars >= config.max_hold_bars
+            if stop_hit or revert_hit or timeout_hit:
+                mode = 0
+                entry_price = None
+                target_price = None
+                hold_bars = 0
+            else:
+                pos[idx] = 1.0
+                continue
+        elif mode == -1 and entry_price is not None and target_price is not None:
+            hold_bars += 1
+            stop_hit = close_i >= entry_price * (1.0 + config.stop_loss_pct)
+            revert_hit = close_i <= target_price
+            timeout_hit = hold_bars >= config.max_hold_bars
+            if stop_hit or revert_hit or timeout_hit:
+                mode = 0
+                entry_price = None
+                target_price = None
+                hold_bars = 0
+            else:
+                pos[idx] = -1.0
+                continue
+
+        if mode == 0 and shock_ok:
+            if ret_i <= -config.return_shock_pct:
+                mode = 1
+                entry_price = close_i
+                target_price = close_i * (1.0 + (abs(ret_i) * config.revert_fraction))
+                hold_bars = 0
+                pos[idx] = 1.0
+            elif config.allow_short and ret_i >= config.return_shock_pct:
+                mode = -1
+                entry_price = close_i
+                target_price = close_i * (1.0 - (abs(ret_i) * config.revert_fraction))
+                hold_bars = 0
+                pos[idx] = -1.0
+    return pos
+
+
+def _apply_liquidity_shock_reversion_strategy(
+    *,
+    params: Mapping[str, Any],
+    aligned: Mapping[str, np.ndarray],
+    symbols: Sequence[str],
+    exposures: np.ndarray,
+) -> None:
+    config = _resolve_shock_reversion_fade_config(
+        params,
+        volume_window_default=64,
+        range_window_default=48,
+        volume_shock_z_default=1.5,
+        range_shock_z_default=1.0,
+        return_shock_pct_default=0.01,
+        revert_fraction_default=0.50,
+    )
+    for s_idx, symbol in enumerate(symbols):
+        close = np.asarray(aligned[f"{symbol}:close"], dtype=float)
+        high = np.asarray(aligned[f"{symbol}:high"], dtype=float)
+        low = np.asarray(aligned[f"{symbol}:low"], dtype=float)
+        volume = np.asarray(aligned[f"{symbol}:volume"], dtype=float)
+        returns, vol_z, range_z = _shock_reversion_support_series(
+            close=close,
+            high=high,
+            low=low,
+            volume=volume,
+            config=config,
+        )
+        exposures[s_idx] = _shock_reversion_position_series(
+            close=close,
+            returns=returns,
+            vol_z=vol_z,
+            range_z=range_z,
+            config=config,
+        )
+
+
+def _apply_session_liquidity_vacuum_fade_strategy(
+    *,
+    params: Mapping[str, Any],
+    aligned: Mapping[str, np.ndarray],
+    symbols: Sequence[str],
+    exposures: np.ndarray,
+) -> None:
+    config = _resolve_shock_reversion_fade_config(
+        params,
+        volume_window_default=48,
+        range_window_default=36,
+        volume_shock_z_default=1.0,
+        range_shock_z_default=0.8,
+        return_shock_pct_default=0.006,
+        revert_fraction_default=0.40,
+    )
+    session_window_minutes = max(5, int(params.get("session_window_minutes", 30)))
+    transition_minutes = np.asarray((0, 480, 780), dtype=int)
+    minute_of_day = _minute_of_day(np.asarray(aligned["datetime"]))
+    session_gate = np.any(
+        np.abs(minute_of_day[:, None] - transition_minutes[None, :]) <= session_window_minutes,
+        axis=1,
+    )
+
+    for s_idx, symbol in enumerate(symbols):
+        close = np.asarray(aligned[f"{symbol}:close"], dtype=float)
+        high = np.asarray(aligned[f"{symbol}:high"], dtype=float)
+        low = np.asarray(aligned[f"{symbol}:low"], dtype=float)
+        volume = np.asarray(aligned[f"{symbol}:volume"], dtype=float)
+        returns, vol_z, range_z = _shock_reversion_support_series(
+            close=close,
+            high=high,
+            low=low,
+            volume=volume,
+            config=config,
+        )
+        exposures[s_idx] = _shock_reversion_position_series(
+            close=close,
+            returns=returns,
+            vol_z=vol_z,
+            range_z=range_z,
+            config=config,
+            entry_gate=session_gate,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class _FundingLiquidationCrowdingFadeConfig:
+    window: int
+    crowding_entry: float
+    crowding_exit: float
+    liquidation_z_min: float
+    return_shock_pct: float
+    max_hold_bars: int
+    stop_loss_pct: float
+    allow_short: bool
+
+
+def _resolve_funding_liquidation_crowding_fade_config(
+    params: Mapping[str, Any],
+) -> _FundingLiquidationCrowdingFadeConfig:
+    return _FundingLiquidationCrowdingFadeConfig(
+        window=int(params.get("window", 96)),
+        crowding_entry=float(params.get("crowding_entry", 0.85)),
+        crowding_exit=float(params.get("crowding_exit", 0.25)),
+        liquidation_z_min=float(params.get("liquidation_z_min", 1.0)),
+        return_shock_pct=float(params.get("return_shock_pct", 0.01)),
+        max_hold_bars=max(1, int(params.get("max_hold_bars", 12))),
+        stop_loss_pct=float(params.get("stop_loss_pct", 0.02)),
+        allow_short=bool(params.get("allow_short", True)),
+    )
+
+
+def _funding_liquidation_crowding_position_series(
+    *,
+    close: np.ndarray,
+    score: np.ndarray,
+    liquidation_z: np.ndarray,
+    config: _FundingLiquidationCrowdingFadeConfig,
+) -> np.ndarray:
+    ret = _returns_from_close(close)
+    position = np.zeros(close.shape, dtype=float)
+    mode = 0
+    entry_price: float | None = None
+    bars_held = 0
+
+    for idx in range(close.size):
+        close_i = float(close[idx])
+        if not np.isfinite(close_i):
+            position[idx] = float(mode)
+            continue
+
+        score_i = float(score[idx]) if np.isfinite(score[idx]) else np.nan
+        liq_i = float(liquidation_z[idx]) if np.isfinite(liquidation_z[idx]) else np.nan
+        ret_i = float(ret[idx]) if np.isfinite(ret[idx]) else 0.0
+
+        if mode == 1:
+            bars_held += 1
+            should_exit = (
+                (np.isfinite(score_i) and score_i >= -config.crowding_exit)
+                or (bars_held >= config.max_hold_bars)
+                or (
+                    entry_price is not None
+                    and close_i <= float(entry_price) * (1.0 - config.stop_loss_pct)
+                )
+            )
+            if should_exit:
+                mode = 0
+                entry_price = None
+                bars_held = 0
+            position[idx] = float(mode)
+            continue
+
+        if mode == -1:
+            bars_held += 1
+            should_exit = (
+                (np.isfinite(score_i) and score_i <= config.crowding_exit)
+                or (bars_held >= config.max_hold_bars)
+                or (
+                    entry_price is not None
+                    and close_i >= float(entry_price) * (1.0 + config.stop_loss_pct)
+                )
+            )
+            if should_exit:
+                mode = 0
+                entry_price = None
+                bars_held = 0
+            position[idx] = float(mode)
+            continue
+
+        if not (np.isfinite(score_i) and np.isfinite(liq_i)):
+            position[idx] = 0.0
+            continue
+
+        long_signal = (
+            score_i <= -config.crowding_entry
+            and liq_i <= -config.liquidation_z_min
+            and ret_i <= -config.return_shock_pct
+        )
+        short_signal = (
+            config.allow_short
+            and score_i >= config.crowding_entry
+            and liq_i >= config.liquidation_z_min
+            and ret_i >= config.return_shock_pct
+        )
+        if long_signal:
+            mode = 1
+            entry_price = close_i
+            bars_held = 0
+        elif short_signal:
+            mode = -1
+            entry_price = close_i
+            bars_held = 0
+        position[idx] = float(mode)
+    return position
+
+
+def _apply_funding_liquidation_crowding_fade_strategy(
+    *,
+    params: Mapping[str, Any],
+    aligned: Mapping[str, np.ndarray],
+    symbols: Sequence[str],
+    exposures: np.ndarray,
+    meta: dict[str, Any],
+) -> None:
+    if not _resolve_feature_points_path().exists():
+        meta["missing_support_data"] = True
+        exposures[:] = 0.0
+        return
+
+    config = _resolve_funding_liquidation_crowding_fade_config(params)
+    missing_symbols: list[str] = []
+    for s_idx, symbol in enumerate(symbols):
+        funding = aligned.get(f"{symbol}:funding_rate")
+        oi = aligned.get(f"{symbol}:open_interest")
+        liq_long = aligned.get(f"{symbol}:liquidation_long_notional")
+        liq_short = aligned.get(f"{symbol}:liquidation_short_notional")
+        if funding is None or oi is None or liq_long is None or liq_short is None:
+            missing_symbols.append(symbol)
+            continue
+
+        support = _crowding_support_series(
+            funding_rate=np.asarray(funding, dtype=float),
+            open_interest=np.asarray(oi, dtype=float),
+            mark_price=None
+            if aligned.get(f"{symbol}:mark_price") is None
+            else np.asarray(aligned[f"{symbol}:mark_price"], dtype=float),
+            index_price=None
+            if aligned.get(f"{symbol}:index_price") is None
+            else np.asarray(aligned[f"{symbol}:index_price"], dtype=float),
+            liquidation_long_notional=np.asarray(liq_long, dtype=float),
+            liquidation_short_notional=np.asarray(liq_short, dtype=float),
+            window=config.window,
+        )
+        score = np.asarray(support["crowding_score"], dtype=float)
+        liquidation_z = np.asarray(support["liquidation_imbalance_z"], dtype=float)
+        close = np.asarray(aligned[f"{symbol}:close"], dtype=float)
+        exposures[s_idx] = _funding_liquidation_crowding_position_series(
+            close=close,
+            score=score,
+            liquidation_z=liquidation_z,
+            config=config,
+        )
+        if np.any(np.isfinite(score)):
+            meta.setdefault("support_data_symbols", []).append(symbol)
+
+    if missing_symbols:
+        meta["missing_support_data"] = True
+        meta["missing_support_symbols"] = missing_symbols
+
+
 def _strategy_signal(
     candidate: dict[str, Any],
     *,
@@ -2359,302 +2740,29 @@ def _strategy_signal(
         )
 
     elif strategy_class == "LiquidityShockReversionStrategy":
-        volume_window = max(8, int(params.get("volume_window", 64)))
-        range_window = max(8, int(params.get("range_window", 48)))
-        volume_shock_z = float(params.get("volume_shock_z", 1.5))
-        range_shock_z = float(params.get("range_shock_z", 1.0))
-        return_shock_pct = max(1e-6, float(params.get("return_shock_pct", 0.01)))
-        revert_fraction = min(0.95, max(0.10, float(params.get("revert_fraction", 0.50))))
-        max_hold_bars = max(1, int(params.get("max_hold_bars", 12)))
-        stop_loss_pct = float(params.get("stop_loss_pct", 0.02))
-        allow_short = bool(params.get("allow_short", True))
-
-        for s_idx, symbol in enumerate(symbols):
-            close = np.asarray(aligned[f"{symbol}:close"], dtype=float)
-            high = np.asarray(aligned[f"{symbol}:high"], dtype=float)
-            low = np.asarray(aligned[f"{symbol}:low"], dtype=float)
-            volume = np.asarray(aligned[f"{symbol}:volume"], dtype=float)
-            prev_close = np.r_[close[0], close[:-1]]
-            returns = np.divide(
-                close,
-                np.clip(prev_close, 1e-12, np.inf),
-                out=np.ones_like(close),
-                where=np.isfinite(prev_close),
-            ) - 1.0
-            range_pct = np.divide(
-                high - low,
-                np.clip(prev_close, 1e-12, np.inf),
-                out=np.zeros_like(close),
-                where=np.isfinite(prev_close),
-            )
-            vol_z = np.nan_to_num(_rolling_z(np.nan_to_num(volume, nan=0.0), volume_window), nan=0.0)
-            range_z = np.nan_to_num(_rolling_z(np.nan_to_num(range_pct, nan=0.0), range_window), nan=0.0)
-            pos = np.zeros(close.shape, dtype=float)
-            mode = 0
-            entry_price: float | None = None
-            target_price: float | None = None
-            hold_bars = 0
-            for idx in range(close.size):
-                close_i = float(close[idx])
-                if not np.isfinite(close_i):
-                    continue
-                ret_i = float(returns[idx]) if np.isfinite(returns[idx]) else 0.0
-                shock_ok = float(vol_z[idx]) >= volume_shock_z and float(range_z[idx]) >= range_shock_z
-                if mode == 1 and entry_price is not None and target_price is not None:
-                    hold_bars += 1
-                    stop_hit = close_i <= entry_price * (1.0 - stop_loss_pct)
-                    revert_hit = close_i >= target_price
-                    timeout_hit = hold_bars >= max_hold_bars
-                    if stop_hit or revert_hit or timeout_hit:
-                        mode = 0
-                        entry_price = None
-                        target_price = None
-                        hold_bars = 0
-                    else:
-                        pos[idx] = 1.0
-                        continue
-                elif mode == -1 and entry_price is not None and target_price is not None:
-                    hold_bars += 1
-                    stop_hit = close_i >= entry_price * (1.0 + stop_loss_pct)
-                    revert_hit = close_i <= target_price
-                    timeout_hit = hold_bars >= max_hold_bars
-                    if stop_hit or revert_hit or timeout_hit:
-                        mode = 0
-                        entry_price = None
-                        target_price = None
-                        hold_bars = 0
-                    else:
-                        pos[idx] = -1.0
-                        continue
-
-                if mode == 0 and shock_ok:
-                    if ret_i <= -return_shock_pct:
-                        mode = 1
-                        entry_price = close_i
-                        target_price = close_i * (1.0 + (abs(ret_i) * revert_fraction))
-                        hold_bars = 0
-                        pos[idx] = 1.0
-                    elif allow_short and ret_i >= return_shock_pct:
-                        mode = -1
-                        entry_price = close_i
-                        target_price = close_i * (1.0 - (abs(ret_i) * revert_fraction))
-                        hold_bars = 0
-                        pos[idx] = -1.0
-            exposures[s_idx] = pos
+        _apply_liquidity_shock_reversion_strategy(
+            params=params,
+            aligned=aligned,
+            symbols=symbols,
+            exposures=exposures,
+        )
 
     elif strategy_class == "SessionLiquidityVacuumFadeStrategy":
-        volume_window = max(8, int(params.get("volume_window", 48)))
-        range_window = max(8, int(params.get("range_window", 36)))
-        volume_shock_z = float(params.get("volume_shock_z", 1.0))
-        range_shock_z = float(params.get("range_shock_z", 0.8))
-        return_shock_pct = max(1e-6, float(params.get("return_shock_pct", 0.006)))
-        revert_fraction = min(0.95, max(0.10, float(params.get("revert_fraction", 0.40))))
-        max_hold_bars = max(1, int(params.get("max_hold_bars", 12)))
-        stop_loss_pct = float(params.get("stop_loss_pct", 0.02))
-        allow_short = bool(params.get("allow_short", True))
-        session_window_minutes = max(5, int(params.get("session_window_minutes", 30)))
-        transition_minutes = np.asarray((0, 480, 780), dtype=int)
-        minute_of_day = _minute_of_day(np.asarray(aligned["datetime"]))
-
-        for s_idx, symbol in enumerate(symbols):
-            close = np.asarray(aligned[f"{symbol}:close"], dtype=float)
-            high = np.asarray(aligned[f"{symbol}:high"], dtype=float)
-            low = np.asarray(aligned[f"{symbol}:low"], dtype=float)
-            volume = np.asarray(aligned[f"{symbol}:volume"], dtype=float)
-            prev_close = np.r_[close[0], close[:-1]]
-            returns = np.divide(
-                close,
-                np.clip(prev_close, 1e-12, np.inf),
-                out=np.ones_like(close),
-                where=np.isfinite(prev_close),
-            ) - 1.0
-            range_pct = np.divide(
-                high - low,
-                np.clip(prev_close, 1e-12, np.inf),
-                out=np.zeros_like(close),
-                where=np.isfinite(prev_close),
-            )
-            vol_z = np.nan_to_num(_rolling_z(np.nan_to_num(volume, nan=0.0), volume_window), nan=0.0)
-            range_z = np.nan_to_num(_rolling_z(np.nan_to_num(range_pct, nan=0.0), range_window), nan=0.0)
-            pos = np.zeros(close.shape, dtype=float)
-            mode = 0
-            entry_price: float | None = None
-            target_price: float | None = None
-            hold_bars = 0
-            for idx in range(close.size):
-                close_i = float(close[idx])
-                if not np.isfinite(close_i):
-                    continue
-                minute_i = int(minute_of_day[idx])
-                session_gate = bool(np.any(np.abs(transition_minutes - minute_i) <= session_window_minutes))
-                ret_i = float(returns[idx]) if np.isfinite(returns[idx]) else 0.0
-                shock_ok = float(vol_z[idx]) >= volume_shock_z and float(range_z[idx]) >= range_shock_z
-                if mode == 1 and entry_price is not None and target_price is not None:
-                    hold_bars += 1
-                    stop_hit = close_i <= entry_price * (1.0 - stop_loss_pct)
-                    revert_hit = close_i >= target_price
-                    timeout_hit = hold_bars >= max_hold_bars
-                    if stop_hit or revert_hit or timeout_hit:
-                        mode = 0
-                        entry_price = None
-                        target_price = None
-                        hold_bars = 0
-                    else:
-                        pos[idx] = 1.0
-                        continue
-                elif mode == -1 and entry_price is not None and target_price is not None:
-                    hold_bars += 1
-                    stop_hit = close_i >= entry_price * (1.0 + stop_loss_pct)
-                    revert_hit = close_i <= target_price
-                    timeout_hit = hold_bars >= max_hold_bars
-                    if stop_hit or revert_hit or timeout_hit:
-                        mode = 0
-                        entry_price = None
-                        target_price = None
-                        hold_bars = 0
-                    else:
-                        pos[idx] = -1.0
-                        continue
-
-                if mode == 0 and session_gate and shock_ok:
-                    if ret_i <= -return_shock_pct:
-                        mode = 1
-                        entry_price = close_i
-                        target_price = close_i * (1.0 + (abs(ret_i) * revert_fraction))
-                        hold_bars = 0
-                        pos[idx] = 1.0
-                    elif allow_short and ret_i >= return_shock_pct:
-                        mode = -1
-                        entry_price = close_i
-                        target_price = close_i * (1.0 - (abs(ret_i) * revert_fraction))
-                        hold_bars = 0
-                        pos[idx] = -1.0
-            exposures[s_idx] = pos
+        _apply_session_liquidity_vacuum_fade_strategy(
+            params=params,
+            aligned=aligned,
+            symbols=symbols,
+            exposures=exposures,
+        )
 
     elif strategy_class == "FundingLiquidationCrowdingFadeStrategy":
-        if not _resolve_feature_points_path().exists():
-            meta["missing_support_data"] = True
-            exposures[:] = 0.0
-        else:
-            missing_symbols: list[str] = []
-            for s_idx, symbol in enumerate(symbols):
-                close = aligned[f"{symbol}:close"]
-                funding = aligned.get(f"{symbol}:funding_rate")
-                oi = aligned.get(f"{symbol}:open_interest")
-                liq_long = aligned.get(f"{symbol}:liquidation_long_notional")
-                liq_short = aligned.get(f"{symbol}:liquidation_short_notional")
-                if funding is None or oi is None or liq_long is None or liq_short is None:
-                    missing_symbols.append(symbol)
-                    continue
-                support = _crowding_support_series(
-                    funding_rate=np.asarray(funding, dtype=float),
-                    open_interest=np.asarray(oi, dtype=float),
-                    mark_price=None
-                    if aligned.get(f"{symbol}:mark_price") is None
-                    else np.asarray(aligned[f"{symbol}:mark_price"], dtype=float),
-                    index_price=None
-                    if aligned.get(f"{symbol}:index_price") is None
-                    else np.asarray(aligned[f"{symbol}:index_price"], dtype=float),
-                    liquidation_long_notional=np.asarray(liq_long, dtype=float),
-                    liquidation_short_notional=np.asarray(liq_short, dtype=float),
-                    window=int(params.get("window", 96)),
-                )
-                score = np.asarray(support["crowding_score"], dtype=float)
-                liq_z = np.asarray(support["liquidation_imbalance_z"], dtype=float)
-                close_arr = np.asarray(close, dtype=float)
-                prev_close = np.r_[close_arr[0], close_arr[:-1]]
-                ret = np.divide(
-                    close_arr,
-                    np.clip(prev_close, 1e-12, np.inf),
-                    out=np.ones_like(close_arr),
-                    where=np.isfinite(prev_close),
-                ) - 1.0
-                position = np.zeros(close_arr.shape, dtype=float)
-                mode = 0
-                entry_price: float | None = None
-                bars_held = 0
-                crowding_entry = float(params.get("crowding_entry", 0.85))
-                crowding_exit = float(params.get("crowding_exit", 0.25))
-                liquidation_z_min = float(params.get("liquidation_z_min", 1.0))
-                return_shock_pct = float(params.get("return_shock_pct", 0.01))
-                max_hold_bars = max(1, int(params.get("max_hold_bars", 12)))
-                stop_loss_pct = float(params.get("stop_loss_pct", 0.02))
-                allow_short = bool(params.get("allow_short", True))
-
-                for idx in range(close_arr.size):
-                    close_i = float(close_arr[idx])
-                    if not np.isfinite(close_i):
-                        position[idx] = float(mode)
-                        continue
-                    score_i = float(score[idx]) if np.isfinite(score[idx]) else np.nan
-                    liq_i = float(liq_z[idx]) if np.isfinite(liq_z[idx]) else np.nan
-                    ret_i = float(ret[idx]) if np.isfinite(ret[idx]) else 0.0
-
-                    if mode == 1:
-                        bars_held += 1
-                        should_exit = (
-                            (np.isfinite(score_i) and score_i >= -crowding_exit)
-                            or (bars_held >= max_hold_bars)
-                            or (
-                                entry_price is not None
-                                and close_i <= float(entry_price) * (1.0 - stop_loss_pct)
-                            )
-                        )
-                        if should_exit:
-                            mode = 0
-                            entry_price = None
-                            bars_held = 0
-                        position[idx] = float(mode)
-                        continue
-
-                    if mode == -1:
-                        bars_held += 1
-                        should_exit = (
-                            (np.isfinite(score_i) and score_i <= crowding_exit)
-                            or (bars_held >= max_hold_bars)
-                            or (
-                                entry_price is not None
-                                and close_i >= float(entry_price) * (1.0 + stop_loss_pct)
-                            )
-                        )
-                        if should_exit:
-                            mode = 0
-                            entry_price = None
-                            bars_held = 0
-                        position[idx] = float(mode)
-                        continue
-
-                    if not (np.isfinite(score_i) and np.isfinite(liq_i)):
-                        position[idx] = 0.0
-                        continue
-
-                    long_signal = (
-                        score_i <= -crowding_entry
-                        and liq_i <= -liquidation_z_min
-                        and ret_i <= -return_shock_pct
-                    )
-                    short_signal = (
-                        allow_short
-                        and score_i >= crowding_entry
-                        and liq_i >= liquidation_z_min
-                        and ret_i >= return_shock_pct
-                    )
-                    if long_signal:
-                        mode = 1
-                        entry_price = close_i
-                        bars_held = 0
-                    elif short_signal:
-                        mode = -1
-                        entry_price = close_i
-                        bars_held = 0
-                    position[idx] = float(mode)
-
-                exposures[s_idx] = position
-                if np.any(np.isfinite(score)):
-                    meta.setdefault("support_data_symbols", []).append(symbol)
-            if missing_symbols:
-                meta["missing_support_data"] = True
-                meta["missing_support_symbols"] = missing_symbols
+        _apply_funding_liquidation_crowding_fade_strategy(
+            params=params,
+            aligned=aligned,
+            symbols=symbols,
+            exposures=exposures,
+            meta=meta,
+        )
 
     elif strategy_class == "BasisSnapbackReversionStrategy":
         if not _resolve_feature_points_path().exists():

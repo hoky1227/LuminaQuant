@@ -442,6 +442,100 @@ def test_funding_liquidation_crowding_fade_strategy_signal_produces_exposure():
     assert "BTC/USDT" in list(meta.get("support_data_symbols") or [])
 
 
+def test_liquidity_shock_reversion_strategy_signal_produces_exposure():
+    length = 240
+    close = np.linspace(100.0, 108.0, length, dtype=float)
+    close[120:128] = np.linspace(103.0, 95.0, 8, dtype=float)
+    close[128:144] = np.linspace(95.0, 101.0, 16, dtype=float)
+    volume = np.full(length, 1_000.0, dtype=float)
+    volume[120:128] = np.linspace(4_000.0, 5_500.0, 8, dtype=float)
+    high = close + 0.3
+    low = close - 0.3
+    high[120:128] = close[120:128] * 1.03
+    low[120:128] = close[120:128] * 0.97
+    aligned = {
+        "datetime": _minute_datetimes(length),
+        "BTC/USDT:open": close - 0.1,
+        "BTC/USDT:high": high,
+        "BTC/USDT:low": low,
+        "BTC/USDT:close": close,
+        "BTC/USDT:volume": volume,
+    }
+    candidate = {
+        "strategy_class": "LiquidityShockReversionStrategy",
+        "params": {
+            "volume_window": 24,
+            "range_window": 16,
+            "volume_shock_z": 0.8,
+            "range_shock_z": 0.8,
+            "return_shock_pct": 0.01,
+            "revert_fraction": 0.50,
+            "max_hold_bars": 18,
+            "stop_loss_pct": 0.03,
+            "allow_short": True,
+        },
+    }
+
+    _, turnover, exposure, meta = research_runner._strategy_signal(
+        candidate,
+        aligned=aligned,
+        symbols=["BTC/USDT"],
+    )
+
+    assert exposure.shape == (length,)
+    assert meta == {}
+    assert np.any(np.abs(exposure) > 0.0)
+    assert np.any(turnover > 0.0)
+
+
+def test_session_liquidity_vacuum_fade_strategy_signal_respects_session_gate():
+    length = 120
+    close = np.linspace(100.0, 102.0, length, dtype=float)
+    close[16:22] = np.linspace(100.0, 94.0, 6, dtype=float)
+    close[22:34] = np.linspace(94.0, 99.5, 12, dtype=float)
+    volume = np.full(length, 900.0, dtype=float)
+    volume[16:22] = np.linspace(3_500.0, 4_200.0, 6, dtype=float)
+    high = close + 0.2
+    low = close - 0.2
+    high[16:22] = close[16:22] * 1.025
+    low[16:22] = close[16:22] * 0.975
+    aligned = {
+        "datetime": _minute_datetimes(length),
+        "BTC/USDT:open": close - 0.1,
+        "BTC/USDT:high": high,
+        "BTC/USDT:low": low,
+        "BTC/USDT:close": close,
+        "BTC/USDT:volume": volume,
+    }
+    candidate = {
+        "strategy_class": "SessionLiquidityVacuumFadeStrategy",
+        "params": {
+            "volume_window": 8,
+            "range_window": 8,
+            "volume_shock_z": 0.5,
+            "range_shock_z": 0.5,
+            "return_shock_pct": 0.01,
+            "revert_fraction": 0.45,
+            "max_hold_bars": 12,
+            "stop_loss_pct": 0.03,
+            "allow_short": False,
+            "session_window_minutes": 30,
+        },
+    }
+
+    _, turnover, exposure, meta = research_runner._strategy_signal(
+        candidate,
+        aligned=aligned,
+        symbols=["BTC/USDT"],
+    )
+
+    assert exposure.shape == (length,)
+    assert meta == {}
+    assert np.max(exposure) > 0.0
+    assert np.all(exposure >= 0.0)
+    assert np.any(turnover > 0.0)
+
+
 def test_basis_snapback_reversion_strategy_signal_produces_exposure():
     length = 420
     close = np.linspace(100.0, 118.0, length, dtype=float)
