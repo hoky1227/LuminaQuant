@@ -77,6 +77,60 @@ class _DummyOptimizationConfig:
     N_TRIALS = 10
 
 
+class _Frame:
+    def __init__(self, *, empty: bool) -> None:
+        self.empty = empty
+
+
+class _HelperExpander:
+    def __init__(self, calls: list[tuple[Any, ...]], label: str) -> None:
+        self._calls = calls
+        self._label = label
+
+    def __enter__(self) -> _HelperExpander:
+        self._calls.append(("expander_enter", self._label))
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        self._calls.append(("expander_exit", self._label))
+        return False
+
+
+class _HelperStreamlit:
+    def __init__(self, *, button_result: bool = False) -> None:
+        self.calls: list[tuple[Any, ...]] = []
+        self._button_result = button_result
+
+    def button(self, label: str, **kwargs: Any) -> bool:
+        self.calls.append(("button", label, kwargs))
+        return self._button_result
+
+    def caption(self, value: str) -> None:
+        self.calls.append(("caption", value))
+
+    def dataframe(self, value: Any, **kwargs: Any) -> None:
+        self.calls.append(("dataframe", value, kwargs))
+
+    def download_button(self, **kwargs: Any) -> None:
+        self.calls.append(("download_button", kwargs))
+
+    def expander(self, label: str) -> _HelperExpander:
+        self.calls.append(("expander", label))
+        return _HelperExpander(self.calls, label)
+
+    def json(self, value: Any) -> None:
+        self.calls.append(("json", value))
+
+    def subheader(self, value: str) -> None:
+        self.calls.append(("subheader", value))
+
+    def success(self, value: str) -> None:
+        self.calls.append(("success", value))
+
+    def warning(self, value: str) -> None:
+        self.calls.append(("warning", value))
+
+
 
 def _package(name: str, path: str | None = None) -> types.ModuleType:
     module = types.ModuleType(name)
@@ -228,3 +282,150 @@ def test_dashboard_app_main_stops_before_main_dashboard_on_exact_window_view(mon
 
     assert render_main_dashboard_calls == []
     assert render_exact_window.calls == [{"standalone": False}]
+
+
+def test_render_snapshot_report_section_builds_preview_without_saving(monkeypatch) -> None:
+    module, _, _ = _load_dashboard_app(monkeypatch)
+    helper_st = _HelperStreamlit(button_result=False)
+    captured: dict[str, Any] = {}
+    save_calls: list[dict[str, Any]] = []
+    payload = {"monthly_returns": {}, "mt5_summary": []}
+
+    module.st = helper_st
+    monkeypatch.setattr(
+        module,
+        "build_report_payload",
+        lambda *args, **kwargs: captured.update(kwargs) or payload,
+    )
+    monkeypatch.setattr(
+        module,
+        "save_report_snapshot",
+        lambda report_payload: save_calls.append(report_payload) or ("report.json", "report.md", "#"),
+    )
+
+    module._render_snapshot_report_section(
+        summary={"bars": 10},
+        performance={"sharpe": 1.2},
+        active_run_id="run-1",
+        resolved_source="postgres",
+        strategy_name="RsiStrategy",
+        period_preset="30d",
+        df_equity=_Frame(empty=True),
+        trade_analytics=_Frame(empty=True),
+        df_risk=_Frame(empty=True),
+        df_hb=_Frame(empty=True),
+        runner_initial_capital=1500.0,
+        runner_leverage=3,
+        runner_symbols=["BTC/USDT", "ETH/USDT"],
+        runner_timeframe="5m",
+        runner_data_source="postgres",
+        runner_timeout_sec=45,
+        strategy_params={"lookback": 12},
+        mirror_snapshot={"wins": 1},
+        mirror_balance_equity=_Frame(empty=True),
+    )
+
+    assert captured["runtime_overrides"] == {
+        "initial_capital": 1500.0,
+        "backtest_leverage": 3,
+        "symbols": ["BTC/USDT", "ETH/USDT"],
+        "timeframe": "5m",
+        "runner_data_source": "postgres",
+        "runner_timeout_sec": 45,
+    }
+    assert captured["strategy_params"] == {"lookback": 12}
+    assert captured["mirror_snapshot"] == {"wins": 1}
+    assert captured["balance_equity_series"] == []
+    assert ("subheader", "Current Snapshot Preview") in helper_st.calls
+    assert ("json", payload) in helper_st.calls
+    assert save_calls == []
+
+
+def test_render_raw_data_tab_loads_workflow_jobs_once_and_preserves_section_order(monkeypatch) -> None:
+    module, _, _ = _load_dashboard_app(monkeypatch)
+    helper_st = _HelperStreamlit()
+    captured: dict[str, Any] = {}
+    workflow_jobs_frame = object()
+
+    module.st = helper_st
+    monkeypatch.setattr(
+        module,
+        "load_workflow_jobs",
+        lambda db_path, refresh_counter=0: captured.update(
+            {"db_path": db_path, "refresh_counter": refresh_counter}
+        )
+        or workflow_jobs_frame,
+    )
+
+    runs_df = object()
+    equity_df = object()
+    fills_df = object()
+    orders_df = object()
+    risk_df = object()
+    hb_df = object()
+    order_states_df = object()
+    market_df = object()
+    optimize_df = object()
+
+    module._render_raw_data_tab(
+        active_run_id="run-raw",
+        resolved_source="csv",
+        market_symbol="BTC/USDT",
+        market_timeframe="1m",
+        market_exchange="binance",
+        runs_df=runs_df,
+        df_equity=equity_df,
+        trade_analytics=fills_df,
+        df_orders=orders_df,
+        df_risk=risk_df,
+        df_hb=hb_df,
+        df_order_states=order_states_df,
+        df_market=market_df,
+        df_optimize=optimize_df,
+        db_path="postgres://lumina",
+        refresh_counter=7,
+    )
+
+    assert captured == {"db_path": "postgres://lumina", "refresh_counter": 7}
+    assert helper_st.calls[0] == (
+        "caption",
+        "Run: run-raw | Source: csv | Market: BTC/USDT 1m (binance)",
+    )
+    assert [call[1] for call in helper_st.calls if call[0] == "expander"] == [
+        "Runs",
+        "Equity",
+        "Fills (enriched)",
+        "Orders",
+        "Risk Events",
+        "Heartbeats",
+        "Order State Events",
+        "Market OHLCV",
+        "Optimization Results",
+        "Workflow Jobs",
+    ]
+    assert [call[1] for call in helper_st.calls if call[0] == "dataframe"] == [
+        runs_df,
+        equity_df,
+        fills_df,
+        orders_df,
+        risk_df,
+        hb_df,
+        order_states_df,
+        market_df,
+        optimize_df,
+        workflow_jobs_frame,
+    ]
+
+
+def test_render_missing_equity_warning_only_when_equity_is_empty(monkeypatch) -> None:
+    module, _, _ = _load_dashboard_app(monkeypatch)
+    helper_st = _HelperStreamlit()
+    module.st = helper_st
+
+    module._render_missing_equity_warning(_Frame(empty=False), 1000.0)
+    assert [call for call in helper_st.calls if call[0] == "warning"] == []
+
+    module._render_missing_equity_warning(_Frame(empty=True), 1000.0)
+    warnings = [call[1] for call in helper_st.calls if call[0] == "warning"]
+    assert len(warnings) == 1
+    assert "Configured initial equity is 1000.00." in warnings[0]

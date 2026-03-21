@@ -2919,6 +2919,151 @@ def save_report_snapshot(payload):
     return json_path, md_path, markdown
 
 
+def _build_dashboard_report_runtime_overrides(
+    *,
+    runner_initial_capital,
+    runner_leverage,
+    runner_symbols,
+    runner_timeframe,
+    runner_data_source,
+    runner_timeout_sec,
+):
+    return {
+        "initial_capital": float(runner_initial_capital),
+        "backtest_leverage": int(runner_leverage),
+        "symbols": runner_symbols,
+        "timeframe": runner_timeframe,
+        "runner_data_source": runner_data_source,
+        "runner_timeout_sec": int(runner_timeout_sec),
+    }
+
+
+def _render_snapshot_report_section(
+    *,
+    summary,
+    performance,
+    active_run_id,
+    resolved_source,
+    strategy_name,
+    period_preset,
+    df_equity,
+    trade_analytics,
+    df_risk,
+    df_hb,
+    runner_initial_capital,
+    runner_leverage,
+    runner_symbols,
+    runner_timeframe,
+    runner_data_source,
+    runner_timeout_sec,
+    strategy_params,
+    mirror_snapshot,
+    mirror_balance_equity,
+) -> None:
+    payload = build_report_payload(
+        summary,
+        performance,
+        active_run_id,
+        resolved_source,
+        strategy_name,
+        period_preset,
+        df_equity,
+        trade_analytics,
+        df_risk,
+        df_hb,
+        runtime_overrides=_build_dashboard_report_runtime_overrides(
+            runner_initial_capital=runner_initial_capital,
+            runner_leverage=runner_leverage,
+            runner_symbols=runner_symbols,
+            runner_timeframe=runner_timeframe,
+            runner_data_source=runner_data_source,
+            runner_timeout_sec=runner_timeout_sec,
+        ),
+        strategy_params=strategy_params,
+        mirror_snapshot=mirror_snapshot,
+        balance_equity_series=_serialize_balance_equity_frame(mirror_balance_equity, limit=1500),
+    )
+
+    if st.button("Generate Snapshot Report", type="primary"):
+        json_path, md_path, markdown = save_report_snapshot(payload)
+        st.success(f"Report saved: {json_path} | {md_path}")
+        st.download_button(
+            label="Download Markdown Report",
+            data=markdown,
+            file_name=os.path.basename(md_path),
+            mime="text/markdown",
+        )
+        st.download_button(
+            label="Download JSON Report",
+            data=json.dumps(payload, indent=2, ensure_ascii=False),
+            file_name=os.path.basename(json_path),
+            mime="application/json",
+        )
+
+    if payload.get("mt5_summary"):
+        st.subheader("Snapshot MT5 Summary")
+        st.dataframe(pd.DataFrame(payload.get("mt5_summary", [])), use_container_width=True)
+
+    monthly_payload = payload.get("monthly_returns") or {}
+    if monthly_payload:
+        st.subheader("Snapshot Monthly Returns")
+        monthly_df = pd.DataFrame.from_dict(monthly_payload, orient="index")
+        monthly_df.index.name = "Year"
+        st.dataframe(monthly_df, use_container_width=True)
+
+    st.subheader("Current Snapshot Preview")
+    st.json(payload)
+
+
+def _render_raw_data_tab(
+    *,
+    active_run_id,
+    resolved_source,
+    market_symbol,
+    market_timeframe,
+    market_exchange,
+    runs_df,
+    df_equity,
+    trade_analytics,
+    df_orders,
+    df_risk,
+    df_hb,
+    df_order_states,
+    df_market,
+    df_optimize,
+    db_path,
+    refresh_counter,
+) -> None:
+    st.caption(
+        f"Run: {active_run_id if active_run_id else 'N/A'} | Source: {resolved_source} | "
+        f"Market: {market_symbol} {market_timeframe} ({market_exchange})"
+    )
+    raw_frames = [
+        ("Runs", runs_df),
+        ("Equity", df_equity),
+        ("Fills (enriched)", trade_analytics),
+        ("Orders", df_orders),
+        ("Risk Events", df_risk),
+        ("Heartbeats", df_hb),
+        ("Order State Events", df_order_states),
+        ("Market OHLCV", df_market),
+        ("Optimization Results", df_optimize),
+        ("Workflow Jobs", load_workflow_jobs(db_path, refresh_counter=refresh_counter)),
+    ]
+    for label, frame in raw_frames:
+        with st.expander(label):
+            st.dataframe(frame)
+
+
+def _render_missing_equity_warning(df_equity, runner_initial_capital) -> None:
+    if df_equity.empty:
+        st.warning(
+            "No equity data found for current selection. "
+            "Start a backtest job from Report Export tab, or switch source/period. "
+            f"Configured initial equity is {runner_initial_capital:.2f}."
+        )
+
+
 def render_main_dashboard() -> None:
     st.sidebar.header("Configuration")
     data_source = st.sidebar.selectbox("Data Source", ["Auto", "Postgres", "CSV"])
@@ -4803,92 +4948,49 @@ def render_main_dashboard() -> None:
                 key="ghost_cleanup_output_view",
             )
 
-        payload = build_report_payload(
-            summary,
-            performance,
-            active_run_id,
-            resolved_source,
-            strategy_name,
-            period_preset,
-            df_equity,
-            trade_analytics,
-            df_risk,
-            df_hb,
-            runtime_overrides={
-                "initial_capital": float(runner_initial_capital),
-                "backtest_leverage": int(runner_leverage),
-                "symbols": runner_symbols,
-                "timeframe": runner_timeframe,
-                "runner_data_source": runner_data_source,
-                "runner_timeout_sec": int(runner_timeout_sec),
-            },
+        _render_snapshot_report_section(
+            summary=summary,
+            performance=performance,
+            active_run_id=active_run_id,
+            resolved_source=resolved_source,
+            strategy_name=strategy_name,
+            period_preset=period_preset,
+            df_equity=df_equity,
+            trade_analytics=trade_analytics,
+            df_risk=df_risk,
+            df_hb=df_hb,
+            runner_initial_capital=runner_initial_capital,
+            runner_leverage=runner_leverage,
+            runner_symbols=runner_symbols,
+            runner_timeframe=runner_timeframe,
+            runner_data_source=runner_data_source,
+            runner_timeout_sec=runner_timeout_sec,
             strategy_params=strategy_params,
             mirror_snapshot=mirror_snapshot,
-            balance_equity_series=_serialize_balance_equity_frame(mirror_balance_equity, limit=1500),
+            mirror_balance_equity=mirror_balance_equity,
         )
-
-        if st.button("Generate Snapshot Report", type="primary"):
-            json_path, md_path, markdown = save_report_snapshot(payload)
-            st.success(f"Report saved: {json_path} | {md_path}")
-            st.download_button(
-                label="Download Markdown Report",
-                data=markdown,
-                file_name=os.path.basename(md_path),
-                mime="text/markdown",
-            )
-            st.download_button(
-                label="Download JSON Report",
-                data=json.dumps(payload, indent=2, ensure_ascii=False),
-                file_name=os.path.basename(json_path),
-                mime="application/json",
-            )
-
-        if payload.get("mt5_summary"):
-            st.subheader("Snapshot MT5 Summary")
-            st.dataframe(pd.DataFrame(payload.get("mt5_summary", [])), use_container_width=True)
-
-        monthly_payload = payload.get("monthly_returns") or {}
-        if monthly_payload:
-            st.subheader("Snapshot Monthly Returns")
-            monthly_df = pd.DataFrame.from_dict(monthly_payload, orient="index")
-            monthly_df.index.name = "Year"
-            st.dataframe(monthly_df, use_container_width=True)
-
-        st.subheader("Current Snapshot Preview")
-        st.json(payload)
 
     with tab_raw:
-        st.caption(
-            f"Run: {active_run_id if active_run_id else 'N/A'} | Source: {resolved_source} | "
-            f"Market: {market_symbol} {market_timeframe} ({market_exchange})"
+        _render_raw_data_tab(
+            active_run_id=active_run_id,
+            resolved_source=resolved_source,
+            market_symbol=market_symbol,
+            market_timeframe=market_timeframe,
+            market_exchange=market_exchange,
+            runs_df=runs_df,
+            df_equity=df_equity,
+            trade_analytics=trade_analytics,
+            df_orders=df_orders,
+            df_risk=df_risk,
+            df_hb=df_hb,
+            df_order_states=df_order_states,
+            df_market=df_market,
+            df_optimize=df_optimize,
+            db_path=db_path,
+            refresh_counter=refresh_counter,
         )
-        with st.expander("Runs"):
-            st.dataframe(runs_df)
-        with st.expander("Equity"):
-            st.dataframe(df_equity)
-        with st.expander("Fills (enriched)"):
-            st.dataframe(trade_analytics)
-        with st.expander("Orders"):
-            st.dataframe(df_orders)
-        with st.expander("Risk Events"):
-            st.dataframe(df_risk)
-        with st.expander("Heartbeats"):
-            st.dataframe(df_hb)
-        with st.expander("Order State Events"):
-            st.dataframe(df_order_states)
-        with st.expander("Market OHLCV"):
-            st.dataframe(df_market)
-        with st.expander("Optimization Results"):
-            st.dataframe(df_optimize)
-        with st.expander("Workflow Jobs"):
-            st.dataframe(load_workflow_jobs(db_path, refresh_counter=refresh_counter))
 
-    if df_equity.empty:
-        st.warning(
-            "No equity data found for current selection. "
-            "Start a backtest job from Report Export tab, or switch source/period. "
-            f"Configured initial equity is {runner_initial_capital:.2f}."
-        )
+    _render_missing_equity_warning(df_equity, runner_initial_capital)
 
 
 
