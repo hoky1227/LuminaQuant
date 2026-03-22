@@ -88,7 +88,7 @@ jobs:
         uses: astral-sh/setup-uv@v6
 
       - name: Sync dependencies
-        run: uv sync --extra optimize --extra dev --extra live-binance
+        run: uv sync --extra optimize --extra dev --extra live-binance --extra dashboard
 
       - name: Ruff lint check
         run: uv run ruff check .
@@ -145,23 +145,11 @@ jobs:
       - name: Documentation verification (EN/KR + docs)
         run: uv run python scripts/verify_docs.py
 
-      - name: Run pytest suite
-        run: |
-          uv run pytest \
-            tests/test_audit_hardcoded_params.py \
-            tests/test_timeframe_panel_and_liquidity.py \
-            tests/test_native_backend.py \
-            tests/test_optimize_two_stage.py \
-            tests/test_message_bus.py \
-            tests/test_runtime_cache.py \
-            tests/test_system_assembly.py \
-            tests/test_ohlcv_loader.py \
-            tests/test_execution_protective_orders.py \
-            tests/test_live_execution_state_machine.py \
-            tests/test_lookahead.py \
-            tests/test_run_research_pipeline_script.py \
-            tests/test_readme_quickstart_paths.py \
-            tests/test_verify_8gb_baseline_script.py
+      - name: Bytecode sanity check
+        run: uv run python -m compileall -q src apps scripts tests
+
+      - name: Run full pytest suite
+        run: uv run pytest -q
 
       - name: Benchmark smoke + 8GB baseline gate
         run: |
