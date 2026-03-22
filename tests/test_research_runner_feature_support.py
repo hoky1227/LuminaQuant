@@ -867,6 +867,90 @@ def test_funding_liquidation_crowding_preserves_default_config(monkeypatch):
     }
 
 
+def _funding_liquidation_crowding_config(**overrides):
+    config = {
+        "window": 96,
+        "crowding_entry": 0.85,
+        "crowding_exit": 0.25,
+        "liquidation_z_min": 1.0,
+        "return_shock_pct": 0.01,
+        "max_hold_bars": 12,
+        "stop_loss_pct": 0.02,
+        "allow_short": True,
+    }
+    config.update(overrides)
+    return research_runner._FundingLiquidationCrowdingFadeConfig(**config)
+
+
+def test_funding_liquidation_crowding_helpers_cover_entry_and_exit_branches():
+    config = _funding_liquidation_crowding_config()
+
+    assert (
+        research_runner._funding_liquidation_crowding_entry_mode(
+            score_i=-0.9,
+            liq_i=-1.2,
+            ret_i=-0.02,
+            config=config,
+        )
+        == 1
+    )
+    assert (
+        research_runner._funding_liquidation_crowding_entry_mode(
+            score_i=0.9,
+            liq_i=1.2,
+            ret_i=0.02,
+            config=config,
+        )
+        == -1
+    )
+    assert (
+        research_runner._funding_liquidation_crowding_should_exit(
+            mode=1,
+            score_i=-0.1,
+            close_i=100.0,
+            entry_price=100.0,
+            bars_held=1,
+            config=config,
+        )
+        is True
+    )
+    assert (
+        research_runner._funding_liquidation_crowding_should_exit(
+            mode=-1,
+            score_i=0.1,
+            close_i=100.0,
+            entry_price=100.0,
+            bars_held=1,
+            config=config,
+        )
+        is True
+    )
+
+
+def test_funding_liquidation_crowding_position_series_exits_long_and_short_positions():
+    config = _funding_liquidation_crowding_config()
+    long_close = np.asarray([100.0, 98.0, 99.0, 100.0], dtype=float)
+    short_close = np.asarray([100.0, 102.0, 101.0, 100.0], dtype=float)
+
+    long_position = research_runner._funding_liquidation_crowding_position_series(
+        close=long_close,
+        score=np.asarray([-0.9, -0.9, -0.1, 0.0], dtype=float),
+        liquidation_z=np.asarray([-1.2, -1.2, -1.2, 0.0], dtype=float),
+        config=config,
+    )
+    short_position = research_runner._funding_liquidation_crowding_position_series(
+        close=short_close,
+        score=np.asarray([0.9, 0.9, 0.1, 0.0], dtype=float),
+        liquidation_z=np.asarray([1.2, 1.2, 1.2, 0.0], dtype=float),
+        config=config,
+    )
+
+    assert long_position[1] > 0.0
+    assert np.array_equal(long_position[[0, 2, 3]], np.zeros(3, dtype=float))
+    assert short_position[1] < 0.0
+    assert np.array_equal(short_position[[0, 2, 3]], np.zeros(3, dtype=float))
+
+
 def test_liquidity_shock_reversion_strategy_signal_produces_exposure():
     length = 240
     close = np.linspace(100.0, 108.0, length, dtype=float)

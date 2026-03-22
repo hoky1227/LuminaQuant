@@ -4029,65 +4029,90 @@ def _funding_liquidation_crowding_position_series(
         liq_i = float(liquidation_z[idx]) if np.isfinite(liquidation_z[idx]) else np.nan
         ret_i = float(ret[idx]) if np.isfinite(ret[idx]) else 0.0
 
-        if mode == 1:
+        if mode != 0:
             bars_held += 1
-            should_exit = (
-                (np.isfinite(score_i) and score_i >= -config.crowding_exit)
-                or (bars_held >= config.max_hold_bars)
-                or (
-                    entry_price is not None
-                    and close_i <= float(entry_price) * (1.0 - config.stop_loss_pct)
-                )
-            )
-            if should_exit:
+            if _funding_liquidation_crowding_should_exit(
+                mode=mode,
+                score_i=score_i,
+                close_i=close_i,
+                entry_price=entry_price,
+                bars_held=bars_held,
+                config=config,
+            ):
                 mode = 0
                 entry_price = None
                 bars_held = 0
             position[idx] = float(mode)
             continue
 
-        if mode == -1:
-            bars_held += 1
-            should_exit = (
-                (np.isfinite(score_i) and score_i <= config.crowding_exit)
-                or (bars_held >= config.max_hold_bars)
-                or (
-                    entry_price is not None
-                    and close_i >= float(entry_price) * (1.0 + config.stop_loss_pct)
-                )
-            )
-            if should_exit:
-                mode = 0
-                entry_price = None
-                bars_held = 0
-            position[idx] = float(mode)
-            continue
-
-        if not (np.isfinite(score_i) and np.isfinite(liq_i)):
-            position[idx] = 0.0
-            continue
-
-        long_signal = (
-            score_i <= -config.crowding_entry
-            and liq_i <= -config.liquidation_z_min
-            and ret_i <= -config.return_shock_pct
+        next_mode = _funding_liquidation_crowding_entry_mode(
+            score_i=score_i,
+            liq_i=liq_i,
+            ret_i=ret_i,
+            config=config,
         )
-        short_signal = (
-            config.allow_short
-            and score_i >= config.crowding_entry
-            and liq_i >= config.liquidation_z_min
-            and ret_i >= config.return_shock_pct
-        )
-        if long_signal:
-            mode = 1
-            entry_price = close_i
-            bars_held = 0
-        elif short_signal:
-            mode = -1
+        if next_mode != 0:
+            mode = next_mode
             entry_price = close_i
             bars_held = 0
         position[idx] = float(mode)
     return position
+
+
+def _funding_liquidation_crowding_should_exit(
+    *,
+    mode: int,
+    score_i: float,
+    close_i: float,
+    entry_price: float | None,
+    bars_held: int,
+    config: _FundingLiquidationCrowdingFadeConfig,
+) -> bool:
+    if mode == 1:
+        return (
+            (np.isfinite(score_i) and score_i >= -config.crowding_exit)
+            or (bars_held >= config.max_hold_bars)
+            or (
+                entry_price is not None
+                and close_i <= float(entry_price) * (1.0 - config.stop_loss_pct)
+            )
+        )
+    return (
+        (np.isfinite(score_i) and score_i <= config.crowding_exit)
+        or (bars_held >= config.max_hold_bars)
+        or (
+            entry_price is not None
+            and close_i >= float(entry_price) * (1.0 + config.stop_loss_pct)
+        )
+    )
+
+
+def _funding_liquidation_crowding_entry_mode(
+    *,
+    score_i: float,
+    liq_i: float,
+    ret_i: float,
+    config: _FundingLiquidationCrowdingFadeConfig,
+) -> int:
+    if not (np.isfinite(score_i) and np.isfinite(liq_i)):
+        return 0
+
+    long_signal = (
+        score_i <= -config.crowding_entry
+        and liq_i <= -config.liquidation_z_min
+        and ret_i <= -config.return_shock_pct
+    )
+    short_signal = (
+        config.allow_short
+        and score_i >= config.crowding_entry
+        and liq_i >= config.liquidation_z_min
+        and ret_i >= config.return_shock_pct
+    )
+    if long_signal:
+        return 1
+    if short_signal:
+        return -1
+    return 0
 
 
 def _apply_funding_liquidation_crowding_fade_strategy(
