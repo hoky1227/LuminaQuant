@@ -54,6 +54,13 @@ from apps.dashboard.services.process_control import (
 from apps.dashboard.services.ghost_cleanup import (
     run_ghost_cleanup_script as _run_ghost_cleanup_script_data,
 )
+from apps.dashboard.services.report_snapshot import (
+    build_dashboard_report_runtime_overrides as _build_dashboard_report_runtime_overrides_data,
+    build_report_markdown as _build_report_markdown_data,
+    build_report_payload as _build_report_payload_data,
+    save_report_snapshot as _save_report_snapshot_data,
+    serialize_balance_equity_frame as _serialize_balance_equity_frame_data,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -2921,26 +2928,12 @@ def _build_mirror_balance_equity_figure(balance_equity_df, snapshot):
 
 
 def _serialize_balance_equity_frame(df_balance_equity, limit=1500):
-    if df_balance_equity.empty:
-        return []
-    view = df_balance_equity[
-        ["datetime", "equity", "balance", "open_pnl", "drawdown_signed"]
-    ].copy()
-    if len(view) > int(limit):
-        view = _downsample_frame(view, int(limit))
-    payload = []
-    for row in view.itertuples(index=False):
-        dt = pd.to_datetime(row.datetime, errors="coerce")
-        payload.append(
-            {
-                "datetime": dt.isoformat() if pd.notna(dt) else None,
-                "equity": _safe_float(row.equity, 0.0),
-                "balance": _safe_float(row.balance, 0.0),
-                "open_pnl": _safe_float(row.open_pnl, 0.0),
-                "drawdown": _safe_float(row.drawdown_signed, 0.0),
-            }
-        )
-    return payload
+    return _serialize_balance_equity_frame_data(
+        df_balance_equity,
+        limit=limit,
+        downsample_frame=_downsample_frame,
+        safe_float=_safe_float,
+    )
 
 
 def build_report_payload(
@@ -2959,119 +2952,42 @@ def build_report_payload(
     mirror_snapshot=None,
     balance_equity_series=None,
 ):
-    perf_export = {
-        k: v
-        for k, v in performance.items()
-        if k not in {"benchmark_series", "return_series", "cum_return_series"}
-    }
-    mt5_rows = _build_mt5_summary_rows(summary)
-    monthly_table = _build_monthly_returns_table(df_equity, performance)
-    monthly_payload = {}
-    if not monthly_table.empty:
-        monthly_payload = {
-            str(idx): {
-                str(col): (
-                    None
-                    if pd.isna(monthly_table.loc[idx, col])
-                    else float(monthly_table.loc[idx, col])
-                )
-                for col in monthly_table.columns
-            }
-            for idx in monthly_table.index
-        }
-    return {
-        "generated_at": datetime.now(UTC).isoformat(),
-        "run_id": run_id,
-        "source": source,
-        "strategy": strategy_name,
-        "strategy_params": strategy_params,
-        "period_preset": period_preset,
-        "runtime_overrides": runtime_overrides,
-        "summary": summary,
-        "performance": perf_export,
-        "equity_rows": len(df_equity),
-        "trade_rows": len(df_trades),
-        "risk_rows": len(df_risk),
-        "heartbeat_rows": len(df_hb),
-        "mt5_summary": mt5_rows.to_dict(orient="records"),
-        "monthly_returns": monthly_payload,
-        "mirror_snapshot": mirror_snapshot or {},
-        "balance_equity_series": balance_equity_series or [],
-    }
+    return _build_report_payload_data(
+        summary=summary,
+        performance=performance,
+        run_id=run_id,
+        source=source,
+        strategy_name=strategy_name,
+        period_preset=period_preset,
+        df_equity=df_equity,
+        df_trades=df_trades,
+        df_risk=df_risk,
+        df_hb=df_hb,
+        runtime_overrides=runtime_overrides,
+        strategy_params=strategy_params,
+        build_mt5_summary_rows=_build_mt5_summary_rows,
+        build_monthly_returns_table=_build_monthly_returns_table,
+        mirror_snapshot=mirror_snapshot,
+        balance_equity_series=balance_equity_series,
+    )
+
+
+def _build_snapshot_report_markdown(payload):
+    return _build_report_markdown_data(
+        payload,
+        safe_float=_safe_float,
+        format_signed_dollar=_format_signed_dollar,
+        format_metric_value=_format_metric_value,
+        format_duration_seconds=_format_duration_seconds,
+    )
 
 
 def save_report_snapshot(payload):
-    out_dir = Path(DASHBOARD_REPORT_DIR)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
-    json_path = out_dir / f"dashboard_report_{ts}.json"
-    md_path = out_dir / f"dashboard_report_{ts}.md"
-
-    with json_path.open("w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2, ensure_ascii=False)
-
-    s = payload["summary"]
-    mirror = payload.get("mirror_snapshot") or {}
-    balance_series = payload.get("balance_equity_series") or []
-    mirror_block = ""
-    if mirror:
-        mirror_block = (
-            f"\n## Mirror KPI Strip\n"
-            f"- Total Trades: {int(mirror.get('total_trades', 0)):,} "
-            f"({int(mirror.get('wins', 0))}W / {int(mirror.get('losses', 0))}L)\n"
-            f"- Win Rate: {_safe_float(mirror.get('win_rate'), 0.0):.2%}\n"
-            f"- Closed PnL: {_format_signed_dollar(mirror.get('closed_pnl'), digits=2)}\n"
-            f"- Open P/L: {_format_signed_dollar(mirror.get('open_pnl'), digits=2)}\n"
-            f"- Total (C+O): {_format_signed_dollar(mirror.get('total_c_plus_o'), digits=2)}\n"
-            f"- Equity MDD: ${_safe_float(mirror.get('equity_mdd'), 0.0):,.2f} "
-            f"({_safe_float(mirror.get('equity_mdd_rel'), 0.0):.2%})\n"
-            f"- R/MDD: {_safe_float(mirror.get('r_mdd'), 0.0):.2f}x\n"
-        )
-
-    markdown = (
-        f"# Dashboard Snapshot Report\n\n"
-        f"- Generated: {payload['generated_at']}\n"
-        f"- Run ID: {payload['run_id']}\n"
-        f"- Source: {payload['source']}\n"
-        f"- Strategy: {payload['strategy']}\n\n"
-        f"## Summary\n"
-        f"- Period: {s['period_start']} -> {s['period_end']}\n"
-        f"- Bars: {s['bars']}\n"
-        f"- Fills: {s['fills']} (BUY {s['buy_fills']} / SELL {s['sell_fills']})\n"
-        f"- Avg fills/day: {s['fills_per_day']:.2f}\n"
-        f"- Avg qty: {s['avg_qty']:.4f}\n"
-        f"- Avg notional: {s['avg_notional']:.2f}\n"
-        f"- Commission: {s['total_commission']:.4f}\n"
-        f"- Realized PnL: {s['realized_pnl']:.4f}\n"
-        f"- Win rate: {s['win_rate']:.2%}\n"
-        f"- Avg trade return: {s['avg_trade_return_pct']:.4f}%\n"
-        f"- Best trade PnL: {s['best_trade_pnl']:.4f}\n"
-        f"- Worst trade PnL: {s['worst_trade_pnl']:.4f}\n"
-        f"- Gross Profit / Gross Loss: {s['gross_profit']:.4f} / {s['gross_loss']:.4f}\n"
-        f"- Profit Factor: {_format_metric_value('Profit Factor', s['profit_factor'])}\n"
-        f"- Recovery Factor: {s['recovery_factor']:.4f}\n"
-        f"- Long Trades (Win %): {s['long_trades_win_pct']}\n"
-        f"- Short Trades (Win %): {s['short_trades_win_pct']}\n"
-        f"- Holding (min/avg/max): {_format_duration_seconds(s['holding_time_min_sec'])} / "
-        f"{_format_duration_seconds(s['holding_time_avg_sec'])} / "
-        f"{_format_duration_seconds(s['holding_time_max_sec'])}\n"
-        f"\n## Drawdown\n"
-        f"- Equity DD (Abs/Max/Rel): {s['equity_drawdown_absolute']:.4f} / "
-        f"{s['equity_drawdown_maximal']:.4f} / {s['equity_drawdown_relative_pct']:.2%}\n"
-        f"- Balance DD (Abs/Max/Rel): {s['balance_drawdown_absolute']:.4f} / "
-        f"{s['balance_drawdown_maximal']:.4f} / {s['balance_drawdown_relative_pct']:.2%}\n"
-        f"\n## Streaks\n"
-        f"- Max win/loss streak: {int(s['win_streak_max'])} / {int(s['loss_streak_max'])}\n"
-        f"- Avg win/loss streak: {s['win_streak_avg']:.2f} / {s['loss_streak_avg']:.2f}\n"
-        f"- Max consecutive profit/loss: {s['max_consecutive_profit_amount']:.4f} / "
-        f"{s['max_consecutive_loss_amount']:.4f}\n"
-        f"\n## Export Payload\n"
-        f"- Balance/Equity points: {len(balance_series)}\n"
-        f"{mirror_block}"
+    return _save_report_snapshot_data(
+        payload,
+        out_dir=Path(DASHBOARD_REPORT_DIR),
+        markdown_builder=_build_snapshot_report_markdown,
     )
-    with md_path.open("w", encoding="utf-8") as f:
-        f.write(markdown)
-    return str(json_path), str(md_path), markdown
 
 
 def _build_dashboard_report_runtime_overrides(
@@ -3083,14 +2999,14 @@ def _build_dashboard_report_runtime_overrides(
     runner_data_source,
     runner_timeout_sec,
 ):
-    return {
-        "initial_capital": float(runner_initial_capital),
-        "backtest_leverage": int(runner_leverage),
-        "symbols": runner_symbols,
-        "timeframe": runner_timeframe,
-        "runner_data_source": runner_data_source,
-        "runner_timeout_sec": int(runner_timeout_sec),
-    }
+    return _build_dashboard_report_runtime_overrides_data(
+        runner_initial_capital=runner_initial_capital,
+        runner_leverage=runner_leverage,
+        runner_symbols=runner_symbols,
+        runner_timeframe=runner_timeframe,
+        runner_data_source=runner_data_source,
+        runner_timeout_sec=runner_timeout_sec,
+    )
 
 
 def _render_snapshot_report_section(
