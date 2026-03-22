@@ -2210,6 +2210,73 @@ def test_topcap_tsmom_strategy_signal_can_apply_benchmark_drawdown_gate():
     assert np.any(turnover > 0.0)
 
 
+def test_apply_topcap_tsmom_strategy_rebalances_only_on_cadence(monkeypatch):
+    rebalance_indices: list[int] = []
+
+    monkeypatch.setattr(
+        research_runner,
+        "_apply_topcap_risk_exits",
+        lambda **kwargs: None,
+    )
+
+    def _stub_ranked_momentum_rows(**kwargs):
+        rebalance_indices.append(int(kwargs["idx"]))
+        return [(0.5, "ETH/USDT"), (-0.5, "BNB/USDT")]
+
+    monkeypatch.setattr(
+        research_runner,
+        "_topcap_ranked_momentum_rows",
+        _stub_ranked_momentum_rows,
+    )
+    monkeypatch.setattr(research_runner, "_topcap_market_regime", lambda *args, **kwargs: "BOTH")
+    monkeypatch.setattr(research_runner, "_topcap_residualized_rows", lambda rows, **kwargs: rows)
+    monkeypatch.setattr(
+        research_runner,
+        "_topcap_target_sets",
+        lambda rows, **kwargs: ({"ETH/USDT"}, {"BNB/USDT"}),
+    )
+
+    length = 12
+    symbols = ["BTC/USDT", "ETH/USDT", "BNB/USDT"]
+    aligned = {"datetime": _minute_datetimes(length)}
+    for symbol, base in {"BTC/USDT": 100.0, "ETH/USDT": 104.0, "BNB/USDT": 98.0}.items():
+        close = np.linspace(base, base + 5.0, length, dtype=float)
+        aligned[f"{symbol}:open"] = close
+        aligned[f"{symbol}:high"] = close + 0.2
+        aligned[f"{symbol}:low"] = close - 0.2
+        aligned[f"{symbol}:close"] = close
+        aligned[f"{symbol}:volume"] = np.full(length, 150.0, dtype=float)
+
+    exposures = np.zeros((len(symbols), length), dtype=float)
+    meta: dict[str, object] = {}
+
+    research_runner._apply_topcap_tsmom_strategy(
+        params={
+            "lookback_bars": 8,
+            "rebalance_bars": 2,
+            "signal_threshold": 0.01,
+            "stop_loss_pct": 0.0,
+            "max_longs": 1,
+            "max_shorts": 1,
+            "min_price": 0.1,
+            "btc_regime_ma": 0,
+            "btc_symbol": "BTC/USDT",
+        },
+        aligned=aligned,
+        symbols=symbols,
+        n=length,
+        exposures=exposures,
+        meta=meta,
+    )
+
+    assert rebalance_indices == [9, 11]
+    assert np.all(exposures[:, :9] == 0.0)
+    assert np.all(exposures[0] == 0.0)
+    assert np.array_equal(exposures[1, 9:], np.asarray([1.0, 1.0, 1.0], dtype=float))
+    assert np.array_equal(exposures[2, 9:], np.asarray([-1.0, -1.0, -1.0], dtype=float))
+    assert meta["cross_sectional"] is True
+
+
 def test_regime_breakout_strategy_signal_still_trades_persistent_breakout():
     length = 160
     close = np.linspace(100.0, 170.0, length, dtype=float)

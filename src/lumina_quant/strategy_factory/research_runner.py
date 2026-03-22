@@ -3733,6 +3733,52 @@ def _apply_topcap_target_positions(
         position_state[s_idx] = next_position
 
 
+def _topcap_rebalance_due(
+    *,
+    idx: int,
+    config: _TopCapTimeSeriesMomentumConfig,
+) -> bool:
+    return idx >= config.lookback_bars and (idx + 1) % config.rebalance_bars == 0
+
+
+def _rebalance_topcap_positions(
+    *,
+    idx: int,
+    current_close_map: Mapping[str, float],
+    close_by_symbol: Mapping[str, np.ndarray],
+    btc_close: np.ndarray,
+    symbols: Sequence[str],
+    position_state: np.ndarray,
+    entry_price: np.ndarray,
+    config: _TopCapTimeSeriesMomentumConfig,
+) -> None:
+    momentum_rows = _topcap_ranked_momentum_rows(
+        close_by_symbol=close_by_symbol,
+        symbols=symbols,
+        idx=idx,
+        config=config,
+    )
+    regime = _topcap_market_regime(
+        btc_close,
+        idx=idx,
+        config=config,
+    )
+    ranked_rows = _topcap_residualized_rows(momentum_rows, config=config)
+    long_set, short_set = _topcap_target_sets(
+        ranked_rows,
+        regime=regime,
+        config=config,
+    )
+    _apply_topcap_target_positions(
+        current_close_map=current_close_map,
+        symbols=symbols,
+        position_state=position_state,
+        entry_price=entry_price,
+        long_set=long_set,
+        short_set=short_set,
+    )
+
+
 def _apply_topcap_tsmom_strategy(
     *,
     params: Mapping[str, Any],
@@ -3764,34 +3810,19 @@ def _apply_topcap_tsmom_strategy(
             config=config,
         )
 
-        if idx < config.lookback_bars or (idx + 1) % config.rebalance_bars != 0:
+        if not _topcap_rebalance_due(idx=idx, config=config):
             exposures[:, idx] = position_state
             continue
 
-        momentum_rows = _topcap_ranked_momentum_rows(
-            close_by_symbol=close_by_symbol,
-            symbols=symbols,
+        _rebalance_topcap_positions(
             idx=idx,
-            config=config,
-        )
-        regime = _topcap_market_regime(
-            btc_close,
-            idx=idx,
-            config=config,
-        )
-        ranked_rows = _topcap_residualized_rows(momentum_rows, config=config)
-        long_set, short_set = _topcap_target_sets(
-            ranked_rows,
-            regime=regime,
-            config=config,
-        )
-        _apply_topcap_target_positions(
             current_close_map=current_close_map,
+            close_by_symbol=close_by_symbol,
+            btc_close=btc_close,
             symbols=symbols,
             position_state=position_state,
             entry_price=entry_price,
-            long_set=long_set,
-            short_set=short_set,
+            config=config,
         )
         exposures[:, idx] = position_state
 
