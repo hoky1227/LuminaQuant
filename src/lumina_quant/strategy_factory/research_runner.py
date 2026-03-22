@@ -4816,6 +4816,69 @@ def _evaluate_candidate_metric_payload(
     )
 
 
+def _evaluate_candidate_hurdles(
+    metric_payload: _CandidateMetricPayload,
+    *,
+    scoring_config: Mapping[str, Any] | None,
+) -> tuple[dict[str, dict[str, Any]], bool, dict[str, Any]]:
+    hurdle_fields, passed, hard_reject = _hurdle_fields(
+        metric_payload.train_metrics,
+        metric_payload.val_metrics,
+        metric_payload.oos_metrics,
+        scoring_config=scoring_config,
+    )
+    hard_reject = _apply_cost_stress_hard_rejects(
+        hard_reject=hard_reject,
+        oos_stress_x2=metric_payload.oos_stress_x2,
+        oos_stress_x3=metric_payload.oos_stress_x3,
+        scoring_config=scoring_config,
+    )
+    passed = bool(passed and not hard_reject)
+    for stage in ("train", "val", "oos"):
+        hurdle_fields[stage]["pass"] = bool(hurdle_fields[stage]["pass"] and passed)
+    return hurdle_fields, passed, hard_reject
+
+
+def _candidate_result_payload(
+    candidate: dict[str, Any],
+    *,
+    signal_payload: _CandidateSignalPayload,
+    metric_payload: _CandidateMetricPayload,
+    hurdle_fields: dict[str, dict[str, Any]],
+    passed: bool,
+    hard_reject: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "candidate": candidate,
+        "timestamps": signal_payload.timestamps,
+        "returns": signal_payload.returns,
+        "turnover": signal_payload.turnover,
+        "exposure": signal_payload.exposure,
+        "train": metric_payload.train_metrics,
+        "val": metric_payload.val_metrics,
+        "oos": metric_payload.oos_metrics,
+        "oos_cost_stress": {
+            "x2": {
+                "sharpe": float(metric_payload.oos_stress_x2.get("sharpe", 0.0)),
+                "return": float(metric_payload.oos_stress_x2.get("return", 0.0)),
+            },
+            "x3": {
+                "sharpe": float(metric_payload.oos_stress_x3.get("sharpe", 0.0)),
+                "return": float(metric_payload.oos_stress_x3.get("return", 0.0)),
+            },
+        },
+        "hurdle_fields": hurdle_fields,
+        "pass": bool(passed),
+        "hard_reject_reasons": hard_reject,
+        "metadata": {
+            "strategy_family": _family_from_strategy(str(candidate.get("strategy_class") or "")),
+            "cost_rate": float(signal_payload.cost_rate),
+            "aligned_bars": int(signal_payload.timestamps.size),
+            **signal_payload.meta,
+        },
+    }
+
+
 def _evaluate_candidate(
     candidate: dict[str, Any],
     *,
@@ -4846,53 +4909,18 @@ def _evaluate_candidate(
         candidate_count=candidate_count,
         split=split,
     )
-
-    hurdle_fields, passed, hard_reject = _hurdle_fields(
-        metric_payload.train_metrics,
-        metric_payload.val_metrics,
-        metric_payload.oos_metrics,
+    hurdle_fields, passed, hard_reject = _evaluate_candidate_hurdles(
+        metric_payload,
         scoring_config=scoring_config,
     )
-
-    hard_reject = _apply_cost_stress_hard_rejects(
+    return _candidate_result_payload(
+        candidate,
+        signal_payload=signal_payload,
+        metric_payload=metric_payload,
+        hurdle_fields=hurdle_fields,
+        passed=passed,
         hard_reject=hard_reject,
-        oos_stress_x2=metric_payload.oos_stress_x2,
-        oos_stress_x3=metric_payload.oos_stress_x3,
-        scoring_config=scoring_config,
     )
-    passed = passed and not hard_reject
-    for stage in ("train", "val", "oos"):
-        hurdle_fields[stage]["pass"] = bool(hurdle_fields[stage]["pass"] and passed)
-
-    return {
-        "candidate": candidate,
-        "timestamps": signal_payload.timestamps,
-        "returns": signal_payload.returns,
-        "turnover": signal_payload.turnover,
-        "exposure": signal_payload.exposure,
-        "train": metric_payload.train_metrics,
-        "val": metric_payload.val_metrics,
-        "oos": metric_payload.oos_metrics,
-        "oos_cost_stress": {
-            "x2": {
-                "sharpe": float(metric_payload.oos_stress_x2.get("sharpe", 0.0)),
-                "return": float(metric_payload.oos_stress_x2.get("return", 0.0)),
-            },
-            "x3": {
-                "sharpe": float(metric_payload.oos_stress_x3.get("sharpe", 0.0)),
-                "return": float(metric_payload.oos_stress_x3.get("return", 0.0)),
-            },
-        },
-        "hurdle_fields": hurdle_fields,
-        "pass": bool(passed),
-        "hard_reject_reasons": hard_reject,
-        "metadata": {
-            "strategy_family": _family_from_strategy(str(candidate.get("strategy_class") or "")),
-            "cost_rate": float(signal_payload.cost_rate),
-            "aligned_bars": int(signal_payload.timestamps.size),
-            **signal_payload.meta,
-        },
-    }
 
 
 def _candidate_instability_penalty(

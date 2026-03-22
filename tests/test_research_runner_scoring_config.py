@@ -243,3 +243,58 @@ def test_evaluate_candidate_returns_insufficient_result_when_signal_payload_miss
         "timeframe": "1m",
         "cache": cache,
     }
+
+
+def test_evaluate_candidate_propagates_cost_stress_hard_rejects_to_stage_passes(monkeypatch):
+    candidate = {"strategy_class": "CompositeTrendStrategy", "params": {}}
+    signal_payload = research_runner._CandidateSignalPayload(
+        symbols=["BTC/USDT"],
+        timeframe="1m",
+        timestamps=np.asarray(["2024-01-01T00:00:00"], dtype="datetime64[ms]"),
+        returns_raw=np.asarray([0.02], dtype=float),
+        returns=np.asarray([0.019], dtype=float),
+        turnover=np.asarray([1.0], dtype=float),
+        exposure=np.asarray([1.0], dtype=float),
+        meta={},
+        cost_rate=0.001,
+    )
+    metric_payload = research_runner._CandidateMetricPayload(
+        train_metrics={"sharpe": 1.0, "return": 0.02},
+        val_metrics={"sharpe": 0.8, "return": 0.01},
+        oos_metrics={"sharpe": 0.7, "return": 0.009},
+        oos_stress_x2={"sharpe": 0.5, "return": 0.006},
+        oos_stress_x3={"sharpe": 0.2, "return": 0.003},
+    )
+
+    monkeypatch.setattr(research_runner, "_load_candidate_signal_payload", lambda *args, **kwargs: signal_payload)
+    monkeypatch.setattr(research_runner, "_evaluate_candidate_metric_payload", lambda *args, **kwargs: metric_payload)
+    monkeypatch.setattr(
+        research_runner,
+        "_hurdle_fields",
+        lambda *args, **kwargs: (
+            {"train": {"pass": True}, "val": {"pass": True}, "oos": {"pass": True}},
+            True,
+            {},
+        ),
+    )
+    monkeypatch.setattr(
+        research_runner,
+        "_apply_cost_stress_hard_rejects",
+        lambda **kwargs: {"stress_x3_sharpe": -0.2},
+    )
+
+    result = research_runner._evaluate_candidate(
+        candidate,
+        cache={},
+        feature_cache={},
+        benchmark_cache={},
+        candidate_count=1,
+    )
+
+    assert result["pass"] is False
+    assert result["hard_reject_reasons"] == {"stress_x3_sharpe": -0.2}
+    assert result["hurdle_fields"] == {
+        "train": {"pass": False},
+        "val": {"pass": False},
+        "oos": {"pass": False},
+    }
