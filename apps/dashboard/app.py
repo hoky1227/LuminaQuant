@@ -56,8 +56,11 @@ from apps.dashboard.services.ghost_cleanup import (
 )
 from apps.dashboard.services.report_snapshot import (
     build_dashboard_report_runtime_overrides as _build_dashboard_report_runtime_overrides_data,
+    build_monthly_returns_table as _build_monthly_returns_table_data,
+    build_mt5_summary_rows as _build_mt5_summary_rows_data,
     build_report_markdown as _build_report_markdown_data,
     build_report_payload as _build_report_payload_data,
+    format_metric_value as _format_metric_value_data,
     save_report_snapshot as _save_report_snapshot_data,
     serialize_balance_equity_frame as _serialize_balance_equity_frame_data,
 )
@@ -1879,291 +1882,23 @@ def _linear_regression_diagnostics(values):
 
 
 def _build_monthly_returns_table(df_equity, performance):
-    if (
-        not isinstance(performance, dict)
-        or "return_series" not in performance
-        or df_equity.empty
-        or "datetime" not in df_equity.columns
-    ):
-        return pd.DataFrame()
-
-    returns = pd.Series(performance.get("return_series", []), dtype="float64")
-    if returns.empty:
-        return pd.DataFrame()
-
-    timestamps = pd.to_datetime(df_equity["datetime"], errors="coerce").iloc[1:]
-    min_len = min(len(returns), len(timestamps))
-    if min_len <= 0:
-        return pd.DataFrame()
-
-    frame = pd.DataFrame(
-        {
-            "datetime": timestamps.iloc[-min_len:].to_numpy(),
-            "ret": returns.iloc[-min_len:].to_numpy(),
-        }
-    )
-    frame = frame.dropna(subset=["datetime", "ret"])
-    if frame.empty:
-        return pd.DataFrame()
-
-    frame["year"] = frame["datetime"].dt.year
-    frame["month"] = frame["datetime"].dt.month
-    monthly = (
-        frame.groupby(["year", "month"], observed=False)["ret"]
-        .apply(lambda s: float(np.prod(1.0 + s.to_numpy(dtype=np.float64)) - 1.0))
-        .unstack("month")
-    )
-    if monthly.empty:
-        return pd.DataFrame()
-    month_names = [
-        "Jan",
-        "Feb",
-        "Mar",
-        "Apr",
-        "May",
-        "Jun",
-        "Jul",
-        "Aug",
-        "Sep",
-        "Oct",
-        "Nov",
-        "Dec",
-    ]
-    monthly = monthly.reindex(columns=list(range(1, 13)))
-    monthly.columns = month_names
-    return monthly
+    return _build_monthly_returns_table_data(df_equity, performance)
 
 
 def _build_mt5_summary_rows(summary):
-    if not isinstance(summary, dict):
-        return pd.DataFrame()
-
-    rows = [
-        {
-            "Section": "Profitability",
-            "Metric": "Total Net Profit",
-            "Value": _format_metric_value("Total Net Profit", summary.get("total_net_profit")),
-        },
-        {
-            "Section": "Profitability",
-            "Metric": "Open P/L",
-            "Value": _format_metric_value("Open P/L", summary.get("open_pnl")),
-        },
-        {
-            "Section": "Profitability",
-            "Metric": "Total (C+O)",
-            "Value": _format_metric_value("Total (C+O)", summary.get("total_c_plus_o")),
-        },
-        {
-            "Section": "Profitability",
-            "Metric": "Gross Profit",
-            "Value": _format_metric_value("Gross Profit", summary.get("gross_profit")),
-        },
-        {
-            "Section": "Profitability",
-            "Metric": "Gross Loss",
-            "Value": _format_metric_value("Gross Loss", summary.get("gross_loss")),
-        },
-        {
-            "Section": "Profitability",
-            "Metric": "Profit Factor",
-            "Value": _format_metric_value("Profit Factor", summary.get("profit_factor")),
-        },
-        {
-            "Section": "Profitability",
-            "Metric": "Expected Payoff",
-            "Value": _format_metric_value("Expected Payoff", summary.get("expected_payoff")),
-        },
-        {
-            "Section": "Profitability",
-            "Metric": "Recovery Factor",
-            "Value": _format_metric_value("Recovery Factor", summary.get("recovery_factor")),
-        },
-        {
-            "Section": "Profitability",
-            "Metric": "R/MDD",
-            "Value": _format_metric_value("R/MDD", summary.get("r_mdd")),
-        },
-        {
-            "Section": "Trade Quality",
-            "Metric": "AHPR",
-            "Value": _format_metric_value("AHPR", summary.get("ahpr")),
-        },
-        {
-            "Section": "Trade Quality",
-            "Metric": "GHPR",
-            "Value": _format_metric_value("GHPR", summary.get("ghpr")),
-        },
-        {
-            "Section": "Trade Quality",
-            "Metric": "LR Correlation",
-            "Value": _format_metric_value("LR Correlation", summary.get("lr_correlation")),
-        },
-        {
-            "Section": "Trade Quality",
-            "Metric": "LR Std Error",
-            "Value": _format_metric_value("LR Std Error", summary.get("lr_std_error")),
-        },
-        {
-            "Section": "Trade Quality",
-            "Metric": "Z-Score",
-            "Value": _format_metric_value("Z-Score", summary.get("z_score")),
-        },
-        {
-            "Section": "Direction",
-            "Metric": "Long Trades (Win %)",
-            "Value": _format_metric_value(
-                "Long Trades (Win %)", summary.get("long_trades_win_pct")
-            ),
-        },
-        {
-            "Section": "Direction",
-            "Metric": "Short Trades (Win %)",
-            "Value": _format_metric_value(
-                "Short Trades (Win %)", summary.get("short_trades_win_pct")
-            ),
-        },
-        {
-            "Section": "Direction",
-            "Metric": "Profit Trades (% of total)",
-            "Value": _format_metric_value(
-                "Profit Trades (% of total)", summary.get("profit_trades_text")
-            ),
-        },
-        {
-            "Section": "Direction",
-            "Metric": "Loss Trades (% of total)",
-            "Value": _format_metric_value(
-                "Loss Trades (% of total)", summary.get("loss_trades_text")
-            ),
-        },
-        {
-            "Section": "Direction",
-            "Metric": "Avg Profit Trade",
-            "Value": _format_metric_value("Avg Profit Trade", summary.get("avg_profit_trade")),
-        },
-        {
-            "Section": "Direction",
-            "Metric": "Avg Loss Trade",
-            "Value": _format_metric_value("Avg Loss Trade", summary.get("avg_loss_trade")),
-        },
-        {
-            "Section": "Direction",
-            "Metric": "Payoff Ratio",
-            "Value": _format_metric_value("Payoff Ratio", summary.get("payoff_ratio")),
-        },
-        {
-            "Section": "Holding",
-            "Metric": "Min Holding Time",
-            "Value": _format_metric_value("Min Holding Time", summary.get("holding_time_min_sec")),
-        },
-        {
-            "Section": "Holding",
-            "Metric": "Avg Holding Time",
-            "Value": _format_metric_value("Avg Holding Time", summary.get("holding_time_avg_sec")),
-        },
-        {
-            "Section": "Holding",
-            "Metric": "Max Holding Time",
-            "Value": _format_metric_value("Max Holding Time", summary.get("holding_time_max_sec")),
-        },
-        {
-            "Section": "Drawdown",
-            "Metric": "Equity Drawdown Absolute",
-            "Value": _format_metric_value(
-                "Equity Drawdown Absolute", summary.get("equity_drawdown_absolute")
-            ),
-        },
-        {
-            "Section": "Drawdown",
-            "Metric": "Equity Drawdown Maximal",
-            "Value": _format_metric_value(
-                "Equity Drawdown Maximal", summary.get("equity_drawdown_maximal")
-            ),
-        },
-        {
-            "Section": "Drawdown",
-            "Metric": "Equity Drawdown Relative %",
-            "Value": _format_metric_value(
-                "Equity Drawdown Relative %", summary.get("equity_drawdown_relative_pct")
-            ),
-        },
-        {
-            "Section": "Drawdown",
-            "Metric": "Balance Drawdown Absolute",
-            "Value": _format_metric_value(
-                "Balance Drawdown Absolute", summary.get("balance_drawdown_absolute")
-            ),
-        },
-        {
-            "Section": "Drawdown",
-            "Metric": "Balance Drawdown Maximal",
-            "Value": _format_metric_value(
-                "Balance Drawdown Maximal", summary.get("balance_drawdown_maximal")
-            ),
-        },
-        {
-            "Section": "Drawdown",
-            "Metric": "Balance Drawdown Relative %",
-            "Value": _format_metric_value(
-                "Balance Drawdown Relative %", summary.get("balance_drawdown_relative_pct")
-            ),
-        },
-    ]
-    return pd.DataFrame(rows)
+    return _build_mt5_summary_rows_data(
+        summary,
+        format_metric_value=_format_metric_value,
+    )
 
 
 def _format_metric_value(name, value):
-    if value is None:
-        return "N/A"
-    if name in {
-        "Long Trades (Win %)",
-        "Short Trades (Win %)",
-        "Profit Trades (% of total)",
-        "Loss Trades (% of total)",
-    }:
-        return str(value)
-    if name in {"Avg Holding Time", "Max Holding Time", "Min Holding Time"}:
-        return _format_duration_seconds(value)
-    if name in {
-        "Total Return",
-        "Cumulative Return",
-        "CAGR",
-        "Ann. Volatility",
-        "Max Drawdown",
-        "Win Rate",
-        "Equity Drawdown Relative %",
-        "Balance Drawdown Relative %",
-    }:
-        return f"{_safe_float(value):.2%}"
-    if name == "Profit Factor":
-        try:
-            parsed = float(value)
-        except Exception:
-            parsed = 0.0
-        return "inf" if math.isinf(parsed) else f"{parsed:.3f}"
-    if name in {"Funding (Net)", "Alpha", "Beta", "Information Ratio"}:
-        return f"{_safe_float(value):.6f}"
-    if name in {
-        "Total Net Profit",
-        "Open P/L",
-        "Total (C+O)",
-        "Gross Profit",
-        "Gross Loss",
-        "Expected Payoff",
-        "Avg Profit Trade",
-        "Avg Loss Trade",
-        "Equity Drawdown Absolute",
-        "Equity Drawdown Maximal",
-        "Balance Drawdown Absolute",
-        "Balance Drawdown Maximal",
-    }:
-        return f"{_safe_float(value):.4f}"
-    if name in {"R/MDD", "Payoff Ratio"}:
-        return f"{_safe_float(value):.4f}"
-    if name == "DD Duration":
-        return str(int(_safe_float(value)))
-    return f"{_safe_float(value):.4f}"
+    return _format_metric_value_data(
+        name,
+        value,
+        safe_float=_safe_float,
+        format_duration_seconds=_format_duration_seconds,
+    )
 
 
 def _downsample_frame(df, target_points):
