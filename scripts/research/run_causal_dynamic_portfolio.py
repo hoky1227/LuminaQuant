@@ -126,6 +126,21 @@ def _current_one_shot_comparison_entry(
     }
 
 
+def _maybe_current_one_shot_comparison_entry(
+    *,
+    bundle_path: Path | None = None,
+    portfolio_path: Path | None = None,
+) -> dict[str, Any] | None:
+    bundle_path = bundle_path or PORTFOLIO_ONE_SHOT_CURRENT_BUNDLE
+    portfolio_path = portfolio_path or PORTFOLIO_CURRENT_OPTIMIZATION
+    if not bundle_path.exists() or not portfolio_path.exists():
+        return None
+    return _current_one_shot_comparison_entry(
+        bundle_path=bundle_path,
+        portfolio_path=portfolio_path,
+    )
+
+
 def _metrics(returns: np.ndarray, periods_per_year: int = 365) -> dict[str, float]:
     if returns.size == 0:
         return {
@@ -817,10 +832,16 @@ def write_dynamic_allocator_report(
 def write_dynamic_comparison(
     *,
     dynamic_payload: dict[str, Any],
-    comparison_input: Path = COMPARISON_INPUT,
+    comparison_input: Path | None = None,
 ) -> dict[str, Any]:
+    comparison_input = comparison_input or COMPARISON_INPUT
     existing = json.loads(comparison_input.read_text(encoding="utf-8"))
-    existing["current_one_shot_optimized"] = _current_one_shot_comparison_entry()
+    current_entry = _maybe_current_one_shot_comparison_entry(
+        bundle_path=PORTFOLIO_ONE_SHOT_CURRENT_BUNDLE,
+        portfolio_path=PORTFOLIO_CURRENT_OPTIMIZATION,
+    )
+    if current_entry is not None:
+        existing["current_one_shot_optimized"] = current_entry
     scope = list(existing.get("comparison_scope") or [])
     if "current_one_shot_optimized" not in scope:
         scope.append("current_one_shot_optimized")

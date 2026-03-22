@@ -185,17 +185,17 @@ def test_write_dynamic_comparison_refreshes_current_one_shot_snapshot(
     )
     current_bundle = tmp_path / "current_bundle.json"
     current_bundle.write_text(
-        json.dumps({"candidates": [{"name": "new-incumbent"}]}),
+        json.dumps({"candidates": [{"name": "fresh-incumbent-123"}]}),
         encoding="utf-8",
     )
     current_portfolio = tmp_path / "current_portfolio.json"
     current_portfolio.write_text(
         json.dumps(
             {
-                "weights": [{"candidate_id": "probe", "name": "new-incumbent", "weight": 1.0}],
+                "weights": [{"candidate_id": "probe", "name": "fresh-incumbent-123", "weight": 1.0}],
                 "portfolio_metrics": {
-                    "val": {"total_return": 0.01, "sharpe": 1.1},
-                    "oos": {"total_return": 0.05, "sharpe": 2.0},
+                    "val": {"total_return": 0.012345, "sharpe": 1.12345},
+                    "oos": {"total_return": 0.054321, "sharpe": 2.34567},
                 },
             }
         ),
@@ -217,9 +217,9 @@ def test_write_dynamic_comparison_refreshes_current_one_shot_snapshot(
     written = json.loads(Path(result["json_path"]).read_text(encoding="utf-8"))
     assert written["current_one_shot_optimized"]["path"] == str(current_portfolio.resolve())
     assert written["current_one_shot_optimized"]["bundle_path"] == str(current_bundle.resolve())
-    assert written["current_one_shot_optimized"]["oos"]["total_return"] == 0.05
+    assert written["current_one_shot_optimized"]["oos"]["total_return"] == 0.054321
     assert "current_one_shot_optimized" in written["comparison_scope"]
-    assert abs(written["deltas"]["dynamic_vs_current_one_shot_oos_return"] + 0.01) < 1e-12
+    assert abs(written["deltas"]["dynamic_vs_current_one_shot_oos_return"] + 0.014321) < 1e-12
 
 
 def test_regime_multiplier_can_disable_rolling_breakout_when_gate_fails() -> None:

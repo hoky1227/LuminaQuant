@@ -441,7 +441,9 @@ def write_overlay_report(
 def write_overlay_comparison(overlay_payload: dict[str, Any]) -> dict[str, Any]:
     payload = json.loads(COMPARISON_INPUT.read_text(encoding="utf-8"))
     scope = list(payload.get("comparison_scope") or [])
-    payload["current_one_shot_optimized"] = _helper._current_one_shot_comparison_entry()
+    current_entry = _helper._maybe_current_one_shot_comparison_entry()
+    if current_entry is not None:
+        payload["current_one_shot_optimized"] = current_entry
     if "current_one_shot_optimized" not in scope:
         scope.append("current_one_shot_optimized")
     if "causal_overlay_portfolio" not in scope:
