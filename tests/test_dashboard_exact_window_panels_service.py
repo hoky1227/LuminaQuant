@@ -56,6 +56,12 @@ class _FakeContainer:
         else:
             self._calls.append(("line_chart", type(data).__name__, None))
 
+    def bar_chart(self, data: Any, **_: Any) -> None:
+        if isinstance(data, pd.DataFrame):
+            self._calls.append(("bar_chart", list(data.columns), len(data)))
+        else:
+            self._calls.append(("bar_chart", type(data).__name__, None))
+
     def markdown(self, value: str, **kwargs: Any) -> None:
         self._calls.append(("markdown", value, kwargs))
 
@@ -78,6 +84,7 @@ def _load_module(monkeypatch):
     fake_streamlit.info = container.info
     fake_streamlit.plotly_chart = container.plotly_chart
     fake_streamlit.line_chart = container.line_chart
+    fake_streamlit.bar_chart = container.bar_chart
     fake_streamlit.markdown = container.markdown
     fake_streamlit.write = container.write
     monkeypatch.setitem(sys.modules, "streamlit", fake_streamlit)
@@ -565,3 +572,175 @@ def test_render_exact_window_universe_tab_reports_empty_sections(monkeypatch) ->
     assert ("info", "No coverage table available.") in calls
     assert ("info", "No saved crypto-metal candidates in current details bundle.") in calls
     assert any(call[0] == "json" and call[1] == {} for call in calls)
+
+
+def test_render_exact_window_followup_tab_renders_table_and_bar_chart(monkeypatch) -> None:
+    module, container, calls = _load_module(monkeypatch)
+    context = types.SimpleNamespace(
+        followup_frame=pd.DataFrame(
+            {
+                "stage": ["stage-a", "stage-b"],
+                "peak_rss_mib": [128.0, 256.0],
+            }
+        )
+    )
+
+    module.render_exact_window_followup_tab(
+        context,
+        format_frame=lambda frame: frame,
+        st_module=container,
+    )
+
+    assert any(call[0] == "dataframe" and "stage" in call[1] for call in calls)
+    assert ("caption", "Follow-up peak RSS (MiB)") in calls
+    assert any(call[0] == "bar_chart" and call[1] == ["peak_rss_mib"] for call in calls)
+
+
+def test_render_exact_window_followup_tab_reports_missing_runs(monkeypatch) -> None:
+    module, container, calls = _load_module(monkeypatch)
+    context = types.SimpleNamespace(followup_frame=pd.DataFrame())
+
+    module.render_exact_window_followup_tab(
+        context,
+        format_frame=lambda frame: frame,
+        st_module=container,
+    )
+
+    assert ("info", "No follow-up runs saved.") in calls
+
+
+def test_render_exact_window_registry_tab_renders_registry_and_archive(monkeypatch) -> None:
+    module, container, calls = _load_module(monkeypatch)
+    context = types.SimpleNamespace(
+        registry_frame=pd.DataFrame({"run_id": ["abc"]}),
+        bundle={"followup_status": {"backtest_log_archive_latest": {"entries": 1}}},
+    )
+
+    module.render_exact_window_registry_tab(
+        context,
+        format_frame=lambda frame: frame,
+        st_module=container,
+    )
+
+    assert any(call[0] == "dataframe" and "run_id" in call[1] for call in calls)
+    assert ("expander", "Archived log ledger", False) in calls
+    assert ("json", {"entries": 1}) in calls
+
+
+def test_render_exact_window_registry_tab_reports_missing_registry(monkeypatch) -> None:
+    module, container, calls = _load_module(monkeypatch)
+    context = types.SimpleNamespace(
+        registry_frame=pd.DataFrame(),
+        bundle={"followup_status": {}},
+    )
+
+    module.render_exact_window_registry_tab(
+        context,
+        format_frame=lambda frame: frame,
+        st_module=container,
+    )
+
+    assert ("info", "No run registry entries saved.") in calls
+    assert ("expander", "Archived log ledger", False) in calls
+
+
+def test_render_exact_window_rejects_tab_renders_reasons_and_fail_analysis(monkeypatch) -> None:
+    module, container, calls = _load_module(monkeypatch)
+    context = types.SimpleNamespace(bundle={"fail_analysis": {"reason": "gate"}})
+    selection = types.SimpleNamespace(selected_row={"timeframe": "1m"})
+
+    module.render_exact_window_rejects_tab(
+        context,
+        selection,
+        reject_reason_frame=lambda _row: pd.DataFrame({"reason": ["gate"], "count": [1]}),
+        st_module=container,
+    )
+
+    assert any(call[0] == "dataframe" and "reason" in call[1] for call in calls)
+    assert ("expander", "Root fail analysis", False) in calls
+    assert ("json", {"reason": "gate"}) in calls
+
+
+def test_render_exact_window_rejects_tab_reports_missing_reasons(monkeypatch) -> None:
+    module, container, calls = _load_module(monkeypatch)
+    context = types.SimpleNamespace(bundle={"fail_analysis": {}})
+    selection = types.SimpleNamespace(selected_row={})
+
+    module.render_exact_window_rejects_tab(
+        context,
+        selection,
+        reject_reason_frame=lambda _row: pd.DataFrame(),
+        st_module=container,
+    )
+
+    assert ("info", "No reject-reason counts available.") in calls
+    assert ("expander", "Root fail analysis", False) in calls
+
+
+def test_render_exact_window_diagnostics_tab_renders_paths_and_context(monkeypatch) -> None:
+    module, container, calls = _load_module(monkeypatch)
+    context = types.SimpleNamespace(
+        summary={
+            "generated_at": "2026-03-22T00:00:00Z",
+            "execution_profile": {"allow_metals": True},
+            "windows": [{"split": "oos"}],
+        },
+        bundle={
+            "latest_pointer": "/tmp/latest.json",
+            "run_root": "/tmp/run",
+            "paths": {"summary": "/tmp/run/summary.json"},
+            "followup_status_root": "/tmp/followup",
+        },
+        memory_evidence={"peak_rss_mib": 512.0},
+    )
+    selection = types.SimpleNamespace(
+        selected_row={
+            "summary_path": "/tmp/run/summary.json",
+            "details_path": "/tmp/run/details.json",
+            "fail_analysis_path": "/tmp/run/fail.json",
+            "memory_evidence": {"peak_rss_mib": 128.0},
+        },
+        selected_best={
+            "source_summary_path": "/tmp/source-summary.json",
+            "source_details_path": "/tmp/source-details.json",
+        },
+    )
+
+    module.render_exact_window_diagnostics_tab(
+        context,
+        selection,
+        coverage_frame=lambda _summary: pd.DataFrame({"symbol": ["BTC/USDT"]}),
+        st_module=container,
+    )
+
+    assert ("write", "Artifact Paths") in calls
+    assert ("write", "Selected timeframe memory evidence") in calls
+    assert any(call[0] == "dataframe" and "summary_path" in call[1] for call in calls)
+    assert ("expander", "Root latest memory evidence", False) in calls
+    assert ("expander", "Execution Profile", False) in calls
+    assert ("expander", "Windows", False) in calls
+    assert ("expander", "Bundle Paths", False) in calls
+
+
+def test_render_exact_window_diagnostics_tab_reports_missing_coverage(monkeypatch) -> None:
+    module, container, calls = _load_module(monkeypatch)
+    context = types.SimpleNamespace(
+        summary={"execution_profile": {}, "windows": []},
+        bundle={},
+        memory_evidence=None,
+    )
+    selection = types.SimpleNamespace(
+        selected_row={"memory_evidence": {}},
+        selected_best={},
+    )
+
+    module.render_exact_window_diagnostics_tab(
+        context,
+        selection,
+        coverage_frame=lambda _summary: pd.DataFrame(),
+        st_module=container,
+    )
+
+    assert ("write", "Coverage") in calls
+    assert ("info", "No coverage table available.") in calls
+    assert not any(call[0] == "expander" and call[1] == "Root latest memory evidence" for call in calls)

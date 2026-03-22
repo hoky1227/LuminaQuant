@@ -17,10 +17,14 @@ from apps.dashboard.services.exact_window_panels import (
     render_exact_window_candidate_analysis,
     render_exact_window_control_strip,
     render_exact_window_deployment_tab,
+    render_exact_window_diagnostics_tab,
+    render_exact_window_followup_tab,
     render_exact_window_leaderboards_tab,
     render_exact_window_monthly_hurdles_tab,
     render_exact_window_overview_tab,
     render_exact_window_portfolio_tab,
+    render_exact_window_registry_tab,
+    render_exact_window_rejects_tab,
     render_exact_window_selected_timeframe_summary,
     render_exact_window_split_metrics_tab,
     render_exact_window_time_series_tab,
@@ -1839,26 +1843,20 @@ def _render_exact_window_universe_tab(
 
 
 def _render_exact_window_followup_tab(context: _ExactWindowDashboardContext) -> None:
-    if context.followup_frame.empty:
-        st.info('No follow-up runs saved.')
-        return
-
-    st.dataframe(_format_frame(context.followup_frame), use_container_width=True, hide_index=True)
-    status_chart = context.followup_frame.assign(stage_name=context.followup_frame['stage']).set_index('stage_name')[['peak_rss_mib']].dropna()
-    if not status_chart.empty:
-        st.caption('Follow-up peak RSS (MiB)')
-        st.bar_chart(status_chart, use_container_width=True)
+    render_exact_window_followup_tab(
+        context,
+        format_frame=_format_frame,
+        st_module=st,
+    )
 
 
 
 def _render_exact_window_registry_tab(context: _ExactWindowDashboardContext) -> None:
-    archive_payload = context.bundle.get('followup_status', {}).get('backtest_log_archive_latest') or {}
-    if context.registry_frame.empty:
-        st.info('No run registry entries saved.')
-    else:
-        st.dataframe(_format_frame(context.registry_frame), use_container_width=True, hide_index=True)
-    with st.expander('Archived log ledger', expanded=False):
-        st.json(archive_payload)
+    render_exact_window_registry_tab(
+        context,
+        format_frame=_format_frame,
+        st_module=st,
+    )
 
 
 
@@ -1866,13 +1864,12 @@ def _render_exact_window_rejects_tab(
     context: _ExactWindowDashboardContext,
     selection: _ExactWindowDashboardSelection,
 ) -> None:
-    reject_frame = _reject_reason_frame(selection.selected_row)
-    if reject_frame.empty:
-        st.info('No reject-reason counts available.')
-    else:
-        st.dataframe(reject_frame, use_container_width=True, hide_index=True)
-    with st.expander('Root fail analysis', expanded=False):
-        st.json(context.bundle.get('fail_analysis') or {})
+    render_exact_window_rejects_tab(
+        context,
+        selection,
+        reject_reason_frame=_reject_reason_frame,
+        st_module=st,
+    )
 
 
 
@@ -1880,47 +1877,12 @@ def _render_exact_window_diagnostics_tab(
     context: _ExactWindowDashboardContext,
     selection: _ExactWindowDashboardSelection,
 ) -> None:
-    path_frame = pd.DataFrame(
-        [
-            {
-                'summary_path': selection.selected_row.get('summary_path'),
-                'details_path': selection.selected_row.get('details_path'),
-                'fail_analysis_path': selection.selected_row.get('fail_analysis_path'),
-                'source_summary_path': selection.selected_best.get('source_summary_path'),
-                'source_details_path': selection.selected_best.get('source_details_path'),
-            }
-        ]
+    render_exact_window_diagnostics_tab(
+        context,
+        selection,
+        coverage_frame=_coverage_frame,
+        st_module=st,
     )
-    diag_left, diag_right = st.columns((2, 3))
-    with diag_left:
-        st.write('Artifact Paths')
-        st.dataframe(path_frame, use_container_width=True, hide_index=True)
-        st.write('Selected timeframe memory evidence')
-        st.json(selection.selected_row.get('memory_evidence') or {})
-        if context.memory_evidence:
-            with st.expander('Root latest memory evidence', expanded=False):
-                st.json(context.memory_evidence)
-    with diag_right:
-        st.write('Coverage')
-        coverage_frame = _coverage_frame(context.summary)
-        if coverage_frame.empty:
-            st.info('No coverage table available.')
-        else:
-            st.dataframe(coverage_frame, use_container_width=True, hide_index=True)
-        with st.expander('Execution Profile', expanded=False):
-            st.json(context.summary.get('execution_profile') or {})
-        with st.expander('Windows', expanded=False):
-            st.json(context.summary.get('windows') or {})
-        with st.expander('Bundle Paths', expanded=False):
-            st.json(
-                {
-                    'summary_generated_at': context.summary.get('generated_at'),
-                    'latest_pointer': context.bundle.get('latest_pointer'),
-                    'run_root': context.bundle.get('run_root'),
-                    'root_paths': context.bundle.get('paths'),
-                    'followup_status_root': context.bundle.get('followup_status_root'),
-                }
-            )
 
 
 
