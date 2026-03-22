@@ -1046,72 +1046,105 @@ def _hurdle_fields(
     max_turnover: float | None = None,
     max_drawdown: float | None = None,
 ) -> tuple[dict[str, Any], bool, dict[str, Any]]:
+    config = _resolve_hurdle_config(
+        scoring_config=scoring_config,
+        oos_sharpe_min=oos_sharpe_min,
+        max_pbo=max_pbo,
+        max_turnover=max_turnover,
+        max_drawdown=max_drawdown,
+    )
+    fields = {
+        "train": _pack_hurdle_stage(train, stage="train", config=config),
+        "val": _pack_hurdle_stage(val, stage="val", config=config),
+        "oos": _pack_hurdle_stage(oos, stage="oos", config=config),
+    }
+    hard_reject_reasons = _hurdle_hard_reject_reasons(oos, config=config)
+    cost_ok = bool(
+        float(oos.get("sharpe", 0.0)) >= config.oos_sharpe_min
+        and float(oos.get("pbo", 1.0)) <= config.max_pbo
+    )
+    return fields, bool(cost_ok and not hard_reject_reasons), hard_reject_reasons
+
+
+@dataclass(frozen=True, slots=True)
+class _ResolvedHurdleConfig:
+    weights: dict[str, float]
+    in_sample_sharpe_min: float
+    oos_sharpe_min: float
+    max_pbo: float
+    max_turnover: float
+    max_drawdown: float
+    min_trade_count: float
+
+
+def _resolve_hurdle_config(
+    *,
+    scoring_config: Mapping[str, Any] | None,
+    oos_sharpe_min: float | None,
+    max_pbo: float | None,
+    max_turnover: float | None,
+    max_drawdown: float | None,
+) -> _ResolvedHurdleConfig:
     cfg = _resolve_score_config(scoring_config)
     thresholds = dict(cfg["reject_thresholds"])
-    weights = dict(cfg["hurdle_score_weights"])
-    resolved_oos_sharpe_min = float(thresholds["oos_sharpe_min"] if oos_sharpe_min is None else oos_sharpe_min)
-    in_sample_sharpe_min = float(thresholds["in_sample_sharpe_min"])
-    resolved_max_pbo = float(thresholds["max_pbo"] if max_pbo is None else max_pbo)
-    resolved_max_turnover = float(thresholds["max_turnover"] if max_turnover is None else max_turnover)
-    resolved_max_drawdown = float(thresholds["max_drawdown"] if max_drawdown is None else max_drawdown)
-    min_trade_count = float(thresholds["min_trade_count"])
-
-    def _pack(metrics: dict[str, float], *, stage: str) -> dict[str, Any]:
-        score = (
-            (float(weights["sharpe_weight"]) * float(metrics.get("sharpe", 0.0)))
-            + (float(weights["return_weight"]) * float(metrics.get("return", 0.0)))
-            + (float(weights["deflated_sharpe_weight"]) * float(metrics.get("deflated_sharpe", 0.0)))
-            - (float(weights["pbo_penalty"]) * float(metrics.get("pbo", 1.0)))
-            - (
-                float(weights["turnover_penalty"])
-                * max(0.0, float(metrics.get("turnover", 0.0)) - resolved_max_turnover)
-            )
-            - (
-                float(weights["drawdown_penalty"])
-                * max(0.0, float(metrics.get("mdd", 0.0)) - resolved_max_drawdown)
-            )
-            - (float(weights["spa_pvalue_penalty"]) * float(metrics.get("spa_pvalue", 1.0)))
-        )
-
-        passed = bool(
-            float(metrics.get("sharpe", 0.0))
-            >= (in_sample_sharpe_min if stage != "oos" else resolved_oos_sharpe_min)
-            and float(metrics.get("pbo", 1.0)) <= resolved_max_pbo
-            and float(metrics.get("turnover", 0.0)) <= resolved_max_turnover
-            and float(metrics.get("mdd", 0.0)) <= resolved_max_drawdown
-            and float(metrics.get("trade_count", 0.0)) >= min_trade_count
-        )
-
-        return {
-            "pass": passed,
-            "score": float(score),
-            "excess_return": float(metrics.get("return", 0.0)),
-        }
-
-    fields = {
-        "train": _pack(train, stage="train"),
-        "val": _pack(val, stage="val"),
-        "oos": _pack(oos, stage="oos"),
-    }
-
-    cost_ok = bool(
-        float(oos.get("sharpe", 0.0)) >= resolved_oos_sharpe_min
-        and float(oos.get("pbo", 1.0)) <= resolved_max_pbo
+    return _ResolvedHurdleConfig(
+        weights={key: float(value) for key, value in dict(cfg["hurdle_score_weights"]).items()},
+        in_sample_sharpe_min=float(thresholds["in_sample_sharpe_min"]),
+        oos_sharpe_min=float(thresholds["oos_sharpe_min"] if oos_sharpe_min is None else oos_sharpe_min),
+        max_pbo=float(thresholds["max_pbo"] if max_pbo is None else max_pbo),
+        max_turnover=float(thresholds["max_turnover"] if max_turnover is None else max_turnover),
+        max_drawdown=float(thresholds["max_drawdown"] if max_drawdown is None else max_drawdown),
+        min_trade_count=float(thresholds["min_trade_count"]),
     )
 
-    hard_reject_reasons: dict[str, Any] = {}
-    if float(oos.get("sharpe", 0.0)) < resolved_oos_sharpe_min:
-        hard_reject_reasons["oos_sharpe"] = float(oos.get("sharpe", 0.0))
-    if float(oos.get("pbo", 1.0)) > resolved_max_pbo:
-        hard_reject_reasons["pbo"] = float(oos.get("pbo", 1.0))
-    if float(oos.get("turnover", 0.0)) > resolved_max_turnover:
-        hard_reject_reasons["turnover"] = float(oos.get("turnover", 0.0))
-    if float(oos.get("mdd", 0.0)) > resolved_max_drawdown:
-        hard_reject_reasons["max_drawdown"] = float(oos.get("mdd", 0.0))
-    if float(oos.get("trade_count", 0.0)) < min_trade_count:
-        hard_reject_reasons["trade_count"] = float(oos.get("trade_count", 0.0))
 
-    return fields, bool(cost_ok and not hard_reject_reasons), hard_reject_reasons
+def _pack_hurdle_stage(
+    metrics: dict[str, float],
+    *,
+    stage: str,
+    config: _ResolvedHurdleConfig,
+) -> dict[str, Any]:
+    score = (
+        (config.weights["sharpe_weight"] * float(metrics.get("sharpe", 0.0)))
+        + (config.weights["return_weight"] * float(metrics.get("return", 0.0)))
+        + (config.weights["deflated_sharpe_weight"] * float(metrics.get("deflated_sharpe", 0.0)))
+        - (config.weights["pbo_penalty"] * float(metrics.get("pbo", 1.0)))
+        - (config.weights["turnover_penalty"] * max(0.0, float(metrics.get("turnover", 0.0)) - config.max_turnover))
+        - (config.weights["drawdown_penalty"] * max(0.0, float(metrics.get("mdd", 0.0)) - config.max_drawdown))
+        - (config.weights["spa_pvalue_penalty"] * float(metrics.get("spa_pvalue", 1.0)))
+    )
+    sharpe_min = config.in_sample_sharpe_min if stage != "oos" else config.oos_sharpe_min
+    passed = bool(
+        float(metrics.get("sharpe", 0.0)) >= sharpe_min
+        and float(metrics.get("pbo", 1.0)) <= config.max_pbo
+        and float(metrics.get("turnover", 0.0)) <= config.max_turnover
+        and float(metrics.get("mdd", 0.0)) <= config.max_drawdown
+        and float(metrics.get("trade_count", 0.0)) >= config.min_trade_count
+    )
+    return {
+        "pass": passed,
+        "score": float(score),
+        "excess_return": float(metrics.get("return", 0.0)),
+    }
+
+
+def _hurdle_hard_reject_reasons(
+    oos: dict[str, float],
+    *,
+    config: _ResolvedHurdleConfig,
+) -> dict[str, Any]:
+    hard_reject_reasons: dict[str, Any] = {}
+    if float(oos.get("sharpe", 0.0)) < config.oos_sharpe_min:
+        hard_reject_reasons["oos_sharpe"] = float(oos.get("sharpe", 0.0))
+    if float(oos.get("pbo", 1.0)) > config.max_pbo:
+        hard_reject_reasons["pbo"] = float(oos.get("pbo", 1.0))
+    if float(oos.get("turnover", 0.0)) > config.max_turnover:
+        hard_reject_reasons["turnover"] = float(oos.get("turnover", 0.0))
+    if float(oos.get("mdd", 0.0)) > config.max_drawdown:
+        hard_reject_reasons["max_drawdown"] = float(oos.get("mdd", 0.0))
+    if float(oos.get("trade_count", 0.0)) < config.min_trade_count:
+        hard_reject_reasons["trade_count"] = float(oos.get("trade_count", 0.0))
+    return hard_reject_reasons
 
 
 def _split_masks_from_datetimes(

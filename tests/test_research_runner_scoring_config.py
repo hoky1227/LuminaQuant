@@ -224,6 +224,119 @@ def test_candidate_rank_score_penalizes_validation_to_oos_instability():
     assert stable_score > unstable_score
 
 
+def test_hurdle_fields_preserves_stage_scores_and_oos_hard_reject_reasons():
+    scoring_config = {
+        "hurdle_score_weights": {
+            "sharpe_weight": 2.0,
+            "return_weight": 10.0,
+            "deflated_sharpe_weight": 3.0,
+            "pbo_penalty": 5.0,
+            "turnover_penalty": 7.0,
+            "drawdown_penalty": 11.0,
+            "spa_pvalue_penalty": 13.0,
+        },
+        "reject_thresholds": {
+            "in_sample_sharpe_min": 0.5,
+            "oos_sharpe_min": 0.7,
+            "max_pbo": 0.2,
+            "max_turnover": 2.0,
+            "max_drawdown": 0.3,
+            "min_trade_count": 5.0,
+        },
+    }
+    train = {
+        "sharpe": 0.8,
+        "return": 0.02,
+        "deflated_sharpe": 0.3,
+        "pbo": 0.1,
+        "turnover": 1.5,
+        "mdd": 0.2,
+        "spa_pvalue": 0.4,
+        "trade_count": 6.0,
+    }
+    val = dict(train, sharpe=0.6, **{"return": 0.01})
+    oos = {
+        "sharpe": 0.6,
+        "return": 0.03,
+        "deflated_sharpe": 0.2,
+        "pbo": 0.25,
+        "turnover": 2.4,
+        "mdd": 0.35,
+        "spa_pvalue": 0.2,
+        "trade_count": 4.0,
+    }
+
+    fields, passed, hard_reject = research_runner._hurdle_fields(
+        train,
+        val,
+        oos,
+        scoring_config=scoring_config,
+    )
+
+    expected_train_score = (
+        (2.0 * 0.8)
+        + (10.0 * 0.02)
+        + (3.0 * 0.3)
+        - (5.0 * 0.1)
+        - (7.0 * 0.0)
+        - (11.0 * 0.0)
+        - (13.0 * 0.4)
+    )
+    expected_oos_score = (
+        (2.0 * 0.6)
+        + (10.0 * 0.03)
+        + (3.0 * 0.2)
+        - (5.0 * 0.25)
+        - (7.0 * 0.4)
+        - (11.0 * 0.05)
+        - (13.0 * 0.2)
+    )
+
+    assert fields["train"]["pass"] is True
+    assert fields["val"]["pass"] is True
+    assert fields["oos"]["pass"] is False
+    assert np.isclose(fields["train"]["score"], expected_train_score)
+    assert np.isclose(fields["oos"]["score"], expected_oos_score)
+    assert fields["oos"]["excess_return"] == 0.03
+    assert passed is False
+    assert hard_reject == {
+        "oos_sharpe": 0.6,
+        "pbo": 0.25,
+        "turnover": 2.4,
+        "max_drawdown": 0.35,
+        "trade_count": 4.0,
+    }
+
+
+def test_hurdle_fields_respects_explicit_threshold_overrides():
+    metrics = {
+        "sharpe": 0.5,
+        "return": 0.01,
+        "deflated_sharpe": 0.2,
+        "pbo": 0.3,
+        "turnover": 3.0,
+        "mdd": 0.5,
+        "spa_pvalue": 0.2,
+        "trade_count": 10.0,
+    }
+
+    fields, passed, hard_reject = research_runner._hurdle_fields(
+        metrics,
+        metrics,
+        metrics,
+        oos_sharpe_min=0.4,
+        max_pbo=0.35,
+        max_turnover=3.5,
+        max_drawdown=0.6,
+    )
+
+    assert fields["train"]["pass"] is True
+    assert fields["val"]["pass"] is True
+    assert fields["oos"]["pass"] is True
+    assert passed is True
+    assert hard_reject == {}
+
+
 def test_evaluate_candidate_uses_signal_and_metric_payload_helpers(monkeypatch):
     candidate = {
         "candidate_id": "cand-a",
