@@ -5181,6 +5181,58 @@ def _synthetic_disabled_bundle_error(*, symbol: str, timeframe: str) -> RawFirst
     )
 
 
+def _bundle_from_frame(
+    *,
+    symbol: str,
+    timeframe: str,
+    frame: pl.DataFrame | None,
+    min_bars: int,
+) -> SeriesBundle | None:
+    if frame is None or frame.is_empty() or frame.height < max(1, int(min_bars)):
+        return None
+    return _frame_to_bundle(symbol, timeframe, frame)
+
+
+def _resolve_bundle_cache_entry(
+    *,
+    symbol: str,
+    timeframe: str,
+    frame: pl.DataFrame | None,
+    start_date: Any,
+    end_date: Any,
+    allow_csv_fallback: bool,
+    allow_synthetic_fallback: bool,
+    min_bars: int,
+) -> tuple[SeriesBundle, str]:
+    parquet_bundle = _bundle_from_frame(
+        symbol=symbol,
+        timeframe=timeframe,
+        frame=frame,
+        min_bars=min_bars,
+    )
+    if parquet_bundle is not None:
+        return parquet_bundle, "parquet"
+
+    if not allow_csv_fallback and not allow_synthetic_fallback:
+        raise _strict_missing_bundle_error(symbol=symbol, timeframe=timeframe)
+
+    if allow_csv_fallback:
+        csv_bundle = _load_csv_bundle(
+            symbol=symbol,
+            timeframe=timeframe,
+            start_date=start_date,
+            end_date=end_date,
+            min_bars=min_bars,
+        )
+        if csv_bundle is not None:
+            return csv_bundle, "csv"
+
+    if not allow_synthetic_fallback:
+        raise _synthetic_disabled_bundle_error(symbol=symbol, timeframe=timeframe)
+
+    return _synthetic_bundle(symbol, timeframe, start_date=start_date, end_date=end_date), "synthetic"
+
+
 def _load_bundle_cache(
     *,
     symbols: Sequence[str],
@@ -5213,33 +5265,18 @@ def _load_bundle_cache(
 
         for symbol in symbols:
             key = (symbol, timeframe)
-            frame = loaded.get(symbol)
-            if frame is not None and not frame.is_empty() and frame.height >= max(1, int(min_bars)):
-                cache[key] = _frame_to_bundle(symbol, timeframe, frame)
-                source_map["parquet"].append(f"{symbol}@{timeframe}")
-                continue
-
-            if not allow_csv_fallback and not allow_synthetic_fallback:
-                raise _strict_missing_bundle_error(symbol=symbol, timeframe=timeframe)
-
-            if allow_csv_fallback:
-                csv_bundle = _load_csv_bundle(
-                    symbol=symbol,
-                    timeframe=timeframe,
-                    start_date=start_date,
-                    end_date=end_date,
-                    min_bars=min_bars,
-                )
-                if csv_bundle is not None:
-                    cache[key] = csv_bundle
-                    source_map["csv"].append(f"{symbol}@{timeframe}")
-                    continue
-
-            if not allow_synthetic_fallback:
-                raise _synthetic_disabled_bundle_error(symbol=symbol, timeframe=timeframe)
-
-            cache[key] = _synthetic_bundle(symbol, timeframe, start_date=start_date, end_date=end_date)
-            source_map["synthetic"].append(f"{symbol}@{timeframe}")
+            bundle, source = _resolve_bundle_cache_entry(
+                symbol=symbol,
+                timeframe=timeframe,
+                frame=loaded.get(symbol),
+                start_date=start_date,
+                end_date=end_date,
+                allow_csv_fallback=allow_csv_fallback,
+                allow_synthetic_fallback=allow_synthetic_fallback,
+                min_bars=min_bars,
+            )
+            cache[key] = bundle
+            source_map[source].append(f"{symbol}@{timeframe}")
 
     return cache, source_map
 

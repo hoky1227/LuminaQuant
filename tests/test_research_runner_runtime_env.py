@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import textwrap
+from datetime import datetime
 from pathlib import Path
 
+import numpy as np
+import polars as pl
 import pytest
 
 from lumina_quant.strategy_factory import research_runner
@@ -224,6 +227,73 @@ def test_load_bundle_cache_uses_csv_fallback_with_date_bounds(
     bundle = cache[("BTC/USDT", "1m")]
     assert source_map["csv"] == ["BTC/USDT@1m"]
     assert bundle.close.tolist() == [101.5]
+
+
+def test_load_bundle_cache_uses_synthetic_fallback_when_other_sources_are_missing(monkeypatch):
+    bundle = research_runner.SeriesBundle(
+        symbol="BTC/USDT",
+        timeframe="1m",
+        datetime=np.asarray(["2024-01-01T00:00:00"], dtype="datetime64[ms]"),
+        open=np.asarray([100.0], dtype=float),
+        high=np.asarray([101.0], dtype=float),
+        low=np.asarray([99.0], dtype=float),
+        close=np.asarray([100.5], dtype=float),
+        volume=np.asarray([10.0], dtype=float),
+    )
+
+    monkeypatch.setattr(research_runner, "load_data_dict_from_parquet", lambda *args, **kwargs: {})
+    monkeypatch.setattr(research_runner, "_load_csv_bundle", lambda **kwargs: None)
+    monkeypatch.setattr(research_runner, "_synthetic_bundle", lambda *args, **kwargs: bundle)
+
+    cache, source_map = research_runner._load_bundle_cache(
+        symbols=["BTC/USDT"],
+        timeframes=["1m"],
+        allow_csv_fallback=True,
+        allow_synthetic_fallback=True,
+        min_bars=1,
+        market_data_settings={
+            "symbols": ["BTC/USDT"],
+            "market_data_parquet_path": "unused",
+            "market_data_exchange": "binance",
+        },
+    )
+
+    assert cache[("BTC/USDT", "1m")] is bundle
+    assert source_map["synthetic"] == ["BTC/USDT@1m"]
+
+
+def test_load_bundle_cache_prefers_parquet_frames_and_records_their_source(monkeypatch):
+    frame = pl.DataFrame(
+        {
+            "datetime": [datetime(2024, 1, 1, 0, 0, 0)],
+            "open": [100.0],
+            "high": [101.0],
+            "low": [99.0],
+            "close": [100.5],
+            "volume": [10.0],
+        }
+    )
+
+    monkeypatch.setattr(research_runner, "load_data_dict_from_parquet", lambda *args, **kwargs: {"BTC/USDT": frame})
+    monkeypatch.setattr(research_runner, "_load_csv_bundle", lambda **kwargs: pytest.fail("csv fallback should not run"))
+    monkeypatch.setattr(research_runner, "_synthetic_bundle", lambda *args, **kwargs: pytest.fail("synthetic fallback should not run"))
+
+    cache, source_map = research_runner._load_bundle_cache(
+        symbols=["BTC/USDT"],
+        timeframes=["1m"],
+        allow_csv_fallback=True,
+        allow_synthetic_fallback=True,
+        min_bars=1,
+        market_data_settings={
+            "symbols": ["BTC/USDT"],
+            "market_data_parquet_path": "unused",
+            "market_data_exchange": "binance",
+        },
+    )
+
+    bundle = cache[("BTC/USDT", "1m")]
+    assert bundle.close.tolist() == [100.5]
+    assert source_map["parquet"] == ["BTC/USDT@1m"]
 
 
 def test_load_feature_cache_uses_runtime_market_data_settings(
