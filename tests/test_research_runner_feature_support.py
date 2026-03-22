@@ -1328,6 +1328,62 @@ def test_residual_basket_reversion_preserves_default_window(monkeypatch):
     assert all(window == 48 for window in windows)
 
 
+def test_residual_basket_reversion_targets_respect_allow_short_and_overlap():
+    config = research_runner._ResidualBasketReversionConfig(
+        residual_window=48,
+        entry_z=0.8,
+        exit_z=0.2,
+        rebalance_bars=2,
+        max_longs=1,
+        max_shorts=2,
+        stop_loss_pct=0.02,
+        allow_short=False,
+    )
+    residual_z_map = {
+        "BTC/USDT": np.asarray([0.0], dtype=float),
+        "ETH/USDT": np.asarray([-1.2], dtype=float),
+        "BNB/USDT": np.asarray([1.4], dtype=float),
+    }
+
+    long_set, shorts = research_runner._residual_basket_reversion_targets(
+        symbols=["BTC/USDT", "ETH/USDT", "BNB/USDT"],
+        btc_symbol="BTC/USDT",
+        residual_z_map=residual_z_map,
+        idx=0,
+        config=config,
+    )
+
+    assert long_set == {"ETH/USDT"}
+    assert shorts == []
+
+    overlap_config = research_runner._ResidualBasketReversionConfig(
+        residual_window=48,
+        entry_z=0.0,
+        exit_z=0.2,
+        rebalance_bars=2,
+        max_longs=2,
+        max_shorts=2,
+        stop_loss_pct=0.02,
+        allow_short=True,
+    )
+    overlap_z_map = {
+        "BTC/USDT": np.asarray([0.0], dtype=float),
+        "ETH/USDT": np.asarray([0.0], dtype=float),
+        "BNB/USDT": np.asarray([0.0], dtype=float),
+    }
+
+    overlap_longs, overlap_shorts = research_runner._residual_basket_reversion_targets(
+        symbols=["BTC/USDT", "ETH/USDT", "BNB/USDT"],
+        btc_symbol="BTC/USDT",
+        residual_z_map=overlap_z_map,
+        idx=0,
+        config=overlap_config,
+    )
+
+    assert overlap_longs == {"ETH/USDT", "BNB/USDT"}
+    assert overlap_shorts == []
+
+
 def test_cross_asset_liquidation_contagion_fade_strategy_signal_produces_exposure():
     length = 420
     aligned = {"datetime": _minute_datetimes(length)}

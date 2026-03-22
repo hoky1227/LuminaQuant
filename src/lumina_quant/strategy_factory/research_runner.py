@@ -2667,34 +2667,27 @@ def _apply_residual_basket_reversion_strategy(
         symbol: np.asarray(aligned[f"{symbol}:close"], dtype=float)
         for symbol in symbols
     }
-    residual_z_map: dict[str, np.ndarray] = {}
+    residual_z_map = _residual_basket_reversion_z_map(
+        symbols=symbols,
+        close_map_np=close_map_np,
+        btc_symbol=btc_symbol,
+        btc_close=btc_close,
+        config=config,
+    )
     position_state = np.zeros(len(symbols), dtype=float)
     entry_price = np.full(len(symbols), np.nan, dtype=float)
 
-    for symbol, close in close_map_np.items():
-        if symbol == btc_symbol:
-            residual_z_map[symbol] = np.zeros(close.shape, dtype=float)
-            continue
-        residual_series = _beta_neutral_residual_series(close, btc_close, window=config.residual_window)
-        residual_z_map[symbol] = np.nan_to_num(
-            _rolling_z(residual_series, config.residual_window),
-            nan=0.0,
-        )
-
     for idx in range(len(aligned["datetime"])):
         close_map = {symbol: float(close[idx]) for symbol, close in close_map_np.items()}
-
-        for s_idx, symbol in enumerate(symbols):
-            if position_state[s_idx] == 0.0 or not np.isfinite(entry_price[s_idx]):
-                continue
-            close_i = close_map[symbol]
-            stop_long = position_state[s_idx] > 0.0 and close_i <= float(entry_price[s_idx]) * (1.0 - config.stop_loss_pct)
-            stop_short = position_state[s_idx] < 0.0 and close_i >= float(entry_price[s_idx]) * (1.0 + config.stop_loss_pct)
-            z_i = float(residual_z_map[symbol][idx]) if symbol in residual_z_map else 0.0
-            exit_hit = abs(z_i) <= config.exit_z
-            if stop_long or stop_short or exit_hit:
-                position_state[s_idx] = 0.0
-                entry_price[s_idx] = np.nan
+        _apply_residual_basket_reversion_exits(
+            symbols=symbols,
+            idx=idx,
+            close_map=close_map,
+            residual_z_map=residual_z_map,
+            position_state=position_state,
+            entry_price=entry_price,
+            config=config,
+        )
 
         if (
             idx < config.residual_window
@@ -2704,18 +2697,13 @@ def _apply_residual_basket_reversion_strategy(
             exposures[:, idx] = position_state
             continue
 
-        ranked = [
-            (float(residual_z_map[symbol][idx]), symbol)
-            for symbol in symbols
-            if symbol != btc_symbol
-        ]
-        ranked.sort(key=lambda item: item[0])
-        longs = [symbol for z_i, symbol in ranked if z_i <= -config.entry_z][: config.max_longs]
-        shorts = [symbol for z_i, symbol in reversed(ranked) if z_i >= config.entry_z][: config.max_shorts]
-        if not config.allow_short:
-            shorts = []
-        long_set = set(longs)
-        shorts = [symbol for symbol in shorts if symbol not in long_set]
+        long_set, shorts = _residual_basket_reversion_targets(
+            symbols=symbols,
+            btc_symbol=btc_symbol,
+            residual_z_map=residual_z_map,
+            idx=idx,
+            config=config,
+        )
 
         for s_idx, symbol in enumerate(symbols):
             next_position = 0.0
@@ -2737,6 +2725,80 @@ def _apply_residual_basket_reversion_strategy(
     meta["btc_symbol"] = btc_symbol
     if session_gated:
         meta["session_gated"] = True
+
+
+def _residual_basket_reversion_z_map(
+    *,
+    symbols: Sequence[str],
+    close_map_np: Mapping[str, np.ndarray],
+    btc_symbol: str,
+    btc_close: np.ndarray,
+    config: _ResidualBasketReversionConfig,
+) -> dict[str, np.ndarray]:
+    residual_z_map: dict[str, np.ndarray] = {}
+    for symbol in symbols:
+        close = close_map_np[symbol]
+        if symbol == btc_symbol:
+            residual_z_map[symbol] = np.zeros(close.shape, dtype=float)
+            continue
+        residual_series = _beta_neutral_residual_series(close, btc_close, window=config.residual_window)
+        residual_z_map[symbol] = np.nan_to_num(
+            _rolling_z(residual_series, config.residual_window),
+            nan=0.0,
+        )
+    return residual_z_map
+
+
+def _apply_residual_basket_reversion_exits(
+    *,
+    symbols: Sequence[str],
+    idx: int,
+    close_map: Mapping[str, float],
+    residual_z_map: Mapping[str, np.ndarray],
+    position_state: np.ndarray,
+    entry_price: np.ndarray,
+    config: _ResidualBasketReversionConfig,
+) -> None:
+    for s_idx, symbol in enumerate(symbols):
+        if position_state[s_idx] == 0.0 or not np.isfinite(entry_price[s_idx]):
+            continue
+        close_i = close_map[symbol]
+        stop_long = (
+            position_state[s_idx] > 0.0
+            and close_i <= float(entry_price[s_idx]) * (1.0 - config.stop_loss_pct)
+        )
+        stop_short = (
+            position_state[s_idx] < 0.0
+            and close_i >= float(entry_price[s_idx]) * (1.0 + config.stop_loss_pct)
+        )
+        z_i = float(residual_z_map[symbol][idx]) if symbol in residual_z_map else 0.0
+        exit_hit = abs(z_i) <= config.exit_z
+        if stop_long or stop_short or exit_hit:
+            position_state[s_idx] = 0.0
+            entry_price[s_idx] = np.nan
+
+
+def _residual_basket_reversion_targets(
+    *,
+    symbols: Sequence[str],
+    btc_symbol: str,
+    residual_z_map: Mapping[str, np.ndarray],
+    idx: int,
+    config: _ResidualBasketReversionConfig,
+) -> tuple[set[str], list[str]]:
+    ranked = [
+        (float(residual_z_map[symbol][idx]), symbol)
+        for symbol in symbols
+        if symbol != btc_symbol
+    ]
+    ranked.sort(key=lambda item: item[0])
+    longs = [symbol for z_i, symbol in ranked if z_i <= -config.entry_z][: config.max_longs]
+    shorts = [symbol for z_i, symbol in reversed(ranked) if z_i >= config.entry_z][: config.max_shorts]
+    if not config.allow_short:
+        shorts = []
+    long_set = set(longs)
+    shorts = [symbol for symbol in shorts if symbol not in long_set]
+    return long_set, shorts
 
 
 @dataclass(frozen=True, slots=True)
