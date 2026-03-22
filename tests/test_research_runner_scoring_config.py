@@ -201,6 +201,28 @@ def test_run_candidate_research_sorts_candidates_and_preserves_stage_metadata(mo
     }
 
 
+def test_run_candidate_research_returns_empty_report_before_loading_resources(monkeypatch):
+    monkeypatch.setattr(research_runner, "_adapt_candidate_inputs", lambda items, max_candidates: [])
+    monkeypatch.setattr(
+        research_runner,
+        "_load_research_run_resources",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("resource loading should be skipped")),
+    )
+
+    report = research_runner.run_candidate_research(
+        candidates=[{"candidate_id": "ignored"}],
+        strategy_timeframes=["1m"],
+        symbol_universe=["BTC/USDT"],
+        stage1_keep_ratio=0.4,
+        max_candidates=8,
+    )
+
+    assert report["candidates"] == []
+    assert report["stage1"]["input_count"] == 0
+    assert report["stage1"]["selected_count"] == 0
+    assert report["stage1"]["keep_ratio"] == 0.4
+
+
 def test_candidate_rank_score_penalizes_validation_to_oos_instability():
     stable = {
         "val": {"sharpe": 1.1, "return": 0.021, "turnover": 1.0},

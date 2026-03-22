@@ -5805,40 +5805,21 @@ def _candidate_research_report_payload(
     }
 
 
-def run_candidate_research(
+def _run_candidate_research_with_adapted_candidates(
     *,
-    candidates: Iterable[dict[str, Any]],
-    base_timeframe: str = "1s",
-    strategy_timeframes: Sequence[str] | None = None,
-    symbol_universe: Sequence[str] | None = None,
-    stage1_keep_ratio: float = 0.35,
-    max_candidates: int = 512,
-    score_config: Mapping[str, Any] | None = None,
-    split: Mapping[str, Any] | None = None,
-    data_mode: str = "legacy",
-    allow_csv_fallback: bool = True,
-    allow_synthetic_fallback: bool = True,
-    min_bundle_bars: int = _MIN_BARS,
+    base_tf: str,
+    adapted: Sequence[dict[str, Any]],
+    strategy_timeframes: Sequence[str] | None,
+    symbol_universe: Sequence[str] | None,
+    stage1_keep_ratio: float,
+    scoring: _ResearchRunScoringConfig,
+    split: Mapping[str, Any] | None,
+    data_mode: str,
+    allow_csv_fallback: bool,
+    allow_synthetic_fallback: bool,
+    min_bundle_bars: int,
+    market_data_settings: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Evaluate candidate manifest into train/val/OOS report contract (v2)."""
-    base_tf = _normalize_candidate_research_base_timeframe(base_timeframe)
-    market_data_settings = _current_research_market_data_settings()
-    scoring = _resolve_research_run_scoring_config(
-        score_config=score_config,
-        stage1_keep_ratio=stage1_keep_ratio,
-    )
-    adapted = _adapt_candidate_inputs(candidates, max_candidates=max_candidates)
-
-    if not adapted:
-        return _empty_candidate_research_report(
-            base_timeframe=base_tf,
-            strategy_timeframes=strategy_timeframes,
-            symbol_universe=symbol_universe,
-            stage1_keep_ratio=stage1_keep_ratio,
-            scoring=scoring,
-            split=split,
-        )
-
     normalized_timeframes, universe = _resolve_research_run_timeframes_and_universe(
         adapted=adapted,
         strategy_timeframes=strategy_timeframes,
@@ -5883,6 +5864,56 @@ def run_candidate_research(
         scoring=scoring,
         data_sources=data_sources,
         report_candidates=_sorted_report_candidates(report_candidates, scoring=scoring),
+    )
+
+
+def run_candidate_research(
+    *,
+    candidates: Iterable[dict[str, Any]],
+    base_timeframe: str = "1s",
+    strategy_timeframes: Sequence[str] | None = None,
+    symbol_universe: Sequence[str] | None = None,
+    stage1_keep_ratio: float = 0.35,
+    max_candidates: int = 512,
+    score_config: Mapping[str, Any] | None = None,
+    split: Mapping[str, Any] | None = None,
+    data_mode: str = "legacy",
+    allow_csv_fallback: bool = True,
+    allow_synthetic_fallback: bool = True,
+    min_bundle_bars: int = _MIN_BARS,
+) -> dict[str, Any]:
+    """Evaluate candidate manifest into train/val/OOS report contract (v2)."""
+    base_tf = _normalize_candidate_research_base_timeframe(base_timeframe)
+    market_data_settings = _current_research_market_data_settings()
+    scoring = _resolve_research_run_scoring_config(
+        score_config=score_config,
+        stage1_keep_ratio=stage1_keep_ratio,
+    )
+    adapted = _adapt_candidate_inputs(candidates, max_candidates=max_candidates)
+
+    if not adapted:
+        return _empty_candidate_research_report(
+            base_timeframe=base_tf,
+            strategy_timeframes=strategy_timeframes,
+            symbol_universe=symbol_universe,
+            stage1_keep_ratio=stage1_keep_ratio,
+            scoring=scoring,
+            split=split,
+        )
+
+    return _run_candidate_research_with_adapted_candidates(
+        base_tf=base_tf,
+        adapted=adapted,
+        strategy_timeframes=strategy_timeframes,
+        symbol_universe=symbol_universe,
+        stage1_keep_ratio=stage1_keep_ratio,
+        scoring=scoring,
+        split=split,
+        data_mode=data_mode,
+        allow_csv_fallback=allow_csv_fallback,
+        allow_synthetic_fallback=allow_synthetic_fallback,
+        min_bundle_bars=min_bundle_bars,
+        market_data_settings=market_data_settings,
     )
 
 
