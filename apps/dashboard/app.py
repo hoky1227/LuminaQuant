@@ -77,6 +77,15 @@ from apps.dashboard.services.risk_dashboard import (
     build_strategy_process_trace_frame as _build_strategy_process_trace_frame_data,
     prepare_heartbeat_interval_frame as _prepare_heartbeat_interval_frame_data,
 )
+from apps.dashboard.services.market_dashboard import (
+    build_market_close_figure as _build_market_close_figure_data,
+    build_market_summary_metrics as _build_market_summary_metrics_data,
+    build_market_volume_figure as _build_market_volume_figure_data,
+    build_pair_indicator_summary as _build_pair_indicator_summary_data,
+    build_pair_price_inputs_figure as _build_pair_price_inputs_figure_data,
+    build_pair_spread_figure as _build_pair_spread_figure_data,
+    build_pair_zscore_figure as _build_pair_zscore_figure_data,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -4058,32 +4067,25 @@ def render_main_dashboard() -> None:
     with tab_market:
         if not plot_market.empty:
             colm1, colm2, colm3, colm4 = st.columns(4)
-            colm1.metric("Market Bars", f"{len(plot_market)}")
-            colm2.metric("First Price", f"{float(plot_market['close'].iloc[0]):.4f}")
-            colm3.metric("Last Price", f"{float(plot_market['close'].iloc[-1]):.4f}")
-            high_val = float(pd.to_numeric(plot_market["high"], errors="coerce").max())
-            low_val = float(pd.to_numeric(plot_market["low"], errors="coerce").min())
-            colm4.metric("Range", f"{low_val:.4f} - {high_val:.4f}")
+            market_metrics = _build_market_summary_metrics_data(plot_market)
+            colm1.metric("Market Bars", market_metrics["market_bars"])
+            colm2.metric("First Price", market_metrics["first_price"])
+            colm3.metric("Last Price", market_metrics["last_price"])
+            colm4.metric("Range", market_metrics["range"])
 
-            fig_close = go.Figure()
-            fig_close.add_trace(
-                go.Scatter(
-                    x=plot_market["datetime"],
-                    y=plot_market["close"],
-                    mode="lines",
-                    name="Close",
-                )
+            st.plotly_chart(
+                _build_market_close_figure_data(
+                    plot_market,
+                    market_symbol=market_symbol,
+                    market_timeframe=market_timeframe,
+                ),
+                use_container_width=True,
             )
-            fig_close.update_layout(
-                title=f"{market_symbol} Close Price ({market_timeframe})",
-                template="plotly_white",
-            )
-            st.plotly_chart(fig_close, use_container_width=True)
 
-            fig_vol = go.Figure()
-            fig_vol.add_trace(go.Bar(x=plot_market["datetime"], y=plot_market["volume"], name="Volume"))
-            fig_vol.update_layout(title="Market Volume", template="plotly_white")
-            st.plotly_chart(fig_vol, use_container_width=True)
+            st.plotly_chart(
+                _build_market_volume_figure_data(plot_market),
+                use_container_width=True,
+            )
 
             st.subheader("Strategy Indicator View")
             if strategy_name == "PairTradingZScoreStrategy":
@@ -4128,36 +4130,16 @@ def render_main_dashboard() -> None:
                         entry_z = float(strategy_params.get("entry_z", 2.0))
                         exit_z = float(strategy_params.get("exit_z", 0.35))
                         stop_z = float(strategy_params.get("stop_z", 3.5))
-
-                        z_series = pd.to_numeric(pair_indicator_df["zscore"], errors="coerce")
-                        hedge_series = pd.to_numeric(pair_indicator_df["hedge_ratio"], errors="coerce")
-                        corr_series = pd.to_numeric(pair_indicator_df["correlation"], errors="coerce")
-
-                        latest_z = (
-                            float(z_series.dropna().iloc[-1])
-                            if z_series.notna().any()
-                            else float("nan")
-                        )
-                        latest_beta = (
-                            float(hedge_series.dropna().iloc[-1])
-                            if hedge_series.notna().any()
-                            else float("nan")
-                        )
-                        latest_corr = (
-                            float(corr_series.dropna().iloc[-1])
-                            if corr_series.notna().any()
-                            else float("nan")
-                        )
-
                         pm1, pm2, pm3, pm4 = st.columns(4)
-                        pm1.metric("Pair", f"{pair_symbol_x} vs {pair_symbol_y}")
-                        pm2.metric("Latest Z", f"{latest_z:.3f}" if math.isfinite(latest_z) else "N/A")
-                        pm3.metric(
-                            "Hedge Ratio", f"{latest_beta:.4f}" if math.isfinite(latest_beta) else "N/A"
+                        pair_metrics = _build_pair_indicator_summary_data(
+                            pair_indicator_df,
+                            pair_symbol_x=pair_symbol_x,
+                            pair_symbol_y=pair_symbol_y,
                         )
-                        pm4.metric(
-                            "Correlation", f"{latest_corr:.4f}" if math.isfinite(latest_corr) else "N/A"
-                        )
+                        pm1.metric("Pair", pair_metrics["pair"])
+                        pm2.metric("Latest Z", pair_metrics["latest_z"])
+                        pm3.metric("Hedge Ratio", pair_metrics["hedge_ratio"])
+                        pm4.metric("Correlation", pair_metrics["correlation"])
 
                         pair_plot_df = (
                             _downsample_frame(pair_indicator_df, downsample_target_points)
@@ -4165,88 +4147,29 @@ def render_main_dashboard() -> None:
                             else pair_indicator_df
                         )
 
-                        fig_pair_norm = go.Figure()
-                        normalized_x = pair_plot_df["close_x"] / float(pair_plot_df["close_x"].iloc[0])
-                        normalized_y = pair_plot_df["close_y"] / float(pair_plot_df["close_y"].iloc[0])
-                        fig_pair_norm.add_trace(
-                            go.Scatter(
-                                x=pair_plot_df["datetime"],
-                                y=normalized_x,
-                                mode="lines",
-                                name=f"{pair_symbol_x} (normalized)",
-                                line=dict(color="#2b6cb0", width=1.8),
-                            )
+                        st.plotly_chart(
+                            _build_pair_price_inputs_figure_data(
+                                pair_plot_df,
+                                pair_symbol_x=pair_symbol_x,
+                                pair_symbol_y=pair_symbol_y,
+                            ),
+                            use_container_width=True,
                         )
-                        fig_pair_norm.add_trace(
-                            go.Scatter(
-                                x=pair_plot_df["datetime"],
-                                y=normalized_y,
-                                mode="lines",
-                                name=f"{pair_symbol_y} (normalized)",
-                                line=dict(color="#ed8936", width=1.8),
-                            )
-                        )
-                        fig_pair_norm.update_layout(
-                            title="Pair Price Inputs (Normalized)",
-                            xaxis_title="Date",
-                            yaxis_title="Normalized Price",
-                            template="plotly_white",
-                            hovermode="x unified",
-                        )
-                        st.plotly_chart(fig_pair_norm, use_container_width=True)
 
-                        fig_z = go.Figure()
-                        fig_z.add_trace(
-                            go.Scatter(
-                                x=pair_plot_df["datetime"],
-                                y=pair_plot_df["zscore"],
-                                mode="lines",
-                                name="Z-Score",
-                                line=dict(color="#2b6cb0", width=2),
-                            )
+                        st.plotly_chart(
+                            _build_pair_zscore_figure_data(
+                                pair_plot_df,
+                                entry_z=entry_z,
+                                exit_z=exit_z,
+                                stop_z=stop_z,
+                            ),
+                            use_container_width=True,
                         )
-                        fig_z.add_hline(y=entry_z, line_dash="dash", line_color="#c53030")
-                        fig_z.add_hline(y=-entry_z, line_dash="dash", line_color="#c53030")
-                        fig_z.add_hline(y=exit_z, line_dash="dot", line_color="#2f855a")
-                        fig_z.add_hline(y=-exit_z, line_dash="dot", line_color="#2f855a")
-                        fig_z.add_hline(y=stop_z, line_dash="dash", line_color="#7b341e")
-                        fig_z.add_hline(y=-stop_z, line_dash="dash", line_color="#7b341e")
-                        fig_z.update_layout(
-                            title="Pair Z-Score with Entry/Exit/Stop Bands",
-                            xaxis_title="Date",
-                            yaxis_title="Z-Score",
-                            template="plotly_white",
-                            hovermode="x unified",
-                        )
-                        st.plotly_chart(fig_z, use_container_width=True)
 
-                        fig_spread = go.Figure()
-                        fig_spread.add_trace(
-                            go.Scatter(
-                                x=pair_plot_df["datetime"],
-                                y=pair_plot_df["spread"],
-                                mode="lines",
-                                name="Spread",
-                                line=dict(color="#4a5568", width=1.6),
-                            )
+                        st.plotly_chart(
+                            _build_pair_spread_figure_data(pair_plot_df),
+                            use_container_width=True,
                         )
-                        fig_spread.add_trace(
-                            go.Scatter(
-                                x=pair_plot_df["datetime"],
-                                y=pair_plot_df["spread_mean"],
-                                mode="lines",
-                                name="Spread Mean",
-                                line=dict(color="#2f855a", width=1.2, dash="dash"),
-                            )
-                        )
-                        fig_spread.update_layout(
-                            title="Hedge-Adjusted Spread",
-                            xaxis_title="Date",
-                            yaxis_title="Spread",
-                            template="plotly_white",
-                            hovermode="x unified",
-                        )
-                        st.plotly_chart(fig_spread, use_container_width=True)
             else:
                 indicator_df = _build_strategy_indicator_frame(
                     plot_market, strategy_name, strategy_params
