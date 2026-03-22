@@ -2133,6 +2133,25 @@ def _apply_breadth_thrust_failure_reversal_strategy(
         for symbol in symbols
     }
 
+    basket_position = _breadth_thrust_failure_reversal_position_series(
+        close_map_np=close_map_np,
+        config=config,
+    )
+    exposures[:] = basket_position
+    meta["cross_sectional"] = True
+
+
+def _breadth_thrust_failure_reversal_position_series(
+    *,
+    close_map_np: Mapping[str, np.ndarray],
+    config: _BreadthThrustFailureReversalConfig,
+) -> np.ndarray:
+    if not close_map_np:
+        return np.zeros(0, dtype=float)
+
+    n = len(next(iter(close_map_np.values())))
+    basket_position = np.zeros(n, dtype=float)
+
     basket_state = 0.0
     basket_entry = np.nan
     hold_bars = 0
@@ -2159,7 +2178,7 @@ def _apply_breadth_thrust_failure_reversal_strategy(
                 hold_bars = 0
 
         if idx < config.momentum_lookback:
-            exposures[:, idx] = basket_state
+            basket_position[idx] = basket_state
             continue
 
         breadth_values: list[float] = []
@@ -2173,7 +2192,7 @@ def _apply_breadth_thrust_failure_reversal_strategy(
             basket_returns.append(float(ret))
             breadth_values.append(1.0 if ret > 0.0 else 0.0)
         if not breadth_values:
-            exposures[:, idx] = basket_state
+            basket_position[idx] = basket_state
             continue
         breadth = float(np.mean(np.asarray(breadth_values, dtype=float)))
         mean_ret = float(np.mean(np.asarray(basket_returns, dtype=float)))
@@ -2197,9 +2216,9 @@ def _apply_breadth_thrust_failure_reversal_strategy(
             basket_state = 0.0
             basket_entry = np.nan
             hold_bars = 0
-        exposures[:, idx] = basket_state
+        basket_position[idx] = basket_state
 
-    meta["cross_sectional"] = True
+    return basket_position
 
 
 @dataclass(frozen=True, slots=True)
@@ -2641,70 +2660,88 @@ def _apply_cross_asset_liquidation_contagion_fade_strategy(
     for s_idx, symbol in enumerate(symbols):
         if symbol not in valid_symbols:
             continue
-        close_arr = close_map_np[symbol]
-        pos = np.zeros(close_arr.shape, dtype=float)
-        mode = 0
-        entry_price: float | None = None
-        hold_bars = 0
-        for idx in range(close_arr.size):
-            leader_vals = [
-                float(liq_z_map[leader][idx])
-                for leader in valid_symbols
-                if leader != symbol and np.isfinite(liq_z_map[leader][idx])
-            ]
-            leader_liq = float(np.mean(np.asarray(leader_vals, dtype=float))) if leader_vals else np.nan
-            ret_z = float(return_z_map[symbol][idx]) if np.isfinite(return_z_map[symbol][idx]) else np.nan
-            close_i = float(close_arr[idx])
-            if not np.isfinite(close_i):
-                continue
-            if mode == 1:
-                hold_bars += 1
-                should_exit = (
-                    (np.isfinite(ret_z) and ret_z >= -config.exit_z)
-                    or (hold_bars >= config.max_hold_bars)
-                    or (
-                        entry_price is not None
-                        and close_i <= float(entry_price) * (1.0 - config.stop_loss_pct)
-                    )
-                )
-                if should_exit:
-                    mode = 0
-                    entry_price = None
-                    hold_bars = 0
-                else:
-                    pos[idx] = 1.0
-                    continue
-            elif mode == -1:
-                hold_bars += 1
-                should_exit = (
-                    (np.isfinite(ret_z) and ret_z <= config.exit_z)
-                    or (hold_bars >= config.max_hold_bars)
-                    or (
-                        entry_price is not None
-                        and close_i >= float(entry_price) * (1.0 + config.stop_loss_pct)
-                    )
-                )
-                if should_exit:
-                    mode = 0
-                    entry_price = None
-                    hold_bars = 0
-                else:
-                    pos[idx] = -1.0
-                    continue
+        exposures[s_idx] = _cross_asset_liquidation_contagion_position_series(
+            symbol=symbol,
+            close_arr=close_map_np[symbol],
+            valid_symbols=valid_symbols,
+            liq_z_map=liq_z_map,
+            return_z_map=return_z_map,
+            config=config,
+        )
 
-            if not (np.isfinite(leader_liq) and np.isfinite(ret_z)):
-                continue
-            if leader_liq >= config.leader_liq_z_min and ret_z >= config.return_shock_pct and config.allow_short:
-                mode = -1
-                entry_price = close_i
+
+def _cross_asset_liquidation_contagion_position_series(
+    *,
+    symbol: str,
+    close_arr: np.ndarray,
+    valid_symbols: Sequence[str],
+    liq_z_map: Mapping[str, np.ndarray],
+    return_z_map: Mapping[str, np.ndarray],
+    config: _CrossAssetLiquidationContagionFadeConfig,
+) -> np.ndarray:
+    pos = np.zeros(close_arr.shape, dtype=float)
+    mode = 0
+    entry_price: float | None = None
+    hold_bars = 0
+    for idx in range(close_arr.size):
+        leader_vals = [
+            float(liq_z_map[leader][idx])
+            for leader in valid_symbols
+            if leader != symbol and np.isfinite(liq_z_map[leader][idx])
+        ]
+        leader_liq = float(np.mean(np.asarray(leader_vals, dtype=float))) if leader_vals else np.nan
+        ret_z = float(return_z_map[symbol][idx]) if np.isfinite(return_z_map[symbol][idx]) else np.nan
+        close_i = float(close_arr[idx])
+        if not np.isfinite(close_i):
+            continue
+        if mode == 1:
+            hold_bars += 1
+            should_exit = (
+                (np.isfinite(ret_z) and ret_z >= -config.exit_z)
+                or (hold_bars >= config.max_hold_bars)
+                or (
+                    entry_price is not None
+                    and close_i <= float(entry_price) * (1.0 - config.stop_loss_pct)
+                )
+            )
+            if should_exit:
+                mode = 0
+                entry_price = None
                 hold_bars = 0
-                pos[idx] = -1.0
-            elif leader_liq <= -config.leader_liq_z_min and ret_z <= -config.return_shock_pct:
-                mode = 1
-                entry_price = close_i
-                hold_bars = 0
+            else:
                 pos[idx] = 1.0
-        exposures[s_idx] = pos
+                continue
+        elif mode == -1:
+            hold_bars += 1
+            should_exit = (
+                (np.isfinite(ret_z) and ret_z <= config.exit_z)
+                or (hold_bars >= config.max_hold_bars)
+                or (
+                    entry_price is not None
+                    and close_i >= float(entry_price) * (1.0 + config.stop_loss_pct)
+                )
+            )
+            if should_exit:
+                mode = 0
+                entry_price = None
+                hold_bars = 0
+            else:
+                pos[idx] = -1.0
+                continue
+
+        if not (np.isfinite(leader_liq) and np.isfinite(ret_z)):
+            continue
+        if leader_liq >= config.leader_liq_z_min and ret_z >= config.return_shock_pct and config.allow_short:
+            mode = -1
+            entry_price = close_i
+            hold_bars = 0
+            pos[idx] = -1.0
+        elif leader_liq <= -config.leader_liq_z_min and ret_z <= -config.return_shock_pct:
+            mode = 1
+            entry_price = close_i
+            hold_bars = 0
+            pos[idx] = 1.0
+    return pos
 
 
 def _minute_of_day(values: np.ndarray) -> np.ndarray:
