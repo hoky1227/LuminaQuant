@@ -126,6 +126,81 @@ def test_run_candidate_research_scoring_config_defaults_and_override(monkeypatch
     assert rows_override[0]["candidate_id"] == "cand-b"
 
 
+def test_run_candidate_research_sorts_candidates_and_preserves_stage_metadata(monkeypatch):
+    candidates = [
+        {
+            "candidate_id": "cand-low",
+            "name": "candidate-low",
+            "strategy_class": "CompositeTrendStrategy",
+            "strategy_timeframe": "1m",
+            "timeframe": "1m",
+            "symbols": ["BTC/USDT"],
+            "params": {},
+        },
+        {
+            "candidate_id": "cand-high",
+            "name": "candidate-high",
+            "strategy_class": "CompositeTrendStrategy",
+            "strategy_timeframe": "1m",
+            "timeframe": "1m",
+            "symbols": ["BTC/USDT"],
+            "params": {},
+        },
+    ]
+    resolved_split = {"mode": "default"}
+    data_sources = {"parquet": ["BTC/USDT@1m"], "csv": [], "synthetic": []}
+    stage2_results = [{"candidate_id": "cand-low"}, {"candidate_id": "cand-high"}]
+    report_candidates = [
+        {"candidate_id": "cand-low", "selection_score": 0.1},
+        {"candidate_id": "cand-high", "selection_score": 0.9},
+    ]
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(research_runner, "_adapt_candidate_inputs", lambda items, max_candidates: list(items))
+    monkeypatch.setattr(
+        research_runner,
+        "_resolve_research_run_timeframes_and_universe",
+        lambda **kwargs: (["1m"], ["BTC/USDT"]),
+    )
+    monkeypatch.setattr(research_runner, "_resolve_split_config", lambda split, strategy_timeframe: resolved_split)
+    monkeypatch.setattr(
+        research_runner,
+        "_load_research_run_resources",
+        lambda **kwargs: ({}, data_sources, {}, {}),
+    )
+    monkeypatch.setattr(research_runner, "_select_stage2_results", lambda **kwargs: stage2_results)
+    monkeypatch.setattr(
+        research_runner,
+        "_report_candidates_from_stage2_results",
+        lambda **kwargs: list(report_candidates),
+    )
+    monkeypatch.setattr(
+        research_runner,
+        "_attach_cross_candidate_correlations",
+        lambda rows: captured.setdefault("candidate_ids", [row["candidate_id"] for row in rows]),
+    )
+
+    report = research_runner.run_candidate_research(
+        candidates=candidates,
+        base_timeframe="1s",
+        strategy_timeframes=["1m"],
+        symbol_universe=["BTC/USDT"],
+        stage1_keep_ratio=0.5,
+        max_candidates=8,
+    )
+
+    assert [row["candidate_id"] for row in report["candidates"]] == ["cand-high", "cand-low"]
+    assert captured["candidate_ids"] == ["cand-low", "cand-high"]
+    assert report["data_sources"] == data_sources
+    assert report["split"] == resolved_split
+    assert report["stage1"] == {
+        "input_count": 2,
+        "selected_count": 2,
+        "keep_ratio": 0.5,
+        "keep_ratio_applied": 0.5,
+    }
+
+
 def test_candidate_rank_score_penalizes_validation_to_oos_instability():
     stable = {
         "val": {"sharpe": 1.1, "return": 0.021, "turnover": 1.0},

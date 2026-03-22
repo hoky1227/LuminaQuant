@@ -5611,6 +5611,52 @@ def _attach_cross_candidate_correlations(report_candidates: Sequence[dict[str, A
     _research_report_builder().attach_cross_candidate_correlations(report_candidates)
 
 
+def _sorted_report_candidates(
+    report_candidates: Sequence[dict[str, Any]],
+    *,
+    scoring: _ResearchRunScoringConfig,
+) -> list[dict[str, Any]]:
+    rows = list(report_candidates)
+    _attach_cross_candidate_correlations(rows)
+    rows.sort(
+        key=lambda item: float(item.get("selection_score", scoring.sort_missing_selection_score)),
+        reverse=True,
+    )
+    return rows
+
+
+def _candidate_research_report_payload(
+    *,
+    base_tf: str,
+    normalized_timeframes: Sequence[str],
+    universe: Sequence[str],
+    resolved_split: Mapping[str, Any],
+    adapted: Sequence[dict[str, Any]],
+    stage2_results: Sequence[dict[str, Any]],
+    stage1_keep_ratio: float,
+    scoring: _ResearchRunScoringConfig,
+    data_sources: dict[str, list[str]],
+    report_candidates: Sequence[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "schema_version": "v2",
+        "generated_at": datetime.now(UTC).isoformat(),
+        "base_timeframe": base_tf,
+        "strategy_timeframes": normalized_timeframes,
+        "symbol_universe": universe,
+        "split": resolved_split,
+        "candidates": report_candidates,
+        "stage1": {
+            "input_count": len(adapted),
+            "selected_count": len(stage2_results),
+            "keep_ratio": float(stage1_keep_ratio),
+            "keep_ratio_applied": float(scoring.keep_ratio_applied),
+        },
+        "scoring_config": scoring.resolved_scoring_config,
+        "data_sources": data_sources,
+    }
+
+
 def run_candidate_research(
     *,
     candidates: Iterable[dict[str, Any]],
@@ -5678,29 +5724,18 @@ def run_candidate_research(
         resolved_split=resolved_split,
         scoring=scoring,
     )
-    _attach_cross_candidate_correlations(report_candidates)
-    report_candidates.sort(
-        key=lambda item: float(item.get("selection_score", scoring.sort_missing_selection_score)),
-        reverse=True,
+    return _candidate_research_report_payload(
+        base_tf=base_tf,
+        normalized_timeframes=normalized_timeframes,
+        universe=universe,
+        resolved_split=resolved_split,
+        adapted=adapted,
+        stage2_results=stage2_results,
+        stage1_keep_ratio=stage1_keep_ratio,
+        scoring=scoring,
+        data_sources=data_sources,
+        report_candidates=_sorted_report_candidates(report_candidates, scoring=scoring),
     )
-
-    return {
-        "schema_version": "v2",
-        "generated_at": datetime.now(UTC).isoformat(),
-        "base_timeframe": base_tf,
-        "strategy_timeframes": normalized_timeframes,
-        "symbol_universe": universe,
-        "split": resolved_split,
-        "candidates": report_candidates,
-        "stage1": {
-            "input_count": len(adapted),
-            "selected_count": len(stage2_results),
-            "keep_ratio": float(stage1_keep_ratio),
-            "keep_ratio_applied": float(scoring.keep_ratio_applied),
-        },
-        "scoring_config": scoring.resolved_scoring_config,
-        "data_sources": data_sources,
-    }
 
 
 def build_default_candidate_rows(
