@@ -420,3 +420,148 @@ def test_render_exact_window_split_metrics_tab_renders_frame(monkeypatch) -> Non
     )
 
     assert any(call[0] == "dataframe" and "split" in call[1] for call in calls)
+
+
+def test_render_exact_window_portfolio_tab_renders_metrics_weights_and_curves(monkeypatch) -> None:
+    module, container, calls = _load_module(monkeypatch)
+
+    module.render_exact_window_portfolio_tab(
+        {"portfolio": True},
+        format_frame=lambda frame: frame,
+        portfolio_chart_frame=lambda _summary, field: pd.DataFrame({field: [1.0, 1.1]}),
+        portfolio_metrics_frame=lambda _summary: pd.DataFrame({"metric": ["return"]}),
+        portfolio_weights_frame=lambda _summary: pd.DataFrame({"symbol": ["BTC/USDT"], "weight": [1.0]}),
+        st_module=container,
+    )
+
+    assert any(call[0] == "dataframe" and "metric" in call[1] for call in calls)
+    assert any(call[0] == "dataframe" and "symbol" in call[1] for call in calls)
+    assert ("caption", "Portfolio cumulative return by split") in calls
+    assert ("caption", "Portfolio drawdown by split") in calls
+
+
+def test_render_exact_window_portfolio_tab_reports_empty_sections(monkeypatch) -> None:
+    module, container, calls = _load_module(monkeypatch)
+
+    module.render_exact_window_portfolio_tab(
+        {"portfolio": False},
+        format_frame=lambda frame: frame,
+        portfolio_chart_frame=lambda _summary, _field: pd.DataFrame(),
+        portfolio_metrics_frame=lambda _summary: pd.DataFrame(),
+        portfolio_weights_frame=lambda _summary: pd.DataFrame(),
+        st_module=container,
+    )
+
+    assert ("info", "No portfolio metrics available.") in calls
+    assert ("info", "No portfolio weights available.") in calls
+    assert not any(call[0] == "line_chart" for call in calls)
+
+
+def test_render_exact_window_monthly_hurdles_tab_renders_chart(monkeypatch) -> None:
+    module, container, calls = _load_module(monkeypatch)
+    selection = types.SimpleNamespace(selected_best={"name": "alpha"})
+    hurdle_frame = pd.DataFrame(
+        {
+            "month": ["2026-01", "2026-01"],
+            "split": ["train", "oos"],
+            "strategy_return": [0.1, 0.2],
+            "threshold": [0.05, 0.05],
+            "btc_buy_hold_return": [0.08, 0.09],
+        }
+    )
+
+    module.render_exact_window_monthly_hurdles_tab(
+        selection,
+        format_frame=lambda frame: frame,
+        monthly_hurdle_frame=lambda _best: hurdle_frame,
+        st_module=container,
+    )
+
+    assert any(call[0] == "dataframe" and "month" in call[1] for call in calls)
+    assert ("caption", "Monthly hurdle comparison") in calls
+    assert any(call[0] == "line_chart" for call in calls)
+
+
+def test_render_exact_window_monthly_hurdles_tab_reports_missing_data(monkeypatch) -> None:
+    module, container, calls = _load_module(monkeypatch)
+    selection = types.SimpleNamespace(selected_best={"name": "alpha"})
+
+    module.render_exact_window_monthly_hurdles_tab(
+        selection,
+        format_frame=lambda frame: frame,
+        monthly_hurdle_frame=lambda _best: pd.DataFrame(),
+        st_module=container,
+    )
+
+    assert ("info", "No monthly hurdle data available.") in calls
+
+
+def test_render_exact_window_universe_tab_renders_candidate_tables(monkeypatch) -> None:
+    module, container, calls = _load_module(monkeypatch)
+    context = types.SimpleNamespace(
+        coverage_status=pd.DataFrame({"symbol": ["BTC/USDT"]}),
+        details_frame=pd.DataFrame(
+            [
+                {
+                    "asset_mix": "crypto-metal mix",
+                    "timeframe": "1m",
+                    "strategy": "PairTrading",
+                    "name": "mix-alpha",
+                    "symbols": ["BTC/USDT", "XAU/USD"],
+                    "val_return": 0.1,
+                    "oos_return": 0.2,
+                    "oos_sharpe": 1.0,
+                    "oos_pbo": 0.1,
+                    "oos_trades": 12,
+                    "rejects": 0,
+                },
+                {
+                    "asset_mix": "pure metal",
+                    "timeframe": "4h",
+                    "strategy": "Trend",
+                    "name": "metal-alpha",
+                    "symbols": ["XAU/USD"],
+                    "val_return": 0.05,
+                    "oos_return": 0.07,
+                    "oos_sharpe": 0.8,
+                    "oos_pbo": 0.2,
+                    "oos_trades": 8,
+                    "rejects": 1,
+                },
+            ]
+        ),
+        bundle={"followup_status": {"metals_blocker_latest": {"blocked_metals": ["XAG/USD"]}}},
+    )
+
+    module.render_exact_window_universe_tab(
+        context,
+        format_frame=lambda frame: frame,
+        top_candidates=lambda frame, columns: frame.loc[:, columns],
+        st_module=container,
+    )
+
+    assert ("write", "Coverage table") in calls
+    assert ("caption", "Mixed-asset candidates") in calls
+    assert ("caption", "Metals blocker / notes") in calls
+    assert ("caption", "Metal-linked candidates") in calls
+    assert any(call[0] == "json" and call[1] == {"blocked_metals": ["XAG/USD"]} for call in calls)
+
+
+def test_render_exact_window_universe_tab_reports_empty_sections(monkeypatch) -> None:
+    module, container, calls = _load_module(monkeypatch)
+    context = types.SimpleNamespace(
+        coverage_status=pd.DataFrame(),
+        details_frame=pd.DataFrame(columns=["asset_mix", "oos_sharpe", "oos_return"]),
+        bundle={"followup_status": {}},
+    )
+
+    module.render_exact_window_universe_tab(
+        context,
+        format_frame=lambda frame: frame,
+        top_candidates=lambda frame, columns: frame.loc[:, columns],
+        st_module=container,
+    )
+
+    assert ("info", "No coverage table available.") in calls
+    assert ("info", "No saved crypto-metal candidates in current details bundle.") in calls
+    assert any(call[0] == "json" and call[1] == {} for call in calls)

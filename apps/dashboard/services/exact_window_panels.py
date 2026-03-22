@@ -501,15 +501,152 @@ def render_exact_window_split_metrics_tab(
     st_module.dataframe(split_metrics_frame(selection.selected_best), use_container_width=True, hide_index=True)
 
 
+def render_exact_window_portfolio_tab(
+    summary,
+    *,
+    format_frame,
+    portfolio_chart_frame,
+    portfolio_metrics_frame,
+    portfolio_weights_frame,
+    st_module=st,
+) -> None:
+    portfolio_metrics = portfolio_metrics_frame(summary)
+    portfolio_weights = portfolio_weights_frame(summary)
+    port_left, port_right = st_module.columns((2, 3))
+    with port_left:
+        if portfolio_metrics.empty:
+            st_module.info('No portfolio metrics available.')
+        else:
+            st_module.dataframe(portfolio_metrics, use_container_width=True, hide_index=True)
+    with port_right:
+        if portfolio_weights.empty:
+            st_module.info('No portfolio weights available.')
+        else:
+            st_module.dataframe(format_frame(portfolio_weights), use_container_width=True, hide_index=True)
+    portfolio_curve = portfolio_chart_frame(summary, 'cumulative_return')
+    portfolio_dd = portfolio_chart_frame(summary, 'drawdown')
+    if not portfolio_curve.empty:
+        port_curve_col, port_dd_col = st_module.columns(2)
+        with port_curve_col:
+            st_module.caption('Portfolio cumulative return by split')
+            st_module.line_chart(portfolio_curve, use_container_width=True)
+        with port_dd_col:
+            st_module.caption('Portfolio drawdown by split')
+            st_module.line_chart(portfolio_dd, use_container_width=True)
+
+
+def render_exact_window_monthly_hurdles_tab(
+    selection,
+    *,
+    format_frame,
+    monthly_hurdle_frame,
+    st_module=st,
+) -> None:
+    hurdle_frame = monthly_hurdle_frame(selection.selected_best)
+    if hurdle_frame.empty:
+        st_module.info('No monthly hurdle data available.')
+        return
+
+    st_module.dataframe(format_frame(hurdle_frame), use_container_width=True, hide_index=True)
+    hurdle_chart = hurdle_frame[['month', 'split', 'strategy_return', 'threshold', 'btc_buy_hold_return']].copy()
+    hurdle_chart['series'] = hurdle_chart['split'] + ' strategy'
+    strategy_pivot = hurdle_chart.pivot_table(index='month', columns='series', values='strategy_return', aggfunc='last')
+    threshold_pivot = hurdle_chart.pivot_table(index='month', columns='split', values='threshold', aggfunc='last')
+    threshold_pivot.columns = [f'{column} threshold' for column in threshold_pivot.columns]
+    btc_pivot = hurdle_chart.pivot_table(index='month', columns='split', values='btc_buy_hold_return', aggfunc='last')
+    btc_pivot.columns = [f'{column} btc' for column in btc_pivot.columns]
+    plot_frame = pd.concat([strategy_pivot, threshold_pivot, btc_pivot], axis=1).sort_index()
+    st_module.caption('Monthly hurdle comparison')
+    st_module.line_chart(plot_frame, use_container_width=True)
+
+
+def render_exact_window_universe_tab(
+    context,
+    *,
+    format_frame,
+    top_candidates,
+    st_module=st,
+) -> None:
+    st_module.write('Coverage table')
+    if context.coverage_status.empty:
+        st_module.info('No coverage table available.')
+    else:
+        st_module.dataframe(context.coverage_status, use_container_width=True, hide_index=True)
+    mixed_scope = (
+        context.details_frame[context.details_frame['asset_mix'] == 'crypto-metal mix']
+        if not context.details_frame.empty
+        else pd.DataFrame()
+    )
+    metal_scope = (
+        context.details_frame[context.details_frame['asset_mix'].isin(['pure metal', 'crypto-metal mix'])]
+        if not context.details_frame.empty
+        else pd.DataFrame()
+    )
+    uni_left, uni_right = st_module.columns(2)
+    with uni_left:
+        st_module.caption('Mixed-asset candidates')
+        if mixed_scope.empty:
+            st_module.info('No saved crypto-metal candidates in current details bundle.')
+        else:
+            st_module.dataframe(
+                format_frame(
+                    top_candidates(
+                        mixed_scope.sort_values(['oos_sharpe', 'oos_return'], ascending=[False, False]),
+                        columns=[
+                            'timeframe',
+                            'strategy',
+                            'name',
+                            'symbols',
+                            'val_return',
+                            'oos_return',
+                            'oos_sharpe',
+                            'oos_pbo',
+                            'oos_trades',
+                        ],
+                    )
+                ),
+                use_container_width=True,
+                hide_index=True,
+            )
+    with uni_right:
+        st_module.caption('Metals blocker / notes')
+        st_module.json(context.bundle.get('followup_status', {}).get('metals_blocker_latest') or {})
+        if not metal_scope.empty:
+            st_module.caption('Metal-linked candidates')
+            st_module.dataframe(
+                format_frame(
+                    top_candidates(
+                        metal_scope.sort_values(['oos_sharpe', 'oos_return'], ascending=[False, False]),
+                        columns=[
+                            'timeframe',
+                            'asset_mix',
+                            'strategy',
+                            'name',
+                            'symbols',
+                            'oos_return',
+                            'oos_sharpe',
+                            'oos_pbo',
+                            'rejects',
+                        ],
+                    )
+                ),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+
 __all__ = [
     'render_exact_window_candidate_analysis',
     'render_exact_window_control_strip',
     'render_exact_window_deployment_tab',
     'render_exact_window_leaderboards_tab',
+    'render_exact_window_monthly_hurdles_tab',
     'render_exact_window_overview_tab',
+    'render_exact_window_portfolio_tab',
     'render_exact_window_selected_timeframe_summary',
     'render_exact_window_split_metrics_tab',
     'render_exact_window_time_series_tab',
     'render_exact_window_timeframe_overview',
+    'render_exact_window_universe_tab',
     'render_exact_window_visual_cockpit',
 ]
