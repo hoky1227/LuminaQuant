@@ -1980,6 +1980,25 @@ def test_rolling_breakout_strategy_signal_produces_exposure():
     assert np.any(turnover > 0.0)
 
 
+def test_rolling_breakout_resumes_across_nonfinite_close():
+    position = research_runner._rolling_breakout_position_series(
+        close=np.asarray([100.0, 101.0, np.nan, 102.0], dtype=float),
+        channel_high=np.asarray([np.nan, 100.0, 100.0, 100.0], dtype=float),
+        channel_low=np.asarray([np.nan, 99.0, 99.0, 99.0], dtype=float),
+        atr_pct=np.asarray([np.nan, 0.01, 0.01, 0.01], dtype=float),
+        config=research_runner._RollingBreakoutConfig(
+            lookback_bars=24,
+            breakout_buffer=0.0,
+            atr_window=8,
+            atr_stop_multiplier=1.5,
+            stop_loss_pct=0.02,
+            allow_short=True,
+        ),
+    )
+
+    assert np.array_equal(position, np.asarray([0.0, 1.0, 1.0, 1.0], dtype=float))
+
+
 def test_vwap_reversion_preserves_default_window(monkeypatch):
     windows: list[int] = []
 

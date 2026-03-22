@@ -1721,6 +1721,14 @@ class _RollingBreakoutConfig:
     allow_short: bool
 
 
+@dataclass(frozen=True, slots=True)
+class _RollingBreakoutStepInput:
+    close_i: float
+    stop_pct: float
+    upper: float | None
+    lower: float | None
+
+
 def _resolve_rolling_breakout_config(params: Mapping[str, Any]) -> _RollingBreakoutConfig:
     return _RollingBreakoutConfig(
         lookback_bars=max(8, int(params.get("lookback_bars", 48))),
@@ -1767,45 +1775,74 @@ def _rolling_breakout_position_series(
     entry_price: float | None = None
 
     for idx in range(close.size):
-        close_i = float(close[idx])
-        stop_pct = max(
-            config.stop_loss_pct,
-            config.atr_stop_multiplier * float(atr_pct[idx])
-            if np.isfinite(atr_pct[idx])
-            else config.stop_loss_pct,
+        step = _rolling_breakout_step_input(
+            idx=idx,
+            close=close,
+            channel_high=channel_high,
+            channel_low=channel_low,
+            atr_pct=atr_pct,
+            config=config,
         )
-        upper = float(channel_high[idx]) if np.isfinite(channel_high[idx]) else None
-        lower = float(channel_low[idx]) if np.isfinite(channel_low[idx]) else None
-        if mode == 1 and entry_price is not None:
-            stop_hit = close_i <= entry_price * (1.0 - stop_pct)
-            exit_hit = lower is not None and close_i < lower
-            if stop_hit or exit_hit:
-                mode = 0
-                entry_price = None
-            else:
-                position[idx] = 1.0
-                continue
-        elif mode == -1 and entry_price is not None:
-            stop_hit = close_i >= entry_price * (1.0 + stop_pct)
-            exit_hit = upper is not None and close_i > upper
-            if stop_hit or exit_hit:
-                mode = 0
-                entry_price = None
-            else:
-                position[idx] = -1.0
-                continue
-
-        if mode == 0 and upper is not None and lower is not None:
-            if close_i >= upper * (1.0 + config.breakout_buffer):
-                mode = 1
-                entry_price = close_i
-                position[idx] = 1.0
-            elif config.allow_short and close_i <= lower * (1.0 - config.breakout_buffer):
-                mode = -1
-                entry_price = close_i
-                position[idx] = -1.0
+        mode, entry_price, position[idx] = _rolling_breakout_step(
+            mode=mode,
+            entry_price=entry_price,
+            step=step,
+            config=config,
+        )
 
     return position
+
+
+def _rolling_breakout_step_input(
+    *,
+    idx: int,
+    close: np.ndarray,
+    channel_high: np.ndarray,
+    channel_low: np.ndarray,
+    atr_pct: np.ndarray,
+    config: _RollingBreakoutConfig,
+) -> _RollingBreakoutStepInput:
+    stop_pct = max(
+        config.stop_loss_pct,
+        config.atr_stop_multiplier * float(atr_pct[idx])
+        if np.isfinite(atr_pct[idx])
+        else config.stop_loss_pct,
+    )
+    return _RollingBreakoutStepInput(
+        close_i=float(close[idx]),
+        stop_pct=stop_pct,
+        upper=float(channel_high[idx]) if np.isfinite(channel_high[idx]) else None,
+        lower=float(channel_low[idx]) if np.isfinite(channel_low[idx]) else None,
+    )
+
+
+def _rolling_breakout_step(
+    *,
+    mode: int,
+    entry_price: float | None,
+    step: _RollingBreakoutStepInput,
+    config: _RollingBreakoutConfig,
+) -> tuple[int, float | None, float]:
+    if mode == 1 and entry_price is not None:
+        stop_hit = step.close_i <= entry_price * (1.0 - step.stop_pct)
+        exit_hit = step.lower is not None and step.close_i < step.lower
+        if stop_hit or exit_hit:
+            return 0, None, 0.0
+        return 1, entry_price, 1.0
+
+    if mode == -1 and entry_price is not None:
+        stop_hit = step.close_i >= entry_price * (1.0 + step.stop_pct)
+        exit_hit = step.upper is not None and step.close_i > step.upper
+        if stop_hit or exit_hit:
+            return 0, None, 0.0
+        return -1, entry_price, -1.0
+
+    if mode == 0 and step.upper is not None and step.lower is not None:
+        if step.close_i >= step.upper * (1.0 + config.breakout_buffer):
+            return 1, step.close_i, 1.0
+        if config.allow_short and step.close_i <= step.lower * (1.0 - config.breakout_buffer):
+            return -1, step.close_i, -1.0
+    return mode, entry_price, 0.0
 
 
 def _apply_rolling_breakout_strategy(
