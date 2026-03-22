@@ -444,12 +444,72 @@ def render_exact_window_deployment_tab(
             )
 
 
+def render_exact_window_leaderboards_tab(
+    selection,
+    *,
+    format_frame,
+    st_module=st,
+) -> None:
+    if selection.candidate_scope.empty:
+        st_module.info('No leaderboard rows available for this filter.')
+        return
+
+    st_module.dataframe(format_frame(selection.candidate_scope), use_container_width=True, hide_index=True)
+
+
+def render_exact_window_time_series_tab(
+    selection,
+    *,
+    chart_frame,
+    split_order,
+    stream_frame,
+    st_module=st,
+) -> None:
+    cumulative = chart_frame(selection.selected_best, 'cumulative_return')
+    raw_returns = chart_frame(selection.selected_best, 'return')
+    drawdown = chart_frame(selection.selected_best, 'drawdown')
+    if cumulative.empty:
+        st_module.info('Return streams not available for this timeframe.')
+        return
+
+    top, bottom = st_module.columns(2)
+    with top:
+        st_module.caption('Cumulative return by split')
+        st_module.line_chart(cumulative, use_container_width=True)
+    with bottom:
+        st_module.caption('Drawdown by split')
+        st_module.line_chart(drawdown, use_container_width=True)
+    st_module.caption('Raw periodic return by split')
+    st_module.line_chart(raw_returns, use_container_width=True)
+    with st_module.expander('Raw stream preview', expanded=False):
+        preview = pd.concat(
+            [
+                stream_frame((selection.selected_best.get('return_streams') or {}).get(split) or [], split)
+                for split in split_order
+            ],
+            ignore_index=True,
+        )
+        st_module.dataframe(preview.tail(100), use_container_width=True, hide_index=True)
+
+
+def render_exact_window_split_metrics_tab(
+    selection,
+    *,
+    split_metrics_frame,
+    st_module=st,
+) -> None:
+    st_module.dataframe(split_metrics_frame(selection.selected_best), use_container_width=True, hide_index=True)
+
+
 __all__ = [
     'render_exact_window_candidate_analysis',
     'render_exact_window_control_strip',
     'render_exact_window_deployment_tab',
+    'render_exact_window_leaderboards_tab',
     'render_exact_window_overview_tab',
     'render_exact_window_selected_timeframe_summary',
+    'render_exact_window_split_metrics_tab',
+    'render_exact_window_time_series_tab',
     'render_exact_window_timeframe_overview',
     'render_exact_window_visual_cockpit',
 ]

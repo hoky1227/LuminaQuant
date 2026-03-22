@@ -17,8 +17,11 @@ from apps.dashboard.services.exact_window_panels import (
     render_exact_window_candidate_analysis,
     render_exact_window_control_strip,
     render_exact_window_deployment_tab,
+    render_exact_window_leaderboards_tab,
     render_exact_window_overview_tab,
     render_exact_window_selected_timeframe_summary,
+    render_exact_window_split_metrics_tab,
+    render_exact_window_time_series_tab,
     render_exact_window_timeframe_overview,
     render_exact_window_visual_cockpit,
 )
@@ -1770,41 +1773,31 @@ def _render_exact_window_deployment_tab(
 
 
 def _render_exact_window_leaderboards_tab(selection: _ExactWindowDashboardSelection) -> None:
-    if selection.candidate_scope.empty:
-        st.info('No leaderboard rows available for this filter.')
-    else:
-        st.dataframe(_format_frame(selection.candidate_scope), use_container_width=True, hide_index=True)
+    render_exact_window_leaderboards_tab(
+        selection,
+        format_frame=_format_frame,
+        st_module=st,
+    )
 
 
 
 def _render_exact_window_time_series_tab(selection: _ExactWindowDashboardSelection) -> None:
-    cumulative = _chart_frame(selection.selected_best, 'cumulative_return')
-    raw_returns = _chart_frame(selection.selected_best, 'return')
-    drawdown = _chart_frame(selection.selected_best, 'drawdown')
-    if cumulative.empty:
-        st.info('Return streams not available for this timeframe.')
-        return
-
-    top, bottom = st.columns(2)
-    with top:
-        st.caption('Cumulative return by split')
-        st.line_chart(cumulative, use_container_width=True)
-    with bottom:
-        st.caption('Drawdown by split')
-        st.line_chart(drawdown, use_container_width=True)
-    st.caption('Raw periodic return by split')
-    st.line_chart(raw_returns, use_container_width=True)
-    with st.expander('Raw stream preview', expanded=False):
-        preview = pd.concat(
-            [_stream_frame((selection.selected_best.get('return_streams') or {}).get(split) or [], split) for split in _SPLIT_ORDER],
-            ignore_index=True,
-        )
-        st.dataframe(preview.tail(100), use_container_width=True, hide_index=True)
+    render_exact_window_time_series_tab(
+        selection,
+        chart_frame=_chart_frame,
+        split_order=_SPLIT_ORDER,
+        stream_frame=_stream_frame,
+        st_module=st,
+    )
 
 
 
 def _render_exact_window_split_metrics_tab(selection: _ExactWindowDashboardSelection) -> None:
-    st.dataframe(_split_metrics_frame(selection.selected_best), use_container_width=True, hide_index=True)
+    render_exact_window_split_metrics_tab(
+        selection,
+        split_metrics_frame=_split_metrics_frame,
+        st_module=st,
+    )
 
 
 

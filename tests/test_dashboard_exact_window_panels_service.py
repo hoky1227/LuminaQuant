@@ -338,3 +338,85 @@ def test_render_exact_window_deployment_tab_renders_curves_and_paths(monkeypatch
         "deployment_scenarios_json": "/tmp/followup/deployment_scenarios_latest.json",
         "deployment_scenarios_md": "/tmp/followup/deployment_scenarios_latest.md",
     } in artifact_payloads
+
+
+def test_render_exact_window_leaderboards_tab_handles_empty_and_populated_frames(monkeypatch) -> None:
+    module, container, calls = _load_module(monkeypatch)
+    empty_selection = types.SimpleNamespace(candidate_scope=pd.DataFrame())
+    module.render_exact_window_leaderboards_tab(
+        empty_selection,
+        format_frame=lambda frame: frame,
+        st_module=container,
+    )
+    assert ("info", "No leaderboard rows available for this filter.") in calls
+
+    calls.clear()
+    populated_selection = types.SimpleNamespace(candidate_scope=pd.DataFrame({"strategy": ["alpha"]}))
+    module.render_exact_window_leaderboards_tab(
+        populated_selection,
+        format_frame=lambda frame: frame,
+        st_module=container,
+    )
+    assert any(call[0] == "dataframe" and "strategy" in call[1] for call in calls)
+
+
+def test_render_exact_window_time_series_tab_renders_streams_and_preview(monkeypatch) -> None:
+    module, container, calls = _load_module(monkeypatch)
+    selection = types.SimpleNamespace(
+        selected_best={
+            "return_streams": {
+                "train": [{"timestamp": "2026-01-01", "value": 0.1}],
+                "oos": [{"timestamp": "2026-02-01", "value": 0.2}],
+            }
+        }
+    )
+
+    module.render_exact_window_time_series_tab(
+        selection,
+        chart_frame=lambda _best, field: pd.DataFrame({field: [1.0, 1.1]}),
+        split_order=("train", "val", "oos"),
+        stream_frame=lambda rows, split: pd.DataFrame(
+            {
+                "split": [split] * len(rows),
+                "timestamp": [row["timestamp"] for row in rows],
+                "value": [row["value"] for row in rows],
+            }
+        ),
+        st_module=container,
+    )
+
+    assert ("caption", "Cumulative return by split") in calls
+    assert ("caption", "Drawdown by split") in calls
+    assert ("caption", "Raw periodic return by split") in calls
+    assert ("expander", "Raw stream preview", False) in calls
+    line_charts = [call for call in calls if call[0] == "line_chart"]
+    assert len(line_charts) == 3
+    assert any(call[0] == "dataframe" and "split" in call[1] for call in calls)
+
+
+def test_render_exact_window_time_series_tab_reports_missing_streams(monkeypatch) -> None:
+    module, container, calls = _load_module(monkeypatch)
+    selection = types.SimpleNamespace(selected_best={})
+
+    module.render_exact_window_time_series_tab(
+        selection,
+        chart_frame=lambda _best, _field: pd.DataFrame(),
+        split_order=("train", "val", "oos"),
+        stream_frame=lambda rows, split: pd.DataFrame({"split": [split], "rows": [len(rows)]}),
+        st_module=container,
+    )
+
+    assert ("info", "Return streams not available for this timeframe.") in calls
+    assert not any(call[0] == "line_chart" for call in calls)
+
+
+def test_render_exact_window_split_metrics_tab_renders_frame(monkeypatch) -> None:
+    module, container, calls = _load_module(monkeypatch)
+    selection = types.SimpleNamespace(selected_best={"name": "alpha"})
+    module.render_exact_window_split_metrics_tab(
+        selection,
+        split_metrics_frame=lambda _best: pd.DataFrame({"split": ["oos"], "return": [0.1]}),
+        st_module=container,
+    )
+
+    assert any(call[0] == "dataframe" and "split" in call[1] for call in calls)
