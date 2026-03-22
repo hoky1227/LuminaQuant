@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pandas as pd
 import streamlit as st
 
@@ -315,9 +317,139 @@ def render_exact_window_candidate_analysis(
             st_module.json(context.next_iteration)
 
 
+def render_exact_window_selected_timeframe_summary(
+    selection,
+    *,
+    card_grid_renderer,
+    format_value,
+    split_cockpit_html,
+    st_module=st,
+) -> None:
+    st_module.subheader(f'Selected Timeframe Deep Dive — {selection.selected_timeframe}')
+    selected_metrics = [
+        ('Evaluated', format_value(selection.selected_row.get('evaluated_count'), 'int')),
+        ('Candidate Pool', format_value(selection.selected_row.get('candidate_pool_strategy_count'), 'int')),
+        ('BTC Beating', format_value(selection.selected_row.get('btc_beating_strategy_count'), 'int')),
+        (
+            'Peak RSS',
+            f"{float((selection.selected_row.get('memory_evidence') or {}).get('peak_rss_mib') or 0.0):.1f} MiB",
+        ),
+        ('Validation Score', format_value(selection.selected_best.get('validation_score'), 'float3')),
+        (
+            'Timeframe Selection',
+            format_value(selection.selected_best.get('timeframe_selection_score'), 'float3'),
+        ),
+        ('OOS Trades', format_value(selection.selected_oos.get('trade_count'), 'int')),
+        ('OOS PBO', format_value(selection.selected_oos.get('pbo'), 'float3')),
+    ]
+    card_grid_renderer(
+        [
+            (
+                label,
+                value,
+                selection.selected_best.get('strategy_class') or selection.selected_best.get('name') or '—',
+            )
+            for label, value in selected_metrics
+        ]
+    )
+    st_module.caption('Train / validation / OOS cockpit')
+    st_module.markdown(split_cockpit_html(selection.selected_best), unsafe_allow_html=True)
+
+
+def render_exact_window_overview_tab(
+    selection,
+    *,
+    best_row_snapshot,
+    format_frame,
+    st_module=st,
+) -> None:
+    snapshot = best_row_snapshot(selection.selected_best)
+    if snapshot.empty:
+        st_module.info('No best row available for this timeframe.')
+        return
+
+    st_module.dataframe(format_frame(snapshot), use_container_width=True, hide_index=True)
+    left, right = st_module.columns((3, 2))
+    with left:
+        st_module.write('Symbols')
+        st_module.write(selection.selected_best.get('symbols') or [])
+        st_module.write('Rejection reasons')
+        st_module.write(selection.selected_best.get('rejection_reasons') or [])
+        st_module.write('Hard reject reasons')
+        st_module.json(selection.selected_best.get('hard_reject_reasons') or {})
+    with right:
+        st_module.write('Parameters')
+        st_module.json(selection.selected_best.get('params') or {})
+        st_module.write('Metadata')
+        st_module.json(selection.selected_best.get('metadata') or {})
+
+
+def render_exact_window_deployment_tab(
+    context,
+    selection,
+    *,
+    format_frame,
+    st_module=st,
+) -> None:
+    if selection.deployment_frame.empty:
+        st_module.info('No deployment panel available.')
+        return
+
+    if selection.deployment_artifact:
+        st_module.caption(
+            f"Primary deployment artifact: {selection.deployment_artifact.get('scenario_id')} · "
+            f"{selection.deployment_artifact.get('label')} · generated {selection.deployment_artifact.get('generated_at')}"
+        )
+    st_module.dataframe(format_frame(selection.deployment_frame), use_container_width=True, hide_index=True)
+    dep_tab_left, dep_tab_right = st_module.columns((1.0, 1.6))
+    with dep_tab_left:
+        st_module.caption('Blend metrics by split')
+        st_module.dataframe(
+            format_frame(selection.deployment_split_metrics_frame),
+            use_container_width=True,
+            hide_index=True,
+        )
+    with dep_tab_right:
+        if selection.deployment_oos_curve.empty:
+            st_module.info('No OOS deployment blend curve available.')
+        else:
+            st_module.caption('Equal-weight OOS blend curve')
+            st_module.line_chart(selection.deployment_oos_curve, use_container_width=True)
+    if not selection.deployment_scenario_frame.empty:
+        scenario_left, scenario_right = st_module.columns((1.2, 1.6))
+        with scenario_left:
+            st_module.caption('Deployment scenario matrix')
+            st_module.dataframe(
+                format_frame(selection.deployment_scenario_frame),
+                use_container_width=True,
+                hide_index=True,
+            )
+        with scenario_right:
+            if selection.deployment_scenario_curve.empty:
+                st_module.info('No deployment scenario comparison curve available.')
+            else:
+                st_module.caption('Scenario comparison — OOS cumulative return')
+                st_module.line_chart(selection.deployment_scenario_curve, use_container_width=True)
+    if selection.deployment_artifact or selection.deployment_scenarios_artifact:
+        with st_module.expander('Deployment artifact paths', expanded=False):
+            followup_root = context.bundle.get('followup_status_root')
+            root = Path(str(followup_root)) if followup_root else None
+            st_module.json(
+                {
+                    'deployment_combo_json': root and str(root / 'deployment_combo_latest.json'),
+                    'deployment_combo_md': root and str(root / 'deployment_combo_latest.md'),
+                    'deployment_scenarios_json': root and str(root / 'deployment_scenarios_latest.json'),
+                    'deployment_scenarios_md': root and str(root / 'deployment_scenarios_latest.md'),
+                }
+            )
+
+
 __all__ = [
     'render_exact_window_candidate_analysis',
     'render_exact_window_control_strip',
+    'render_exact_window_deployment_tab',
+    'render_exact_window_overview_tab',
+    'render_exact_window_selected_timeframe_summary',
     'render_exact_window_timeframe_overview',
     'render_exact_window_visual_cockpit',
 ]

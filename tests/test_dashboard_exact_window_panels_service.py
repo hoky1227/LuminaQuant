@@ -31,6 +31,9 @@ class _FakeContainer:
     def caption(self, value: str) -> None:
         self._calls.append(("caption", value))
 
+    def write(self, value: Any) -> None:
+        self._calls.append(("write", value))
+
     def dataframe(self, data: Any, **_: Any) -> None:
         if isinstance(data, pd.DataFrame):
             self._calls.append(("dataframe", list(data.columns), len(data)))
@@ -46,6 +49,12 @@ class _FakeContainer:
 
     def plotly_chart(self, figure: Any, **_: Any) -> None:
         self._calls.append(("plotly_chart", figure))
+
+    def line_chart(self, data: Any, **_: Any) -> None:
+        if isinstance(data, pd.DataFrame):
+            self._calls.append(("line_chart", list(data.columns), len(data)))
+        else:
+            self._calls.append(("line_chart", type(data).__name__, None))
 
     def markdown(self, value: str, **kwargs: Any) -> None:
         self._calls.append(("markdown", value, kwargs))
@@ -68,7 +77,9 @@ def _load_module(monkeypatch):
     fake_streamlit.subheader = container.subheader
     fake_streamlit.info = container.info
     fake_streamlit.plotly_chart = container.plotly_chart
+    fake_streamlit.line_chart = container.line_chart
     fake_streamlit.markdown = container.markdown
+    fake_streamlit.write = container.write
     monkeypatch.setitem(sys.modules, "streamlit", fake_streamlit)
 
     spec = importlib.util.spec_from_file_location("dashboard_exact_window_panels", MODULE_PATH)
@@ -225,3 +236,105 @@ def test_render_exact_window_candidate_analysis_renders_leaderboards_and_triage(
     assert ("subheader", "Reject Reasons") in calls
     assert ("expander", "Next Iteration Triage", True) in calls
     assert ("json", {"action": "rerun"}) in calls
+
+
+def test_render_exact_window_selected_timeframe_summary_renders_cards_and_split_view(monkeypatch) -> None:
+    module, container, calls = _load_module(monkeypatch)
+    selection = types.SimpleNamespace(
+        selected_timeframe="1m",
+        selected_row={
+            "evaluated_count": 12,
+            "candidate_pool_strategy_count": 4,
+            "btc_beating_strategy_count": 2,
+            "memory_evidence": {"peak_rss_mib": 512.3},
+        },
+        selected_best={
+            "validation_score": 1.234,
+            "timeframe_selection_score": 0.987,
+            "strategy_class": "PairTrading",
+        },
+        selected_oos={"trade_count": 21, "pbo": 0.123},
+    )
+
+    card_payloads: list[list[tuple[Any, ...]]] = []
+    module.render_exact_window_selected_timeframe_summary(
+        selection,
+        card_grid_renderer=lambda cards: card_payloads.append(cards),
+        format_value=lambda value, kind: f"{kind}:{value}",
+        split_cockpit_html=lambda _best: "<split-cockpit />",
+        st_module=container,
+    )
+
+    assert ("subheader", "Selected Timeframe Deep Dive — 1m") in calls
+    assert ("caption", "Train / validation / OOS cockpit") in calls
+    assert any(call[0] == "markdown" and call[1] == "<split-cockpit />" for call in calls)
+    assert len(card_payloads) == 1
+    assert any(card[0] == "Peak RSS" and "512.3 MiB" in card[1] for card in card_payloads[0])
+    assert all(card[2] == "PairTrading" for card in card_payloads[0])
+
+
+def test_render_exact_window_overview_tab_renders_snapshot_and_metadata(monkeypatch) -> None:
+    module, container, calls = _load_module(monkeypatch)
+    selection = types.SimpleNamespace(
+        selected_best={
+            "symbols": ["BTC/USDT", "ETH/USDT"],
+            "rejection_reasons": ["gate"],
+            "hard_reject_reasons": {"risk": 1},
+            "params": {"lookback": 20},
+            "metadata": {"family": "pairs"},
+        }
+    )
+
+    module.render_exact_window_overview_tab(
+        selection,
+        best_row_snapshot=lambda _best: pd.DataFrame({"strategy": ["alpha"]}),
+        format_frame=lambda frame: frame,
+        st_module=container,
+    )
+
+    assert any(call[0] == "dataframe" and "strategy" in call[1] for call in calls)
+    assert ("write", "Symbols") in calls
+    assert ("write", ["BTC/USDT", "ETH/USDT"]) in calls
+    assert ("json", {"risk": 1}) in calls
+    assert ("json", {"lookback": 20}) in calls
+    assert ("json", {"family": "pairs"}) in calls
+
+
+def test_render_exact_window_deployment_tab_renders_curves_and_paths(monkeypatch) -> None:
+    module, container, calls = _load_module(monkeypatch)
+    context = types.SimpleNamespace(bundle={"followup_status_root": "/tmp/followup"})
+    selection = types.SimpleNamespace(
+        deployment_frame=pd.DataFrame({"label": ["anchor"]}),
+        deployment_artifact={
+            "scenario_id": "scenario-1",
+            "label": "baseline",
+            "generated_at": "2026-03-22T00:00:00Z",
+        },
+        deployment_split_metrics_frame=pd.DataFrame({"split": ["oos"]}),
+        deployment_oos_curve=pd.DataFrame({"oos": [1.0, 1.1]}),
+        deployment_scenario_frame=pd.DataFrame({"scenario": ["baseline"]}),
+        deployment_scenario_curve=pd.DataFrame({"scenario-1": [1.0, 1.2]}),
+        deployment_scenarios_artifact={"scenario_count": 1},
+    )
+
+    module.render_exact_window_deployment_tab(
+        context,
+        selection,
+        format_frame=lambda frame: frame,
+        st_module=container,
+    )
+
+    assert (
+        "caption",
+        "Primary deployment artifact: scenario-1 · baseline · generated 2026-03-22T00:00:00Z",
+    ) in calls
+    assert any(call[0] == "line_chart" and call[1] == ["oos"] for call in calls)
+    assert any(call[0] == "line_chart" and call[1] == ["scenario-1"] for call in calls)
+    assert ("expander", "Deployment artifact paths", False) in calls
+    artifact_payloads = [call[1] for call in calls if call[0] == "json"]
+    assert {
+        "deployment_combo_json": "/tmp/followup/deployment_combo_latest.json",
+        "deployment_combo_md": "/tmp/followup/deployment_combo_latest.md",
+        "deployment_scenarios_json": "/tmp/followup/deployment_scenarios_latest.json",
+        "deployment_scenarios_md": "/tmp/followup/deployment_scenarios_latest.md",
+    } in artifact_payloads

@@ -16,6 +16,9 @@ from apps.dashboard.services.exact_window import load_exact_window_bundle
 from apps.dashboard.services.exact_window_panels import (
     render_exact_window_candidate_analysis,
     render_exact_window_control_strip,
+    render_exact_window_deployment_tab,
+    render_exact_window_overview_tab,
+    render_exact_window_selected_timeframe_summary,
     render_exact_window_timeframe_overview,
     render_exact_window_visual_cockpit,
 )
@@ -1733,52 +1736,23 @@ def _render_exact_window_candidate_analysis(
 
 
 def _render_exact_window_selected_timeframe_summary(selection: _ExactWindowDashboardSelection) -> None:
-    st.subheader(f'Selected Timeframe Deep Dive — {selection.selected_timeframe}')
-    selected_metrics = [
-        ('Evaluated', _format_value(selection.selected_row.get('evaluated_count'), 'int')),
-        ('Candidate Pool', _format_value(selection.selected_row.get('candidate_pool_strategy_count'), 'int')),
-        ('BTC Beating', _format_value(selection.selected_row.get('btc_beating_strategy_count'), 'int')),
-        ('Peak RSS', f"{float((selection.selected_row.get('memory_evidence') or {}).get('peak_rss_mib') or 0.0):.1f} MiB"),
-        ('Validation Score', _format_value(selection.selected_best.get('validation_score'), 'float3')),
-        ('Timeframe Selection', _format_value(selection.selected_best.get('timeframe_selection_score'), 'float3')),
-        ('OOS Trades', _format_value(selection.selected_oos.get('trade_count'), 'int')),
-        ('OOS PBO', _format_value(selection.selected_oos.get('pbo'), 'float3')),
-    ]
-    render_exact_window_card_grid(
-        [
-            (
-                label,
-                value,
-                selection.selected_best.get('strategy_class') or selection.selected_best.get('name') or '—',
-            )
-            for label, value in selected_metrics
-        ]
+    render_exact_window_selected_timeframe_summary(
+        selection,
+        card_grid_renderer=render_exact_window_card_grid,
+        format_value=_format_value,
+        split_cockpit_html=_split_cockpit_html,
+        st_module=st,
     )
-    st.caption('Train / validation / OOS cockpit')
-    st.markdown(_split_cockpit_html(selection.selected_best), unsafe_allow_html=True)
 
 
 
 def _render_exact_window_overview_tab(selection: _ExactWindowDashboardSelection) -> None:
-    best_snapshot = _best_row_snapshot(selection.selected_best)
-    if best_snapshot.empty:
-        st.info('No best row available for this timeframe.')
-        return
-
-    st.dataframe(_format_frame(best_snapshot), use_container_width=True, hide_index=True)
-    left, right = st.columns((3, 2))
-    with left:
-        st.write('Symbols')
-        st.write(selection.selected_best.get('symbols') or [])
-        st.write('Rejection reasons')
-        st.write(selection.selected_best.get('rejection_reasons') or [])
-        st.write('Hard reject reasons')
-        st.json(selection.selected_best.get('hard_reject_reasons') or {})
-    with right:
-        st.write('Parameters')
-        st.json(selection.selected_best.get('params') or {})
-        st.write('Metadata')
-        st.json(selection.selected_best.get('metadata') or {})
+    render_exact_window_overview_tab(
+        selection,
+        best_row_snapshot=_best_row_snapshot,
+        format_frame=_format_frame,
+        st_module=st,
+    )
 
 
 
@@ -1786,47 +1760,12 @@ def _render_exact_window_deployment_tab(
     context: _ExactWindowDashboardContext,
     selection: _ExactWindowDashboardSelection,
 ) -> None:
-    if selection.deployment_frame.empty:
-        st.info('No deployment panel available.')
-        return
-
-    if selection.deployment_artifact:
-        st.caption(
-            f"Primary deployment artifact: {selection.deployment_artifact.get('scenario_id')} · "
-            f"{selection.deployment_artifact.get('label')} · generated {selection.deployment_artifact.get('generated_at')}"
-        )
-    st.dataframe(_format_frame(selection.deployment_frame), use_container_width=True, hide_index=True)
-    dep_tab_left, dep_tab_right = st.columns((1.0, 1.6))
-    with dep_tab_left:
-        st.caption('Blend metrics by split')
-        st.dataframe(_format_frame(selection.deployment_split_metrics_frame), use_container_width=True, hide_index=True)
-    with dep_tab_right:
-        if selection.deployment_oos_curve.empty:
-            st.info('No OOS deployment blend curve available.')
-        else:
-            st.caption('Equal-weight OOS blend curve')
-            st.line_chart(selection.deployment_oos_curve, use_container_width=True)
-    if not selection.deployment_scenario_frame.empty:
-        scenario_left, scenario_right = st.columns((1.2, 1.6))
-        with scenario_left:
-            st.caption('Deployment scenario matrix')
-            st.dataframe(_format_frame(selection.deployment_scenario_frame), use_container_width=True, hide_index=True)
-        with scenario_right:
-            if selection.deployment_scenario_curve.empty:
-                st.info('No deployment scenario comparison curve available.')
-            else:
-                st.caption('Scenario comparison — OOS cumulative return')
-                st.line_chart(selection.deployment_scenario_curve, use_container_width=True)
-    if selection.deployment_artifact or selection.deployment_scenarios_artifact:
-        with st.expander('Deployment artifact paths', expanded=False):
-            st.json(
-                {
-                    'deployment_combo_json': context.bundle.get('followup_status_root') and str(Path(str(context.bundle.get('followup_status_root'))) / 'deployment_combo_latest.json'),
-                    'deployment_combo_md': context.bundle.get('followup_status_root') and str(Path(str(context.bundle.get('followup_status_root'))) / 'deployment_combo_latest.md'),
-                    'deployment_scenarios_json': context.bundle.get('followup_status_root') and str(Path(str(context.bundle.get('followup_status_root'))) / 'deployment_scenarios_latest.json'),
-                    'deployment_scenarios_md': context.bundle.get('followup_status_root') and str(Path(str(context.bundle.get('followup_status_root'))) / 'deployment_scenarios_latest.md'),
-                }
-            )
+    render_exact_window_deployment_tab(
+        context,
+        selection,
+        format_frame=_format_frame,
+        st_module=st,
+    )
 
 
 
