@@ -101,6 +101,54 @@ def test_launch_managed_job_records_process_and_row(tmp_path: Path, monkeypatch)
     assert session_state["workflow_processes"]["job-123"]["log_path"] == launched["log_path"]
 
 
+def test_launch_managed_job_defaults_cwd_to_project_root(tmp_path: Path, monkeypatch) -> None:
+    launched: dict[str, object] = {}
+    session_state: dict[str, object] = {}
+
+    class _DummyProcess:
+        pid = 54321
+
+    def _fake_popen(command, *, stdout, stderr, text, env, cwd):
+        launched.update(
+            {
+                "command": list(command),
+                "stderr": stderr,
+                "text": text,
+                "env": dict(env),
+                "cwd": cwd,
+                "log_path": stdout.name,
+            }
+        )
+        return _DummyProcess()
+
+    monkeypatch.setattr(workflow_jobs.subprocess, "Popen", _fake_popen)
+    monkeypatch.setattr(workflow_jobs.uuid, "uuid4", lambda: "job-456")
+
+    job_id = workflow_jobs.launch_managed_job(
+        db_path="postgres://lumina",
+        workflow="optimize",
+        command=("uv", "run", "lq", "optimize"),
+        env_overrides={},
+        workflow_log_dir=str(tmp_path / "logs"),
+        session_state=session_state,
+        insert_workflow_job_row=lambda *_args, **_kwargs: None,
+        utc_now_iso=lambda: "2026-03-22T00:00:00+00:00",
+        cwd=None,
+    )
+
+    assert job_id == "job-456"
+    assert launched["cwd"] == str(workflow_jobs.PROJECT_ROOT)
+    assert Path(launched["log_path"]).is_file()
+
+
+def test_build_stop_file_path_defaults_under_project_var_control(monkeypatch) -> None:
+    monkeypatch.setattr(workflow_jobs, "WORKFLOW_CONTROL_DIR", Path("/tmp/lumina-root/var/dashboard/control"))
+
+    stop_file = workflow_jobs.build_stop_file_path("job-789")
+
+    assert stop_file == "/tmp/lumina-root/var/dashboard/control/job-789.stop"
+
+
 def test_request_job_stop_writes_timestamp(tmp_path: Path) -> None:
     stop_file = tmp_path / "control" / "run.stop"
 

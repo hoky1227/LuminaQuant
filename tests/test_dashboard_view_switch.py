@@ -489,6 +489,65 @@ def test_render_snapshot_report_section_builds_preview_without_saving(monkeypatc
     assert save_calls == []
 
 
+def test_save_report_snapshot_writes_under_dashboard_var_reports(monkeypatch, tmp_path: Path) -> None:
+    module, _, _ = _load_dashboard_app(monkeypatch)
+    monkeypatch.setattr(module, "DASHBOARD_REPORT_DIR", tmp_path / "var" / "dashboard" / "reports")
+    payload = {
+        "generated_at": "2026-03-22T00:00:00Z",
+        "run_id": "run-1",
+        "source": "postgres",
+        "strategy": "RsiStrategy",
+        "summary": {
+            "period_start": "2026-03-01",
+            "period_end": "2026-03-22",
+            "bars": 10,
+            "fills": 2,
+            "buy_fills": 1,
+            "sell_fills": 1,
+            "fills_per_day": 0.5,
+            "avg_qty": 1.0,
+            "avg_notional": 100.0,
+            "total_commission": 0.1,
+            "realized_pnl": 1.5,
+            "win_rate": 0.5,
+            "avg_trade_return_pct": 0.2,
+            "best_trade_pnl": 2.0,
+            "worst_trade_pnl": -0.5,
+            "gross_profit": 2.0,
+            "gross_loss": -0.5,
+            "profit_factor": 4.0,
+            "recovery_factor": 1.25,
+            "long_trades_win_pct": "1 (100.0%)",
+            "short_trades_win_pct": "0 (0.0%)",
+            "holding_time_min_sec": 60.0,
+            "holding_time_avg_sec": 120.0,
+            "holding_time_max_sec": 180.0,
+            "equity_drawdown_absolute": 0.1,
+            "equity_drawdown_maximal": 0.2,
+            "equity_drawdown_relative_pct": 0.01,
+            "balance_drawdown_absolute": 0.1,
+            "balance_drawdown_maximal": 0.2,
+            "balance_drawdown_relative_pct": 0.01,
+            "win_streak_max": 1,
+            "loss_streak_max": 1,
+            "win_streak_avg": 1.0,
+            "loss_streak_avg": 1.0,
+            "max_consecutive_profit_amount": 2.0,
+            "max_consecutive_loss_amount": -0.5,
+        },
+        "mirror_snapshot": {},
+        "balance_equity_series": [],
+    }
+
+    json_path, md_path, markdown = module.save_report_snapshot(payload)
+
+    assert json_path.startswith(str(tmp_path / "var" / "dashboard" / "reports"))
+    assert md_path.startswith(str(tmp_path / "var" / "dashboard" / "reports"))
+    assert Path(json_path).is_file()
+    assert Path(md_path).is_file()
+    assert "Dashboard Snapshot Report" in markdown
+
+
 def test_render_raw_data_tab_loads_workflow_jobs_once_and_preserves_section_order(monkeypatch) -> None:
     module, _, _ = _load_dashboard_app(monkeypatch)
     helper_st = _HelperStreamlit()

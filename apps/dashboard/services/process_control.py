@@ -11,7 +11,7 @@ import sys
 def is_process_running(pid: object) -> bool:
     try:
         pid = int(pid)
-    except Exception:
+    except (TypeError, ValueError):
         return False
     if pid <= 0:
         return False
@@ -34,7 +34,7 @@ def is_process_running(pid: object) -> bool:
 def terminate_process(pid: object) -> tuple[bool, str]:
     try:
         pid = int(pid)
-    except Exception:
+    except (TypeError, ValueError):
         return False, "invalid pid"
     if pid <= 0:
         return False, "invalid pid"
@@ -60,7 +60,7 @@ def tail_text_file(path: str | os.PathLike[str] | None, max_chars: int = 20000) 
         return ""
     try:
         max_bytes = max(4096, int(max_chars) * 3)
-    except Exception:
+    except (TypeError, ValueError):
         max_bytes = 60000
     with open(path, "rb") as f:
         f.seek(0, os.SEEK_END)

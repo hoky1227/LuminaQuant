@@ -6,7 +6,13 @@ import json
 import os
 import subprocess
 import uuid
+from pathlib import Path
 from collections.abc import Callable, MutableMapping
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+WORKFLOW_RUNTIME_ROOT = PROJECT_ROOT / "var" / "dashboard"
+WORKFLOW_LOG_DIR = WORKFLOW_RUNTIME_ROOT / "workflow_jobs"
+WORKFLOW_CONTROL_DIR = WORKFLOW_RUNTIME_ROOT / "control"
 
 DEFAULT_LQ_COMMAND = ("uv", "run", "lq")
 
@@ -15,9 +21,14 @@ def build_lq_command(subcommand: str, *args: str) -> tuple[str, ...]:
     return (*DEFAULT_LQ_COMMAND, str(subcommand), *tuple(str(arg) for arg in args))
 
 
-def build_stop_file_path(job_id: str, *, control_dir: str = os.path.join("logs", "control")) -> str:
-    os.makedirs(control_dir, exist_ok=True)
-    return os.path.join(control_dir, f"{job_id}.stop")
+def build_stop_file_path(
+    job_id: str,
+    *,
+    control_dir: str | Path | None = None,
+) -> str:
+    resolved_control_dir = Path(control_dir) if control_dir is not None else WORKFLOW_CONTROL_DIR
+    resolved_control_dir.mkdir(parents=True, exist_ok=True)
+    return str(resolved_control_dir / f"{job_id}.stop")
 
 
 def build_runtime_env_overrides(
@@ -63,9 +74,10 @@ def launch_managed_job(
         workflow_processes = {}
         session_state["workflow_processes"] = workflow_processes
 
-    os.makedirs(workflow_log_dir, exist_ok=True)
+    resolved_workflow_log_dir = Path(workflow_log_dir)
+    resolved_workflow_log_dir.mkdir(parents=True, exist_ok=True)
     job_id = str(uuid.uuid4())
-    log_path = os.path.join(workflow_log_dir, f"{workflow}_{job_id}.log")
+    log_path = str(resolved_workflow_log_dir / f"{workflow}_{job_id}.log")
     normalized_command = [str(part) for part in command]
     normalized_env = {str(key): str(value) for key, value in (env_overrides or {}).items()}
     env = os.environ.copy()
@@ -79,7 +91,7 @@ def launch_managed_job(
             stderr=subprocess.STDOUT,
             text=True,
             env=env,
-            cwd=cwd or os.getcwd(),
+            cwd=cwd or str(PROJECT_ROOT),
         )
 
     insert_workflow_job_row(

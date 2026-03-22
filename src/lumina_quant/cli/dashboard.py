@@ -45,7 +45,7 @@ def main(argv: list[str] | None = None) -> int:
 
     command = build_dashboard_command(args.path)
     if args.run:
-        return int(subprocess.call(command, env=_dashboard_env()))
+        return int(subprocess.call(command, env=_dashboard_env(), cwd=str(REPO_ROOT)))
     print(" ".join(command))
     return 0
 

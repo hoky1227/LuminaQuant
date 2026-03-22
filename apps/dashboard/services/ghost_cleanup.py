@@ -6,7 +6,10 @@ import json
 import subprocess
 import time
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
 def build_ghost_cleanup_command(
@@ -21,7 +24,7 @@ def build_ghost_cleanup_command(
 ) -> list[str]:
     command = [
         str(python_executable),
-        "scripts/cleanup_ghost_runs.py",
+        str(PROJECT_ROOT / "scripts" / "cleanup_ghost_runs.py"),
         "--dsn",
         str(dsn),
         "--stale-sec",
@@ -52,7 +55,7 @@ def parse_ghost_cleanup_output(
     if stripped_stdout:
         try:
             payload = json.loads(stripped_stdout)
-        except Exception:
+        except json.JSONDecodeError:
             payload = None
     output = stripped_stdout
     if stripped_stderr:
@@ -92,6 +95,7 @@ def run_ghost_cleanup_script(
         capture_output=True,
         text=True,
         check=False,
+        cwd=str(PROJECT_ROOT),
     )
     return parse_ghost_cleanup_output(
         returncode=completed.returncode,

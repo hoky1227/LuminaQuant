@@ -25,7 +25,9 @@ def test_build_ghost_cleanup_command_uses_dsn_flag() -> None:
 
     assert "--dsn" in command
     assert "--db" not in command
-    assert command[:2] == ["/usr/bin/python3", "scripts/cleanup_ghost_runs.py"]
+    assert command[0] == "/usr/bin/python3"
+    assert Path(command[1]).is_absolute()
+    assert command[1].endswith("scripts/cleanup_ghost_runs.py")
 
 
 def test_parse_ghost_cleanup_output_merges_json_and_stderr() -> None:
@@ -40,3 +42,35 @@ def test_parse_ghost_cleanup_output_merges_json_and_stderr() -> None:
     assert payload["ok"] is True
     assert payload["payload"] == {"closed_runs": 2}
     assert payload["output"] == '{"closed_runs": 2}\nwarning'
+
+
+def test_run_ghost_cleanup_script_uses_project_root_as_cwd(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _Completed:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def _fake_run(command, *, capture_output, text, check, cwd):
+        captured["command"] = list(command)
+        captured["capture_output"] = capture_output
+        captured["text"] = text
+        captured["check"] = check
+        captured["cwd"] = cwd
+        return _Completed()
+
+    monkeypatch.setattr(ghost_cleanup.subprocess, "run", _fake_run)
+
+    payload = ghost_cleanup.run_ghost_cleanup_script(
+        python_executable="/usr/bin/python3",
+        dsn="postgres://lumina",
+        stale_sec=300,
+        startup_grace_sec=90,
+        close_status="STOPPED",
+        force_kill_stop_requested_after_sec=0,
+        apply_changes=False,
+    )
+
+    assert payload["ok"] is True
+    assert captured["cwd"] == str(ghost_cleanup.PROJECT_ROOT)

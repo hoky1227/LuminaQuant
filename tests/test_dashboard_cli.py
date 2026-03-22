@@ -20,3 +20,21 @@ def test_dashboard_env_includes_repo_root_and_src() -> None:
 
     assert str(dashboard.REPO_ROOT) in pythonpath_entries
     assert str(dashboard.REPO_ROOT / "src") in pythonpath_entries
+
+
+def test_dashboard_main_run_uses_repo_root_as_cwd(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def _fake_call(command, *, env, cwd):
+        captured["command"] = list(command)
+        captured["env"] = dict(env)
+        captured["cwd"] = cwd
+        return 0
+
+    monkeypatch.setattr(dashboard.subprocess, "call", _fake_call)
+
+    exit_code = dashboard.main(["--run"])
+
+    assert exit_code == 0
+    assert captured["command"][:2] == ["streamlit", "run"]
+    assert captured["cwd"] == str(dashboard.REPO_ROOT)

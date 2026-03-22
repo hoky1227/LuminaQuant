@@ -36,6 +36,9 @@ from apps.dashboard.services.workflow_jobs import (
     build_backtest_job_launch_spec as _build_backtest_job_launch_spec_data,
     build_live_job_launch_spec as _build_live_job_launch_spec_data,
     build_optimize_job_launch_spec as _build_optimize_job_launch_spec_data,
+    WORKFLOW_CONTROL_DIR,
+    WORKFLOW_LOG_DIR,
+    WORKFLOW_RUNTIME_ROOT,
     build_runtime_env_overrides as _build_runtime_env_overrides,
     build_stop_file_path as _build_stop_file_path_data,
     launch_managed_job as _launch_managed_job_data,
@@ -234,8 +237,7 @@ DEFAULT_REFRESH_INTERVAL_SEC = 5
 DEFAULT_WINDOW_POINTS = 2500
 DEFAULT_DOWNSAMPLE_TARGET_POINTS = 5000
 DEFAULT_RUN_STALE_SEC = 180
-WORKFLOW_LOG_DIR = os.path.join("logs", "workflow_jobs")
-WORKFLOW_CONTROL_DIR = os.path.join("logs", "control")
+DASHBOARD_REPORT_DIR = WORKFLOW_RUNTIME_ROOT / "reports"
 METRIC_DEFINITIONS = {
     "Total Return": "(Final Equity / Initial Equity) - 1 over selected period.",
     "Cumulative Return": "Compounded series from periodic returns across selected window.",
@@ -603,7 +605,7 @@ class _ManagedJobLaunchSpec:
             workflow=self.workflow,
             command=self.command,
             env_overrides=self.env_overrides,
-            workflow_log_dir=WORKFLOW_LOG_DIR,
+            workflow_log_dir=str(WORKFLOW_LOG_DIR),
             session_state=st.session_state,
             insert_workflow_job_row=_insert_workflow_job_row,
             utc_now_iso=_utc_now_iso,
@@ -612,7 +614,7 @@ class _ManagedJobLaunchSpec:
             run_id=self.run_id,
             stop_file=self.stop_file,
             metadata=self.metadata,
-            cwd=os.getcwd(),
+            cwd=str(PROJECT_ROOT),
         )
 
 
@@ -1100,7 +1102,7 @@ def load_equity_state(db_path, run_id, refresh_counter=0, max_points=DEFAULT_WIN
 
 
 @st.cache_data
-def load_metrics_state(db_path, run_id, refresh_counter=0):
+def load_metrics_state(db_path, run_id, refresh_counter=0, max_points=DEFAULT_WINDOW_POINTS):
     _ = refresh_counter
     conn = _connect_state_store(db_path)
     try:
@@ -1111,12 +1113,17 @@ def load_metrics_state(db_path, run_id, refresh_counter=0):
                 total,
                 cash,
                 metadata_json AS metadata
-            FROM equity
-            WHERE run_id = %s
+            FROM (
+                SELECT id, timeindex, total, cash, metadata_json
+                FROM equity
+                WHERE run_id = %s
+                ORDER BY id DESC
+                LIMIT %s
+            ) recent
             ORDER BY id ASC
             """,
             conn,
-            params=[run_id],
+            params=[run_id, int(max(1, max_points))],
         )
         df = _coerce_datetime(df, "datetime")
         if df.empty:
@@ -3013,13 +3020,13 @@ def build_report_payload(
 
 
 def save_report_snapshot(payload):
-    out_dir = os.path.join("reports", "dashboard")
-    os.makedirs(out_dir, exist_ok=True)
+    out_dir = Path(DASHBOARD_REPORT_DIR)
+    out_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
-    json_path = os.path.join(out_dir, f"dashboard_report_{ts}.json")
-    md_path = os.path.join(out_dir, f"dashboard_report_{ts}.md")
+    json_path = out_dir / f"dashboard_report_{ts}.json"
+    md_path = out_dir / f"dashboard_report_{ts}.md"
 
-    with open(json_path, "w", encoding="utf-8") as f:
+    with json_path.open("w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, ensure_ascii=False)
 
     s = payload["summary"]
@@ -3081,9 +3088,9 @@ def save_report_snapshot(payload):
         f"- Balance/Equity points: {len(balance_series)}\n"
         f"{mirror_block}"
     )
-    with open(md_path, "w", encoding="utf-8") as f:
+    with md_path.open("w", encoding="utf-8") as f:
         f.write(markdown)
-    return json_path, md_path, markdown
+    return str(json_path), str(md_path), markdown
 
 
 def _build_dashboard_report_runtime_overrides(
@@ -4006,10 +4013,17 @@ def render_main_dashboard() -> None:
                 df_orders = load_orders_state(
                     db_path, active_run_id, refresh_counter=refresh_counter, max_points=max_points
                 )
-                df_risk = load_risk_events_state(db_path, active_run_id, refresh_counter=refresh_counter)
-                df_hb = load_heartbeats_state(db_path, active_run_id, refresh_counter=refresh_counter)
+                df_risk = load_risk_events_state(
+                    db_path, active_run_id, refresh_counter=refresh_counter, max_points=max_points
+                )
+                df_hb = load_heartbeats_state(
+                    db_path, active_run_id, refresh_counter=refresh_counter, max_points=max_points
+                )
                 df_order_states = load_order_states_state(
-                    db_path, active_run_id, refresh_counter=refresh_counter
+                    db_path,
+                    active_run_id,
+                    refresh_counter=refresh_counter,
+                    max_points=max_points,
                 )
                 resolved_source = "Postgres"
         except Exception:

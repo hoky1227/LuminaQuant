@@ -18,22 +18,9 @@ from lumina_quant.symbols import (
     canonicalize_symbol_list,
     normalize_strategy_timeframes,
 )
-
-_DEFAULT_SYMBOL_FALLBACK: tuple[str, ...] = (
-    "BTC/USDT",
-    "ETH/USDT",
-    "XRP/USDT",
-    "BNB/USDT",
-    "SOL/USDT",
-    "TRX/USDT",
-    "DOGE/USDT",
-    "ADA/USDT",
-    "TON/USDT",
-    "AVAX/USDT",
-    "XAU/USDT",
-    "XAG/USDT",
-    "XPT/USDT",
-    "XPD/USDT",
+from lumina_quant.strategy_factory.runtime_settings import (
+    current_research_market_data_settings,
+    default_research_symbol_universe,
 )
 
 _PAIR_ANCHORS: tuple[tuple[str, str], ...] = (
@@ -54,14 +41,7 @@ _CRYPTO_LEADERS = {"BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT"}
 _METALS = {"XAU/USDT", "XAG/USDT", "XPT/USDT", "XPD/USDT"}
 
 
-try:  # pragma: no cover - guarded import for bootstrap contexts
-    from lumina_quant.config import BaseConfig
-
-    DEFAULT_BINANCE_TOP10_PLUS_METALS: tuple[str, ...] = tuple(
-        canonicalize_symbol_list(list(getattr(BaseConfig, "SYMBOLS", _DEFAULT_SYMBOL_FALLBACK)))
-    )
-except Exception:  # pragma: no cover - safe fallback during partial imports
-    DEFAULT_BINANCE_TOP10_PLUS_METALS = _DEFAULT_SYMBOL_FALLBACK
+DEFAULT_BINANCE_TOP10_PLUS_METALS: tuple[str, ...] = default_research_symbol_universe()
 
 DEFAULT_TIMEFRAMES: tuple[str, ...] = CANONICAL_STRATEGY_TIMEFRAMES
 
@@ -1463,9 +1443,13 @@ def _with_article_pipeline_provenance(
 
 def _has_perp_support_data() -> bool:
     candidates: list[Path] = []
+    market_data_root = current_research_market_data_settings().get(
+        "parquet_root",
+        "data/market_parquet",
+    )
 
     for raw in (
-        getattr(BaseConfig, "MARKET_DATA_PARQUET_PATH", ""),
+        market_data_root,
         os.getenv("LQ__STORAGE__MARKET_DATA_PARQUET_PATH", ""),
         os.getenv("LQ_MARKET_PARQUET_PATH", ""),
         "data/market_parquet",

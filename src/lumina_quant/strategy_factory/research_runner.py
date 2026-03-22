@@ -19,7 +19,7 @@ from typing import Any
 import numpy as np
 import polars as pl
 from lumina_quant.backtesting.cli_contract import RawFirstDataMissingError
-from lumina_quant.config import BacktestConfig, BaseConfig, current_market_data_runtime_settings
+from lumina_quant.config import BacktestConfig
 from lumina_quant.market_data import load_futures_feature_points_from_db
 from lumina_quant.storage.parquet import load_data_dict_from_parquet
 from lumina_quant.symbols import (
@@ -27,6 +27,9 @@ from lumina_quant.symbols import (
     canonical_symbol,
     canonicalize_symbol_list,
     normalize_strategy_timeframes,
+)
+from lumina_quant.strategy_factory.runtime_settings import (
+    current_research_market_data_settings as _current_research_market_data_settings_impl,
 )
 from lumina_quant.strategy_factory.research_reporting import ResearchReportBuilder
 from lumina_quant.strategy_factory.research_resources import ResearchResourceLoader
@@ -70,28 +73,7 @@ _FEATURE_POINT_COLUMNS: tuple[str, ...] = (
 def _current_research_market_data_settings(
     runtime_settings: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    if runtime_settings is not None:
-        defaults = dict(runtime_settings)
-    else:
-        try:
-            defaults = current_market_data_runtime_settings()
-        except FileNotFoundError:
-            defaults = {
-                "symbols": list(getattr(BaseConfig, "SYMBOLS", [])),
-                "market_data_parquet_path": str(
-                    getattr(BaseConfig, "MARKET_DATA_PARQUET_PATH", "data/market_parquet")
-                ),
-                "market_data_exchange": str(
-                    getattr(BaseConfig, "MARKET_DATA_EXCHANGE", "binance") or "binance"
-                ),
-            }
-    parquet_root = defaults.get("market_data_parquet_path", defaults.get("parquet_root", "data/market_parquet"))
-    market_exchange = defaults.get("market_data_exchange", defaults.get("exchange", "binance"))
-    return {
-        "symbols": canonicalize_symbol_list(list(defaults["symbols"])),
-        "parquet_root": str(parquet_root or "data/market_parquet"),
-        "exchange": str(market_exchange or "binance"),
-    }
+    return _current_research_market_data_settings_impl(runtime_settings)
 
 
 DEFAULT_RESEARCH_SCORING_CONFIG: dict[str, Any] = {
