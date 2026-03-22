@@ -2816,6 +2816,38 @@ def _align_bundles(
 ) -> dict[str, np.ndarray] | None:
     if not bundles:
         return None
+    common_datetime = _common_bundle_datetime(bundles)
+    if common_datetime is None:
+        return None
+
+    aligned: dict[str, np.ndarray] = {
+        "datetime": common_datetime,
+    }
+    for bundle in bundles:
+        prefix = bundle.symbol
+        indices = _aligned_bundle_indices(bundle, common_datetime)
+        if indices is None:
+            return None
+        aligned[f"{prefix}:open"] = bundle.open[indices]
+        aligned[f"{prefix}:high"] = bundle.high[indices]
+        aligned[f"{prefix}:low"] = bundle.low[indices]
+        aligned[f"{prefix}:close"] = bundle.close[indices]
+        aligned[f"{prefix}:volume"] = bundle.volume[indices]
+        feature_frame = None if feature_cache is None else feature_cache.get(prefix)
+        _augment_aligned_bundle_features(
+            aligned,
+            prefix=prefix,
+            common_datetime=common_datetime,
+            feature_frame=feature_frame,
+        )
+    return aligned
+
+
+def _common_bundle_datetime(
+    bundles: Sequence[SeriesBundle],
+) -> np.ndarray | None:
+    if not bundles:
+        return None
     common_datetime = np.asarray(bundles[0].datetime, dtype="datetime64[ms]")
     for bundle in bundles[1:]:
         common_datetime = np.intersect1d(
@@ -2827,58 +2859,77 @@ def _align_bundles(
             return None
     if common_datetime.size < _MIN_BARS:
         return None
+    return common_datetime
 
-    aligned: dict[str, np.ndarray] = {
-        "datetime": common_datetime,
-    }
-    for bundle in bundles:
-        prefix = bundle.symbol
-        bundle_datetime = np.asarray(bundle.datetime, dtype="datetime64[ms]")
-        indices = np.searchsorted(bundle_datetime, common_datetime)
-        if np.any(indices >= bundle_datetime.size) or np.any(bundle_datetime[indices] != common_datetime):
-            return None
-        aligned[f"{prefix}:open"] = bundle.open[indices]
-        aligned[f"{prefix}:high"] = bundle.high[indices]
-        aligned[f"{prefix}:low"] = bundle.low[indices]
-        aligned[f"{prefix}:close"] = bundle.close[indices]
-        aligned[f"{prefix}:volume"] = bundle.volume[indices]
-        feature_frame = None if feature_cache is None else feature_cache.get(prefix)
-        if feature_frame is None or feature_frame.is_empty():
-            continue
 
-        target = pl.DataFrame(
-            {"datetime": pl.Series("datetime", common_datetime)}
-        )
-        feature_points = feature_frame.select(["datetime", *_FEATURE_POINT_COLUMNS])
-        target_dtype = target.schema.get("datetime")
-        feature_dtype = feature_points.schema.get("datetime")
-        if target_dtype is not None and feature_dtype is not None and target_dtype != feature_dtype:
-            feature_points = feature_points.with_columns(pl.col("datetime").cast(target_dtype))
-        joined = target.join_asof(
-            feature_points.sort("datetime"),
-            on="datetime",
-            strategy="backward",
-        )
-        for field in _FEATURE_POINT_COLUMNS:
-            aligned[f"{prefix}:{field}"] = joined.get_column(field).to_numpy()
+def _aligned_bundle_indices(
+    bundle: SeriesBundle,
+    common_datetime: np.ndarray,
+) -> np.ndarray | None:
+    bundle_datetime = np.asarray(bundle.datetime, dtype="datetime64[ms]")
+    indices = np.searchsorted(bundle_datetime, common_datetime)
+    if np.any(indices >= bundle_datetime.size) or np.any(bundle_datetime[indices] != common_datetime):
+        return None
+    return indices
 
-        support = _crowding_support_series(
-            funding_rate=np.asarray(joined.get_column("funding_rate").to_numpy(), dtype=float),
-            open_interest=np.asarray(joined.get_column("open_interest").to_numpy(), dtype=float),
-            mark_price=np.asarray(joined.get_column("mark_price").to_numpy(), dtype=float),
-            index_price=np.asarray(joined.get_column("index_price").to_numpy(), dtype=float),
-            liquidation_long_notional=np.asarray(
-                joined.get_column("liquidation_long_notional").to_numpy(),
-                dtype=float,
-            ),
-            liquidation_short_notional=np.asarray(
-                joined.get_column("liquidation_short_notional").to_numpy(),
-                dtype=float,
-            ),
-        )
-        for key, values in support.items():
-            aligned[f"{prefix}:{key}"] = values
-    return aligned
+
+def _aligned_feature_points(
+    *,
+    common_datetime: np.ndarray,
+    feature_frame: pl.DataFrame,
+) -> pl.DataFrame | None:
+    if feature_frame.is_empty():
+        return None
+
+    target = pl.DataFrame({"datetime": pl.Series("datetime", common_datetime)})
+    feature_points = feature_frame.select(["datetime", *_FEATURE_POINT_COLUMNS])
+    target_dtype = target.schema.get("datetime")
+    feature_dtype = feature_points.schema.get("datetime")
+    if target_dtype is not None and feature_dtype is not None and target_dtype != feature_dtype:
+        feature_points = feature_points.with_columns(pl.col("datetime").cast(target_dtype))
+    return target.join_asof(
+        feature_points.sort("datetime"),
+        on="datetime",
+        strategy="backward",
+    )
+
+
+def _augment_aligned_bundle_features(
+    aligned: dict[str, np.ndarray],
+    *,
+    prefix: str,
+    common_datetime: np.ndarray,
+    feature_frame: pl.DataFrame | None,
+) -> None:
+    if feature_frame is None:
+        return
+
+    joined = _aligned_feature_points(
+        common_datetime=common_datetime,
+        feature_frame=feature_frame,
+    )
+    if joined is None:
+        return
+
+    for field in _FEATURE_POINT_COLUMNS:
+        aligned[f"{prefix}:{field}"] = joined.get_column(field).to_numpy()
+
+    support = _crowding_support_series(
+        funding_rate=np.asarray(joined.get_column("funding_rate").to_numpy(), dtype=float),
+        open_interest=np.asarray(joined.get_column("open_interest").to_numpy(), dtype=float),
+        mark_price=np.asarray(joined.get_column("mark_price").to_numpy(), dtype=float),
+        index_price=np.asarray(joined.get_column("index_price").to_numpy(), dtype=float),
+        liquidation_long_notional=np.asarray(
+            joined.get_column("liquidation_long_notional").to_numpy(),
+            dtype=float,
+        ),
+        liquidation_short_notional=np.asarray(
+            joined.get_column("liquidation_short_notional").to_numpy(),
+            dtype=float,
+        ),
+    )
+    for key, values in support.items():
+        aligned[f"{prefix}:{key}"] = values
 
 
 def _perp_carry_position_series(

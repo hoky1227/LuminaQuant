@@ -62,6 +62,30 @@ def test_align_bundles_augments_feature_series_from_feature_cache():
     assert np.isfinite(float(aligned["BTC/USDT:crowding_score"][-1]))
 
 
+def test_align_bundles_ignores_empty_feature_frames():
+    bundle = _bundle("BTC/USDT")
+    feature_frame = pl.DataFrame(
+        schema={
+            "datetime": pl.Datetime("ms"),
+            **dict.fromkeys(research_runner._FEATURE_POINT_COLUMNS, pl.Float64),
+        }
+    )
+
+    aligned = research_runner._align_bundles(
+        [bundle],
+        feature_cache={"BTC/USDT": feature_frame},
+    )
+
+    assert aligned is not None
+    assert "BTC/USDT:open" in aligned
+    assert "BTC/USDT:funding_rate" not in aligned
+    assert "BTC/USDT:crowding_score" not in aligned
+
+
+def test_common_bundle_datetime_returns_none_for_empty_input():
+    assert research_runner._common_bundle_datetime([]) is None
+
+
 def test_perp_carry_strategy_signal_uses_actual_support_feature_arrays():
     length = 420
     close = np.linspace(100.0, 118.0, length, dtype=float)
