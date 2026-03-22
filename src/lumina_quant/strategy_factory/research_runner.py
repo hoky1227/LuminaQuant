@@ -2330,6 +2330,17 @@ class _PerpCrowdingCarryConfig:
     allow_short: bool
 
 
+@dataclass(frozen=True, slots=True)
+class _CrowdingSupportInputs:
+    close: np.ndarray
+    funding_rate: np.ndarray
+    open_interest: np.ndarray
+    liquidation_long_notional: np.ndarray
+    liquidation_short_notional: np.ndarray
+    mark_price: np.ndarray | None
+    index_price: np.ndarray | None
+
+
 def _resolve_perp_crowding_carry_config(
     params: Mapping[str, Any],
 ) -> _PerpCrowdingCarryConfig:
@@ -2343,6 +2354,58 @@ def _resolve_perp_crowding_carry_config(
         max_hold_bars=int(params.get("max_hold_bars", 72)),
         allow_short=bool(params.get("allow_short", True)),
     )
+
+
+def _resolve_crowding_support_inputs(
+    *,
+    aligned: Mapping[str, np.ndarray],
+    symbol: str,
+) -> _CrowdingSupportInputs | None:
+    funding = aligned.get(f"{symbol}:funding_rate")
+    open_interest = aligned.get(f"{symbol}:open_interest")
+    liquidation_long = aligned.get(f"{symbol}:liquidation_long_notional")
+    liquidation_short = aligned.get(f"{symbol}:liquidation_short_notional")
+    close = aligned.get(f"{symbol}:close")
+    if (
+        funding is None
+        or open_interest is None
+        or liquidation_long is None
+        or liquidation_short is None
+        or close is None
+    ):
+        return None
+
+    mark_price = aligned.get(f"{symbol}:mark_price")
+    index_price = aligned.get(f"{symbol}:index_price")
+    return _CrowdingSupportInputs(
+        close=np.asarray(close, dtype=float),
+        funding_rate=np.asarray(funding, dtype=float),
+        open_interest=np.asarray(open_interest, dtype=float),
+        liquidation_long_notional=np.asarray(liquidation_long, dtype=float),
+        liquidation_short_notional=np.asarray(liquidation_short, dtype=float),
+        mark_price=None if mark_price is None else np.asarray(mark_price, dtype=float),
+        index_price=None if index_price is None else np.asarray(index_price, dtype=float),
+    )
+
+
+def _note_support_data_symbol(
+    meta: dict[str, Any],
+    *,
+    symbol: str,
+    values: np.ndarray,
+) -> None:
+    if np.any(np.isfinite(values)):
+        meta.setdefault("support_data_symbols", []).append(symbol)
+
+
+def _finalize_missing_support_symbols(
+    meta: dict[str, Any],
+    *,
+    missing_symbols: Sequence[str],
+) -> None:
+    if missing_symbols:
+        meta["missing_support_data"] = True
+        meta["missing_support_symbols"] = list(missing_symbols)
 
 
 def _apply_perp_crowding_carry_strategy(
@@ -2361,26 +2424,18 @@ def _apply_perp_crowding_carry_strategy(
     config = _resolve_perp_crowding_carry_config(params)
     missing_symbols: list[str] = []
     for s_idx, symbol in enumerate(symbols):
-        close = aligned[f"{symbol}:close"]
-        funding = aligned.get(f"{symbol}:funding_rate")
-        oi = aligned.get(f"{symbol}:open_interest")
-        liq_long = aligned.get(f"{symbol}:liquidation_long_notional")
-        liq_short = aligned.get(f"{symbol}:liquidation_short_notional")
-        if funding is None or oi is None or liq_long is None or liq_short is None:
+        support_inputs = _resolve_crowding_support_inputs(aligned=aligned, symbol=symbol)
+        if support_inputs is None:
             missing_symbols.append(symbol)
             continue
         position, support = _perp_carry_position_series(
-            close=np.asarray(close, dtype=float),
-            funding_rate=np.asarray(funding, dtype=float),
-            open_interest=np.asarray(oi, dtype=float),
-            liquidation_long_notional=np.asarray(liq_long, dtype=float),
-            liquidation_short_notional=np.asarray(liq_short, dtype=float),
-            mark_price=None
-            if aligned.get(f"{symbol}:mark_price") is None
-            else np.asarray(aligned[f"{symbol}:mark_price"], dtype=float),
-            index_price=None
-            if aligned.get(f"{symbol}:index_price") is None
-            else np.asarray(aligned[f"{symbol}:index_price"], dtype=float),
+            close=support_inputs.close,
+            funding_rate=support_inputs.funding_rate,
+            open_interest=support_inputs.open_interest,
+            liquidation_long_notional=support_inputs.liquidation_long_notional,
+            liquidation_short_notional=support_inputs.liquidation_short_notional,
+            mark_price=support_inputs.mark_price,
+            index_price=support_inputs.index_price,
             window=config.window,
             mild_funding=config.mild_funding,
             extreme_funding=config.extreme_funding,
@@ -2391,12 +2446,13 @@ def _apply_perp_crowding_carry_strategy(
             allow_short=config.allow_short,
         )
         exposures[s_idx] = position
-        if np.any(np.isfinite(support["crowding_score"])):
-            meta.setdefault("support_data_symbols", []).append(symbol)
+        _note_support_data_symbol(
+            meta,
+            symbol=symbol,
+            values=np.asarray(support["crowding_score"], dtype=float),
+        )
 
-    if missing_symbols:
-        meta["missing_support_data"] = True
-        meta["missing_support_symbols"] = missing_symbols
+    _finalize_missing_support_symbols(meta, missing_symbols=missing_symbols)
 
 
 def _pair_spread_z(px: np.ndarray, py: np.ndarray, window: int = 96) -> np.ndarray:
@@ -3846,42 +3902,31 @@ def _apply_funding_liquidation_crowding_fade_strategy(
     config = _resolve_funding_liquidation_crowding_fade_config(params)
     missing_symbols: list[str] = []
     for s_idx, symbol in enumerate(symbols):
-        funding = aligned.get(f"{symbol}:funding_rate")
-        oi = aligned.get(f"{symbol}:open_interest")
-        liq_long = aligned.get(f"{symbol}:liquidation_long_notional")
-        liq_short = aligned.get(f"{symbol}:liquidation_short_notional")
-        if funding is None or oi is None or liq_long is None or liq_short is None:
+        support_inputs = _resolve_crowding_support_inputs(aligned=aligned, symbol=symbol)
+        if support_inputs is None:
             missing_symbols.append(symbol)
             continue
 
         support = _crowding_support_series(
-            funding_rate=np.asarray(funding, dtype=float),
-            open_interest=np.asarray(oi, dtype=float),
-            mark_price=None
-            if aligned.get(f"{symbol}:mark_price") is None
-            else np.asarray(aligned[f"{symbol}:mark_price"], dtype=float),
-            index_price=None
-            if aligned.get(f"{symbol}:index_price") is None
-            else np.asarray(aligned[f"{symbol}:index_price"], dtype=float),
-            liquidation_long_notional=np.asarray(liq_long, dtype=float),
-            liquidation_short_notional=np.asarray(liq_short, dtype=float),
+            funding_rate=support_inputs.funding_rate,
+            open_interest=support_inputs.open_interest,
+            mark_price=support_inputs.mark_price,
+            index_price=support_inputs.index_price,
+            liquidation_long_notional=support_inputs.liquidation_long_notional,
+            liquidation_short_notional=support_inputs.liquidation_short_notional,
             window=config.window,
         )
         score = np.asarray(support["crowding_score"], dtype=float)
         liquidation_z = np.asarray(support["liquidation_imbalance_z"], dtype=float)
-        close = np.asarray(aligned[f"{symbol}:close"], dtype=float)
         exposures[s_idx] = _funding_liquidation_crowding_position_series(
-            close=close,
+            close=support_inputs.close,
             score=score,
             liquidation_z=liquidation_z,
             config=config,
         )
-        if np.any(np.isfinite(score)):
-            meta.setdefault("support_data_symbols", []).append(symbol)
+        _note_support_data_symbol(meta, symbol=symbol, values=score)
 
-    if missing_symbols:
-        meta["missing_support_data"] = True
-        meta["missing_support_symbols"] = missing_symbols
+    _finalize_missing_support_symbols(meta, missing_symbols=missing_symbols)
 
 
 def _apply_vol_compression_vwap_reversion_strategy(

@@ -572,6 +572,77 @@ def test_funding_liquidation_crowding_fade_strategy_signal_produces_exposure():
     assert "BTC/USDT" in list(meta.get("support_data_symbols") or [])
 
 
+def test_funding_liquidation_crowding_preserves_default_config(monkeypatch):
+    captured: dict[str, float | int | bool] = {}
+
+    def _stub_crowding_support_series(**kwargs):
+        funding_rate = np.asarray(kwargs["funding_rate"], dtype=float)
+        captured["support_window"] = int(kwargs["window"])
+        shape = funding_rate.shape
+        return {
+            "crowding_score": np.zeros(shape, dtype=float),
+            "liquidation_imbalance_z": np.zeros(shape, dtype=float),
+        }
+
+    def _stub_funding_liquidation_position_series(*, close, score, liquidation_z, config):
+        captured.update(
+            {
+                "window": int(config.window),
+                "crowding_entry": float(config.crowding_entry),
+                "crowding_exit": float(config.crowding_exit),
+                "liquidation_z_min": float(config.liquidation_z_min),
+                "return_shock_pct": float(config.return_shock_pct),
+                "max_hold_bars": int(config.max_hold_bars),
+                "stop_loss_pct": float(config.stop_loss_pct),
+                "allow_short": bool(config.allow_short),
+            }
+        )
+        return np.zeros(np.asarray(close, dtype=float).shape, dtype=float)
+
+    monkeypatch.setattr(research_runner, "_resolve_feature_points_path", lambda: Path(__file__))
+    monkeypatch.setattr(research_runner, "_crowding_support_series", _stub_crowding_support_series)
+    monkeypatch.setattr(
+        research_runner,
+        "_funding_liquidation_crowding_position_series",
+        _stub_funding_liquidation_position_series,
+    )
+
+    length = 120
+    close = np.linspace(100.0, 104.0, length, dtype=float)
+    aligned = {
+        "datetime": _minute_datetimes(length),
+        "BTC/USDT:open": close - 0.1,
+        "BTC/USDT:high": close + 0.2,
+        "BTC/USDT:low": close - 0.2,
+        "BTC/USDT:close": close,
+        "BTC/USDT:volume": np.full(length, 120.0, dtype=float),
+        "BTC/USDT:funding_rate": np.full(length, 0.0001, dtype=float),
+        "BTC/USDT:open_interest": np.full(length, 1_000_000.0, dtype=float),
+        "BTC/USDT:liquidation_long_notional": np.full(length, 120_000.0, dtype=float),
+        "BTC/USDT:liquidation_short_notional": np.full(length, 20_000.0, dtype=float),
+        "BTC/USDT:mark_price": close * 1.001,
+        "BTC/USDT:index_price": close,
+    }
+
+    research_runner._strategy_signal(
+        {"strategy_class": "FundingLiquidationCrowdingFadeStrategy", "params": {}},
+        aligned=aligned,
+        symbols=["BTC/USDT"],
+    )
+
+    assert captured == {
+        "support_window": 96,
+        "window": 96,
+        "crowding_entry": 0.85,
+        "crowding_exit": 0.25,
+        "liquidation_z_min": 1.0,
+        "return_shock_pct": 0.01,
+        "max_hold_bars": 12,
+        "stop_loss_pct": 0.02,
+        "allow_short": True,
+    }
+
+
 def test_liquidity_shock_reversion_strategy_signal_produces_exposure():
     length = 240
     close = np.linspace(100.0, 108.0, length, dtype=float)
