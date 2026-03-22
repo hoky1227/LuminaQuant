@@ -275,6 +275,113 @@ def test_composite_trend_benchmark_gate_blocks_longs_in_benchmark_crash_state():
     assert gated_meta.get("benchmark_regime_ma") == 48
 
 
+def test_composite_trend_helpers_cover_entry_and_exit_branches():
+    config = research_runner._CompositeTrendStrategyConfig(
+        long_threshold=0.10,
+        short_threshold=0.10,
+        exit_score_cross=0.03,
+        te_min=0.0,
+        vr_min=0.0,
+        risk_target_vol=0.0025,
+        max_signal_strength=0.60,
+        vol_window=32,
+        max_hold_bars=8,
+        allow_short=True,
+        benchmark_regime_ma=0,
+        benchmark_symbol="BTC/USDT",
+        crowding_reduce_threshold=0.55,
+        crowding_block_threshold=0.85,
+    )
+
+    assert (
+        research_runner._composite_trend_entry_mode(
+            score_i=0.2,
+            long_gate_i=True,
+            short_gate_i=True,
+            blocked=False,
+            config=config,
+        )
+        == 1
+    )
+    assert (
+        research_runner._composite_trend_entry_mode(
+            score_i=-0.2,
+            long_gate_i=True,
+            short_gate_i=True,
+            blocked=False,
+            config=config,
+        )
+        == -1
+    )
+    assert (
+        research_runner._composite_trend_should_exit(
+            mode=1,
+            score_i=0.01,
+            long_gate_i=True,
+            short_gate_i=True,
+            bars_held=1,
+            config=config,
+        )
+        is True
+    )
+
+
+def test_composite_trend_position_series_exits_active_long_and_short_positions():
+    config = research_runner._CompositeTrendStrategyConfig(
+        long_threshold=0.10,
+        short_threshold=0.10,
+        exit_score_cross=0.03,
+        te_min=0.0,
+        vr_min=0.0,
+        risk_target_vol=0.0025,
+        max_signal_strength=0.60,
+        vol_window=2,
+        max_hold_bars=8,
+        allow_short=True,
+        benchmark_regime_ma=0,
+        benchmark_symbol="BTC/USDT",
+        crowding_reduce_threshold=0.55,
+        crowding_block_threshold=0.85,
+    )
+    gate = np.asarray([True, True, True], dtype=bool)
+    close = np.asarray([100.0, 101.0, 102.0], dtype=float)
+
+    long_position = research_runner._composite_trend_position_series(
+        close=close,
+        score=np.asarray([0.2, 0.01, 0.0], dtype=float),
+        gate=gate,
+        long_gate=gate,
+        short_gate=gate,
+        crowding=None,
+        config=config,
+    )
+    short_position = research_runner._composite_trend_position_series(
+        close=close,
+        score=np.asarray([-0.2, -0.01, 0.0], dtype=float),
+        gate=gate,
+        long_gate=gate,
+        short_gate=gate,
+        crowding=None,
+        config=config,
+    )
+
+    assert long_position[0] > 0.0
+    assert np.array_equal(long_position[1:], np.zeros(2, dtype=float))
+    assert short_position[0] < 0.0
+    assert np.array_equal(short_position[1:], np.zeros(2, dtype=float))
+    assert (
+        research_runner._composite_trend_should_exit(
+            mode=-1,
+            score_i=-0.01,
+            long_gate_i=True,
+            short_gate_i=True,
+            bars_held=1,
+            config=config,
+        )
+        is True
+    )
+
+
 def test_lag_convergence_strategy_signal_trades_xpt_xpd_pair():
     length = 120
     x_close = np.full(length, 100.0, dtype=float)

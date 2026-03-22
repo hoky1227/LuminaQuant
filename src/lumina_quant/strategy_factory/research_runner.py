@@ -1275,16 +1275,7 @@ def _composite_trend_position_series(
     long_gate: np.ndarray | None = None,
     short_gate: np.ndarray | None = None,
     crowding: np.ndarray | None,
-    long_threshold: float,
-    short_threshold: float,
-    exit_score_cross: float,
-    risk_target_vol: float,
-    max_signal_strength: float,
-    vol_window: int,
-    max_hold_bars: int,
-    crowding_reduce_threshold: float,
-    crowding_block_threshold: float,
-    allow_short: bool,
+    config: _CompositeTrendStrategyConfig,
 ) -> np.ndarray:
     close_arr = np.asarray(close, dtype=float)
     score_arr = np.asarray(score, dtype=float)
@@ -1296,7 +1287,7 @@ def _composite_trend_position_series(
         if crowding is None
         else np.asarray(crowding, dtype=float)
     )
-    sigma_arr = _rolling_volatility_series(close_arr, vol_window)
+    sigma_arr = _rolling_volatility_series(close_arr, config.vol_window)
     position = np.zeros(close_arr.shape, dtype=float)
     mode = 0
     bars_held = 0
@@ -1311,57 +1302,90 @@ def _composite_trend_position_series(
         strength = _composite_trend_signal_strength(
             sigma=float(sigma_arr[idx]) if np.isfinite(sigma_arr[idx]) else 0.0,
             crowding_score=crowd_i,
-            crowding_reduce_threshold=float(crowding_reduce_threshold),
-            risk_target_vol=float(risk_target_vol),
-            max_signal_strength=float(max_signal_strength),
+            crowding_reduce_threshold=config.crowding_reduce_threshold,
+            risk_target_vol=config.risk_target_vol,
+            max_signal_strength=config.max_signal_strength,
         )
-        blocked = crowd_i is not None and abs(float(crowd_i)) >= float(crowding_block_threshold)
+        blocked = crowd_i is not None and abs(float(crowd_i)) >= config.crowding_block_threshold
 
         if not np.isfinite(close_i):
             position[idx] = float(mode) * strength
             continue
 
-        if mode == 1:
+        if mode != 0:
             bars_held += 1
-            should_exit = (not long_gate_i) or (not np.isfinite(score_i)) or (score_i <= float(exit_score_cross)) or (bars_held >= int(max_hold_bars))
-            if should_exit:
+            if _composite_trend_should_exit(
+                mode=mode,
+                score_i=score_i,
+                long_gate_i=long_gate_i,
+                short_gate_i=short_gate_i,
+                bars_held=bars_held,
+                config=config,
+            ):
                 mode = 0
                 bars_held = 0
                 position[idx] = 0.0
             else:
-                position[idx] = strength
+                position[idx] = float(mode) * strength
             continue
 
-        if mode == -1:
-            bars_held += 1
-            should_exit = (not short_gate_i) or (not np.isfinite(score_i)) or (score_i >= -float(exit_score_cross)) or (bars_held >= int(max_hold_bars))
-            if should_exit:
-                mode = 0
-                bars_held = 0
-                position[idx] = 0.0
-            else:
-                position[idx] = -strength
-            continue
-
-        if (not long_gate_i and not short_gate_i) or not np.isfinite(score_i) or blocked:
+        next_mode = _composite_trend_entry_mode(
+            score_i=score_i,
+            long_gate_i=long_gate_i,
+            short_gate_i=short_gate_i,
+            blocked=blocked,
+            config=config,
+        )
+        if next_mode == 0:
             position[idx] = 0.0
             continue
 
-        if long_gate_i and score_i >= float(long_threshold):
-            mode = 1
-            bars_held = 0
-            position[idx] = strength
-            continue
-
-        if bool(allow_short) and short_gate_i and score_i <= -float(short_threshold):
-            mode = -1
-            bars_held = 0
-            position[idx] = -strength
-            continue
-
-        position[idx] = 0.0
+        mode = next_mode
+        bars_held = 0
+        position[idx] = float(mode) * strength
 
     return position
+
+
+def _composite_trend_should_exit(
+    *,
+    mode: int,
+    score_i: float,
+    long_gate_i: bool,
+    short_gate_i: bool,
+    bars_held: int,
+    config: _CompositeTrendStrategyConfig,
+) -> bool:
+    if mode == 1:
+        return (
+            (not long_gate_i)
+            or (not np.isfinite(score_i))
+            or (score_i <= config.exit_score_cross)
+            or (bars_held >= config.max_hold_bars)
+        )
+    return (
+        (not short_gate_i)
+        or (not np.isfinite(score_i))
+        or (score_i >= -config.exit_score_cross)
+        or (bars_held >= config.max_hold_bars)
+    )
+
+
+def _composite_trend_entry_mode(
+    *,
+    score_i: float,
+    long_gate_i: bool,
+    short_gate_i: bool,
+    blocked: bool,
+    config: _CompositeTrendStrategyConfig,
+) -> int:
+    if (not long_gate_i and not short_gate_i) or not np.isfinite(score_i) or blocked:
+        return 0
+    if long_gate_i and score_i >= config.long_threshold:
+        return 1
+    if config.allow_short and short_gate_i and score_i <= -config.short_threshold:
+        return -1
+    return 0
 
 
 def _vwap_dev_z(high: np.ndarray, low: np.ndarray, close: np.ndarray, volume: np.ndarray, window: int = 60, z_window: int = 120) -> np.ndarray:
@@ -3271,16 +3295,7 @@ def _apply_composite_trend_strategy(
             long_gate=np.asarray(long_gate, dtype=bool),
             short_gate=np.asarray(gate, dtype=bool),
             crowding=None if crowding is None else np.asarray(crowding, dtype=float),
-            long_threshold=config.long_threshold,
-            short_threshold=config.short_threshold,
-            exit_score_cross=config.exit_score_cross,
-            risk_target_vol=config.risk_target_vol,
-            max_signal_strength=config.max_signal_strength,
-            vol_window=config.vol_window,
-            max_hold_bars=config.max_hold_bars,
-            crowding_reduce_threshold=config.crowding_reduce_threshold,
-            crowding_block_threshold=config.crowding_block_threshold,
-            allow_short=config.allow_short,
+            config=config,
         )
 
     if config.benchmark_regime_ma > 0:
