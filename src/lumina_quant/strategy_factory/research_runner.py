@@ -2532,6 +2532,14 @@ class _CrowdingSupportInputs:
     index_price: np.ndarray | None
 
 
+@dataclass(frozen=True, slots=True)
+class _PerpCarryStepInput:
+    funding_i: float
+    score_i: float
+    oi_delta_z_i: float
+    close_i: float
+
+
 def _resolve_perp_crowding_carry_config(
     params: Mapping[str, Any],
 ) -> _PerpCrowdingCarryConfig:
@@ -3239,45 +3247,74 @@ def _perp_carry_position_series(
     bars_held = 0
 
     for idx in range(close_arr.size):
-        funding_i = funding[idx]
-        score_i = score[idx]
-        oi_delta_z_i = oi_delta_z[idx]
-        close_i = close_arr[idx]
-        if not np.isfinite(close_i):
-            position[idx] = float(mode)
-            continue
-
-        if mode != 0:
-            bars_held += 1
-            if _perp_carry_should_exit(
-                mode=mode,
-                score_i=score_i,
-                funding_i=funding_i,
-                close_i=close_i,
-                entry_price=entry_price,
-                bars_held=bars_held,
-                config=config,
-            ):
-                mode = 0
-                entry_price = None
-                bars_held = 0
-            position[idx] = float(mode)
-            continue
-
-        next_mode = _perp_carry_entry_mode(
-            funding_i=funding_i,
-            score_i=score_i,
-            oi_delta_z_i=oi_delta_z_i,
+        step = _perp_carry_step_input(
+            idx=idx,
+            funding=funding,
+            score=score,
+            oi_delta_z=oi_delta_z,
+            close_arr=close_arr,
+        )
+        mode, entry_price, bars_held, position[idx] = _perp_carry_step(
+            mode=mode,
+            entry_price=entry_price,
+            bars_held=bars_held,
+            step=step,
             config=config,
         )
-        if next_mode != 0:
-            mode = next_mode
-            entry_price = float(close_i)
-            bars_held = 0
-
-        position[idx] = float(mode)
 
     return position, support
+
+
+def _perp_carry_step_input(
+    *,
+    idx: int,
+    funding: np.ndarray,
+    score: np.ndarray,
+    oi_delta_z: np.ndarray,
+    close_arr: np.ndarray,
+) -> _PerpCarryStepInput:
+    return _PerpCarryStepInput(
+        funding_i=float(funding[idx]),
+        score_i=float(score[idx]),
+        oi_delta_z_i=float(oi_delta_z[idx]),
+        close_i=float(close_arr[idx]),
+    )
+
+
+def _perp_carry_step(
+    *,
+    mode: int,
+    entry_price: float | None,
+    bars_held: int,
+    step: _PerpCarryStepInput,
+    config: _PerpCrowdingCarryConfig,
+) -> tuple[int, float | None, int, float]:
+    if not np.isfinite(step.close_i):
+        return mode, entry_price, bars_held, float(mode)
+
+    if mode != 0:
+        next_bars_held = bars_held + 1
+        if _perp_carry_should_exit(
+            mode=mode,
+            score_i=step.score_i,
+            funding_i=step.funding_i,
+            close_i=step.close_i,
+            entry_price=entry_price,
+            bars_held=next_bars_held,
+            config=config,
+        ):
+            return 0, None, 0, 0.0
+        return mode, entry_price, next_bars_held, float(mode)
+
+    next_mode = _perp_carry_entry_mode(
+        funding_i=step.funding_i,
+        score_i=step.score_i,
+        oi_delta_z_i=step.oi_delta_z_i,
+        config=config,
+    )
+    if next_mode == 0:
+        return 0, entry_price, 0, 0.0
+    return next_mode, step.close_i, 0, float(next_mode)
 
 
 def _perp_carry_should_exit(
