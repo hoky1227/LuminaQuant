@@ -2739,10 +2739,10 @@ def _apply_residual_basket_reversion_strategy(
             config=config,
         )
 
-        if (
-            idx < config.residual_window
-            or (idx + 1) % config.rebalance_bars != 0
-            or (entry_gate is not None and not bool(entry_gate[idx]))
+        if not _residual_basket_reversion_rebalance_due(
+            idx=idx,
+            config=config,
+            entry_gate=entry_gate,
         ):
             exposures[:, idx] = position_state
             continue
@@ -2755,19 +2755,14 @@ def _apply_residual_basket_reversion_strategy(
             config=config,
         )
 
-        for s_idx, symbol in enumerate(symbols):
-            next_position = 0.0
-            if symbol in long_set:
-                next_position = 1.0
-            elif symbol in shorts:
-                next_position = -1.0
-            if next_position == 0.0:
-                position_state[s_idx] = 0.0
-                entry_price[s_idx] = np.nan
-            else:
-                if position_state[s_idx] != next_position or not np.isfinite(entry_price[s_idx]):
-                    entry_price[s_idx] = close_map[symbol]
-                position_state[s_idx] = next_position
+        _apply_residual_basket_reversion_targets_to_state(
+            symbols=symbols,
+            close_map=close_map,
+            long_set=long_set,
+            shorts=shorts,
+            position_state=position_state,
+            entry_price=entry_price,
+        )
         exposures[:, idx] = position_state
 
     meta["cross_sectional"] = True
@@ -2775,6 +2770,40 @@ def _apply_residual_basket_reversion_strategy(
     meta["btc_symbol"] = btc_symbol
     if session_gated:
         meta["session_gated"] = True
+
+
+def _residual_basket_reversion_rebalance_due(
+    *,
+    idx: int,
+    config: _ResidualBasketReversionConfig,
+    entry_gate: np.ndarray | None,
+) -> bool:
+    return (
+        idx >= config.residual_window
+        and (idx + 1) % config.rebalance_bars == 0
+        and (entry_gate is None or bool(entry_gate[idx]))
+    )
+
+
+def _apply_residual_basket_reversion_targets_to_state(
+    *,
+    symbols: Sequence[str],
+    close_map: Mapping[str, float],
+    long_set: set[str],
+    shorts: Sequence[str],
+    position_state: np.ndarray,
+    entry_price: np.ndarray,
+) -> None:
+    short_set = set(shorts)
+    for s_idx, symbol in enumerate(symbols):
+        next_position = 1.0 if symbol in long_set else -1.0 if symbol in short_set else 0.0
+        if next_position == 0.0:
+            position_state[s_idx] = 0.0
+            entry_price[s_idx] = np.nan
+            continue
+        if position_state[s_idx] != next_position or not np.isfinite(entry_price[s_idx]):
+            entry_price[s_idx] = close_map[symbol]
+        position_state[s_idx] = next_position
 
 
 def _residual_basket_reversion_z_map(

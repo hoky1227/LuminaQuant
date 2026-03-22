@@ -1468,6 +1468,73 @@ def test_residual_basket_reversion_targets_respect_allow_short_and_overlap():
     assert overlap_shorts == []
 
 
+def test_apply_residual_basket_reversion_strategy_respects_rebalance_gate(monkeypatch):
+    target_indices: list[int] = []
+    length = 12
+
+    monkeypatch.setattr(
+        research_runner,
+        "_residual_basket_reversion_z_map",
+        lambda **_: {
+            "BTC/USDT": np.zeros(length, dtype=float),
+            "ETH/USDT": np.zeros(length, dtype=float),
+            "BNB/USDT": np.zeros(length, dtype=float),
+        },
+    )
+    monkeypatch.setattr(
+        research_runner,
+        "_apply_residual_basket_reversion_exits",
+        lambda **_: None,
+    )
+
+    def _stub_targets(**kwargs):
+        target_indices.append(int(kwargs["idx"]))
+        return {"ETH/USDT"}, ["BNB/USDT"]
+
+    monkeypatch.setattr(
+        research_runner,
+        "_residual_basket_reversion_targets",
+        _stub_targets,
+    )
+
+    aligned = {"datetime": _minute_datetimes(length)}
+    for symbol, base in {"BTC/USDT": 100.0, "ETH/USDT": 104.0, "BNB/USDT": 98.0}.items():
+        close = np.linspace(base, base + 5.0, length, dtype=float)
+        aligned[f"{symbol}:open"] = close
+        aligned[f"{symbol}:high"] = close + 0.2
+        aligned[f"{symbol}:low"] = close - 0.2
+        aligned[f"{symbol}:close"] = close
+        aligned[f"{symbol}:volume"] = np.full(length, 100.0, dtype=float)
+
+    exposures = np.zeros((3, length), dtype=float)
+    meta: dict[str, object] = {}
+
+    research_runner._apply_residual_basket_reversion_strategy(
+        params={
+            "residual_window": 8,
+            "rebalance_bars": 2,
+            "btc_symbol": "BTC/USDT",
+        },
+        aligned=aligned,
+        symbols=["BTC/USDT", "ETH/USDT", "BNB/USDT"],
+        exposures=exposures,
+        meta=meta,
+        entry_gate=np.asarray(
+            [False, False, False, False, False, False, False, False, False, True, False, True],
+            dtype=bool,
+        ),
+    )
+
+    assert target_indices == [9, 11]
+    assert np.all(exposures[:, :9] == 0.0)
+    assert np.all(exposures[0] == 0.0)
+    assert np.array_equal(exposures[1, 9:], np.asarray([1.0, 1.0, 1.0], dtype=float))
+    assert np.array_equal(exposures[2, 9:], np.asarray([-1.0, -1.0, -1.0], dtype=float))
+    assert meta["cross_sectional"] is True
+    assert meta["residualized_cross_sectional"] is True
+    assert meta["btc_symbol"] == "BTC/USDT"
+
+
 def test_cross_asset_liquidation_contagion_fade_strategy_signal_produces_exposure():
     length = 420
     aligned = {"datetime": _minute_datetimes(length)}
