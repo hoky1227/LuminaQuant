@@ -13,6 +13,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from apps.dashboard.services.exact_window import load_exact_window_bundle
+from apps.dashboard.services.exact_window_render import render_exact_window_card_grid
 from lumina_quant.eval.exact_window_suite import _metrics_daily
 
 TIMEFRAME_ORDER = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"]
@@ -766,16 +767,6 @@ def _format_frame(frame: pd.DataFrame) -> pd.DataFrame:
     return formatted
 
 
-def _card_html(label: str, value: str, sub: str) -> str:
-    return (
-        '<div class="exact-window-card">'
-        f'<div class="label">{html.escape(label)}</div>'
-        f'<div class="value">{html.escape(value)}</div>'
-        f'<div class="sub">{html.escape(sub)}</div>'
-        '</div>'
-    )
-
-
 def _timeframe_card_html(timeframe_row: dict[str, Any]) -> str:
     best = dict(timeframe_row.get("best_row") or {})
     oos = dict(best.get("oos") or {})
@@ -1247,14 +1238,6 @@ class _ExactWindowDashboardSelection:
 
 
 
-def _render_exact_window_card_grid(cards: list[tuple[str, str, str]]) -> None:
-    st.markdown(
-        '<div class="exact-window-card-grid">' + ''.join(_card_html(*card) for card in cards) + '</div>',
-        unsafe_allow_html=True,
-    )
-
-
-
 def _build_exact_window_dashboard_context(bundle: dict[str, Any]) -> _ExactWindowDashboardContext:
     decision = dict(bundle.get('decision') or {})
     summary = dict(bundle.get('summary') or {})
@@ -1317,7 +1300,7 @@ def _render_exact_window_recovery_dashboard(context: _ExactWindowDashboardContex
         ('Follow-up Snapshots', _format_value(len(context.followup_frame), 'int'), 'saved JSON/MD follow-up artifacts still available'),
         ('Deployment Scenarios', _format_value(deployment_scenarios.get('scenario_count'), 'int'), deployment_payload.get('scenario_id') or 'unavailable'),
     ]
-    _render_exact_window_card_grid(recovery_cards)
+    render_exact_window_card_grid(recovery_cards)
 
     recovery_tabs = st.tabs(['Saved Metrics', 'Candidates', 'Registry', 'Pipeline Thesis', 'Diagnostics'])
     with recovery_tabs[0]:
@@ -1634,7 +1617,7 @@ def _render_exact_window_primary_summary(
         ('Mixed-Asset Rows', _format_value(len(selection.mixed_asset_rows), 'int'), 'crypto/metal pairs in saved candidate details'),
         ('Pure Metal Rows', _format_value(len(selection.pure_metal_rows), 'int'), 'metal-only candidates in saved candidate details'),
     ]
-    _render_exact_window_card_grid(header_cards)
+    render_exact_window_card_grid(header_cards)
 
 
 
@@ -1660,7 +1643,7 @@ def _render_exact_window_deployment_panel(selection: _ExactWindowDashboardSelect
         ('Saved Scenario', str(selection.deployment_artifact.get('scenario_id') or 'live'), str(selection.deployment_artifact.get('generated_at') or 'computed live')),
         ('Scenario Count', _format_value(selection.deployment_scenario_count, 'int'), 'saved deployment scenario variants'),
     ]
-    _render_exact_window_card_grid(deployment_cards)
+    render_exact_window_card_grid(deployment_cards)
     if selection.deployment_artifact:
         st.caption(
             f"Saved deployment artifact: {selection.deployment_artifact.get('label') or selection.deployment_artifact.get('scenario_id')} "
@@ -1936,7 +1919,7 @@ def _render_exact_window_selected_timeframe_summary(selection: _ExactWindowDashb
         ('OOS Trades', _format_value(selection.selected_oos.get('trade_count'), 'int')),
         ('OOS PBO', _format_value(selection.selected_oos.get('pbo'), 'float3')),
     ]
-    _render_exact_window_card_grid(
+    render_exact_window_card_grid(
         [
             (
                 label,

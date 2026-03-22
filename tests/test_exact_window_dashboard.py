@@ -141,6 +141,7 @@ def _package(name: str, path: str | None = None) -> types.ModuleType:
 def _load_dashboard_module(monkeypatch) -> Any:
     root = Path(__file__).resolve().parents[1]
     module_path = root / "apps" / "dashboard" / "exact_window_suite.py"
+    render_module_path = root / "apps" / "dashboard" / "services" / "exact_window_render.py"
 
     streamlit_module = types.ModuleType("streamlit")
     plotly_module = _package("plotly")
@@ -154,6 +155,13 @@ def _load_dashboard_module(monkeypatch) -> Any:
     services_module = _package("apps.dashboard.services", str(root / "apps" / "dashboard" / "services"))
     service_exact_window = types.ModuleType("apps.dashboard.services.exact_window")
     service_exact_window.load_exact_window_bundle = lambda *_args, **_kwargs: {}
+    render_spec = importlib.util.spec_from_file_location(
+        "apps.dashboard.services.exact_window_render",
+        render_module_path,
+    )
+    if render_spec is None or render_spec.loader is None:
+        raise RuntimeError("Failed to load exact-window render helper module")
+    render_module = importlib.util.module_from_spec(render_spec)
 
     lumina_quant_module = _package("lumina_quant", str(root / "src" / "lumina_quant"))
     eval_package = _package("lumina_quant.eval", str(root / "src" / "lumina_quant" / "eval"))
@@ -169,11 +177,14 @@ def _load_dashboard_module(monkeypatch) -> Any:
         "apps.dashboard": dashboard_module,
         "apps.dashboard.services": services_module,
         "apps.dashboard.services.exact_window": service_exact_window,
+        "apps.dashboard.services.exact_window_render": render_module,
         "lumina_quant": lumina_quant_module,
         "lumina_quant.eval": eval_package,
         "lumina_quant.eval.exact_window_suite": eval_module,
     }.items():
         monkeypatch.setitem(sys.modules, name, module)
+
+    render_spec.loader.exec_module(render_module)
 
     spec = importlib.util.spec_from_file_location("dashboard_exact_window_renderer_test", module_path)
     if spec is None or spec.loader is None:
@@ -184,10 +195,59 @@ def _load_dashboard_module(monkeypatch) -> Any:
     return module
 
 
+def _load_render_helper_module(monkeypatch):
+    root = Path(__file__).resolve().parents[1]
+    module_path = root / "apps" / "dashboard" / "services" / "exact_window_render.py"
+
+    streamlit_module = types.ModuleType("streamlit")
+    calls: list[tuple[Any, ...]] = []
+
+    def markdown(value: str, **kwargs: Any) -> None:
+        calls.append(("markdown", value, kwargs))
+
+    streamlit_module.markdown = markdown
+    monkeypatch.setitem(sys.modules, "streamlit", streamlit_module)
+
+    spec = importlib.util.spec_from_file_location("dashboard_exact_window_render_test", module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Failed to load exact-window render helper module")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module, calls
+
+
+def test_render_exact_window_card_grid_escapes_card_content(monkeypatch) -> None:
+    module, calls = _load_render_helper_module(monkeypatch)
+
+    module.render_exact_window_card_grid(
+        [
+            ("<strict>", "42 & rising", "alpha <beta>"),
+        ]
+    )
+
+    assert calls == [
+        (
+            "markdown",
+            (
+                '<div class="exact-window-card-grid">'
+                '<div class="exact-window-card">'
+                '<div class="label">&lt;strict&gt;</div>'
+                '<div class="value">42 &amp; rising</div>'
+                '<div class="sub">alpha &lt;beta&gt;</div>'
+                "</div>"
+                "</div>"
+            ),
+            {"unsafe_allow_html": True},
+        )
+    ]
+
+
 def test_render_exact_window_dashboard_recovery_mode_surfaces_archive_cockpit(monkeypatch) -> None:
     module = _load_dashboard_module(monkeypatch)
     fake_st = _FakeStreamlit()
     module.st = fake_st
+    sys.modules["streamlit"].markdown = fake_st.markdown
     module.load_exact_window_bundle = lambda: {
         "decision": {},
         "summary": {
@@ -260,6 +320,7 @@ def test_render_exact_window_dashboard_primary_mode_builds_sidebar_and_tabs(monk
     module = _load_dashboard_module(monkeypatch)
     fake_st = _FakeStreamlit()
     module.st = fake_st
+    sys.modules["streamlit"].markdown = fake_st.markdown
     module._oos_scatter_figure = lambda frame: None
     module._metric_heatmap_figure = lambda frame: None
     module._rss_bar_figure = lambda frame: None
