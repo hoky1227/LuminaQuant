@@ -51,6 +51,19 @@ def test_sensitive_path_detection_allows_public_runtime_paths():
     assert not publish_public_pr.is_sensitive_path("run_backtest.py")
     assert not publish_public_pr.is_sensitive_path("lumina_quant/backtesting/chunked_runner.py")
     assert not publish_public_pr.is_sensitive_path("docs/RUNBOOK_1Y_1S_LOCAL.md")
+    assert not publish_public_pr.is_sensitive_path(
+        "src/lumina_quant/strategies/sample_public_strategy.py"
+    )
+    assert not publish_public_pr.is_sensitive_path(
+        "src/lumina_quant/indicators/sample_public_indicator.py"
+    )
+
+
+def test_sensitive_path_detection_blocks_generic_strategy_indicator_like_names():
+    assert publish_public_pr.is_sensitive_path("docs/FUTURES_STRATEGY_FACTORY.md")
+    assert publish_public_pr.is_sensitive_path("configs/profiles/research.yaml")
+    assert publish_public_pr.is_sensitive_path("src/lumina_quant/compute/indicators.py")
+    assert publish_public_pr.is_sensitive_path("scripts/build_live_portfolio_dashboard_summary.py")
 
 
 def test_default_branch_name_uses_prefix():
@@ -181,6 +194,38 @@ def test_content_sensitive_detection_blocks_public_path_with_private_reference(t
     assert flagged == [".github/workflows/ci.yml"]
 
 
+def test_content_sensitive_detection_scans_markdown_for_generic_strategy_terms(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    readme = repo / "README.md"
+    readme.write_text(
+        "This document discusses strategy research and indicator rollout details.\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(repo)
+    flagged = publish_public_pr._find_sensitive_content_paths(["README.md"])
+    assert flagged == ["README.md"]
+
+
+def test_content_sensitive_detection_allows_explicit_public_sample_terms(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    readme = repo / "README.md"
+    readme.write_text(
+        "Public sample strategy docs may reference PublicSampleStrategy and sample_public_indicator.\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(repo)
+    flagged = publish_public_pr._find_sensitive_content_paths(["README.md"])
+    assert flagged == []
+
+
 def test_content_sensitive_detection_derives_module_patterns_from_protected_inventory(tmp_path, monkeypatch):
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -263,6 +308,25 @@ def test_content_sensitive_detection_blocks_dot_prefixed_exact_protected_paths(t
     monkeypatch.chdir(repo)
     flagged = publish_public_pr._find_sensitive_content_paths([".github/workflows/dot-protected.yml"])
     assert flagged == [".github/workflows/dot-protected.yml"]
+
+
+def test_public_tree_exposures_catch_preexisting_sensitive_public_tree_files(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    readme = repo / "README.md"
+    readme.write_text("strategy research content\n", encoding="utf-8")
+    strategy_doc = repo / "docs" / "FUTURES_STRATEGY_FACTORY.md"
+    strategy_doc.parent.mkdir(parents=True, exist_ok=True)
+    strategy_doc.write_text("safe?\n", encoding="utf-8")
+    _run_git(repo, "add", ".")
+    _run_git(repo, "commit", "-m", "base")
+
+    monkeypatch.chdir(repo)
+    path_hits, content_hits = publish_public_pr._public_tree_exposures()
+    assert "docs/FUTURES_STRATEGY_FACTORY.md" in path_hits
+    assert "README.md" in content_hits
 
 
 def test_content_sensitive_detection_ignores_publish_sanitizer_self_test_file(tmp_path, monkeypatch):

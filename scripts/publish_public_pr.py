@@ -210,8 +210,47 @@ CONTENT_SCAN_EXTENSIONS: tuple[str, ...] = (
     ".yaml",
     ".toml",
     ".json",
+    ".md",
+    ".txt",
 )
 CONTENT_SCAN_EXEMPT_PATHS: tuple[str, ...] = ()
+
+ALLOWED_PUBLIC_SAMPLE_PATHS: tuple[str, ...] = (
+    "src/lumina_quant/strategies/sample_public_strategy.py",
+    "lumina_quant/strategies/sample_public_strategy.py",
+    "src/lumina_quant/indicators/sample_public_indicator.py",
+    "lumina_quant/indicators/sample_public_indicator.py",
+)
+
+ALLOWED_PUBLIC_SAMPLE_CONTENT_TOKENS: tuple[str, ...] = (
+    "sample_public_strategy",
+    "sample_public_indicator",
+    "PublicSampleStrategy",
+    "public sample strategy",
+    "public sample indicator",
+    "sample strategy",
+    "sample indicator",
+)
+
+GENERIC_SENSITIVE_PATH_RE = re.compile(
+    r"(^|/)[^/]*(strategy|strategies|indicator|indicators|research|exact_window|alpha|funding|momentum|reversion|breakout|portfolio)[^/]*$",
+    re.IGNORECASE,
+)
+
+GENERIC_SENSITIVE_CONTENT_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\bstrategy_factory\b", re.IGNORECASE),
+    re.compile(r"\bresearch_runner\b", re.IGNORECASE),
+    re.compile(r"\bexact_window\b", re.IGNORECASE),
+    re.compile(r"\bstrateg(?:y|ies)\b", re.IGNORECASE),
+    re.compile(r"\bindicators?\b", re.IGNORECASE),
+    re.compile(r"\bresearch\b", re.IGNORECASE),
+    re.compile(r"\balpha\b", re.IGNORECASE),
+    re.compile(r"\bfunding\b", re.IGNORECASE),
+    re.compile(r"\bmomentum\b", re.IGNORECASE),
+    re.compile(r"\breversion\b", re.IGNORECASE),
+    re.compile(r"\bbreakout\b", re.IGNORECASE),
+    re.compile(r"\bportfolio\b", re.IGNORECASE),
+)
 
 DEFAULT_PR_BODY = """## Summary
 - conflict-free sanitized sync branch from private source
@@ -267,8 +306,26 @@ def _staged_names() -> list[str]:
     return [line.strip() for line in out.splitlines() if line.strip()]
 
 
+def _tracked_names() -> list[str]:
+    out = _git("ls-files").stdout
+    return [line.strip() for line in out.splitlines() if line.strip()]
+
+
+def _is_allowed_public_sample_path(path: str) -> bool:
+    normalized = str(path or "").strip()
+    return normalized in ALLOWED_PUBLIC_SAMPLE_PATHS
+
+
 def is_sensitive_path(path: str) -> bool:
-    return bool(SENSITIVE_PATH_RE.search(str(path).strip()))
+    normalized = str(path or "").strip()
+    if not normalized:
+        return False
+    if _is_allowed_public_sample_path(normalized):
+        return False
+    return bool(
+        SENSITIVE_PATH_RE.search(normalized)
+        or GENERIC_SENSITIVE_PATH_RE.search(normalized)
+    )
 
 
 def _find_sensitive_paths(paths: list[str]) -> list[str]:
@@ -331,8 +388,6 @@ def _should_content_scan(path: str) -> bool:
         return False
     if normalized in CONTENT_SCAN_EXEMPT_PATHS:
         return False
-    if normalized.endswith(".md") or normalized.startswith("docs/"):
-        return False
     return normalized.endswith(CONTENT_SCAN_EXTENSIONS)
 
 
@@ -348,9 +403,19 @@ def _find_sensitive_content_paths(paths: list[str]) -> list[str]:
                 text = handle.read()
         except OSError:
             continue
-        if any(pattern.search(text) for pattern in patterns):
+        normalized_text = text
+        for token in ALLOWED_PUBLIC_SAMPLE_CONTENT_TOKENS:
+            normalized_text = re.sub(re.escape(token), "", normalized_text, flags=re.IGNORECASE)
+        if any(pattern.search(normalized_text) for pattern in patterns) or any(
+            pattern.search(normalized_text) for pattern in GENERIC_SENSITIVE_CONTENT_PATTERNS
+        ):
             flagged.append(candidate)
     return flagged
+
+
+def _public_tree_exposures() -> tuple[list[str], list[str]]:
+    tracked = _tracked_names()
+    return _find_sensitive_paths(tracked), _find_sensitive_content_paths(tracked)
 
 
 def _restore_protected_paths_from_base() -> None:
@@ -489,6 +554,14 @@ def main() -> int:
         if content_sensitive:
             joined = "\n - ".join(["", *content_sensitive])
             raise RuntimeError(f"Sensitive content references are still staged:{joined}")
+
+        tree_sensitive_paths, tree_sensitive_content = _public_tree_exposures()
+        if tree_sensitive_paths:
+            joined = "\n - ".join(["", *tree_sensitive_paths[:100]])
+            raise RuntimeError(f"Public tree still contains sensitive paths:{joined}")
+        if tree_sensitive_content:
+            joined = "\n - ".join(["", *tree_sensitive_content[:100]])
+            raise RuntimeError(f"Public tree still contains sensitive content:{joined}")
 
         if not staged:
             print("[INFO] No public-safe changes to publish.")
