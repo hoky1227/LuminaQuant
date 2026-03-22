@@ -4,6 +4,8 @@ import importlib.util
 import json
 from pathlib import Path
 
+import pandas as pd
+
 ROOT = Path(__file__).resolve().parents[1]
 MODULE_PATH = ROOT / "apps" / "dashboard" / "services" / "workflow_jobs.py"
 SPEC = importlib.util.spec_from_file_location("dashboard_workflow_jobs", MODULE_PATH)
@@ -201,3 +203,96 @@ def test_refresh_workflow_jobs_updates_finished_process_and_exited_pid() -> None
             {"status": "STOPPED", "ended_at": "2026-03-22T00:00:00Z"},
         ),
     ]
+
+
+def test_load_workflow_jobs_frame_returns_query_results_with_datetime_coercion(monkeypatch) -> None:
+    called: dict[str, object] = {}
+    frame = pd.DataFrame(
+        [
+            {
+                "job_id": "job-1",
+                "workflow": "backtest",
+                "status": "RUNNING",
+                "requested_mode": "backtest",
+                "strategy": "RsiStrategy",
+                "command_json": "[]",
+                "env_json": "{}",
+                "pid": 123,
+                "run_id": "run-1",
+                "started_at": "2026-03-22T00:00:00Z",
+                "ended_at": None,
+                "exit_code": None,
+                "log_path": "/tmp/job.log",
+                "stop_file": None,
+                "metadata_json": "{}",
+                "last_updated": "2026-03-22T00:00:01Z",
+            }
+        ]
+    )
+
+    def _fake_read_sql_query(query, conn, params):
+        called["query"] = query
+        called["conn"] = conn
+        called["params"] = list(params)
+        return frame.copy()
+
+    class _Conn:
+        closed = False
+
+        def close(self):
+            self.closed = True
+
+    conn = _Conn()
+    monkeypatch.setattr(workflow_jobs.pd, "read_sql_query", _fake_read_sql_query)
+
+    result = workflow_jobs.load_workflow_jobs_frame(
+        db_path="postgres://lumina",
+        limit=25,
+        resolve_postgres_dsn=lambda db_path: db_path,
+        ensure_workflow_jobs_schema=lambda _db_path: called.setdefault("schema", True),
+        connect_state_store=lambda _db_path: conn,
+        coerce_datetime=lambda df, col: df.assign(**{col: f"coerced:{col}"}),
+    )
+
+    assert called["query"] == workflow_jobs.WORKFLOW_JOBS_QUERY
+    assert called["params"] == [25]
+    assert conn.closed is True
+    assert list(result["started_at"]) == ["coerced:started_at"]
+    assert list(result["ended_at"]) == ["coerced:ended_at"]
+    assert list(result["last_updated"]) == ["coerced:last_updated"]
+
+
+def test_load_workflow_jobs_frame_returns_empty_when_connection_or_query_fails(monkeypatch) -> None:
+    monkeypatch.setattr(
+        workflow_jobs.pd,
+        "read_sql_query",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("query failed")),
+    )
+
+    class _Conn:
+        closed = False
+
+        def close(self):
+            self.closed = True
+
+    conn = _Conn()
+    query_result = workflow_jobs.load_workflow_jobs_frame(
+        db_path="postgres://lumina",
+        limit=10,
+        resolve_postgres_dsn=lambda db_path: db_path,
+        ensure_workflow_jobs_schema=lambda _db_path: None,
+        connect_state_store=lambda _db_path: conn,
+        coerce_datetime=lambda df, _col: df,
+    )
+    assert query_result.empty
+    assert conn.closed is True
+
+    connect_result = workflow_jobs.load_workflow_jobs_frame(
+        db_path="postgres://lumina",
+        limit=10,
+        resolve_postgres_dsn=lambda db_path: db_path,
+        ensure_workflow_jobs_schema=lambda _db_path: None,
+        connect_state_store=lambda _db_path: (_ for _ in ()).throw(RuntimeError("connect failed")),
+        coerce_datetime=lambda df, _col: df,
+    )
+    assert connect_result.empty

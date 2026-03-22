@@ -9,12 +9,23 @@ import uuid
 from pathlib import Path
 from collections.abc import Callable, MutableMapping
 
+import pandas as pd
+
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW_RUNTIME_ROOT = PROJECT_ROOT / "var" / "dashboard"
 WORKFLOW_LOG_DIR = WORKFLOW_RUNTIME_ROOT / "workflow_jobs"
 WORKFLOW_CONTROL_DIR = WORKFLOW_RUNTIME_ROOT / "control"
 
 DEFAULT_LQ_COMMAND = ("uv", "run", "lq")
+WORKFLOW_JOBS_QUERY = """
+SELECT job_id, workflow, status, requested_mode, strategy, command_json,
+       env_json, pid, run_id, started_at, ended_at, exit_code,
+       log_path, stop_file, metadata_json, last_updated
+FROM workflow_jobs
+ORDER BY COALESCE(started_at, last_updated) DESC
+LIMIT %s
+"""
+WORKFLOW_JOB_DATETIME_COLUMNS = ("started_at", "ended_at", "last_updated")
 
 
 def build_lq_command(subcommand: str, *args: str) -> tuple[str, ...]:
@@ -199,6 +210,39 @@ def refresh_workflow_jobs(
                 status=final_status,
                 ended_at=utc_now_iso(),
             )
+
+
+def load_workflow_jobs_frame(
+    *,
+    db_path: str,
+    limit: int,
+    resolve_postgres_dsn: Callable[[str], str],
+    ensure_workflow_jobs_schema: Callable[[str], None],
+    connect_state_store: Callable[[str], object],
+    coerce_datetime: Callable[[pd.DataFrame, str], pd.DataFrame],
+) -> pd.DataFrame:
+    if not resolve_postgres_dsn(db_path):
+        return pd.DataFrame()
+    ensure_workflow_jobs_schema(db_path)
+    try:
+        conn = connect_state_store(db_path)
+    except Exception:
+        return pd.DataFrame()
+    try:
+        try:
+            df = pd.read_sql_query(
+                WORKFLOW_JOBS_QUERY,
+                conn,
+                params=[int(max(1, limit))],
+            )
+        except Exception:
+            return pd.DataFrame()
+    finally:
+        conn.close()
+
+    for column in WORKFLOW_JOB_DATETIME_COLUMNS:
+        df = coerce_datetime(df, column)
+    return df
 
 
 def build_backtest_job_launch_spec(

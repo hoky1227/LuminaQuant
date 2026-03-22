@@ -40,6 +40,7 @@ from apps.dashboard.services.workflow_jobs import (
     WORKFLOW_LOG_DIR,
     WORKFLOW_RUNTIME_ROOT,
     build_runtime_env_overrides as _build_runtime_env_overrides,
+    load_workflow_jobs_frame as _load_workflow_jobs_frame_data,
     build_stop_file_path as _build_stop_file_path_data,
     launch_managed_job as _launch_managed_job_data,
     refresh_workflow_jobs as _refresh_workflow_jobs_data,
@@ -504,34 +505,14 @@ def _tail_text_file(path, max_chars=20000):
 @st.cache_data
 def load_workflow_jobs(db_path, refresh_counter=0, limit=200):
     _ = refresh_counter
-    if not _resolve_postgres_dsn(db_path):
-        return pd.DataFrame()
-    _ensure_workflow_jobs_schema(db_path)
-    try:
-        conn = _connect_state_store(db_path)
-    except Exception:
-        return pd.DataFrame()
-    try:
-        try:
-            df = pd.read_sql_query(
-                """
-                SELECT job_id, workflow, status, requested_mode, strategy, command_json,
-                       env_json, pid, run_id, started_at, ended_at, exit_code,
-                       log_path, stop_file, metadata_json, last_updated
-                FROM workflow_jobs
-                ORDER BY COALESCE(started_at, last_updated) DESC
-                LIMIT %s
-                """,
-                conn,
-                params=[int(max(1, limit))],
-            )
-            for col in ["started_at", "ended_at", "last_updated"]:
-                df = _coerce_datetime(df, col)
-            return df
-        except Exception:
-            return pd.DataFrame()
-    finally:
-        conn.close()
+    return _load_workflow_jobs_frame_data(
+        db_path=db_path,
+        limit=limit,
+        resolve_postgres_dsn=_resolve_postgres_dsn,
+        ensure_workflow_jobs_schema=_ensure_workflow_jobs_schema,
+        connect_state_store=_connect_state_store,
+        coerce_datetime=_coerce_datetime,
+    )
 
 
 def _refresh_workflow_jobs(db_path):
