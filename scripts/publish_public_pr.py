@@ -84,6 +84,7 @@ PROTECTED_PATHS: tuple[str, ...] = (
     "scripts/run_exact_window_suite.py",
     "scripts/run_portfolio_optimization.py",
     "scripts/run_research_candidates.py",
+    "scripts/ci/architecture_gate_binance_native.sh",
     "tests/test_advanced_alpha_indicators.py",
     "tests/test_alpha_research_pipeline.py",
     "tests/test_alpha101_formula_strategy.py",
@@ -164,6 +165,7 @@ SENSITIVE_PATH_RE = re.compile(
     r"|^scripts/run_exact_window_suite\.py$"
     r"|^scripts/run_portfolio_optimization\.py$"
     r"|^scripts/run_research_candidates\.py$"
+    r"|^scripts/ci/architecture_gate_binance_native\.sh$"
     r"|^tests/test_advanced_alpha_indicators\.py$"
     r"|^tests/test_alpha_research_pipeline\.py$"
     r"|^tests/test_alpha101_formula_strategy\.py$"

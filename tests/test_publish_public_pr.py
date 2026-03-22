@@ -39,6 +39,7 @@ def test_sensitive_path_detection_blocks_private_trees():
     assert publish_public_pr.is_sensitive_path("scripts/run_bulk_research.py")
     assert publish_public_pr.is_sensitive_path("scripts/run_research_pipeline.py")
     assert publish_public_pr.is_sensitive_path("scripts/run_research_hurdle.py")
+    assert publish_public_pr.is_sensitive_path("scripts/ci/architecture_gate_binance_native.sh")
     assert publish_public_pr.is_sensitive_path("tests/test_run_research_pipeline_script.py")
     assert publish_public_pr.is_sensitive_path("reports/benchmarks/latest.json")
     assert publish_public_pr.is_sensitive_path(".agents/skills/alpha-research-pipeline/SKILL.md")

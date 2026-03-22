@@ -7,6 +7,7 @@ logs/
 *.bat
 !native/**/*.bat
 !scripts/**/*.bat
+!scripts/ci/*.sh
 !scripts/ci/architecture_gate_market_window_contract.sh
 !scripts/ops/start_live_session.sh
 !scripts/ops/stop_live_session.sh
