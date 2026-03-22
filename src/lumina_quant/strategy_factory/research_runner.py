@@ -839,34 +839,10 @@ def _compute_metrics(
     timestamps: np.ndarray | None = None,
 ) -> dict[str, float]:
     if returns.size == 0:
-        return {
-            "return": 0.0,
-            "total_return": 0.0,
-            "cagr": 0.0,
-            "sharpe": 0.0,
-            "sortino": 0.0,
-            "calmar": 0.0,
-            "mdd": 0.0,
-            "max_drawdown": 0.0,
-            "turnover": 0.0,
-            "trades": 0.0,
-            "trade_count": 0.0,
-            "win_rate": 0.0,
-            "avg_trade": 0.0,
-            "exposure": 0.0,
-            "volatility": 0.0,
-            "stability": 0.0,
-            "rolling_sharpe_min": 0.0,
-            "worst_month": 0.0,
-            "benchmark_corr": 0.0,
-            "deflated_sharpe": 0.0,
-            "pbo": 1.0,
-            "spa_pvalue": 1.0,
-            "risk_free_annual": 0.0,
-            "risk_free_per_period": 0.0,
-            "sortino_target_annual": 0.0,
-            "sortino_target_per_period": 0.0,
-        }
+        return _compute_metric_summary(
+            _empty_compute_metric_payload(),
+            resolved_rf=None,
+        )
 
     resolved_rf = resolve_risk_free_config(
         metric_config or BacktestConfig,
@@ -874,6 +850,78 @@ def _compute_metrics(
         timestamps=timestamps,
         size=int(returns.size),
     )
+    metric_payload = _resolve_compute_metric_payload(
+        returns,
+        turnover=turnover,
+        exposure=exposure,
+        benchmark_returns=benchmark_returns,
+        periods_per_year=periods_per_year,
+        num_trials=num_trials,
+        resolved_rf=resolved_rf,
+    )
+    return _compute_metric_summary(
+        metric_payload,
+        resolved_rf=resolved_rf,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _ComputedMetricPayload:
+    total_return: float
+    cagr: float
+    sharpe: float
+    sortino: float
+    calmar: float
+    max_drawdown: float
+    turnover: float
+    trade_count: float
+    win_rate: float
+    avg_trade: float
+    exposure: float
+    volatility: float
+    stability: float
+    rolling_sharpe_min: float
+    worst_month: float
+    benchmark_corr: float
+    deflated_sharpe: float
+    pbo: float
+    spa_pvalue: float
+
+
+def _empty_compute_metric_payload() -> _ComputedMetricPayload:
+    return _ComputedMetricPayload(
+        total_return=0.0,
+        cagr=0.0,
+        sharpe=0.0,
+        sortino=0.0,
+        calmar=0.0,
+        max_drawdown=0.0,
+        turnover=0.0,
+        trade_count=0.0,
+        win_rate=0.0,
+        avg_trade=0.0,
+        exposure=0.0,
+        volatility=0.0,
+        stability=0.0,
+        rolling_sharpe_min=0.0,
+        worst_month=0.0,
+        benchmark_corr=0.0,
+        deflated_sharpe=0.0,
+        pbo=1.0,
+        spa_pvalue=1.0,
+    )
+
+
+def _resolve_compute_metric_payload(
+    returns: np.ndarray,
+    *,
+    turnover: np.ndarray,
+    exposure: np.ndarray,
+    benchmark_returns: np.ndarray,
+    periods_per_year: int,
+    num_trials: int,
+    resolved_rf: Any,
+) -> _ComputedMetricPayload:
     total_return = float(np.prod(1.0 + returns) - 1.0)
     years = max(1.0 / float(periods_per_year), returns.size / float(periods_per_year))
     cagr = float(math.exp(math.log1p(max(-0.999999, total_return)) / years) - 1.0)
@@ -890,8 +938,8 @@ def _compute_metrics(
         target_per_period=np.asarray(resolved_rf.periodic_sortino_targets, dtype=float),
     )
 
-    max_dd = _max_drawdown(returns)
-    calmar = 0.0 if max_dd <= 1e-12 else cagr / max_dd
+    max_drawdown = _max_drawdown(returns)
+    calmar = 0.0 if max_drawdown <= 1e-12 else cagr / max_drawdown
 
     trade_count = float(np.sum(turnover > 1e-9))
     win_rate = float(np.sum(returns > 0.0) / returns.size)
@@ -906,36 +954,67 @@ def _compute_metrics(
         returns,
         bars_per_month=max(4, int(periods_per_year // 12)),
     )
-
     stability = 0.5 * max(-3.0, min(3.0, rolling_sharpe_min)) + 0.5 * worst_month
 
+    return _ComputedMetricPayload(
+        total_return=total_return,
+        cagr=cagr,
+        sharpe=float(sharpe),
+        sortino=float(sortino),
+        calmar=float(calmar),
+        max_drawdown=float(max_drawdown),
+        turnover=float(_safe_mean(turnover)),
+        trade_count=trade_count,
+        win_rate=win_rate,
+        avg_trade=avg_trade,
+        exposure=float(_safe_mean(np.abs(exposure))),
+        volatility=float(sigma * math.sqrt(periods_per_year)),
+        stability=float(stability),
+        rolling_sharpe_min=float(rolling_sharpe_min),
+        worst_month=float(worst_month),
+        benchmark_corr=float(_correlation(returns, benchmark_returns)),
+        deflated_sharpe=float(_deflated_sharpe_ratio(returns, num_trials=num_trials)),
+        pbo=float(_approx_pbo(returns)),
+        spa_pvalue=float(_spa_like_pvalue(returns)),
+    )
+
+
+def _compute_metric_summary(
+    metric_payload: _ComputedMetricPayload,
+    *,
+    resolved_rf: Any | None,
+) -> dict[str, float]:
+    risk_free_annual = 0.0 if resolved_rf is None else float(resolved_rf.annual_rate)
+    risk_free_per_period = 0.0 if resolved_rf is None else float(resolved_rf.per_period_rate)
+    sortino_target_annual = 0.0 if resolved_rf is None else float(resolved_rf.sortino_target_annual)
+    sortino_target_per_period = 0.0 if resolved_rf is None else float(resolved_rf.sortino_target_per_period)
     return {
-        "return": total_return,
-        "total_return": total_return,
-        "cagr": cagr,
-        "sharpe": float(sharpe),
-        "sortino": float(sortino),
-        "calmar": float(calmar),
-        "mdd": float(max_dd),
-        "max_drawdown": float(max_dd),
-        "turnover": float(_safe_mean(turnover)),
-        "trades": trade_count,
-        "trade_count": trade_count,
-        "win_rate": win_rate,
-        "avg_trade": avg_trade,
-        "exposure": float(_safe_mean(np.abs(exposure))),
-        "volatility": float(sigma * math.sqrt(periods_per_year)),
-        "stability": float(stability),
-        "rolling_sharpe_min": float(rolling_sharpe_min),
-        "worst_month": float(worst_month),
-        "benchmark_corr": float(_correlation(returns, benchmark_returns)),
-        "deflated_sharpe": float(_deflated_sharpe_ratio(returns, num_trials=num_trials)),
-        "pbo": float(_approx_pbo(returns)),
-        "spa_pvalue": float(_spa_like_pvalue(returns)),
-        "risk_free_annual": float(resolved_rf.annual_rate),
-        "risk_free_per_period": float(resolved_rf.per_period_rate),
-        "sortino_target_annual": float(resolved_rf.sortino_target_annual),
-        "sortino_target_per_period": float(resolved_rf.sortino_target_per_period),
+        "return": metric_payload.total_return,
+        "total_return": metric_payload.total_return,
+        "cagr": metric_payload.cagr,
+        "sharpe": metric_payload.sharpe,
+        "sortino": metric_payload.sortino,
+        "calmar": metric_payload.calmar,
+        "mdd": metric_payload.max_drawdown,
+        "max_drawdown": metric_payload.max_drawdown,
+        "turnover": metric_payload.turnover,
+        "trades": metric_payload.trade_count,
+        "trade_count": metric_payload.trade_count,
+        "win_rate": metric_payload.win_rate,
+        "avg_trade": metric_payload.avg_trade,
+        "exposure": metric_payload.exposure,
+        "volatility": metric_payload.volatility,
+        "stability": metric_payload.stability,
+        "rolling_sharpe_min": metric_payload.rolling_sharpe_min,
+        "worst_month": metric_payload.worst_month,
+        "benchmark_corr": metric_payload.benchmark_corr,
+        "deflated_sharpe": metric_payload.deflated_sharpe,
+        "pbo": metric_payload.pbo,
+        "spa_pvalue": metric_payload.spa_pvalue,
+        "risk_free_annual": risk_free_annual,
+        "risk_free_per_period": risk_free_per_period,
+        "sortino_target_annual": sortino_target_annual,
+        "sortino_target_per_period": sortino_target_per_period,
     }
 
 
