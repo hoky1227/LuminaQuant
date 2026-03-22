@@ -50,6 +50,15 @@ from apps.dashboard.services.process_control import (
     tail_text_file as _tail_text_file_data,
     terminate_process as _terminate_process_data,
 )
+from apps.dashboard.services.execution_dashboard import (
+    build_cumulative_realized_pnl_figure as _build_cumulative_realized_pnl_figure_data,
+    build_direction_table as _build_direction_table_data,
+    build_execution_metric_rows as _build_execution_metric_rows_data,
+    build_order_status_figure as _build_order_status_figure_data,
+    build_streak_distribution_figure as _build_streak_distribution_figure_data,
+    build_trade_pnl_figure as _build_trade_pnl_figure_data,
+    filter_closed_trade_analytics as _filter_closed_trade_analytics_data,
+)
 from apps.dashboard.services.ghost_cleanup import (
     run_ghost_cleanup_script as _run_ghost_cleanup_script_data,
 )
@@ -3909,130 +3918,46 @@ def render_main_dashboard() -> None:
             st.plotly_chart(fig_price, use_container_width=True)
 
     with tab_exec:
-        col_a, col_b, col_c, col_d = st.columns(4)
-        col_a.metric("BUY fills", f"{summary['buy_fills']}")
-        col_b.metric("SELL fills", f"{summary['sell_fills']}")
-        col_c.metric("Avg Qty", f"{summary['avg_qty']:.4f}")
-        col_d.metric("Avg Notional", f"{summary['avg_notional']:.2f}")
-
-        col_e, col_f, col_g, col_h = st.columns(4)
-        col_e.metric("Total Commission", f"{summary['total_commission']:.4f}")
-        col_f.metric("Avg Trade Return", f"{summary['avg_trade_return_pct']:.4f}%")
-        col_g.metric("Best Trade PnL", f"{summary['best_trade_pnl']:.4f}")
-        col_h.metric("Worst Trade PnL", f"{summary['worst_trade_pnl']:.4f}")
-
-        col_i, col_j, col_k, col_l = st.columns(4)
-        col_i.metric("Max Win Streak", f"{int(summary['win_streak_max'])}")
-        col_j.metric("Max Loss Streak", f"{int(summary['loss_streak_max'])}")
-        col_k.metric(
-            "Avg Win/Loss Streak", f"{summary['win_streak_avg']:.2f} / {summary['loss_streak_avg']:.2f}"
+        execution_metric_rows = _build_execution_metric_rows_data(
+            summary,
+            format_duration_seconds=_format_duration_seconds,
         )
-        col_l.metric("Avg Holding Time", _format_duration_seconds(summary["holding_time_avg_sec"]))
+        for metric_row in execution_metric_rows:
+            metric_columns = st.columns(len(metric_row))
+            for metric_column, (label, value) in zip(metric_columns, metric_row, strict=False):
+                metric_column.metric(label, value)
 
-        direction_table = pd.DataFrame(
-            [
-                {
-                    "Direction": "Long",
-                    "Closed Trades": int(summary.get("long_trades", 0)),
-                    "Win Rate": f"{_safe_float(summary.get('long_win_rate')):.2%}",
-                },
-                {
-                    "Direction": "Short",
-                    "Closed Trades": int(summary.get("short_trades", 0)),
-                    "Win Rate": f"{_safe_float(summary.get('short_win_rate')):.2%}",
-                },
-            ]
+        direction_table = _build_direction_table_data(
+            summary,
+            safe_float=_safe_float,
         )
         st.dataframe(direction_table, use_container_width=True, hide_index=True)
 
         if not trade_analytics.empty:
-            closed = (
-                trade_analytics[trade_analytics["closed_qty"] > 0]
-                if "closed_qty" in trade_analytics.columns
-                else trade_analytics[trade_analytics["realized_pnl"] != 0]
-            )
+            closed = _filter_closed_trade_analytics_data(trade_analytics)
             if not closed.empty:
-                fig_trade_pnl = go.Figure()
-                fig_trade_pnl.add_trace(
-                    go.Bar(
-                        x=closed["datetime"],
-                        y=closed["realized_pnl"],
-                        name="Realized PnL per closing trade",
-                    )
+                st.plotly_chart(
+                    _build_trade_pnl_figure_data(closed),
+                    use_container_width=True,
                 )
-                fig_trade_pnl.update_layout(
-                    title="Trade-by-Trade Realized PnL", template="plotly_white"
-                )
-                st.plotly_chart(fig_trade_pnl, use_container_width=True)
 
-                fig_cum = go.Figure()
-                fig_cum.add_trace(
-                    go.Scatter(
-                        x=closed["datetime"],
-                        y=closed["cum_realized_pnl"],
-                        mode="lines",
-                        name="Cumulative Realized PnL",
-                    )
+                st.plotly_chart(
+                    _build_cumulative_realized_pnl_figure_data(closed),
+                    use_container_width=True,
                 )
-                fig_cum.update_layout(title="Cumulative Realized PnL", template="plotly_white")
-                st.plotly_chart(fig_cum, use_container_width=True)
 
-                decisive = closed[
-                    pd.to_numeric(closed["realized_pnl"], errors="coerce").fillna(0.0) != 0.0
-                ]
-                if not decisive.empty:
-                    outcomes = list((decisive["realized_pnl"] > 0.0).to_numpy(dtype=bool))
-                    streaks = _streak_groups(outcomes)
-                    streak_rows = []
-                    for flag, length in streaks:
-                        streak_rows.append(
-                            {
-                                "Result": "Win" if flag else "Loss",
-                                "Length": int(length),
-                            }
-                        )
-                    if streak_rows:
-                        streak_df = pd.DataFrame(streak_rows)
-                        dist = (
-                            streak_df.groupby(["Length", "Result"], observed=False)
-                            .size()
-                            .reset_index(name="Count")
-                        )
-                        fig_streak = go.Figure()
-                        for label, color in [("Win", "#2f855a"), ("Loss", "#c53030")]:
-                            part = dist[dist["Result"] == label]
-                            if part.empty:
-                                continue
-                            fig_streak.add_trace(
-                                go.Bar(
-                                    x=part["Length"],
-                                    y=part["Count"],
-                                    name=label,
-                                    marker_color=color,
-                                )
-                            )
-                        fig_streak.update_layout(
-                            title="Win/Loss Streak Distribution",
-                            xaxis_title="Streak Length",
-                            yaxis_title="Occurrences",
-                            barmode="group",
-                            template="plotly_white",
-                        )
-                        st.plotly_chart(fig_streak, use_container_width=True)
+                streak_figure = _build_streak_distribution_figure_data(
+                    closed,
+                    streak_groups=_streak_groups,
+                )
+                if streak_figure is not None:
+                    st.plotly_chart(streak_figure, use_container_width=True)
 
         if not df_orders.empty:
-            status_counts = df_orders["status"].fillna("UNKNOWN").astype(str).value_counts()
-            fig_status = go.Figure(
-                data=[
-                    go.Pie(
-                        labels=status_counts.index.tolist(),
-                        values=status_counts.values.tolist(),
-                        hole=0.4,
-                    )
-                ]
+            st.plotly_chart(
+                _build_order_status_figure_data(df_orders),
+                use_container_width=True,
             )
-            fig_status.update_layout(title="Order Status Distribution")
-            st.plotly_chart(fig_status, use_container_width=True)
 
     with tab_risk:
         if not df_risk.empty:
