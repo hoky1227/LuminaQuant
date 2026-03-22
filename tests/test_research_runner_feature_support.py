@@ -382,6 +382,44 @@ def test_composite_trend_position_series_exits_active_long_and_short_positions()
     )
 
 
+def test_composite_trend_position_series_falls_back_to_primary_gate_and_damps_crowding(
+    monkeypatch,
+):
+    config = research_runner._CompositeTrendStrategyConfig(
+        long_threshold=0.10,
+        short_threshold=0.10,
+        exit_score_cross=0.03,
+        te_min=0.0,
+        vr_min=0.0,
+        risk_target_vol=0.006,
+        max_signal_strength=0.60,
+        vol_window=8,
+        max_hold_bars=8,
+        allow_short=True,
+        benchmark_regime_ma=0,
+        benchmark_symbol="BTC/USDT",
+        crowding_reduce_threshold=0.55,
+        crowding_block_threshold=0.85,
+    )
+    monkeypatch.setattr(
+        research_runner,
+        "_rolling_volatility_series",
+        lambda closes, window: np.full(np.asarray(closes, dtype=float).shape, 0.01, dtype=float),
+    )
+
+    position = research_runner._composite_trend_position_series(
+        close=np.asarray([100.0, 101.0, 102.0, 103.0], dtype=float),
+        score=np.asarray([0.2, 0.2, 0.2, 0.2], dtype=float),
+        gate=np.asarray([True, True, True, True], dtype=bool),
+        long_gate=np.asarray([True], dtype=bool),
+        short_gate=np.asarray([False], dtype=bool),
+        crowding=np.asarray([0.0, 0.6, 0.6, 0.6], dtype=float),
+        config=config,
+    )
+
+    assert np.array_equal(position, np.asarray([0.6, 0.3, 0.3, 0.3], dtype=float))
+
+
 def test_lag_convergence_strategy_signal_trades_xpt_xpd_pair():
     length = 120
     x_close = np.full(length, 100.0, dtype=float)

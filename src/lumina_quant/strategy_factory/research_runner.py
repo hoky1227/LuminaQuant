@@ -1343,58 +1343,96 @@ def _composite_trend_position_series(
     bars_held = 0
 
     for idx in range(close_arr.size):
-        close_i = float(close_arr[idx])
-        score_i = float(score_arr[idx]) if np.isfinite(score_arr[idx]) else float("nan")
-        gate_i = bool(gate_arr[idx]) if idx < gate_arr.size else False
-        long_gate_i = bool(long_gate_arr[idx]) if idx < long_gate_arr.size else gate_i
-        short_gate_i = bool(short_gate_arr[idx]) if idx < short_gate_arr.size else gate_i
-        crowd_i = crowd_arr[idx] if idx < crowd_arr.size and np.isfinite(crowd_arr[idx]) else None
-        strength = _composite_trend_signal_strength(
-            sigma=float(sigma_arr[idx]) if np.isfinite(sigma_arr[idx]) else 0.0,
-            crowding_score=crowd_i,
-            crowding_reduce_threshold=config.crowding_reduce_threshold,
-            risk_target_vol=config.risk_target_vol,
-            max_signal_strength=config.max_signal_strength,
-        )
-        blocked = crowd_i is not None and abs(float(crowd_i)) >= config.crowding_block_threshold
-
-        if not np.isfinite(close_i):
-            position[idx] = float(mode) * strength
-            continue
-
-        if mode != 0:
-            bars_held += 1
-            if _composite_trend_should_exit(
-                mode=mode,
-                score_i=score_i,
-                long_gate_i=long_gate_i,
-                short_gate_i=short_gate_i,
-                bars_held=bars_held,
-                config=config,
-            ):
-                mode = 0
-                bars_held = 0
-                position[idx] = 0.0
-            else:
-                position[idx] = float(mode) * strength
-            continue
-
-        next_mode = _composite_trend_entry_mode(
-            score_i=score_i,
-            long_gate_i=long_gate_i,
-            short_gate_i=short_gate_i,
-            blocked=blocked,
+        step = _composite_trend_step_input(
+            idx=idx,
+            close_arr=close_arr,
+            score_arr=score_arr,
+            gate_arr=gate_arr,
+            long_gate_arr=long_gate_arr,
+            short_gate_arr=short_gate_arr,
+            crowd_arr=crowd_arr,
+            sigma_arr=sigma_arr,
             config=config,
         )
-        if next_mode == 0:
-            position[idx] = 0.0
-            continue
-
-        mode = next_mode
-        bars_held = 0
-        position[idx] = float(mode) * strength
+        mode, bars_held, position[idx] = _composite_trend_step(
+            mode=mode,
+            bars_held=bars_held,
+            step=step,
+            config=config,
+        )
 
     return position
+
+
+def _composite_trend_step_input(
+    *,
+    idx: int,
+    close_arr: np.ndarray,
+    score_arr: np.ndarray,
+    gate_arr: np.ndarray,
+    long_gate_arr: np.ndarray,
+    short_gate_arr: np.ndarray,
+    crowd_arr: np.ndarray,
+    sigma_arr: np.ndarray,
+    config: _CompositeTrendStrategyConfig,
+) -> _CompositeTrendStepInput:
+    close_i = float(close_arr[idx])
+    score_i = float(score_arr[idx]) if np.isfinite(score_arr[idx]) else float("nan")
+    gate_i = bool(gate_arr[idx]) if idx < gate_arr.size else False
+    long_gate_i = bool(long_gate_arr[idx]) if idx < long_gate_arr.size else gate_i
+    short_gate_i = bool(short_gate_arr[idx]) if idx < short_gate_arr.size else gate_i
+    crowd_i = crowd_arr[idx] if idx < crowd_arr.size and np.isfinite(crowd_arr[idx]) else None
+    strength = _composite_trend_signal_strength(
+        sigma=float(sigma_arr[idx]) if np.isfinite(sigma_arr[idx]) else 0.0,
+        crowding_score=crowd_i,
+        crowding_reduce_threshold=config.crowding_reduce_threshold,
+        risk_target_vol=config.risk_target_vol,
+        max_signal_strength=config.max_signal_strength,
+    )
+    blocked = crowd_i is not None and abs(float(crowd_i)) >= config.crowding_block_threshold
+    return _CompositeTrendStepInput(
+        close_i=close_i,
+        score_i=score_i,
+        long_gate_i=long_gate_i,
+        short_gate_i=short_gate_i,
+        strength=strength,
+        blocked=blocked,
+    )
+
+
+def _composite_trend_step(
+    *,
+    mode: int,
+    bars_held: int,
+    step: _CompositeTrendStepInput,
+    config: _CompositeTrendStrategyConfig,
+) -> tuple[int, int, float]:
+    if not np.isfinite(step.close_i):
+        return mode, bars_held, float(mode) * step.strength
+
+    if mode != 0:
+        next_bars_held = bars_held + 1
+        if _composite_trend_should_exit(
+            mode=mode,
+            score_i=step.score_i,
+            long_gate_i=step.long_gate_i,
+            short_gate_i=step.short_gate_i,
+            bars_held=next_bars_held,
+            config=config,
+        ):
+            return 0, 0, 0.0
+        return mode, next_bars_held, float(mode) * step.strength
+
+    next_mode = _composite_trend_entry_mode(
+        score_i=step.score_i,
+        long_gate_i=step.long_gate_i,
+        short_gate_i=step.short_gate_i,
+        blocked=step.blocked,
+        config=config,
+    )
+    if next_mode == 0:
+        return 0, 0, 0.0
+    return next_mode, 0, float(next_mode) * step.strength
 
 
 def _composite_trend_should_exit(
@@ -3347,6 +3385,16 @@ class _CompositeTrendStrategyConfig:
     benchmark_symbol: str
     crowding_reduce_threshold: float
     crowding_block_threshold: float
+
+
+@dataclass(frozen=True, slots=True)
+class _CompositeTrendStepInput:
+    close_i: float
+    score_i: float
+    long_gate_i: bool
+    short_gate_i: bool
+    strength: float
+    blocked: bool
 
 
 def _resolve_composite_trend_strategy_config(
