@@ -5059,62 +5059,19 @@ def _synthetic_bundle(
     start_date: Any = None,
     end_date: Any = None,
 ) -> SeriesBundle:
-    seed = _hash_seed("synthetic", symbol, timeframe)
-    rng = random.Random(seed)
-
-    step_seconds = {
-        "1s": 1,
-        "1m": 60,
-        "5m": 300,
-        "15m": 900,
-        "30m": 1800,
-        "1h": 3600,
-        "4h": 14_400,
-        "1d": 86_400,
-    }.get(timeframe, 60)
-
-    start_bound = _coerce_utc_datetime(start_date)
-    end_bound = _coerce_utc_datetime(end_date, end_of_day=True)
-    if start_bound is not None and end_bound is not None and end_bound > start_bound:
-        requested_bars = int(((end_bound - start_bound).total_seconds()) // step_seconds) + 1
-        bars = max(_MIN_BARS, min(max(bars, requested_bars), 20_000))
-        if requested_bars <= bars:
-            start = start_bound
-        else:
-            start = end_bound - timedelta(seconds=(bars - 1) * step_seconds)
-    else:
-        start = datetime.now(UTC) - timedelta(seconds=bars * step_seconds)
-
-    close = np.zeros(bars, dtype=float)
-    high = np.zeros(bars, dtype=float)
-    low = np.zeros(bars, dtype=float)
-    open_ = np.zeros(bars, dtype=float)
-    volume = np.zeros(bars, dtype=float)
-    dt = np.zeros(bars, dtype="datetime64[ms]")
-
-    base = 100.0 + (20.0 * _hash_unit_interval(symbol, timeframe, "base"))
-    price = base
-    for idx in range(bars):
-        drift = (0.00002 + (0.00008 * _hash_unit_interval(symbol, timeframe, "drift")))
-        shock = rng.gauss(0.0, 0.0025)
-        regime = math.sin((idx / max(50.0, bars / 18.0)) + (2.0 * math.pi * _hash_unit_interval(symbol, timeframe, "phase")))
-        step = drift + (0.001 * regime) + shock
-
-        o = max(0.1, price)
-        c = max(0.1, o * (1.0 + step))
-        wiggle = abs(rng.gauss(0.0, 0.0018)) + 0.0003
-        h = max(o, c) * (1.0 + wiggle)
-        low_price = min(o, c) * (1.0 - wiggle)
-
-        open_[idx] = o
-        high[idx] = h
-        low[idx] = low_price
-        close[idx] = c
-        volume[idx] = max(1.0, 1200.0 * (1.0 + abs(regime)) + rng.uniform(-200.0, 200.0))
-
-        ts = start + timedelta(seconds=idx * step_seconds)
-        dt[idx] = np.datetime64(ts.replace(tzinfo=None), "ms")
-        price = c
+    step_seconds, bars, start = _synthetic_bundle_window(
+        timeframe=timeframe,
+        bars=bars,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    open_, high, low, close, volume, dt = _synthetic_bundle_arrays(
+        symbol=symbol,
+        timeframe=timeframe,
+        bars=bars,
+        start=start,
+        step_seconds=step_seconds,
+    )
 
     return SeriesBundle(
         symbol=symbol,
@@ -5126,6 +5083,70 @@ def _synthetic_bundle(
         close=close,
         volume=volume,
     )
+
+
+def _synthetic_bundle_window(
+    *,
+    timeframe: str,
+    bars: int,
+    start_date: Any,
+    end_date: Any,
+) -> tuple[int, int, datetime]:
+    step_seconds = {
+        "1s": 1,
+        "1m": 60,
+        "5m": 300,
+        "15m": 900,
+        "30m": 1800,
+        "1h": 3600,
+        "4h": 14_400,
+        "1d": 86_400,
+    }.get(timeframe, 60)
+    start_bound = _coerce_utc_datetime(start_date)
+    end_bound = _coerce_utc_datetime(end_date, end_of_day=True)
+    if start_bound is not None and end_bound is not None and end_bound > start_bound:
+        requested_bars = int(((end_bound - start_bound).total_seconds()) // step_seconds) + 1
+        bars = max(_MIN_BARS, min(max(bars, requested_bars), 20_000))
+        start = start_bound if requested_bars <= bars else end_bound - timedelta(seconds=(bars - 1) * step_seconds)
+        return step_seconds, bars, start
+    return step_seconds, bars, datetime.now(UTC) - timedelta(seconds=bars * step_seconds)
+
+
+def _synthetic_bundle_arrays(
+    *,
+    symbol: str,
+    timeframe: str,
+    bars: int,
+    start: datetime,
+    step_seconds: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    rng = random.Random(_hash_seed("synthetic", symbol, timeframe))
+    open_ = np.zeros(bars, dtype=float)
+    high = np.zeros(bars, dtype=float)
+    low = np.zeros(bars, dtype=float)
+    close = np.zeros(bars, dtype=float)
+    volume = np.zeros(bars, dtype=float)
+    dt = np.zeros(bars, dtype="datetime64[ms]")
+
+    base = 100.0 + (20.0 * _hash_unit_interval(symbol, timeframe, "base"))
+    drift = 0.00002 + (0.00008 * _hash_unit_interval(symbol, timeframe, "drift"))
+    phase = 2.0 * math.pi * _hash_unit_interval(symbol, timeframe, "phase")
+    price = base
+    for idx in range(bars):
+        regime = math.sin((idx / max(50.0, bars / 18.0)) + phase)
+        step = drift + (0.001 * regime) + rng.gauss(0.0, 0.0025)
+
+        o = max(0.1, price)
+        c = max(0.1, o * (1.0 + step))
+        wiggle = abs(rng.gauss(0.0, 0.0018)) + 0.0003
+        open_[idx] = o
+        high[idx] = max(o, c) * (1.0 + wiggle)
+        low[idx] = min(o, c) * (1.0 - wiggle)
+        close[idx] = c
+        volume[idx] = max(1.0, 1200.0 * (1.0 + abs(regime)) + rng.uniform(-200.0, 200.0))
+        dt[idx] = np.datetime64((start + timedelta(seconds=idx * step_seconds)).replace(tzinfo=None), "ms")
+        price = c
+    return open_, high, low, close, volume, dt
 
 
 def _frame_to_bundle(symbol: str, timeframe: str, frame: pl.DataFrame) -> SeriesBundle:

@@ -365,6 +365,34 @@ def test_load_feature_cache_normalizes_feature_frames(monkeypatch):
     assert trailing_field in frame.columns
 
 
+def test_synthetic_bundle_is_deterministic_for_symbol_and_timeframe():
+    start = datetime(2024, 1, 1, 0, 0, 0)
+    end = datetime(2024, 1, 1, 0, 31, 0)
+    first = research_runner._synthetic_bundle("BTC/USDT", "1m", bars=32, start_date=start, end_date=end)
+    second = research_runner._synthetic_bundle("BTC/USDT", "1m", bars=32, start_date=start, end_date=end)
+
+    assert np.array_equal(first.datetime, second.datetime)
+    assert np.array_equal(first.open, second.open)
+    assert np.array_equal(first.high, second.high)
+    assert np.array_equal(first.low, second.low)
+    assert np.array_equal(first.close, second.close)
+    assert np.array_equal(first.volume, second.volume)
+
+
+def test_synthetic_bundle_expands_to_cover_requested_date_window():
+    bundle = research_runner._synthetic_bundle(
+        "BTC/USDT",
+        "1m",
+        bars=32,
+        start_date="2024-01-01",
+        end_date="2024-01-02",
+    )
+
+    assert bundle.datetime.size == 2880
+    assert bundle.datetime[0] == np.datetime64(datetime(2024, 1, 1, 0, 0, 0), "ms")
+    assert bundle.datetime[-1] == np.datetime64(datetime(2024, 1, 2, 23, 59, 0), "ms")
+
+
 def test_current_research_market_data_settings_accepts_explicit_runtime_mapping():
     settings = research_runner._current_research_market_data_settings(
         {
