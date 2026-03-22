@@ -2937,6 +2937,13 @@ class _CrossAssetLiquidationContagionFadeConfig:
     allow_short: bool
 
 
+@dataclass(frozen=True, slots=True)
+class _CrossAssetLiquidationStepInput:
+    leader_liq: float
+    ret_z: float
+    close_i: float
+
+
 def _resolve_cross_asset_liquidation_contagion_fade_config(
     params: Mapping[str, Any],
 ) -> _CrossAssetLiquidationContagionFadeConfig:
@@ -3017,64 +3024,97 @@ def _cross_asset_liquidation_contagion_position_series(
     entry_price: float | None = None
     hold_bars = 0
     for idx in range(close_arr.size):
-        leader_vals = [
-            float(liq_z_map[leader][idx])
-            for leader in valid_symbols
-            if leader != symbol and np.isfinite(liq_z_map[leader][idx])
-        ]
-        leader_liq = float(np.mean(np.asarray(leader_vals, dtype=float))) if leader_vals else np.nan
-        ret_z = float(return_z_map[symbol][idx]) if np.isfinite(return_z_map[symbol][idx]) else np.nan
-        close_i = float(close_arr[idx])
-        if not np.isfinite(close_i):
-            continue
-        if mode == 1:
-            hold_bars += 1
-            should_exit = (
-                (np.isfinite(ret_z) and ret_z >= -config.exit_z)
-                or (hold_bars >= config.max_hold_bars)
-                or (
-                    entry_price is not None
-                    and close_i <= float(entry_price) * (1.0 - config.stop_loss_pct)
-                )
-            )
-            if should_exit:
-                mode = 0
-                entry_price = None
-                hold_bars = 0
-            else:
-                pos[idx] = 1.0
-                continue
-        elif mode == -1:
-            hold_bars += 1
-            should_exit = (
-                (np.isfinite(ret_z) and ret_z <= config.exit_z)
-                or (hold_bars >= config.max_hold_bars)
-                or (
-                    entry_price is not None
-                    and close_i >= float(entry_price) * (1.0 + config.stop_loss_pct)
-                )
-            )
-            if should_exit:
-                mode = 0
-                entry_price = None
-                hold_bars = 0
-            else:
-                pos[idx] = -1.0
-                continue
-
-        if not (np.isfinite(leader_liq) and np.isfinite(ret_z)):
-            continue
-        if leader_liq >= config.leader_liq_z_min and ret_z >= config.return_shock_pct and config.allow_short:
-            mode = -1
-            entry_price = close_i
-            hold_bars = 0
-            pos[idx] = -1.0
-        elif leader_liq <= -config.leader_liq_z_min and ret_z <= -config.return_shock_pct:
-            mode = 1
-            entry_price = close_i
-            hold_bars = 0
-            pos[idx] = 1.0
+        step = _cross_asset_liquidation_step_input(
+            idx=idx,
+            symbol=symbol,
+            valid_symbols=valid_symbols,
+            liq_z_map=liq_z_map,
+            return_z_map=return_z_map,
+            close_arr=close_arr,
+        )
+        mode, entry_price, hold_bars, pos[idx] = _cross_asset_liquidation_step(
+            mode=mode,
+            entry_price=entry_price,
+            hold_bars=hold_bars,
+            step=step,
+            config=config,
+        )
     return pos
+
+
+def _cross_asset_liquidation_step_input(
+    *,
+    idx: int,
+    symbol: str,
+    valid_symbols: Sequence[str],
+    liq_z_map: Mapping[str, np.ndarray],
+    return_z_map: Mapping[str, np.ndarray],
+    close_arr: np.ndarray,
+) -> _CrossAssetLiquidationStepInput:
+    leader_vals = [
+        float(liq_z_map[leader][idx])
+        for leader in valid_symbols
+        if leader != symbol and np.isfinite(liq_z_map[leader][idx])
+    ]
+    leader_liq = float(np.mean(np.asarray(leader_vals, dtype=float))) if leader_vals else np.nan
+    ret_z = float(return_z_map[symbol][idx]) if np.isfinite(return_z_map[symbol][idx]) else np.nan
+    return _CrossAssetLiquidationStepInput(
+        leader_liq=leader_liq,
+        ret_z=ret_z,
+        close_i=float(close_arr[idx]),
+    )
+
+
+def _cross_asset_liquidation_step(
+    *,
+    mode: int,
+    entry_price: float | None,
+    hold_bars: int,
+    step: _CrossAssetLiquidationStepInput,
+    config: _CrossAssetLiquidationContagionFadeConfig,
+) -> tuple[int, float | None, int, float]:
+    if not np.isfinite(step.close_i):
+        return mode, entry_price, hold_bars, 0.0
+
+    if mode == 1:
+        next_hold_bars = hold_bars + 1
+        should_exit = (
+            (np.isfinite(step.ret_z) and step.ret_z >= -config.exit_z)
+            or (next_hold_bars >= config.max_hold_bars)
+            or (
+                entry_price is not None
+                and step.close_i <= float(entry_price) * (1.0 - config.stop_loss_pct)
+            )
+        )
+        if should_exit:
+            return 0, None, 0, 0.0
+        return 1, entry_price, next_hold_bars, 1.0
+
+    if mode == -1:
+        next_hold_bars = hold_bars + 1
+        should_exit = (
+            (np.isfinite(step.ret_z) and step.ret_z <= config.exit_z)
+            or (next_hold_bars >= config.max_hold_bars)
+            or (
+                entry_price is not None
+                and step.close_i >= float(entry_price) * (1.0 + config.stop_loss_pct)
+            )
+        )
+        if should_exit:
+            return 0, None, 0, 0.0
+        return -1, entry_price, next_hold_bars, -1.0
+
+    if not (np.isfinite(step.leader_liq) and np.isfinite(step.ret_z)):
+        return 0, entry_price, hold_bars, 0.0
+    if (
+        step.leader_liq >= config.leader_liq_z_min
+        and step.ret_z >= config.return_shock_pct
+        and config.allow_short
+    ):
+        return -1, step.close_i, 0, -1.0
+    if step.leader_liq <= -config.leader_liq_z_min and step.ret_z <= -config.return_shock_pct:
+        return 1, step.close_i, 0, 1.0
+    return 0, entry_price, hold_bars, 0.0
 
 
 def _minute_of_day(values: np.ndarray) -> np.ndarray:

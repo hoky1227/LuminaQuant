@@ -1651,6 +1651,32 @@ def test_cross_asset_liquidation_contagion_fade_strategy_signal_produces_exposur
     assert meta == {}
 
 
+def test_cross_asset_liquidation_contagion_position_series_resumes_after_nonfinite_close():
+    position = research_runner._cross_asset_liquidation_contagion_position_series(
+        symbol="ETH/USDT",
+        close_arr=np.asarray([100.0, np.nan, 99.0], dtype=float),
+        valid_symbols=["BTC/USDT", "ETH/USDT"],
+        liq_z_map={
+            "BTC/USDT": np.asarray([1.0, 1.0, 1.0], dtype=float),
+            "ETH/USDT": np.asarray([0.0, 0.0, 0.0], dtype=float),
+        },
+        return_z_map={
+            "ETH/USDT": np.asarray([0.5, 0.5, 0.5], dtype=float),
+        },
+        config=research_runner._CrossAssetLiquidationContagionFadeConfig(
+            window=48,
+            leader_liq_z_min=0.4,
+            return_shock_pct=0.2,
+            exit_z=0.2,
+            max_hold_bars=12,
+            stop_loss_pct=0.02,
+            allow_short=True,
+        ),
+    )
+
+    assert np.array_equal(position, np.asarray([-1.0, 0.0, -1.0], dtype=float))
+
+
 def test_multi_horizon_trend_exhaustion_fade_strategy_signal_produces_exposure():
     length = 180
     close = np.linspace(100.0, 120.0, length, dtype=float)
