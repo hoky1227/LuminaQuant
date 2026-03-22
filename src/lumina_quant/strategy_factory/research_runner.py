@@ -1821,6 +1821,17 @@ class _RegimeBreakoutCandidateConfig:
     allow_short: bool
 
 
+@dataclass(frozen=True, slots=True)
+class _RegimeBreakoutStepInput:
+    close_i: float
+    upper: float | None
+    lower: float | None
+    slope: float | None
+    momentum: float | None
+    vol_ok: bool
+    range_pos: float | None
+
+
 def _resolve_regime_breakout_candidate_config(
     params: Mapping[str, Any],
 ) -> _RegimeBreakoutCandidateConfig:
@@ -1857,54 +1868,102 @@ def _regime_breakout_candidate_position_series(
     entry_price: float | None = None
 
     for idx in range(close.size):
-        close_i = float(close[idx])
-        upper = float(channel_high[idx]) if np.isfinite(channel_high[idx]) else None
-        lower = float(channel_low[idx]) if np.isfinite(channel_low[idx]) else None
-        slope = float(slope_series[idx]) if np.isfinite(slope_series[idx]) else None
-        momentum = float(momentum_series[idx]) if np.isfinite(momentum_series[idx]) else None
-        if upper is None or lower is None or upper <= lower or slope is None or momentum is None:
-            continue
-        range_pos = (close_i - lower) / max(upper - lower, 1e-12)
-        vol_ok = float(vol_ratio[idx]) <= config.max_volatility_ratio
-        if mode == 1 and entry_price is not None:
-            stop_hit = close_i <= entry_price * (1.0 - config.stop_loss_pct)
-            exit_hit = slope < 0.0 or range_pos < 0.50
-            if stop_hit or exit_hit:
-                mode = 0
-                entry_price = None
-            else:
-                position[idx] = 1.0
-                continue
-        elif mode == -1 and entry_price is not None:
-            stop_hit = close_i >= entry_price * (1.0 + config.stop_loss_pct)
-            exit_hit = slope > 0.0 or range_pos > 0.50
-            if stop_hit or exit_hit:
-                mode = 0
-                entry_price = None
-            else:
-                position[idx] = -1.0
-                continue
-
-        if mode == 0 and vol_ok:
-            if (
-                range_pos >= config.range_entry_threshold
-                and slope >= config.slope_entry_threshold
-                and momentum >= config.momentum_floor
-            ):
-                mode = 1
-                entry_price = close_i
-                position[idx] = 1.0
-            elif (
-                config.allow_short
-                and range_pos <= (1.0 - config.range_entry_threshold)
-                and slope <= -config.slope_entry_threshold
-                and momentum <= -config.momentum_floor
-            ):
-                mode = -1
-                entry_price = close_i
-                position[idx] = -1.0
+        step = _regime_breakout_step_input(
+            idx=idx,
+            close=close,
+            channel_high=channel_high,
+            channel_low=channel_low,
+            vol_ratio=vol_ratio,
+            slope_series=slope_series,
+            momentum_series=momentum_series,
+            config=config,
+        )
+        mode, entry_price, position[idx] = _regime_breakout_step(
+            mode=mode,
+            entry_price=entry_price,
+            step=step,
+            config=config,
+        )
 
     return position
+
+
+def _regime_breakout_step_input(
+    *,
+    idx: int,
+    close: np.ndarray,
+    channel_high: np.ndarray,
+    channel_low: np.ndarray,
+    vol_ratio: np.ndarray,
+    slope_series: np.ndarray,
+    momentum_series: np.ndarray,
+    config: _RegimeBreakoutCandidateConfig,
+) -> _RegimeBreakoutStepInput:
+    close_i = float(close[idx])
+    upper = float(channel_high[idx]) if np.isfinite(channel_high[idx]) else None
+    lower = float(channel_low[idx]) if np.isfinite(channel_low[idx]) else None
+    slope = float(slope_series[idx]) if np.isfinite(slope_series[idx]) else None
+    momentum = float(momentum_series[idx]) if np.isfinite(momentum_series[idx]) else None
+    range_pos = None
+    if upper is not None and lower is not None and upper > lower:
+        range_pos = (close_i - lower) / max(upper - lower, 1e-12)
+    return _RegimeBreakoutStepInput(
+        close_i=close_i,
+        upper=upper,
+        lower=lower,
+        slope=slope,
+        momentum=momentum,
+        vol_ok=float(vol_ratio[idx]) <= config.max_volatility_ratio,
+        range_pos=range_pos,
+    )
+
+
+def _regime_breakout_step(
+    *,
+    mode: int,
+    entry_price: float | None,
+    step: _RegimeBreakoutStepInput,
+    config: _RegimeBreakoutCandidateConfig,
+) -> tuple[int, float | None, float]:
+    if (
+        step.upper is None
+        or step.lower is None
+        or step.upper <= step.lower
+        or step.slope is None
+        or step.momentum is None
+        or step.range_pos is None
+    ):
+        return mode, entry_price, 0.0
+
+    if mode == 1 and entry_price is not None:
+        stop_hit = step.close_i <= entry_price * (1.0 - config.stop_loss_pct)
+        exit_hit = step.slope < 0.0 or step.range_pos < 0.50
+        if stop_hit or exit_hit:
+            return 0, None, 0.0
+        return 1, entry_price, 1.0
+
+    if mode == -1 and entry_price is not None:
+        stop_hit = step.close_i >= entry_price * (1.0 + config.stop_loss_pct)
+        exit_hit = step.slope > 0.0 or step.range_pos > 0.50
+        if stop_hit or exit_hit:
+            return 0, None, 0.0
+        return -1, entry_price, -1.0
+
+    if mode == 0 and step.vol_ok:
+        if (
+            step.range_pos >= config.range_entry_threshold
+            and step.slope >= config.slope_entry_threshold
+            and step.momentum >= config.momentum_floor
+        ):
+            return 1, step.close_i, 1.0
+        if (
+            config.allow_short
+            and step.range_pos <= (1.0 - config.range_entry_threshold)
+            and step.slope <= -config.slope_entry_threshold
+            and step.momentum <= -config.momentum_floor
+        ):
+            return -1, step.close_i, -1.0
+    return mode, entry_price, 0.0
 
 
 def _apply_regime_breakout_candidate_strategy(

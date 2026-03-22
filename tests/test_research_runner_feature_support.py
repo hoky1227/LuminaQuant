@@ -2408,6 +2408,31 @@ def test_regime_breakout_strategy_signal_respects_composite_momentum_gate():
     assert not np.any(turnover > 0.0)
 
 
+def test_regime_breakout_position_series_resumes_after_invalid_indicator_bar():
+    position = research_runner._regime_breakout_candidate_position_series(
+        close=np.asarray([100.0, 101.0, 102.0], dtype=float),
+        channel_high=np.asarray([101.0, np.nan, 103.0], dtype=float),
+        channel_low=np.asarray([99.0, np.nan, 99.0], dtype=float),
+        vol_ratio=np.asarray([1.0, 1.0, 1.0], dtype=float),
+        slope_series=np.asarray([0.1, 0.1, 0.1], dtype=float),
+        momentum_series=np.asarray([0.1, 0.1, 0.1], dtype=float),
+        config=research_runner._RegimeBreakoutCandidateConfig(
+            lookback_window=8,
+            slope_window=4,
+            volatility_fast_window=4,
+            volatility_slow_window=8,
+            range_entry_threshold=0.5,
+            slope_entry_threshold=0.0,
+            momentum_floor=0.0,
+            max_volatility_ratio=2.0,
+            stop_loss_pct=0.05,
+            allow_short=True,
+        ),
+    )
+
+    assert np.array_equal(position, np.asarray([1.0, 0.0, 1.0], dtype=float))
+
+
 def test_regime_breakout_preserves_default_windows(monkeypatch):
     observed: dict[str, list[int]] = {
         "channel": [],
