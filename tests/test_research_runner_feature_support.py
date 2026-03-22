@@ -1370,6 +1370,38 @@ def test_vol_of_vol_exhaustion_fade_preserves_default_windows(monkeypatch):
     assert z_windows == [48, 24]
 
 
+def test_vol_of_vol_exhaustion_position_series_resumes_after_nonfinite_close(monkeypatch):
+    def _stub_rolling_realized_vol(values, window):
+        return np.zeros(np.asarray(values, dtype=float).shape, dtype=float)
+
+    def _stub_rolling_z(values, window):
+        out = np.zeros(np.asarray(values, dtype=float).shape, dtype=float)
+        if int(window) == 48:
+            out[1:3] = 2.0
+        elif int(window) == 24:
+            out[1:] = -2.0
+        return out
+
+    monkeypatch.setattr(research_runner, "_rolling_realized_vol", _stub_rolling_realized_vol)
+    monkeypatch.setattr(research_runner, "_rolling_z", _stub_rolling_z)
+
+    position = research_runner._vol_of_vol_exhaustion_fade_position_series(
+        close=np.asarray([100.0, 98.0, np.nan, 99.0], dtype=float),
+        config=research_runner._VolOfVolExhaustionFadeConfig(
+            vol_window=24,
+            vol_z_window=48,
+            return_z_window=24,
+            vol_entry_z=1.8,
+            return_entry_z=1.2,
+            max_hold_bars=8,
+            stop_loss_pct=0.02,
+            allow_short=True,
+        ),
+    )
+
+    assert np.array_equal(position, np.asarray([0.0, 1.0, 0.0, 1.0], dtype=float))
+
+
 def test_residual_basket_reversion_strategy_signal_produces_exposure():
     length = 420
     btc_close = np.linspace(100.0, 120.0, length, dtype=float)

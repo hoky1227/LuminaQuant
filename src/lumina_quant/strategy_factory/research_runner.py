@@ -2171,6 +2171,13 @@ class _VolOfVolExhaustionFadeConfig:
     allow_short: bool
 
 
+@dataclass(frozen=True, slots=True)
+class _VolOfVolExhaustionStepInput:
+    close_i: float
+    vol_z_i: float
+    return_z_i: float
+
+
 def _resolve_vol_of_vol_exhaustion_fade_config(
     params: Mapping[str, Any],
 ) -> _VolOfVolExhaustionFadeConfig:
@@ -2203,47 +2210,72 @@ def _vol_of_vol_exhaustion_fade_position_series(
     hold_bars = 0
 
     for idx in range(close.size):
-        close_i = float(close[idx])
-        if not np.isfinite(close_i):
-            continue
-        if mode == 1 and entry_price is not None:
-            hold_bars += 1
-            stop_hit = close_i <= entry_price * (1.0 - config.stop_loss_pct)
-            revert_hit = float(return_z[idx]) >= 0.0
-            timeout_hit = hold_bars >= config.max_hold_bars
-            if stop_hit or revert_hit or timeout_hit:
-                mode = 0
-                entry_price = None
-                hold_bars = 0
-            else:
-                position[idx] = 1.0
-                continue
-        elif mode == -1 and entry_price is not None:
-            hold_bars += 1
-            stop_hit = close_i >= entry_price * (1.0 + config.stop_loss_pct)
-            revert_hit = float(return_z[idx]) <= 0.0
-            timeout_hit = hold_bars >= config.max_hold_bars
-            if stop_hit or revert_hit or timeout_hit:
-                mode = 0
-                entry_price = None
-                hold_bars = 0
-            else:
-                position[idx] = -1.0
-                continue
-
-        if mode == 0 and float(vol_z[idx]) >= config.vol_entry_z:
-            if float(return_z[idx]) <= -config.return_entry_z:
-                mode = 1
-                entry_price = close_i
-                hold_bars = 0
-                position[idx] = 1.0
-            elif config.allow_short and float(return_z[idx]) >= config.return_entry_z:
-                mode = -1
-                entry_price = close_i
-                hold_bars = 0
-                position[idx] = -1.0
+        step = _vol_of_vol_exhaustion_step_input(
+            idx=idx,
+            close=close,
+            vol_z=vol_z,
+            return_z=return_z,
+        )
+        mode, entry_price, hold_bars, position[idx] = _vol_of_vol_exhaustion_step(
+            mode=mode,
+            entry_price=entry_price,
+            hold_bars=hold_bars,
+            step=step,
+            config=config,
+        )
 
     return position
+
+
+def _vol_of_vol_exhaustion_step_input(
+    *,
+    idx: int,
+    close: np.ndarray,
+    vol_z: np.ndarray,
+    return_z: np.ndarray,
+) -> _VolOfVolExhaustionStepInput:
+    return _VolOfVolExhaustionStepInput(
+        close_i=float(close[idx]),
+        vol_z_i=float(vol_z[idx]),
+        return_z_i=float(return_z[idx]),
+    )
+
+
+def _vol_of_vol_exhaustion_step(
+    *,
+    mode: int,
+    entry_price: float | None,
+    hold_bars: int,
+    step: _VolOfVolExhaustionStepInput,
+    config: _VolOfVolExhaustionFadeConfig,
+) -> tuple[int, float | None, int, float]:
+    if not np.isfinite(step.close_i):
+        return mode, entry_price, hold_bars, 0.0
+
+    if mode == 1 and entry_price is not None:
+        next_hold_bars = hold_bars + 1
+        stop_hit = step.close_i <= entry_price * (1.0 - config.stop_loss_pct)
+        revert_hit = step.return_z_i >= 0.0
+        timeout_hit = next_hold_bars >= config.max_hold_bars
+        if stop_hit or revert_hit or timeout_hit:
+            return 0, None, 0, 0.0
+        return 1, entry_price, next_hold_bars, 1.0
+
+    if mode == -1 and entry_price is not None:
+        next_hold_bars = hold_bars + 1
+        stop_hit = step.close_i >= entry_price * (1.0 + config.stop_loss_pct)
+        revert_hit = step.return_z_i <= 0.0
+        timeout_hit = next_hold_bars >= config.max_hold_bars
+        if stop_hit or revert_hit or timeout_hit:
+            return 0, None, 0, 0.0
+        return -1, entry_price, next_hold_bars, -1.0
+
+    if mode == 0 and step.vol_z_i >= config.vol_entry_z:
+        if step.return_z_i <= -config.return_entry_z:
+            return 1, step.close_i, 0, 1.0
+        if config.allow_short and step.return_z_i >= config.return_entry_z:
+            return -1, step.close_i, 0, -1.0
+    return mode, entry_price, hold_bars, 0.0
 
 
 def _apply_vol_of_vol_exhaustion_fade_strategy(
