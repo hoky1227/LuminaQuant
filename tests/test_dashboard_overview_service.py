@@ -15,6 +15,12 @@ class _FakeHeatmap:
         self.name = kwargs.get("name")
 
 
+class _FakeCandlestick:
+    def __init__(self, **kwargs: Any) -> None:
+        self.kwargs = kwargs
+        self.name = kwargs.get("name")
+
+
 class _FakeScatter:
     def __init__(self, **kwargs: Any) -> None:
         self.kwargs = kwargs
@@ -44,6 +50,7 @@ MODULE_PATH = ROOT / "apps" / "dashboard" / "services" / "overview_dashboard.py"
 def _load_module(monkeypatch):
     fake_plotly = types.ModuleType("plotly")
     fake_graph_objects = types.ModuleType("plotly.graph_objects")
+    fake_graph_objects.Candlestick = _FakeCandlestick
     fake_graph_objects.Figure = _FakeFigure
     fake_graph_objects.Heatmap = _FakeHeatmap
     fake_graph_objects.Scatter = _FakeScatter
@@ -151,3 +158,55 @@ def test_build_monthly_returns_heatmap_formats_cells(monkeypatch) -> None:
     assert figure.data[0].kwargs["x"] == ["Jan", "Feb"]
     assert figure.data[0].kwargs["y"] == ["2025", "2026"]
     assert figure.data[0].kwargs["text"] == [["10.00%", ""], ["-5.00%", "0.00%"]]
+
+
+def test_build_price_with_trade_markers_figure_adds_market_and_trade_traces(monkeypatch) -> None:
+    overview_dashboard = _load_module(monkeypatch)
+    plot_market = pd.DataFrame(
+        {
+            "datetime": pd.to_datetime(
+                ["2026-03-22T00:00:00Z", "2026-03-22T00:01:00Z"],
+                utc=True,
+            ),
+            "open": [100.0, 101.0],
+            "high": [102.0, 103.0],
+            "low": [99.0, 100.0],
+            "close": [101.0, 102.0],
+        }
+    )
+    plot_trades = pd.DataFrame(
+        {
+            "symbol": ["BTC/USDT", "BTC/USDT", "ETH/USDT"],
+            "direction": ["BUY", "SELL", "BUY"],
+            "datetime": pd.to_datetime(
+                [
+                    "2026-03-22T00:00:00Z",
+                    "2026-03-22T00:01:00Z",
+                    "2026-03-22T00:01:00Z",
+                ],
+                utc=True,
+            ),
+            "price": [101.0, 102.0, 50.0],
+            "quantity": [1.0, 1.5, 0.5],
+            "position_after": [1.0, 0.0, 0.5],
+            "realized_pnl": [0.0, 1.25, 0.0],
+            "realized_return_pct": [0.0, 1.24, 0.0],
+        }
+    )
+    fake_go = types.SimpleNamespace(
+        Figure=_FakeFigure,
+        Candlestick=_FakeCandlestick,
+        Scatter=_FakeScatter,
+    )
+
+    figure = overview_dashboard.build_price_with_trade_markers_figure(
+        plot_market,
+        plot_trades,
+        market_symbol="BTC/USDT",
+        compute_trade_analytics=lambda frame: frame,
+        go_module=fake_go,
+    )
+
+    assert figure.layout.title.text == "BTC/USDT Price + Buy/Sell Markers"
+    assert [trace.name for trace in figure.data] == ["BTC/USDT price", "BUY", "SELL"]
+    assert figure.data[1].kwargs["customdata"].shape == (1, 4)

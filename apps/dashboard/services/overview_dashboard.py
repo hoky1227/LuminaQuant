@@ -159,6 +159,73 @@ def build_monthly_returns_heatmap(
     return fig
 
 
+def build_price_with_trade_markers_figure(
+    plot_market: pd.DataFrame,
+    plot_trades: pd.DataFrame,
+    *,
+    market_symbol: str,
+    compute_trade_analytics,
+    go_module=go,
+):
+    fig = go_module.Figure()
+    fig.add_trace(
+        go_module.Candlestick(
+            x=plot_market["datetime"],
+            open=plot_market["open"],
+            high=plot_market["high"],
+            low=plot_market["low"],
+            close=plot_market["close"],
+            name=f"{market_symbol} price",
+        )
+    )
+
+    if not plot_trades.empty:
+        symbol_trades = plot_trades[plot_trades["symbol"] == market_symbol]
+        if not symbol_trades.empty:
+            enriched = compute_trade_analytics(symbol_trades)
+            for direction, color, symbol_shape in [
+                ("BUY", "#0db39e", "triangle-up"),
+                ("SELL", "#f05a66", "triangle-down"),
+            ]:
+                part = enriched[enriched["direction"] == direction]
+                if part.empty:
+                    continue
+                custom_cols = [
+                    part["quantity"],
+                    part["position_after"],
+                    part["realized_pnl"],
+                    part["realized_return_pct"],
+                ]
+                custom_data = pd.concat(custom_cols, axis=1).to_numpy()
+                fig.add_trace(
+                    go_module.Scatter(
+                        x=part["datetime"],
+                        y=part["price"],
+                        mode="markers",
+                        name=direction,
+                        marker=dict(symbol=symbol_shape, size=10, color=color),
+                        customdata=custom_data,
+                        hovertemplate=(
+                            "%{x}<br>"
+                            f"{direction} @ %{{y:.4f}}<br>"
+                            "Qty: %{customdata[0]:.4f}<br>"
+                            "Position after: %{customdata[1]:.4f}<br>"
+                            "Realized PnL: %{customdata[2]:.4f}<br>"
+                            "Trade Return: %{customdata[3]:.4f}%<extra></extra>"
+                        ),
+                    )
+                )
+
+    fig.update_layout(
+        title=f"{market_symbol} Price + Buy/Sell Markers",
+        xaxis_title="Date",
+        yaxis_title="Price",
+        template="plotly_white",
+        xaxis_rangeslider_visible=True,
+    )
+    return fig
+
+
 __all__ = [
     "build_benchmark_price_figure",
     "build_cumulative_return_figure",
@@ -166,4 +233,5 @@ __all__ = [
     "build_equity_curve_figure",
     "build_funding_figure",
     "build_monthly_returns_heatmap",
+    "build_price_with_trade_markers_figure",
 ]

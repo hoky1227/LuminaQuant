@@ -66,6 +66,7 @@ from apps.dashboard.services.overview_dashboard import (
     build_equity_curve_figure as _build_equity_curve_figure_data,
     build_funding_figure as _build_funding_figure_data,
     build_monthly_returns_heatmap as _build_monthly_returns_heatmap_data,
+    build_price_with_trade_markers_figure as _build_price_with_trade_markers_figure_data,
 )
 from apps.dashboard.services.ghost_cleanup import (
     run_ghost_cleanup_script as _run_ghost_cleanup_script_data,
@@ -3768,63 +3769,15 @@ def render_main_dashboard() -> None:
                 )
 
         if not plot_market.empty:
-            fig_price = go.Figure()
-            fig_price.add_trace(
-                go.Candlestick(
-                    x=plot_market["datetime"],
-                    open=plot_market["open"],
-                    high=plot_market["high"],
-                    low=plot_market["low"],
-                    close=plot_market["close"],
-                    name=f"{market_symbol} price",
-                )
+            st.plotly_chart(
+                _build_price_with_trade_markers_figure_data(
+                    plot_market,
+                    plot_trades,
+                    market_symbol=market_symbol,
+                    compute_trade_analytics=compute_trade_analytics,
+                ),
+                use_container_width=True,
             )
-
-            if not plot_trades.empty:
-                symbol_trades = plot_trades[plot_trades["symbol"] == market_symbol]
-                if not symbol_trades.empty:
-                    enriched = compute_trade_analytics(symbol_trades)
-                    for direction, color, symbol_shape in [
-                        ("BUY", "#0db39e", "triangle-up"),
-                        ("SELL", "#f05a66", "triangle-down"),
-                    ]:
-                        part = enriched[enriched["direction"] == direction]
-                        if part.empty:
-                            continue
-                        custom_cols = [
-                            part["quantity"],
-                            part["position_after"],
-                            part["realized_pnl"],
-                            part["realized_return_pct"],
-                        ]
-                        custom_data = pd.concat(custom_cols, axis=1).to_numpy()
-                        fig_price.add_trace(
-                            go.Scatter(
-                                x=part["datetime"],
-                                y=part["price"],
-                                mode="markers",
-                                name=direction,
-                                marker=dict(symbol=symbol_shape, size=10, color=color),
-                                customdata=custom_data,
-                                hovertemplate=(
-                                    "%{x}<br>"
-                                    f"{direction} @ %{{y:.4f}}<br>"
-                                    "Qty: %{customdata[0]:.4f}<br>"
-                                    "Position after: %{customdata[1]:.4f}<br>"
-                                    "Realized PnL: %{customdata[2]:.4f}<br>"
-                                    "Trade Return: %{customdata[3]:.4f}%<extra></extra>"
-                                ),
-                            )
-                        )
-
-            fig_price.update_layout(
-                title=f"{market_symbol} Price + Buy/Sell Markers",
-                xaxis_title="Date",
-                yaxis_title="Price",
-                template="plotly_white",
-                xaxis_rangeslider_visible=True,
-            )
-            st.plotly_chart(fig_price, use_container_width=True)
 
     with tab_exec:
         execution_metric_rows = _build_execution_metric_rows_data(
