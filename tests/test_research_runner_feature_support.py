@@ -787,6 +787,26 @@ def test_mean_reversion_std_strategy_signal_produces_exposure():
     assert np.any(turnover > 0.0)
 
 
+def test_mean_reversion_position_series_resumes_after_nonfinite_close(monkeypatch):
+    monkeypatch.setattr(
+        research_runner,
+        "_rolling_z",
+        lambda values, window: np.asarray([-2.0, -2.0, -2.0], dtype=float),
+    )
+
+    position = research_runner._mean_reversion_position_series(
+        close=np.asarray([100.0, np.nan, 101.0], dtype=float),
+        signal_series=np.asarray([100.0, 99.0, 98.0], dtype=float),
+        window=16,
+        entry_z=1.2,
+        exit_z=0.3,
+        stop_loss_pct=0.02,
+        allow_short=True,
+    )
+
+    assert np.array_equal(position, np.asarray([1.0, 0.0, 1.0], dtype=float))
+
+
 def test_mean_reversion_std_strategy_signal_can_residualize_btc():
     length = 180
     btc_close = np.full(length, 100.0, dtype=float)

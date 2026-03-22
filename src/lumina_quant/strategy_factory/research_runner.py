@@ -4188,40 +4188,74 @@ def _mean_reversion_position_series(
     entry_price: float | None = None
 
     for idx in range(close.size):
-        close_i = float(close[idx])
-        z_i = float(zscore[idx])
-        if not np.isfinite(close_i):
-            continue
-
-        if mode == 1 and entry_price is not None:
-            stop_hit = close_i <= entry_price * (1.0 - stop_loss_pct)
-            revert_hit = z_i >= -exit_z
-            if stop_hit or revert_hit:
-                mode = 0
-                entry_price = None
-            else:
-                pos[idx] = 1.0
-                continue
-        elif mode == -1 and entry_price is not None:
-            stop_hit = close_i >= entry_price * (1.0 + stop_loss_pct)
-            revert_hit = z_i <= exit_z
-            if stop_hit or revert_hit:
-                mode = 0
-                entry_price = None
-            else:
-                pos[idx] = -1.0
-                continue
-
-        if mode == 0:
-            if z_i <= -entry_z:
-                mode = 1
-                entry_price = close_i
-                pos[idx] = 1.0
-            elif allow_short and z_i >= entry_z:
-                mode = -1
-                entry_price = close_i
-                pos[idx] = -1.0
+        step = _mean_reversion_step_input(
+            idx=idx,
+            close=close,
+            zscore=zscore,
+        )
+        mode, entry_price, pos[idx] = _mean_reversion_step(
+            mode=mode,
+            entry_price=entry_price,
+            step=step,
+            entry_z=entry_z,
+            exit_z=exit_z,
+            stop_loss_pct=stop_loss_pct,
+            allow_short=allow_short,
+        )
     return pos
+
+
+@dataclass(frozen=True, slots=True)
+class _MeanReversionStepInput:
+    close_i: float
+    z_i: float
+
+
+def _mean_reversion_step_input(
+    *,
+    idx: int,
+    close: np.ndarray,
+    zscore: np.ndarray,
+) -> _MeanReversionStepInput:
+    return _MeanReversionStepInput(
+        close_i=float(close[idx]),
+        z_i=float(zscore[idx]),
+    )
+
+
+def _mean_reversion_step(
+    *,
+    mode: int,
+    entry_price: float | None,
+    step: _MeanReversionStepInput,
+    entry_z: float,
+    exit_z: float,
+    stop_loss_pct: float,
+    allow_short: bool,
+) -> tuple[int, float | None, float]:
+    if not np.isfinite(step.close_i):
+        return mode, entry_price, 0.0
+
+    if mode == 1 and entry_price is not None:
+        stop_hit = step.close_i <= entry_price * (1.0 - stop_loss_pct)
+        revert_hit = step.z_i >= -exit_z
+        if stop_hit or revert_hit:
+            return 0, None, 0.0
+        return 1, entry_price, 1.0
+
+    if mode == -1 and entry_price is not None:
+        stop_hit = step.close_i >= entry_price * (1.0 + stop_loss_pct)
+        revert_hit = step.z_i <= exit_z
+        if stop_hit or revert_hit:
+            return 0, None, 0.0
+        return -1, entry_price, -1.0
+
+    if mode == 0:
+        if step.z_i <= -entry_z:
+            return 1, step.close_i, 1.0
+        if allow_short and step.z_i >= entry_z:
+            return -1, step.close_i, -1.0
+    return mode, entry_price, 0.0
 
 
 def _apply_mean_reversion_std_strategy(
