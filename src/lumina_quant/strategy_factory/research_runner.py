@@ -2295,6 +2295,13 @@ class _BreadthThrustFailureReversalConfig:
     allow_short: bool
 
 
+@dataclass(frozen=True, slots=True)
+class _BreadthThrustStepInput:
+    basket_close: float
+    breadth: float
+    mean_ret: float
+
+
 def _resolve_breadth_thrust_failure_reversal_config(
     params: Mapping[str, Any],
 ) -> _BreadthThrustFailureReversalConfig:
@@ -2347,69 +2354,109 @@ def _breadth_thrust_failure_reversal_position_series(
     basket_entry = np.nan
     hold_bars = 0
     for idx in range(n):
-        close_map = {
-            symbol: float(close[idx])
-            for symbol, close in close_map_np.items()
-        }
-        basket_close = float(np.mean(list(close_map.values())))
-        if basket_state != 0.0 and np.isfinite(basket_entry):
-            hold_bars += 1
-            stop_long = (
-                basket_state > 0.0
-                and basket_close <= float(basket_entry) * (1.0 - config.stop_loss_pct)
-            )
-            stop_short = (
-                basket_state < 0.0
-                and basket_close >= float(basket_entry) * (1.0 + config.stop_loss_pct)
-            )
-            timeout_hit = hold_bars >= config.max_hold_bars
-            if stop_long or stop_short or timeout_hit:
-                basket_state = 0.0
-                basket_entry = np.nan
-                hold_bars = 0
+        step = _breadth_thrust_step_input(
+            idx=idx,
+            close_map_np=close_map_np,
+            config=config,
+        )
+        basket_state, basket_entry, hold_bars, basket_position[idx] = _breadth_thrust_step(
+            idx=idx,
+            basket_state=basket_state,
+            basket_entry=basket_entry,
+            hold_bars=hold_bars,
+            step=step,
+            config=config,
+        )
 
-        if idx < config.momentum_lookback:
-            basket_position[idx] = basket_state
-            continue
+    return basket_position
 
-        breadth_values: list[float] = []
-        basket_returns: list[float] = []
-        for close in close_map_np.values():
-            latest = float(close[idx])
-            base = float(close[idx - config.momentum_lookback])
-            if not np.isfinite(latest) or not np.isfinite(base) or base <= 0.0:
-                continue
-            ret = (latest / base) - 1.0
-            basket_returns.append(float(ret))
-            breadth_values.append(1.0 if ret > 0.0 else 0.0)
-        if not breadth_values:
-            basket_position[idx] = basket_state
+
+def _breadth_thrust_step_input(
+    *,
+    idx: int,
+    close_map_np: Mapping[str, np.ndarray],
+    config: _BreadthThrustFailureReversalConfig,
+) -> _BreadthThrustStepInput:
+    close_map = {symbol: float(close[idx]) for symbol, close in close_map_np.items()}
+    basket_close = float(np.mean(list(close_map.values())))
+    if idx < config.momentum_lookback:
+        return _BreadthThrustStepInput(
+            basket_close=basket_close,
+            breadth=float("nan"),
+            mean_ret=float("nan"),
+        )
+
+    breadth_values: list[float] = []
+    basket_returns: list[float] = []
+    for close in close_map_np.values():
+        latest = float(close[idx])
+        base = float(close[idx - config.momentum_lookback])
+        if not np.isfinite(latest) or not np.isfinite(base) or base <= 0.0:
             continue
-        breadth = float(np.mean(np.asarray(breadth_values, dtype=float)))
-        mean_ret = float(np.mean(np.asarray(basket_returns, dtype=float)))
-        if basket_state == 0.0:
-            if (
-                config.allow_short
-                and breadth >= config.breadth_entry
-                and mean_ret <= -config.basket_return_floor
-            ):
-                basket_state = -1.0
-                basket_entry = basket_close
-                hold_bars = 0
-            elif (
-                breadth <= (1.0 - config.breadth_entry)
-                and mean_ret >= config.basket_return_floor
-            ):
-                basket_state = 1.0
-                basket_entry = basket_close
-                hold_bars = 0
-        elif abs(breadth - 0.5) <= abs(config.breadth_exit - 0.5):
+        ret = (latest / base) - 1.0
+        basket_returns.append(float(ret))
+        breadth_values.append(1.0 if ret > 0.0 else 0.0)
+    if not breadth_values:
+        return _BreadthThrustStepInput(
+            basket_close=basket_close,
+            breadth=float("nan"),
+            mean_ret=float("nan"),
+        )
+    return _BreadthThrustStepInput(
+        basket_close=basket_close,
+        breadth=float(np.mean(np.asarray(breadth_values, dtype=float))),
+        mean_ret=float(np.mean(np.asarray(basket_returns, dtype=float))),
+    )
+
+
+def _breadth_thrust_step(
+    *,
+    idx: int,
+    basket_state: float,
+    basket_entry: float,
+    hold_bars: int,
+    step: _BreadthThrustStepInput,
+    config: _BreadthThrustFailureReversalConfig,
+) -> tuple[float, float, int, float]:
+    if basket_state != 0.0 and np.isfinite(basket_entry):
+        next_hold_bars = hold_bars + 1
+        stop_long = (
+            basket_state > 0.0
+            and step.basket_close <= float(basket_entry) * (1.0 - config.stop_loss_pct)
+        )
+        stop_short = (
+            basket_state < 0.0
+            and step.basket_close >= float(basket_entry) * (1.0 + config.stop_loss_pct)
+        )
+        timeout_hit = next_hold_bars >= config.max_hold_bars
+        if stop_long or stop_short or timeout_hit:
             basket_state = 0.0
             basket_entry = np.nan
             hold_bars = 0
-        basket_position[idx] = basket_state
+        else:
+            hold_bars = next_hold_bars
 
-    return basket_position
+    if idx < config.momentum_lookback or not (
+        np.isfinite(step.breadth) and np.isfinite(step.mean_ret)
+    ):
+        return basket_state, basket_entry, hold_bars, basket_state
+
+    if basket_state == 0.0:
+        if (
+            config.allow_short
+            and step.breadth >= config.breadth_entry
+            and step.mean_ret <= -config.basket_return_floor
+        ):
+            return -1.0, step.basket_close, 0, -1.0
+        if (
+            step.breadth <= (1.0 - config.breadth_entry)
+            and step.mean_ret >= config.basket_return_floor
+        ):
+            return 1.0, step.basket_close, 0, 1.0
+    elif abs(step.breadth - 0.5) <= abs(config.breadth_exit - 0.5):
+        return 0.0, np.nan, 0, 0.0
+
+    return basket_state, basket_entry, hold_bars, basket_state
 
 
 @dataclass(frozen=True, slots=True)

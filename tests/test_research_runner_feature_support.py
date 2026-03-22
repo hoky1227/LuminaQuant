@@ -520,6 +520,31 @@ def test_breadth_thrust_failure_reversal_strategy_signal_produces_exposure():
     assert np.any(turnover > 0.0)
 
 
+def test_breadth_thrust_failure_reversal_position_series_holds_state_when_breadth_is_missing():
+    close_map_np = {
+        "S0/USDT": np.asarray([100.0, 100.0, 101.0, np.nan], dtype=float),
+        "S1/USDT": np.asarray([100.0, 100.0, 101.0, np.nan], dtype=float),
+        "S2/USDT": np.asarray([100.0, 100.0, 101.0, np.nan], dtype=float),
+        "S3/USDT": np.asarray([100.0, 100.0, 101.0, np.nan], dtype=float),
+        "S4/USDT": np.asarray([100.0, 100.0, 70.0, np.nan], dtype=float),
+    }
+
+    position = research_runner._breadth_thrust_failure_reversal_position_series(
+        close_map_np=close_map_np,
+        config=research_runner._BreadthThrustFailureReversalConfig(
+            momentum_lookback=2,
+            breadth_entry=0.8,
+            breadth_exit=0.6,
+            basket_return_floor=0.02,
+            max_hold_bars=8,
+            stop_loss_pct=0.05,
+            allow_short=True,
+        ),
+    )
+
+    assert np.array_equal(position, np.asarray([0.0, 0.0, -1.0, -1.0], dtype=float))
+
+
 def test_perp_carry_preserves_default_config(monkeypatch):
     captured: dict[str, float | int | bool] = {}
 
