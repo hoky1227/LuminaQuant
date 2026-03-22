@@ -70,6 +70,13 @@ from apps.dashboard.services.report_snapshot import (
     save_report_snapshot as _save_report_snapshot_data,
     serialize_balance_equity_frame as _serialize_balance_equity_frame_data,
 )
+from apps.dashboard.services.risk_dashboard import (
+    build_heartbeat_interval_figure as _build_heartbeat_interval_figure_data,
+    build_order_state_figure as _build_order_state_figure_data,
+    build_risk_reason_figure as _build_risk_reason_figure_data,
+    build_strategy_process_trace_frame as _build_strategy_process_trace_frame_data,
+    prepare_heartbeat_interval_frame as _prepare_heartbeat_interval_frame_data,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -4015,73 +4022,36 @@ def render_main_dashboard() -> None:
 
     with tab_risk:
         if not df_risk.empty:
-            reason_counts = df_risk["reason"].fillna("UNKNOWN").astype(str).value_counts()
-            fig_risk = go.Figure(
-                data=[go.Bar(x=reason_counts.index.tolist(), y=reason_counts.values.tolist())]
+            st.plotly_chart(
+                _build_risk_reason_figure_data(df_risk),
+                use_container_width=True,
             )
-            fig_risk.update_layout(title="Risk Event Counts by Reason", template="plotly_white")
-            st.plotly_chart(fig_risk, use_container_width=True)
         else:
             st.info("No risk events recorded for selected run/data source.")
 
         if not df_hb.empty:
-            hb = df_hb.copy()
-            hb = hb.sort_values("heartbeat_time")
-            hb["delta_sec"] = hb["heartbeat_time"].diff().dt.total_seconds()
-            avg_hb = float(hb["delta_sec"].dropna().mean()) if hb["delta_sec"].notna().any() else 0.0
+            hb, avg_hb = _prepare_heartbeat_interval_frame_data(df_hb)
             st.metric("Avg Heartbeat Interval (sec)", f"{avg_hb:.2f}")
-
-            fig_hb = go.Figure()
-            fig_hb.add_trace(
-                go.Scatter(
-                    x=hb["heartbeat_time"],
-                    y=hb["delta_sec"],
-                    mode="lines+markers",
-                    name="Heartbeat interval",
-                )
+            st.plotly_chart(
+                _build_heartbeat_interval_figure_data(hb),
+                use_container_width=True,
             )
-            fig_hb.update_layout(title="Heartbeat Interval Trend", template="plotly_white")
-            st.plotly_chart(fig_hb, use_container_width=True)
         else:
             st.info("No heartbeats recorded for selected run/data source.")
 
         if not df_order_states.empty:
-            state_counts = df_order_states["state"].fillna("UNKNOWN").astype(str).value_counts()
-            fig_state = go.Figure(
-                data=[go.Bar(x=state_counts.index.tolist(), y=state_counts.values.tolist())]
+            st.plotly_chart(
+                _build_order_state_figure_data(df_order_states),
+                use_container_width=True,
             )
-            fig_state.update_layout(title="Order State Event Counts", template="plotly_white")
-            st.plotly_chart(fig_state, use_container_width=True)
 
-        trace_parts = []
-        if not df_orders.empty and "created_at" in df_orders.columns:
-            t = df_orders[["created_at", "symbol", "side", "status"]].copy()
-            t = t.rename(columns={"created_at": "event_time", "side": "event_detail"})
-            t["event_type"] = "order"
-            trace_parts.append(t)
-        if not df_risk.empty and "event_time" in df_risk.columns:
-            t = df_risk[["event_time", "reason"]].copy()
-            t["symbol"] = ""
-            t["status"] = ""
-            t = t.rename(columns={"reason": "event_detail"})
-            t["event_type"] = "risk"
-            trace_parts.append(t)
-        if not df_hb.empty and "heartbeat_time" in df_hb.columns:
-            t = df_hb[["heartbeat_time", "status"]].copy()
-            t = t.rename(columns={"heartbeat_time": "event_time"})
-            t["symbol"] = ""
-            t["event_detail"] = "heartbeat"
-            t["event_type"] = "heartbeat"
-            trace_parts.append(t)
-        if not df_order_states.empty and "event_time" in df_order_states.columns:
-            t = df_order_states[["event_time", "symbol", "state", "message"]].copy()
-            t = t.rename(columns={"state": "status", "message": "event_detail"})
-            t["event_type"] = "order_state"
-            trace_parts.append(t)
-
-        if trace_parts:
-            trace_df = pd.concat(trace_parts, ignore_index=True)
-            trace_df = trace_df.sort_values("event_time", ascending=False).head(500)
+        trace_df = _build_strategy_process_trace_frame_data(
+            df_orders=df_orders,
+            df_risk=df_risk,
+            df_hb=df_hb,
+            df_order_states=df_order_states,
+        )
+        if not trace_df.empty:
             st.subheader("Strategy Process Trace")
             st.dataframe(trace_df, use_container_width=True)
 
