@@ -331,6 +331,40 @@ def test_load_feature_cache_uses_runtime_market_data_settings(
     assert captured["symbol"] == "ETH/USDT"
 
 
+def test_load_feature_cache_normalizes_feature_frames(monkeypatch):
+    lead_field = research_runner._FEATURE_POINT_COLUMNS[0]
+    trailing_field = research_runner._FEATURE_POINT_COLUMNS[-1]
+
+    monkeypatch.setattr(
+        research_runner,
+        "load_futures_feature_points_from_db",
+        lambda *args, **kwargs: pl.DataFrame(
+            {
+                "timestamp_ms": [1_000, 1_000, 2_000],
+                lead_field: [0.1, 0.2, None],
+            }
+        ),
+    )
+
+    cache = research_runner._load_feature_cache(
+        symbols=["ETH/USDT"],
+        market_data_settings={
+            "symbols": ["ETH/USDT"],
+            "market_data_parquet_path": "unused",
+            "market_data_exchange": "binance",
+        },
+    )
+
+    frame = cache["ETH/USDT"]
+    assert frame["timestamp_ms"].to_list() == [1_000, 2_000]
+    assert frame["datetime"].to_list() == [
+        datetime(1970, 1, 1, 0, 0, 1),
+        datetime(1970, 1, 1, 0, 0, 2),
+    ]
+    assert frame[lead_field].to_list() == [0.2, 0.2]
+    assert trailing_field in frame.columns
+
+
 def test_current_research_market_data_settings_accepts_explicit_runtime_mapping():
     settings = research_runner._current_research_market_data_settings(
         {

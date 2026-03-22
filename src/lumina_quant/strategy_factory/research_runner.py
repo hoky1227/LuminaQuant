@@ -377,49 +377,66 @@ def _load_feature_cache(
     cache: dict[str, pl.DataFrame] = {}
 
     for symbol in canonicalize_symbol_list(symbols):
-        try:
-            frame = load_futures_feature_points_from_db(
-                db_path,
-                exchange=exchange,
-                symbol=symbol,
-                start_date=start_date,
-                end_date=end_date,
-            )
-        except (FileNotFoundError, OSError, RuntimeError, ValueError):
-            frame = pl.DataFrame()
-
-        if frame.is_empty() or "timestamp_ms" not in frame.columns:
-            cache[symbol] = pl.DataFrame()
-            continue
-
-        cleaned = frame.filter(pl.col("timestamp_ms").is_not_null()).with_columns(
-            pl.col("timestamp_ms").cast(pl.Int64)
+        frame = _load_feature_frame(
+            db_path=db_path,
+            exchange=exchange,
+            symbol=symbol,
+            start_date=start_date,
+            end_date=end_date,
         )
-        if cleaned.is_empty():
-            cache[symbol] = pl.DataFrame()
-            continue
-
-        for field in _FEATURE_POINT_COLUMNS:
-            if field not in cleaned.columns:
-                cleaned = cleaned.with_columns(pl.lit(None, dtype=pl.Float64).alias(field))
-
-        cleaned = cleaned.select(["timestamp_ms", *_FEATURE_POINT_COLUMNS]).sort("timestamp_ms").unique(
-            subset=["timestamp_ms"],
-            keep="last",
-        )
-        cleaned = cleaned.with_columns(
-            [
-                pl.col("timestamp_ms").cast(pl.Int64),
-                pl.from_epoch("timestamp_ms", time_unit="ms").alias("datetime"),
-                *[
-                    pl.col(field).cast(pl.Float64).fill_null(strategy="forward").alias(field)
-                    for field in _FEATURE_POINT_COLUMNS
-                ],
-            ]
-        )
-        cache[symbol] = cleaned
+        cache[symbol] = _normalize_feature_frame(frame)
 
     return cache
+
+
+def _load_feature_frame(
+    *,
+    db_path: str,
+    exchange: str,
+    symbol: str,
+    start_date: Any,
+    end_date: Any,
+) -> pl.DataFrame:
+    try:
+        return load_futures_feature_points_from_db(
+            db_path,
+            exchange=exchange,
+            symbol=symbol,
+            start_date=start_date,
+            end_date=end_date,
+        )
+    except (FileNotFoundError, OSError, RuntimeError, ValueError):
+        return pl.DataFrame()
+
+
+def _normalize_feature_frame(frame: pl.DataFrame) -> pl.DataFrame:
+    if frame.is_empty() or "timestamp_ms" not in frame.columns:
+        return pl.DataFrame()
+
+    cleaned = frame.filter(pl.col("timestamp_ms").is_not_null()).with_columns(
+        pl.col("timestamp_ms").cast(pl.Int64)
+    )
+    if cleaned.is_empty():
+        return pl.DataFrame()
+
+    for field in _FEATURE_POINT_COLUMNS:
+        if field not in cleaned.columns:
+            cleaned = cleaned.with_columns(pl.lit(None, dtype=pl.Float64).alias(field))
+
+    cleaned = cleaned.select(["timestamp_ms", *_FEATURE_POINT_COLUMNS]).sort("timestamp_ms").unique(
+        subset=["timestamp_ms"],
+        keep="last",
+    )
+    return cleaned.with_columns(
+        [
+            pl.col("timestamp_ms").cast(pl.Int64),
+            pl.from_epoch("timestamp_ms", time_unit="ms").alias("datetime"),
+            *[
+                pl.col(field).cast(pl.Float64).fill_null(strategy="forward").alias(field)
+                for field in _FEATURE_POINT_COLUMNS
+            ],
+        ]
+    )
 
 
 def _crowding_support_series(
