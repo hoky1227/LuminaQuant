@@ -1049,6 +1049,17 @@ def test_funding_liquidation_crowding_position_series_exits_long_and_short_posit
     assert np.array_equal(short_position[[0, 2, 3]], np.zeros(3, dtype=float))
 
 
+def test_funding_liquidation_crowding_position_series_resumes_after_nonfinite_close():
+    position = research_runner._funding_liquidation_crowding_position_series(
+        close=np.asarray([100.0, 98.0, np.nan, 99.0], dtype=float),
+        score=np.asarray([-0.9, -0.9, -0.9, -0.9], dtype=float),
+        liquidation_z=np.asarray([-1.2, -1.2, -1.2, -1.2], dtype=float),
+        config=_funding_liquidation_crowding_config(),
+    )
+
+    assert np.array_equal(position, np.asarray([0.0, 1.0, 1.0, 1.0], dtype=float))
+
+
 def test_liquidity_shock_reversion_strategy_signal_produces_exposure():
     length = 240
     close = np.linspace(100.0, 108.0, length, dtype=float)

@@ -4438,6 +4438,14 @@ class _FundingLiquidationCrowdingFadeConfig:
     allow_short: bool
 
 
+@dataclass(frozen=True, slots=True)
+class _FundingLiquidationCrowdingStepInput:
+    close_i: float
+    score_i: float
+    liq_i: float
+    ret_i: float
+
+
 def _resolve_funding_liquidation_crowding_fade_config(
     params: Mapping[str, Any],
 ) -> _FundingLiquidationCrowdingFadeConfig:
@@ -4467,43 +4475,72 @@ def _funding_liquidation_crowding_position_series(
     bars_held = 0
 
     for idx in range(close.size):
-        close_i = float(close[idx])
-        if not np.isfinite(close_i):
-            position[idx] = float(mode)
-            continue
-
-        score_i = float(score[idx]) if np.isfinite(score[idx]) else np.nan
-        liq_i = float(liquidation_z[idx]) if np.isfinite(liquidation_z[idx]) else np.nan
-        ret_i = float(ret[idx]) if np.isfinite(ret[idx]) else 0.0
-
-        if mode != 0:
-            bars_held += 1
-            if _funding_liquidation_crowding_should_exit(
-                mode=mode,
-                score_i=score_i,
-                close_i=close_i,
-                entry_price=entry_price,
-                bars_held=bars_held,
-                config=config,
-            ):
-                mode = 0
-                entry_price = None
-                bars_held = 0
-            position[idx] = float(mode)
-            continue
-
-        next_mode = _funding_liquidation_crowding_entry_mode(
-            score_i=score_i,
-            liq_i=liq_i,
-            ret_i=ret_i,
+        step = _funding_liquidation_crowding_step_input(
+            idx=idx,
+            close=close,
+            score=score,
+            liquidation_z=liquidation_z,
+            returns=ret,
+        )
+        mode, entry_price, bars_held, position[idx] = _funding_liquidation_crowding_step(
+            mode=mode,
+            entry_price=entry_price,
+            bars_held=bars_held,
+            step=step,
             config=config,
         )
-        if next_mode != 0:
-            mode = next_mode
-            entry_price = close_i
-            bars_held = 0
-        position[idx] = float(mode)
     return position
+
+
+def _funding_liquidation_crowding_step_input(
+    *,
+    idx: int,
+    close: np.ndarray,
+    score: np.ndarray,
+    liquidation_z: np.ndarray,
+    returns: np.ndarray,
+) -> _FundingLiquidationCrowdingStepInput:
+    return _FundingLiquidationCrowdingStepInput(
+        close_i=float(close[idx]),
+        score_i=float(score[idx]) if np.isfinite(score[idx]) else np.nan,
+        liq_i=float(liquidation_z[idx]) if np.isfinite(liquidation_z[idx]) else np.nan,
+        ret_i=float(returns[idx]) if np.isfinite(returns[idx]) else 0.0,
+    )
+
+
+def _funding_liquidation_crowding_step(
+    *,
+    mode: int,
+    entry_price: float | None,
+    bars_held: int,
+    step: _FundingLiquidationCrowdingStepInput,
+    config: _FundingLiquidationCrowdingFadeConfig,
+) -> tuple[int, float | None, int, float]:
+    if not np.isfinite(step.close_i):
+        return mode, entry_price, bars_held, float(mode)
+
+    if mode != 0:
+        next_bars_held = bars_held + 1
+        if _funding_liquidation_crowding_should_exit(
+            mode=mode,
+            score_i=step.score_i,
+            close_i=step.close_i,
+            entry_price=entry_price,
+            bars_held=next_bars_held,
+            config=config,
+        ):
+            return 0, None, 0, 0.0
+        return mode, entry_price, next_bars_held, float(mode)
+
+    next_mode = _funding_liquidation_crowding_entry_mode(
+        score_i=step.score_i,
+        liq_i=step.liq_i,
+        ret_i=step.ret_i,
+        config=config,
+    )
+    if next_mode != 0:
+        return next_mode, step.close_i, 0, float(next_mode)
+    return mode, entry_price, bars_held, 0.0
 
 
 def _funding_liquidation_crowding_should_exit(
