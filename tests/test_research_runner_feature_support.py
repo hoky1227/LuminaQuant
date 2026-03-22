@@ -1229,6 +1229,23 @@ def test_basis_snapback_reversion_preserves_default_window(monkeypatch):
     assert windows == [96]
 
 
+def test_basis_snapback_reversion_position_series_holds_through_missing_basis_signal():
+    position = research_runner._basis_snapback_reversion_position_series(
+        close=np.asarray([100.0, 101.0, 102.0], dtype=float),
+        basis_z=np.asarray([-2.0, np.nan, -2.0], dtype=float),
+        config=research_runner._BasisSnapbackReversionConfig(
+            window=48,
+            entry_z=1.8,
+            exit_z=0.4,
+            max_hold_bars=12,
+            stop_loss_pct=0.02,
+            allow_short=True,
+        ),
+    )
+
+    assert np.array_equal(position, np.asarray([1.0, 1.0, 1.0], dtype=float))
+
+
 def test_vol_of_vol_exhaustion_fade_strategy_signal_produces_exposure(monkeypatch):
     def _stub_rolling_realized_vol(values, window):
         realized = np.zeros(np.asarray(values, dtype=float).shape, dtype=float)

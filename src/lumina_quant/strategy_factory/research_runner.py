@@ -2010,6 +2010,12 @@ class _BasisSnapbackReversionConfig:
     allow_short: bool
 
 
+@dataclass(frozen=True, slots=True)
+class _BasisSnapbackStepInput:
+    close_i: float
+    z_i: float
+
+
 def _resolve_basis_snapback_reversion_config(
     params: Mapping[str, Any],
 ) -> _BasisSnapbackReversionConfig:
@@ -2035,57 +2041,80 @@ def _basis_snapback_reversion_position_series(
     bars_held = 0
 
     for idx in range(close.size):
-        close_i = float(close[idx])
-        z_i = float(basis_z[idx]) if np.isfinite(basis_z[idx]) else np.nan
-        if not np.isfinite(close_i):
-            position[idx] = float(mode)
-            continue
-        if mode == 1:
-            bars_held += 1
-            should_exit = (
-                (np.isfinite(z_i) and z_i >= -config.exit_z)
-                or (bars_held >= config.max_hold_bars)
-                or (
-                    entry_price is not None
-                    and close_i <= float(entry_price) * (1.0 - config.stop_loss_pct)
-                )
-            )
-            if should_exit:
-                mode = 0
-                entry_price = None
-                bars_held = 0
-            position[idx] = float(mode)
-            continue
-        if mode == -1:
-            bars_held += 1
-            should_exit = (
-                (np.isfinite(z_i) and z_i <= config.exit_z)
-                or (bars_held >= config.max_hold_bars)
-                or (
-                    entry_price is not None
-                    and close_i >= float(entry_price) * (1.0 + config.stop_loss_pct)
-                )
-            )
-            if should_exit:
-                mode = 0
-                entry_price = None
-                bars_held = 0
-            position[idx] = float(mode)
-            continue
-        if not np.isfinite(z_i):
-            position[idx] = 0.0
-            continue
-        if z_i <= -config.entry_z:
-            mode = 1
-            entry_price = close_i
-            bars_held = 0
-        elif config.allow_short and z_i >= config.entry_z:
-            mode = -1
-            entry_price = close_i
-            bars_held = 0
-        position[idx] = float(mode)
+        step = _basis_snapback_step_input(
+            idx=idx,
+            close=close,
+            basis_z=basis_z,
+        )
+        mode, entry_price, bars_held, position[idx] = _basis_snapback_step(
+            mode=mode,
+            entry_price=entry_price,
+            bars_held=bars_held,
+            step=step,
+            config=config,
+        )
 
     return position
+
+
+def _basis_snapback_step_input(
+    *,
+    idx: int,
+    close: np.ndarray,
+    basis_z: np.ndarray,
+) -> _BasisSnapbackStepInput:
+    return _BasisSnapbackStepInput(
+        close_i=float(close[idx]),
+        z_i=float(basis_z[idx]) if np.isfinite(basis_z[idx]) else float("nan"),
+    )
+
+
+def _basis_snapback_step(
+    *,
+    mode: int,
+    entry_price: float | None,
+    bars_held: int,
+    step: _BasisSnapbackStepInput,
+    config: _BasisSnapbackReversionConfig,
+) -> tuple[int, float | None, int, float]:
+    if not np.isfinite(step.close_i):
+        return mode, entry_price, bars_held, float(mode)
+
+    if mode == 1:
+        next_bars_held = bars_held + 1
+        should_exit = (
+            (np.isfinite(step.z_i) and step.z_i >= -config.exit_z)
+            or (next_bars_held >= config.max_hold_bars)
+            or (
+                entry_price is not None
+                and step.close_i <= float(entry_price) * (1.0 - config.stop_loss_pct)
+            )
+        )
+        if should_exit:
+            return 0, None, 0, 0.0
+        return 1, entry_price, next_bars_held, 1.0
+
+    if mode == -1:
+        next_bars_held = bars_held + 1
+        should_exit = (
+            (np.isfinite(step.z_i) and step.z_i <= config.exit_z)
+            or (next_bars_held >= config.max_hold_bars)
+            or (
+                entry_price is not None
+                and step.close_i >= float(entry_price) * (1.0 + config.stop_loss_pct)
+            )
+        )
+        if should_exit:
+            return 0, None, 0, 0.0
+        return -1, entry_price, next_bars_held, -1.0
+
+    if not np.isfinite(step.z_i):
+        return 0, entry_price, bars_held, 0.0
+    if step.z_i <= -config.entry_z:
+        return 1, step.close_i, 0, 1.0
+    if config.allow_short and step.z_i >= config.entry_z:
+        return -1, step.close_i, 0, -1.0
+    return 0, entry_price, bars_held, 0.0
 
 
 def _apply_basis_snapback_reversion_strategy(
