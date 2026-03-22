@@ -356,35 +356,22 @@ def test_perp_carry_preserves_default_config(monkeypatch):
 
     def _stub_perp_carry_position_series(
         *,
-        close,
-        funding_rate,
-        open_interest,
-        liquidation_long_notional,
-        liquidation_short_notional,
-        mark_price,
-        index_price,
-        window,
-        mild_funding,
-        extreme_funding,
-        entry_threshold,
-        exit_threshold,
-        stop_loss_pct,
-        max_hold_bars,
-        allow_short,
+        support_inputs,
+        config,
     ):
         captured.update(
             {
-                "window": int(window),
-                "mild_funding": float(mild_funding),
-                "extreme_funding": float(extreme_funding),
-                "entry_threshold": float(entry_threshold),
-                "exit_threshold": float(exit_threshold),
-                "stop_loss_pct": float(stop_loss_pct),
-                "max_hold_bars": int(max_hold_bars),
-                "allow_short": bool(allow_short),
+                "window": int(config.window),
+                "mild_funding": float(config.mild_funding),
+                "extreme_funding": float(config.extreme_funding),
+                "entry_threshold": float(config.entry_threshold),
+                "exit_threshold": float(config.exit_threshold),
+                "stop_loss_pct": float(config.stop_loss_pct),
+                "max_hold_bars": int(config.max_hold_bars),
+                "allow_short": bool(config.allow_short),
             }
         )
-        shape = np.asarray(close, dtype=float).shape
+        shape = np.asarray(support_inputs.close, dtype=float).shape
         return np.zeros(shape, dtype=float), {"crowding_score": np.zeros(shape, dtype=float)}
 
     monkeypatch.setattr(research_runner, "_resolve_feature_points_path", lambda: Path(__file__))
@@ -427,6 +414,112 @@ def test_perp_carry_preserves_default_config(monkeypatch):
         "max_hold_bars": 72,
         "allow_short": True,
     }
+
+
+def test_perp_carry_position_series_shorts_on_crowded_positive_funding(monkeypatch):
+    support = {
+        "crowding_score": np.asarray([0.45, 0.45, 0.0], dtype=float),
+        "oi_delta_z": np.asarray([1.2, 1.2, 0.0], dtype=float),
+    }
+    monkeypatch.setattr(research_runner, "_crowding_support_series", lambda **kwargs: support)
+
+    position, returned_support = research_runner._perp_carry_position_series(
+        support_inputs=research_runner._CrowdingSupportInputs(
+            close=np.asarray([100.0, 101.0, 101.0], dtype=float),
+            funding_rate=np.asarray([0.0025, 0.0025, 0.0], dtype=float),
+            open_interest=np.asarray([1_000_000.0, 1_000_000.0, 1_000_000.0], dtype=float),
+            liquidation_long_notional=np.asarray([100_000.0, 100_000.0, 100_000.0], dtype=float),
+            liquidation_short_notional=np.asarray([20_000.0, 20_000.0, 20_000.0], dtype=float),
+            mark_price=None,
+            index_price=None,
+        ),
+        config=research_runner._PerpCrowdingCarryConfig(
+            window=24,
+            mild_funding=0.0002,
+            extreme_funding=0.0012,
+            entry_threshold=0.3,
+            exit_threshold=0.1,
+            stop_loss_pct=0.02,
+            max_hold_bars=8,
+            allow_short=True,
+        ),
+    )
+
+    assert np.array_equal(position, np.asarray([-1.0, 0.0, 0.0], dtype=float))
+    assert returned_support is support
+
+
+def test_perp_carry_position_series_respects_allow_short_flag(monkeypatch):
+    monkeypatch.setattr(
+        research_runner,
+        "_crowding_support_series",
+        lambda **kwargs: {
+            "crowding_score": np.asarray([0.45, 0.45, 0.0], dtype=float),
+            "oi_delta_z": np.asarray([1.2, 1.2, 0.0], dtype=float),
+        },
+    )
+
+    position, _ = research_runner._perp_carry_position_series(
+        support_inputs=research_runner._CrowdingSupportInputs(
+            close=np.asarray([100.0, 101.0, 101.0], dtype=float),
+            funding_rate=np.asarray([0.0025, 0.0025, 0.0], dtype=float),
+            open_interest=np.asarray([1_000_000.0, 1_000_000.0, 1_000_000.0], dtype=float),
+            liquidation_long_notional=np.asarray([100_000.0, 100_000.0, 100_000.0], dtype=float),
+            liquidation_short_notional=np.asarray([20_000.0, 20_000.0, 20_000.0], dtype=float),
+            mark_price=None,
+            index_price=None,
+        ),
+        config=research_runner._PerpCrowdingCarryConfig(
+            window=24,
+            mild_funding=0.0002,
+            extreme_funding=0.0012,
+            entry_threshold=0.3,
+            exit_threshold=0.1,
+            stop_loss_pct=0.02,
+            max_hold_bars=8,
+            allow_short=False,
+        ),
+    )
+
+    assert np.array_equal(position, np.zeros(3, dtype=float))
+
+
+def test_perp_carry_should_exit_covers_long_and_short_branches():
+    config = research_runner._PerpCrowdingCarryConfig(
+        window=24,
+        mild_funding=0.0002,
+        extreme_funding=0.0012,
+        entry_threshold=0.3,
+        exit_threshold=0.1,
+        stop_loss_pct=0.02,
+        max_hold_bars=8,
+        allow_short=True,
+    )
+
+    assert (
+        research_runner._perp_carry_should_exit(
+            mode=1,
+            score_i=0.05,
+            funding_i=0.0,
+            close_i=100.0,
+            entry_price=100.0,
+            bars_held=1,
+            config=config,
+        )
+        is True
+    )
+    assert (
+        research_runner._perp_carry_should_exit(
+            mode=-1,
+            score_i=-0.05,
+            funding_i=0.0,
+            close_i=100.0,
+            entry_price=100.0,
+            bars_held=1,
+            config=config,
+        )
+        is True
+    )
 
 
 def test_mean_reversion_std_strategy_signal_produces_exposure():

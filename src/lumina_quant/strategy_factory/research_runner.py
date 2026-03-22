@@ -2429,21 +2429,8 @@ def _apply_perp_crowding_carry_strategy(
             missing_symbols.append(symbol)
             continue
         position, support = _perp_carry_position_series(
-            close=support_inputs.close,
-            funding_rate=support_inputs.funding_rate,
-            open_interest=support_inputs.open_interest,
-            liquidation_long_notional=support_inputs.liquidation_long_notional,
-            liquidation_short_notional=support_inputs.liquidation_short_notional,
-            mark_price=support_inputs.mark_price,
-            index_price=support_inputs.index_price,
-            window=config.window,
-            mild_funding=config.mild_funding,
-            extreme_funding=config.extreme_funding,
-            entry_threshold=config.entry_threshold,
-            exit_threshold=config.exit_threshold,
-            stop_loss_pct=config.stop_loss_pct,
-            max_hold_bars=config.max_hold_bars,
-            allow_short=config.allow_short,
+            support_inputs=support_inputs,
+            config=config,
         )
         exposures[s_idx] = position
         _note_support_data_symbol(
@@ -2896,35 +2883,22 @@ def _align_bundles(
 
 def _perp_carry_position_series(
     *,
-    close: np.ndarray,
-    funding_rate: np.ndarray,
-    open_interest: np.ndarray,
-    liquidation_long_notional: np.ndarray,
-    liquidation_short_notional: np.ndarray,
-    mark_price: np.ndarray | None = None,
-    index_price: np.ndarray | None = None,
-    window: int,
-    mild_funding: float,
-    extreme_funding: float,
-    entry_threshold: float,
-    exit_threshold: float,
-    stop_loss_pct: float,
-    max_hold_bars: int,
-    allow_short: bool,
+    support_inputs: _CrowdingSupportInputs,
+    config: _PerpCrowdingCarryConfig,
 ) -> tuple[np.ndarray, dict[str, np.ndarray]]:
     support = _crowding_support_series(
-        funding_rate=funding_rate,
-        open_interest=open_interest,
-        mark_price=mark_price,
-        index_price=index_price,
-        liquidation_long_notional=liquidation_long_notional,
-        liquidation_short_notional=liquidation_short_notional,
-        window=window,
+        funding_rate=support_inputs.funding_rate,
+        open_interest=support_inputs.open_interest,
+        mark_price=support_inputs.mark_price,
+        index_price=support_inputs.index_price,
+        liquidation_long_notional=support_inputs.liquidation_long_notional,
+        liquidation_short_notional=support_inputs.liquidation_short_notional,
+        window=config.window,
     )
     score = np.asarray(support["crowding_score"], dtype=float)
     oi_delta_z = np.asarray(support["oi_delta_z"], dtype=float)
-    funding = np.asarray(funding_rate, dtype=float)
-    close_arr = np.asarray(close, dtype=float)
+    funding = support_inputs.funding_rate
+    close_arr = support_inputs.close
 
     position = np.zeros(close_arr.shape, dtype=float)
     mode = 0
@@ -2940,85 +2914,108 @@ def _perp_carry_position_series(
             position[idx] = float(mode)
             continue
 
-        if mode == 1:
+        if mode != 0:
             bars_held += 1
-            should_exit = (
-                (np.isfinite(score_i) and float(score_i) <= float(exit_threshold))
-                or (np.isfinite(funding_i) and float(funding_i) >= float(extreme_funding))
-                or (bars_held >= int(max_hold_bars))
-                or (
-                    entry_price is not None
-                    and close_i <= float(entry_price) * (1.0 - float(stop_loss_pct))
-                )
-            )
-            if should_exit:
+            if _perp_carry_should_exit(
+                mode=mode,
+                score_i=score_i,
+                funding_i=funding_i,
+                close_i=close_i,
+                entry_price=entry_price,
+                bars_held=bars_held,
+                config=config,
+            ):
                 mode = 0
                 entry_price = None
                 bars_held = 0
             position[idx] = float(mode)
             continue
 
-        if mode == -1:
-            bars_held += 1
-            should_exit = (
-                (np.isfinite(score_i) and float(score_i) >= -float(exit_threshold))
-                or (np.isfinite(funding_i) and float(funding_i) <= -float(extreme_funding))
-                or (bars_held >= int(max_hold_bars))
-                or (
-                    entry_price is not None
-                    and close_i >= float(entry_price) * (1.0 + float(stop_loss_pct))
-                )
-            )
-            if should_exit:
-                mode = 0
-                entry_price = None
-                bars_held = 0
-            position[idx] = float(mode)
-            continue
-
-        if not (np.isfinite(funding_i) and np.isfinite(score_i) and np.isfinite(oi_delta_z_i)):
-            position[idx] = 0.0
-            continue
-
-        carry_long = (
-            (funding_i > 0.0)
-            and (funding_i <= float(mild_funding))
-            and (score_i >= float(entry_threshold))
+        next_mode = _perp_carry_entry_mode(
+            funding_i=funding_i,
+            score_i=score_i,
+            oi_delta_z_i=oi_delta_z_i,
+            config=config,
         )
-        crowded_long = (
-            (funding_i >= float(extreme_funding))
-            and (oi_delta_z_i > 0.0)
-            and (score_i >= float(entry_threshold))
-        )
-        carry_short = (
-            (funding_i < 0.0)
-            and (abs(funding_i) <= float(mild_funding))
-            and (score_i <= -float(entry_threshold))
-        )
-        crowded_short = (
-            (funding_i <= -float(extreme_funding))
-            and (oi_delta_z_i < 0.0)
-            and (score_i <= -float(entry_threshold))
-        )
-
-        if carry_long and not crowded_long:
-            mode = 1
-            entry_price = float(close_i)
-            bars_held = 0
-        elif bool(allow_short) and (
-            crowded_long or (carry_short and not crowded_short)
-        ):
-            mode = -1
-            entry_price = float(close_i)
-            bars_held = 0
-        elif crowded_short:
-            mode = 1
+        if next_mode != 0:
+            mode = next_mode
             entry_price = float(close_i)
             bars_held = 0
 
         position[idx] = float(mode)
 
     return position, support
+
+
+def _perp_carry_should_exit(
+    *,
+    mode: int,
+    score_i: float,
+    funding_i: float,
+    close_i: float,
+    entry_price: float | None,
+    bars_held: int,
+    config: _PerpCrowdingCarryConfig,
+) -> bool:
+    if mode == 1:
+        return (
+            (np.isfinite(score_i) and float(score_i) <= config.exit_threshold)
+            or (np.isfinite(funding_i) and float(funding_i) >= config.extreme_funding)
+            or (bars_held >= config.max_hold_bars)
+            or (
+                entry_price is not None
+                and close_i <= float(entry_price) * (1.0 - config.stop_loss_pct)
+            )
+        )
+    return (
+        (np.isfinite(score_i) and float(score_i) >= -config.exit_threshold)
+        or (np.isfinite(funding_i) and float(funding_i) <= -config.extreme_funding)
+        or (bars_held >= config.max_hold_bars)
+        or (
+            entry_price is not None
+            and close_i >= float(entry_price) * (1.0 + config.stop_loss_pct)
+        )
+    )
+
+
+def _perp_carry_entry_mode(
+    *,
+    funding_i: float,
+    score_i: float,
+    oi_delta_z_i: float,
+    config: _PerpCrowdingCarryConfig,
+) -> int:
+    if not (np.isfinite(funding_i) and np.isfinite(score_i) and np.isfinite(oi_delta_z_i)):
+        return 0
+
+    carry_long = (
+        (funding_i > 0.0)
+        and (funding_i <= config.mild_funding)
+        and (score_i >= config.entry_threshold)
+    )
+    crowded_long = (
+        (funding_i >= config.extreme_funding)
+        and (oi_delta_z_i > 0.0)
+        and (score_i >= config.entry_threshold)
+    )
+    carry_short = (
+        (funding_i < 0.0)
+        and (abs(funding_i) <= config.mild_funding)
+        and (score_i <= -config.entry_threshold)
+    )
+    crowded_short = (
+        (funding_i <= -config.extreme_funding)
+        and (oi_delta_z_i < 0.0)
+        and (score_i <= -config.entry_threshold)
+    )
+
+    if carry_long and not crowded_long:
+        return 1
+    if config.allow_short and (crowded_long or (carry_short and not crowded_short)):
+        return -1
+    if crowded_short:
+        return 1
+    return 0
 
 
 def _returns_from_close(closes: np.ndarray) -> np.ndarray:
