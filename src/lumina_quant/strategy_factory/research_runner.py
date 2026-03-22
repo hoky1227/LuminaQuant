@@ -2191,11 +2191,6 @@ def _apply_basis_snapback_reversion_strategy(
     exposures: np.ndarray,
     meta: dict[str, Any],
 ) -> None:
-    if not _resolve_feature_points_path().exists():
-        meta["missing_support_data"] = True
-        exposures[:] = 0.0
-        return
-
     config = _resolve_basis_snapback_reversion_config(params)
     missing_symbols: list[str] = []
     for s_idx, symbol in enumerate(symbols):
@@ -2878,11 +2873,6 @@ def _apply_perp_crowding_carry_strategy(
     exposures: np.ndarray,
     meta: dict[str, Any],
 ) -> None:
-    if not _resolve_feature_points_path().exists():
-        meta["missing_support_data"] = True
-        exposures[:] = 0.0
-        return
-
     config = _resolve_perp_crowding_carry_config(params)
     missing_symbols: list[str] = []
     for s_idx, symbol in enumerate(symbols):
@@ -4739,11 +4729,6 @@ def _apply_funding_liquidation_crowding_fade_strategy(
     exposures: np.ndarray,
     meta: dict[str, Any],
 ) -> None:
-    if not _resolve_feature_points_path().exists():
-        meta["missing_support_data"] = True
-        exposures[:] = 0.0
-        return
-
     config = _resolve_funding_liquidation_crowding_fade_config(params)
     missing_symbols: list[str] = []
     for s_idx, symbol in enumerate(symbols):
