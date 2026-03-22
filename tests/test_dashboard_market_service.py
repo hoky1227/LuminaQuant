@@ -175,3 +175,100 @@ def test_build_pair_indicator_summary_handles_missing_numeric_values(monkeypatch
         "hedge_ratio": "N/A",
         "correlation": "N/A",
     }
+
+
+def test_rsi_helpers_return_summary_and_figures(monkeypatch) -> None:
+    market_dashboard = _load_module(monkeypatch)
+    indicator_df = pd.DataFrame(
+        {
+            "datetime": pd.to_datetime(
+                [
+                    "2026-03-22T00:00:00Z",
+                    "2026-03-22T00:01:00Z",
+                    "2026-03-22T00:02:00Z",
+                ],
+                utc=True,
+            ),
+            "close": [100.0, 99.0, 101.0],
+            "rsi": [35.0, 25.0, 75.0],
+        }
+    )
+    fake_go = types.SimpleNamespace(Figure=_FakeFigure, Scatter=_FakeScatter)
+
+    summary = market_dashboard.build_rsi_summary_metrics(
+        indicator_df,
+        rsi_period=14,
+        oversold=30.0,
+        overbought=70.0,
+    )
+    rsi_figure = market_dashboard.build_rsi_figure(
+        indicator_df,
+        rsi_period=14,
+        oversold=30.0,
+        overbought=70.0,
+        go_module=fake_go,
+    )
+    signal_figure = market_dashboard.build_rsi_signal_figure(
+        indicator_df,
+        oversold=30.0,
+        overbought=70.0,
+        go_module=fake_go,
+    )
+
+    assert summary == {
+        "rsi_period": "14",
+        "latest_rsi": "75.00",
+        "rsi_zone": "Overbought",
+    }
+    assert rsi_figure.layout.title.text == "RSI (14) with Oversold/Overbought Bands"
+    assert len(rsi_figure.hlines) == 2
+    assert [trace.name for trace in signal_figure.data] == [
+        "Close",
+        "RSI Long Trigger",
+        "RSI Exit Trigger",
+    ]
+
+
+def test_moving_average_helpers_return_summary_and_trigger_figure(monkeypatch) -> None:
+    market_dashboard = _load_module(monkeypatch)
+    indicator_df = pd.DataFrame(
+        {
+            "datetime": pd.to_datetime(
+                [
+                    "2026-03-22T00:00:00Z",
+                    "2026-03-22T00:01:00Z",
+                    "2026-03-22T00:02:00Z",
+                    "2026-03-22T00:03:00Z",
+                ],
+                utc=True,
+            ),
+            "close": [100.0, 101.0, 99.0, 100.0],
+            "short_ma": [1.0, 0.0, 3.0, 0.0],
+            "long_ma": [2.0, 1.0, 2.0, 1.0],
+        }
+    )
+    fake_go = types.SimpleNamespace(Figure=_FakeFigure, Scatter=_FakeScatter)
+
+    summary = market_dashboard.build_moving_average_summary_metrics(
+        short_window=10,
+        long_window=30,
+    )
+    figure = market_dashboard.build_moving_average_figure(
+        indicator_df,
+        short_window=10,
+        long_window=30,
+        go_module=fake_go,
+    )
+
+    assert summary == {
+        "short_window": "10",
+        "long_window": "30",
+    }
+    assert figure.layout.title.text == "Moving Average Strategy Inputs and Cross Triggers"
+    assert [trace.name for trace in figure.data] == [
+        "Close",
+        "Short MA (10)",
+        "Long MA (30)",
+        "MA Long Trigger",
+        "MA Exit Trigger",
+    ]

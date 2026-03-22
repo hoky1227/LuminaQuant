@@ -81,10 +81,15 @@ from apps.dashboard.services.market_dashboard import (
     build_market_close_figure as _build_market_close_figure_data,
     build_market_summary_metrics as _build_market_summary_metrics_data,
     build_market_volume_figure as _build_market_volume_figure_data,
+    build_moving_average_figure as _build_moving_average_figure_data,
+    build_moving_average_summary_metrics as _build_moving_average_summary_metrics_data,
     build_pair_indicator_summary as _build_pair_indicator_summary_data,
     build_pair_price_inputs_figure as _build_pair_price_inputs_figure_data,
     build_pair_spread_figure as _build_pair_spread_figure_data,
     build_pair_zscore_figure as _build_pair_zscore_figure_data,
+    build_rsi_figure as _build_rsi_figure_data,
+    build_rsi_signal_figure as _build_rsi_signal_figure_data,
+    build_rsi_summary_metrics as _build_rsi_summary_metrics_data,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -4181,166 +4186,56 @@ def render_main_dashboard() -> None:
                     oversold = float(strategy_params.get("oversold", 30.0))
                     overbought = float(strategy_params.get("overbought", 70.0))
 
-                    rsi_series = pd.to_numeric(indicator_df["rsi"], errors="coerce")
-                    latest_rsi = (
-                        float(rsi_series.dropna().iloc[-1])
-                        if rsi_series.notna().any()
-                        else float("nan")
-                    )
-                    rsi_zone = "N/A"
-                    if math.isfinite(latest_rsi):
-                        if latest_rsi <= oversold:
-                            rsi_zone = "Oversold"
-                        elif latest_rsi >= overbought:
-                            rsi_zone = "Overbought"
-                        else:
-                            rsi_zone = "Neutral"
-
                     rm1, rm2, rm3 = st.columns(3)
-                    rm1.metric("RSI Period", f"{rsi_period}")
-                    rm2.metric(
-                        "Latest RSI", f"{latest_rsi:.2f}" if math.isfinite(latest_rsi) else "N/A"
+                    rsi_metrics = _build_rsi_summary_metrics_data(
+                        indicator_df,
+                        rsi_period=rsi_period,
+                        oversold=oversold,
+                        overbought=overbought,
                     )
-                    rm3.metric("RSI Zone", rsi_zone)
+                    rm1.metric("RSI Period", rsi_metrics["rsi_period"])
+                    rm2.metric("Latest RSI", rsi_metrics["latest_rsi"])
+                    rm3.metric("RSI Zone", rsi_metrics["rsi_zone"])
 
-                    fig_rsi = go.Figure()
-                    fig_rsi.add_trace(
-                        go.Scatter(
-                            x=indicator_df["datetime"],
-                            y=rsi_series,
-                            mode="lines",
-                            name="RSI",
-                            line=dict(color="#2b6cb0", width=2),
-                        )
+                    st.plotly_chart(
+                        _build_rsi_figure_data(
+                            indicator_df,
+                            rsi_period=rsi_period,
+                            oversold=oversold,
+                            overbought=overbought,
+                        ),
+                        use_container_width=True,
                     )
-                    fig_rsi.add_hline(y=oversold, line_dash="dash", line_color="#2f855a")
-                    fig_rsi.add_hline(y=overbought, line_dash="dash", line_color="#c53030")
-                    fig_rsi.update_layout(
-                        title=f"RSI ({rsi_period}) with Oversold/Overbought Bands",
-                        xaxis_title="Date",
-                        yaxis_title="RSI",
-                        yaxis=dict(range=[0, 100]),
-                        template="plotly_white",
-                        hovermode="x unified",
-                    )
-                    st.plotly_chart(fig_rsi, use_container_width=True)
 
-                    prev_rsi = rsi_series.shift(1)
-                    long_entries = indicator_df[(prev_rsi >= oversold) & (rsi_series < oversold)]
-                    exits = indicator_df[(prev_rsi <= overbought) & (rsi_series > overbought)]
-                    fig_rsi_signals = go.Figure()
-                    fig_rsi_signals.add_trace(
-                        go.Scatter(
-                            x=indicator_df["datetime"],
-                            y=indicator_df["close"],
-                            mode="lines",
-                            name="Close",
-                            line=dict(color="#4a5568", width=1.5),
-                        )
+                    st.plotly_chart(
+                        _build_rsi_signal_figure_data(
+                            indicator_df,
+                            oversold=oversold,
+                            overbought=overbought,
+                        ),
+                        use_container_width=True,
                     )
-                    if not long_entries.empty:
-                        fig_rsi_signals.add_trace(
-                            go.Scatter(
-                                x=long_entries["datetime"],
-                                y=long_entries["close"],
-                                mode="markers",
-                                name="RSI Long Trigger",
-                                marker=dict(color="#2f855a", size=8, symbol="triangle-up"),
-                            )
-                        )
-                    if not exits.empty:
-                        fig_rsi_signals.add_trace(
-                            go.Scatter(
-                                x=exits["datetime"],
-                                y=exits["close"],
-                                mode="markers",
-                                name="RSI Exit Trigger",
-                                marker=dict(color="#c53030", size=8, symbol="triangle-down"),
-                            )
-                        )
-                    fig_rsi_signals.update_layout(
-                        title="Price with RSI Trigger Points",
-                        xaxis_title="Date",
-                        yaxis_title="Price",
-                        template="plotly_white",
-                        hovermode="x unified",
-                    )
-                    st.plotly_chart(fig_rsi_signals, use_container_width=True)
 
                 elif strategy_name == "MovingAverageCrossStrategy":
                     short_window = max(2, int(strategy_params.get("short_window", 10)))
                     long_window = max(short_window + 1, int(strategy_params.get("long_window", 30)))
 
-                    ma_frame = indicator_df.copy()
-                    short_ma = pd.to_numeric(ma_frame.get("short_ma"), errors="coerce")
-                    long_ma = pd.to_numeric(ma_frame.get("long_ma"), errors="coerce")
-
                     mm1, mm2 = st.columns(2)
-                    mm1.metric("Short Window", f"{short_window}")
-                    mm2.metric("Long Window", f"{long_window}")
+                    ma_metrics = _build_moving_average_summary_metrics_data(
+                        short_window=short_window,
+                        long_window=long_window,
+                    )
+                    mm1.metric("Short Window", ma_metrics["short_window"])
+                    mm2.metric("Long Window", ma_metrics["long_window"])
 
-                    fig_ma = go.Figure()
-                    fig_ma.add_trace(
-                        go.Scatter(
-                            x=ma_frame["datetime"],
-                            y=ma_frame["close"],
-                            mode="lines",
-                            name="Close",
-                            line=dict(color="#4a5568", width=1.5),
-                        )
+                    st.plotly_chart(
+                        _build_moving_average_figure_data(
+                            indicator_df,
+                            short_window=short_window,
+                            long_window=long_window,
+                        ),
+                        use_container_width=True,
                     )
-                    fig_ma.add_trace(
-                        go.Scatter(
-                            x=ma_frame["datetime"],
-                            y=short_ma,
-                            mode="lines",
-                            name=f"Short MA ({short_window})",
-                            line=dict(color="#2b6cb0", width=1.8),
-                        )
-                    )
-                    fig_ma.add_trace(
-                        go.Scatter(
-                            x=ma_frame["datetime"],
-                            y=long_ma,
-                            mode="lines",
-                            name=f"Long MA ({long_window})",
-                            line=dict(color="#ed8936", width=1.8),
-                        )
-                    )
-
-                    prev_short = short_ma.shift(1)
-                    prev_long = long_ma.shift(1)
-                    cross_up = ma_frame[(prev_short <= prev_long) & (short_ma > long_ma)]
-                    cross_down = ma_frame[(prev_short >= prev_long) & (short_ma < long_ma)]
-                    if not cross_up.empty:
-                        fig_ma.add_trace(
-                            go.Scatter(
-                                x=cross_up["datetime"],
-                                y=cross_up["close"],
-                                mode="markers",
-                                name="MA Long Trigger",
-                                marker=dict(color="#2f855a", size=8, symbol="triangle-up"),
-                            )
-                        )
-                    if not cross_down.empty:
-                        fig_ma.add_trace(
-                            go.Scatter(
-                                x=cross_down["datetime"],
-                                y=cross_down["close"],
-                                mode="markers",
-                                name="MA Exit Trigger",
-                                marker=dict(color="#c53030", size=8, symbol="triangle-down"),
-                            )
-                        )
-
-                    fig_ma.update_layout(
-                        title="Moving Average Strategy Inputs and Cross Triggers",
-                        xaxis_title="Date",
-                        yaxis_title="Price",
-                        template="plotly_white",
-                        hovermode="x unified",
-                    )
-                    st.plotly_chart(fig_ma, use_container_width=True)
         else:
             st.info("No market_ohlcv rows available for selected symbol/timeframe/exchange.")
 
