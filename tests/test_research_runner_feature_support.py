@@ -1918,6 +1918,28 @@ def test_vwap_reversion_strategy_signal_produces_exposure():
     assert np.any(turnover > 0.0)
 
 
+def test_vwap_reversion_resumes_after_nonfinite_close(monkeypatch):
+    monkeypatch.setattr(
+        research_runner,
+        "_rolling_vwap_deviation",
+        lambda close, volume, window: np.asarray([-0.03, -0.03, -0.03], dtype=float),
+    )
+
+    position = research_runner._vwap_reversion_position_series(
+        close=np.asarray([100.0, np.nan, 101.0], dtype=float),
+        volume=np.asarray([120.0, 120.0, 120.0], dtype=float),
+        config=research_runner._VwapReversionConfig(
+            window=16,
+            entry_dev=0.02,
+            exit_dev=0.005,
+            stop_loss_pct=0.03,
+            allow_short=True,
+        ),
+    )
+
+    assert np.array_equal(position, np.asarray([1.0, 0.0, 1.0], dtype=float))
+
+
 def test_rolling_breakout_strategy_signal_produces_exposure():
     length = 160
     close = np.linspace(100.0, 112.0, length, dtype=float)

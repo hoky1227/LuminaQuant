@@ -1603,6 +1603,12 @@ class _VwapReversionConfig:
     allow_short: bool
 
 
+@dataclass(frozen=True, slots=True)
+class _VwapReversionStepInput:
+    close_i: float
+    deviation_i: float
+
+
 def _resolve_vwap_reversion_config(params: Mapping[str, Any]) -> _VwapReversionConfig:
     return _VwapReversionConfig(
         window=max(8, int(params.get("window", 64))),
@@ -1628,40 +1634,63 @@ def _vwap_reversion_position_series(
     entry_price: float | None = None
 
     for idx in range(close.size):
-        close_i = float(close[idx])
-        deviation_i = float(deviation[idx])
-        if not np.isfinite(close_i):
-            continue
-        if mode == 1 and entry_price is not None:
-            stop_hit = close_i <= entry_price * (1.0 - config.stop_loss_pct)
-            revert_hit = deviation_i >= -config.exit_dev
-            if stop_hit or revert_hit:
-                mode = 0
-                entry_price = None
-            else:
-                position[idx] = 1.0
-                continue
-        elif mode == -1 and entry_price is not None:
-            stop_hit = close_i >= entry_price * (1.0 + config.stop_loss_pct)
-            revert_hit = deviation_i <= config.exit_dev
-            if stop_hit or revert_hit:
-                mode = 0
-                entry_price = None
-            else:
-                position[idx] = -1.0
-                continue
-
-        if mode == 0:
-            if deviation_i <= -config.entry_dev:
-                mode = 1
-                entry_price = close_i
-                position[idx] = 1.0
-            elif config.allow_short and deviation_i >= config.entry_dev:
-                mode = -1
-                entry_price = close_i
-                position[idx] = -1.0
+        step = _vwap_reversion_step_input(
+            idx=idx,
+            close=close,
+            deviation=deviation,
+        )
+        mode, entry_price, position[idx] = _vwap_reversion_step(
+            mode=mode,
+            entry_price=entry_price,
+            step=step,
+            config=config,
+        )
 
     return position
+
+
+def _vwap_reversion_step_input(
+    *,
+    idx: int,
+    close: np.ndarray,
+    deviation: np.ndarray,
+) -> _VwapReversionStepInput:
+    return _VwapReversionStepInput(
+        close_i=float(close[idx]),
+        deviation_i=float(deviation[idx]),
+    )
+
+
+def _vwap_reversion_step(
+    *,
+    mode: int,
+    entry_price: float | None,
+    step: _VwapReversionStepInput,
+    config: _VwapReversionConfig,
+) -> tuple[int, float | None, float]:
+    if not np.isfinite(step.close_i):
+        return mode, entry_price, 0.0
+
+    if mode == 1 and entry_price is not None:
+        stop_hit = step.close_i <= entry_price * (1.0 - config.stop_loss_pct)
+        revert_hit = step.deviation_i >= -config.exit_dev
+        if stop_hit or revert_hit:
+            return 0, None, 0.0
+        return 1, entry_price, 1.0
+
+    if mode == -1 and entry_price is not None:
+        stop_hit = step.close_i >= entry_price * (1.0 + config.stop_loss_pct)
+        revert_hit = step.deviation_i <= config.exit_dev
+        if stop_hit or revert_hit:
+            return 0, None, 0.0
+        return -1, entry_price, -1.0
+
+    if mode == 0:
+        if step.deviation_i <= -config.entry_dev:
+            return 1, step.close_i, 1.0
+        if config.allow_short and step.deviation_i >= config.entry_dev:
+            return -1, step.close_i, -1.0
+    return mode, entry_price, 0.0
 
 
 def _apply_vwap_reversion_strategy(
