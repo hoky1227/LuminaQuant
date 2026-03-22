@@ -147,3 +147,99 @@ def test_candidate_rank_score_penalizes_validation_to_oos_instability():
     unstable_score = research_runner._candidate_rank_score(unstable)
 
     assert stable_score > unstable_score
+
+
+def test_evaluate_candidate_uses_signal_and_metric_payload_helpers(monkeypatch):
+    candidate = {
+        "candidate_id": "cand-a",
+        "strategy_class": "CompositeTrendStrategy",
+        "symbols": ["BTC/USDT"],
+        "timeframe": "1m",
+    }
+    signal_payload = research_runner._CandidateSignalPayload(
+        symbols=["BTC/USDT"],
+        timeframe="1m",
+        timestamps=np.asarray(["2026-01-01T00:00:00.000"], dtype="datetime64[ms]"),
+        returns_raw=np.asarray([0.01], dtype=float),
+        returns=np.asarray([0.0095], dtype=float),
+        turnover=np.asarray([0.5], dtype=float),
+        exposure=np.asarray([1.0], dtype=float),
+        meta={"source": "signal"},
+        cost_rate=0.001,
+    )
+    metric_payload = research_runner._CandidateMetricPayload(
+        train_metrics={"sharpe": 1.0, "return": 0.02},
+        val_metrics={"sharpe": 0.8, "return": 0.01},
+        oos_metrics={"sharpe": 0.7, "return": 0.009},
+        oos_stress_x2={"sharpe": 0.5, "return": 0.006},
+        oos_stress_x3={"sharpe": 0.2, "return": 0.003},
+    )
+
+    monkeypatch.setattr(research_runner, "_load_candidate_signal_payload", lambda *args, **kwargs: signal_payload)
+    monkeypatch.setattr(research_runner, "_evaluate_candidate_metric_payload", lambda *args, **kwargs: metric_payload)
+    monkeypatch.setattr(
+        research_runner,
+        "_hurdle_fields",
+        lambda *args, **kwargs: (
+            {"train": {"pass": True}, "val": {"pass": True}, "oos": {"pass": True}},
+            True,
+            {},
+        ),
+    )
+    monkeypatch.setattr(research_runner, "_apply_cost_stress_hard_rejects", lambda **kwargs: {})
+
+    result = research_runner._evaluate_candidate(
+        candidate,
+        cache={},
+        feature_cache={},
+        benchmark_cache={},
+        candidate_count=7,
+    )
+
+    assert result["candidate"] is candidate
+    assert result["train"] == metric_payload.train_metrics
+    assert result["oos"] == metric_payload.oos_metrics
+    assert result["oos_cost_stress"]["x2"]["sharpe"] == 0.5
+    assert result["metadata"]["strategy_family"] == "trend"
+    assert result["metadata"]["cost_rate"] == 0.001
+    assert result["metadata"]["aligned_bars"] == 1
+    assert result["metadata"]["source"] == "signal"
+    assert result["pass"] is True
+
+
+def test_evaluate_candidate_returns_insufficient_result_when_signal_payload_missing(monkeypatch):
+    candidate = {
+        "candidate_id": "cand-a",
+        "strategy_class": "CompositeTrendStrategy",
+        "symbols": ["BTC/USDT"],
+        "timeframe": "1m",
+    }
+    captured: dict[str, object] = {}
+    cache = {("BTC/USDT", "1m"): object()}
+
+    monkeypatch.setattr(research_runner, "_load_candidate_signal_payload", lambda *args, **kwargs: None)
+
+    def _capture_insufficient(candidate_arg, *, symbols, timeframe, cache):
+        captured["candidate"] = candidate_arg
+        captured["symbols"] = symbols
+        captured["timeframe"] = timeframe
+        captured["cache"] = cache
+        return {"candidate": candidate_arg, "error": "insufficient"}
+
+    monkeypatch.setattr(research_runner, "_insufficient_candidate_result", _capture_insufficient)
+
+    result = research_runner._evaluate_candidate(
+        candidate,
+        cache=cache,
+        feature_cache={},
+        benchmark_cache={},
+        candidate_count=1,
+    )
+
+    assert result == {"candidate": candidate, "error": "insufficient"}
+    assert captured == {
+        "candidate": candidate,
+        "symbols": ["BTC/USDT"],
+        "timeframe": "1m",
+        "cache": cache,
+    }

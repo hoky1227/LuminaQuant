@@ -4492,6 +4492,101 @@ def _stage1_prefilter_score(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class _CandidateSignalPayload:
+    symbols: list[str]
+    timeframe: str
+    timestamps: np.ndarray
+    returns_raw: np.ndarray
+    returns: np.ndarray
+    turnover: np.ndarray
+    exposure: np.ndarray
+    meta: dict[str, Any]
+    cost_rate: float
+
+
+@dataclass(frozen=True, slots=True)
+class _CandidateMetricPayload:
+    train_metrics: dict[str, Any]
+    val_metrics: dict[str, Any]
+    oos_metrics: dict[str, Any]
+    oos_stress_x2: dict[str, Any]
+    oos_stress_x3: dict[str, Any]
+
+
+def _load_candidate_signal_payload(
+    candidate: dict[str, Any],
+    *,
+    cache: Mapping[tuple[str, str], SeriesBundle],
+    feature_cache: Mapping[str, pl.DataFrame] | None,
+) -> _CandidateSignalPayload | None:
+    symbols, timeframe = _candidate_symbols_and_timeframe(candidate)
+    bundles = _candidate_bundle_list(symbols=symbols, timeframe=timeframe, cache=cache)
+    aligned = _align_bundles(bundles, feature_cache=feature_cache)
+    if aligned is None:
+        return None
+
+    returns_raw, turnover, exposure, meta = _strategy_signal(candidate, aligned=aligned, symbols=symbols)
+    cost_rate = _candidate_cost_rate(candidate)
+    timestamps = np.asarray(aligned.get("datetime"), dtype="datetime64[ms]")
+    return _CandidateSignalPayload(
+        symbols=symbols,
+        timeframe=timeframe,
+        timestamps=timestamps,
+        returns_raw=returns_raw,
+        returns=returns_raw - (turnover * cost_rate),
+        turnover=turnover,
+        exposure=exposure,
+        meta=meta,
+        cost_rate=float(cost_rate),
+    )
+
+
+def _evaluate_candidate_metric_payload(
+    signal_payload: _CandidateSignalPayload,
+    *,
+    benchmark_cache: Mapping[str, Mapping[str, np.ndarray] | np.ndarray],
+    candidate_count: int,
+    split: Mapping[str, Any] | None,
+) -> _CandidateMetricPayload:
+    split_masks = _split_masks_from_datetimes(signal_payload.timestamps, split=split)
+    periods_per_year = int(_PERIODS_PER_YEAR.get(signal_payload.timeframe, 365))
+    benchmark = _candidate_benchmark_series(
+        benchmark_cache=benchmark_cache,
+        timeframe=signal_payload.timeframe,
+        timestamps=signal_payload.timestamps,
+        returns_size=signal_payload.returns.size,
+    )
+    train_metrics, val_metrics, oos_metrics = _candidate_stage_metrics(
+        returns=signal_payload.returns,
+        turnover=signal_payload.turnover,
+        exposure=signal_payload.exposure,
+        benchmark=benchmark,
+        timestamps=signal_payload.timestamps,
+        split_masks=split_masks,
+        periods_per_year=periods_per_year,
+        candidate_count=candidate_count,
+    )
+    oos_stress_x2, oos_stress_x3 = _candidate_oos_cost_stress_metrics(
+        returns_raw=signal_payload.returns_raw,
+        turnover=signal_payload.turnover,
+        exposure=signal_payload.exposure,
+        benchmark=benchmark,
+        timestamps=signal_payload.timestamps,
+        split_masks=split_masks,
+        cost_rate=signal_payload.cost_rate,
+        periods_per_year=periods_per_year,
+        candidate_count=candidate_count,
+    )
+    return _CandidateMetricPayload(
+        train_metrics=train_metrics,
+        val_metrics=val_metrics,
+        oos_metrics=oos_metrics,
+        oos_stress_x2=oos_stress_x2,
+        oos_stress_x3=oos_stress_x3,
+    )
+
+
 def _evaluate_candidate(
     candidate: dict[str, Any],
     *,
@@ -4502,10 +4597,13 @@ def _evaluate_candidate(
     scoring_config: Mapping[str, Any] | None = None,
     split: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    symbols, timeframe = _candidate_symbols_and_timeframe(candidate)
-    bundles = _candidate_bundle_list(symbols=symbols, timeframe=timeframe, cache=cache)
-    aligned = _align_bundles(bundles, feature_cache=feature_cache)
-    if aligned is None:
+    signal_payload = _load_candidate_signal_payload(
+        candidate,
+        cache=cache,
+        feature_cache=feature_cache,
+    )
+    if signal_payload is None:
+        symbols, timeframe = _candidate_symbols_and_timeframe(candidate)
         return _insufficient_candidate_result(
             candidate,
             symbols=symbols,
@@ -4513,53 +4611,24 @@ def _evaluate_candidate(
             cache=cache,
         )
 
-    returns_raw, turnover, exposure, meta = _strategy_signal(candidate, aligned=aligned, symbols=symbols)
-    cost_rate = _candidate_cost_rate(candidate)
-    returns = returns_raw - (turnover * cost_rate)
-    timestamps = np.asarray(aligned.get("datetime"), dtype="datetime64[ms]")
-
-    split_masks = _split_masks_from_datetimes(timestamps, split=split)
-    periods_per_year = int(_PERIODS_PER_YEAR.get(timeframe, 365))
-    benchmark = _candidate_benchmark_series(
+    metric_payload = _evaluate_candidate_metric_payload(
+        signal_payload,
         benchmark_cache=benchmark_cache,
-        timeframe=timeframe,
-        timestamps=timestamps,
-        returns_size=returns.size,
-    )
-    train_metrics, val_metrics, oos_metrics = _candidate_stage_metrics(
-        returns=returns,
-        turnover=turnover,
-        exposure=exposure,
-        benchmark=benchmark,
-        timestamps=timestamps,
-        split_masks=split_masks,
-        periods_per_year=periods_per_year,
         candidate_count=candidate_count,
-    )
-
-    oos_stress_x2, oos_stress_x3 = _candidate_oos_cost_stress_metrics(
-        returns_raw=returns_raw,
-        turnover=turnover,
-        exposure=exposure,
-        benchmark=benchmark,
-        timestamps=timestamps,
-        split_masks=split_masks,
-        cost_rate=cost_rate,
-        periods_per_year=periods_per_year,
-        candidate_count=candidate_count,
+        split=split,
     )
 
     hurdle_fields, passed, hard_reject = _hurdle_fields(
-        train_metrics,
-        val_metrics,
-        oos_metrics,
+        metric_payload.train_metrics,
+        metric_payload.val_metrics,
+        metric_payload.oos_metrics,
         scoring_config=scoring_config,
     )
 
     hard_reject = _apply_cost_stress_hard_rejects(
         hard_reject=hard_reject,
-        oos_stress_x2=oos_stress_x2,
-        oos_stress_x3=oos_stress_x3,
+        oos_stress_x2=metric_payload.oos_stress_x2,
+        oos_stress_x3=metric_payload.oos_stress_x3,
         scoring_config=scoring_config,
     )
     passed = passed and not hard_reject
@@ -4568,21 +4637,21 @@ def _evaluate_candidate(
 
     return {
         "candidate": candidate,
-        "timestamps": timestamps,
-        "returns": returns,
-        "turnover": turnover,
-        "exposure": exposure,
-        "train": train_metrics,
-        "val": val_metrics,
-        "oos": oos_metrics,
+        "timestamps": signal_payload.timestamps,
+        "returns": signal_payload.returns,
+        "turnover": signal_payload.turnover,
+        "exposure": signal_payload.exposure,
+        "train": metric_payload.train_metrics,
+        "val": metric_payload.val_metrics,
+        "oos": metric_payload.oos_metrics,
         "oos_cost_stress": {
             "x2": {
-                "sharpe": float(oos_stress_x2.get("sharpe", 0.0)),
-                "return": float(oos_stress_x2.get("return", 0.0)),
+                "sharpe": float(metric_payload.oos_stress_x2.get("sharpe", 0.0)),
+                "return": float(metric_payload.oos_stress_x2.get("return", 0.0)),
             },
             "x3": {
-                "sharpe": float(oos_stress_x3.get("sharpe", 0.0)),
-                "return": float(oos_stress_x3.get("return", 0.0)),
+                "sharpe": float(metric_payload.oos_stress_x3.get("sharpe", 0.0)),
+                "return": float(metric_payload.oos_stress_x3.get("return", 0.0)),
             },
         },
         "hurdle_fields": hurdle_fields,
@@ -4590,9 +4659,9 @@ def _evaluate_candidate(
         "hard_reject_reasons": hard_reject,
         "metadata": {
             "strategy_family": _family_from_strategy(str(candidate.get("strategy_class") or "")),
-            "cost_rate": float(cost_rate),
-            "aligned_bars": int(timestamps.size),
-            **meta,
+            "cost_rate": float(signal_payload.cost_rate),
+            "aligned_bars": int(signal_payload.timestamps.size),
+            **signal_payload.meta,
         },
     }
 
