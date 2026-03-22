@@ -3,8 +3,6 @@ import importlib
 import json
 import math
 import os
-import signal
-import subprocess
 import sys
 import time
 import uuid
@@ -38,14 +36,22 @@ from apps.dashboard.services.workflow_jobs import (
     build_backtest_job_launch_spec as _build_backtest_job_launch_spec_data,
     build_live_job_launch_spec as _build_live_job_launch_spec_data,
     build_optimize_job_launch_spec as _build_optimize_job_launch_spec_data,
+    build_runtime_env_overrides as _build_runtime_env_overrides,
     build_stop_file_path as _build_stop_file_path_data,
+    launch_managed_job as _launch_managed_job_data,
+    refresh_workflow_jobs as _refresh_workflow_jobs_data,
+    request_job_stop as _request_job_stop_data,
+)
+from apps.dashboard.services.process_control import (
+    is_process_running as _is_process_running_data,
+    tail_text_file as _tail_text_file_data,
+    terminate_process as _terminate_process_data,
+)
+from apps.dashboard.services.ghost_cleanup import (
+    run_ghost_cleanup_script as _run_ghost_cleanup_script_data,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-SRC_ROOT = PROJECT_ROOT / "src"
-for path in (str(SRC_ROOT), str(PROJECT_ROOT)):
-    if path not in sys.path:
-        sys.path.insert(0, path)
 
 
 def _ensure_project_strategies_module(project_root: Path) -> None:
@@ -482,68 +488,15 @@ def _update_workflow_job_row(db_path, job_id, **updates):
 
 
 def _is_process_running(pid):
-    try:
-        pid = int(pid)
-    except Exception:
-        return False
-    if pid <= 0:
-        return False
-    if sys.platform.startswith("win"):
-        completed = subprocess.run(
-            ["tasklist", "/FI", f"PID eq {pid}"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        output = (completed.stdout or "").upper()
-        return str(pid) in output and "NO TASKS" not in output
-    try:
-        os.kill(pid, 0)
-    except OSError:
-        return False
-    return True
+    return _is_process_running_data(pid)
 
 
 def _terminate_process(pid):
-    try:
-        pid = int(pid)
-    except Exception:
-        return False, "invalid pid"
-    if pid <= 0:
-        return False, "invalid pid"
-    if sys.platform.startswith("win"):
-        proc = subprocess.run(
-            ["taskkill", "/PID", str(pid), "/T", "/F"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        ok = proc.returncode == 0
-        detail = (proc.stdout or "") + "\n" + (proc.stderr or "")
-        return ok, detail.strip()
-    try:
-        os.kill(pid, signal.SIGTERM)
-    except OSError as exc:
-        return False, str(exc)
-    return True, "terminated"
+    return _terminate_process_data(pid)
 
 
 def _tail_text_file(path, max_chars=20000):
-    if not path or not os.path.exists(path):
-        return ""
-    try:
-        max_bytes = max(4096, int(max_chars) * 3)
-    except Exception:
-        max_bytes = 60000
-    with open(path, "rb") as f:
-        f.seek(0, os.SEEK_END)
-        total = f.tell()
-        f.seek(max(0, total - max_bytes), os.SEEK_SET)
-        data = f.read()
-    text = data.decode("utf-8", errors="replace")
-    if len(text) > max_chars:
-        return text[-max_chars:]
-    return text
+    return _tail_text_file_data(path, max_chars=max_chars)
 
 
 @st.cache_data
@@ -580,58 +533,16 @@ def load_workflow_jobs(db_path, refresh_counter=0, limit=200):
 
 
 def _refresh_workflow_jobs(db_path):
-    if not _resolve_postgres_dsn(db_path):
-        return
-    _ensure_workflow_jobs_schema(db_path)
-    if "workflow_processes" not in st.session_state:
-        st.session_state["workflow_processes"] = {}
-    managed = st.session_state["workflow_processes"]
-
-    try:
-        conn = _connect_state_store(db_path)
-    except Exception:
-        return
-    try:
-        rows = conn.execute(
-            """
-            SELECT job_id, status, pid
-            FROM workflow_jobs
-            WHERE status IN ('RUNNING', 'STOP_REQUESTED')
-            """
-        ).fetchall()
-    finally:
-        conn.close()
-
-    for job_id, status, pid in rows:
-        entry = managed.get(job_id)
-        if entry is not None:
-            proc = entry.get("process")
-            if proc is None:
-                continue
-            exit_code = proc.poll()
-            if exit_code is None:
-                continue
-            final_status = "COMPLETED" if exit_code == 0 else "FAILED"
-            if status == "STOP_REQUESTED":
-                final_status = "STOPPED" if exit_code == 0 else "FAILED"
-            _update_workflow_job_row(
-                db_path,
-                job_id,
-                status=final_status,
-                ended_at=_utc_now_iso(),
-                exit_code=int(exit_code),
-            )
-            managed.pop(job_id, None)
-            continue
-
-        if not _is_process_running(pid):
-            final_status = "STOPPED" if status == "STOP_REQUESTED" else "EXITED"
-            _update_workflow_job_row(
-                db_path,
-                job_id,
-                status=final_status,
-                ended_at=_utc_now_iso(),
-            )
+    _refresh_workflow_jobs_data(
+        db_path=db_path,
+        session_state=st.session_state,
+        resolve_postgres_dsn=_resolve_postgres_dsn,
+        ensure_workflow_jobs_schema=_ensure_workflow_jobs_schema,
+        connect_state_store=_connect_state_store,
+        is_process_running=_is_process_running,
+        update_workflow_job_row=_update_workflow_job_row,
+        utc_now_iso=_utc_now_iso,
+    )
 
 
 def _annotate_run_health(runs_df, stale_after_sec=DEFAULT_RUN_STALE_SEC):
@@ -687,16 +598,21 @@ class _ManagedJobLaunchSpec:
     metadata: dict[str, object] | None = None
 
     def launch(self, *, db_path):
-        return _launch_managed_job(
+        return _launch_managed_job_data(
             db_path=db_path,
             workflow=self.workflow,
             command=self.command,
             env_overrides=self.env_overrides,
+            workflow_log_dir=WORKFLOW_LOG_DIR,
+            session_state=st.session_state,
+            insert_workflow_job_row=_insert_workflow_job_row,
+            utc_now_iso=_utc_now_iso,
             requested_mode=self.requested_mode,
             strategy=self.strategy,
             run_id=self.run_id,
             stop_file=self.stop_file,
             metadata=self.metadata,
+            cwd=os.getcwd(),
         )
 
 
@@ -1092,78 +1008,9 @@ def _render_managed_run_launch_controls(
             st.cache_data.clear()
 
 
-def _launch_managed_job(
-    *,
-    db_path,
-    workflow,
-    command,
-    env_overrides,
-    requested_mode=None,
-    strategy=None,
-    run_id=None,
-    stop_file=None,
-    metadata=None,
-):
-    if "workflow_processes" not in st.session_state:
-        st.session_state["workflow_processes"] = {}
-
-    os.makedirs(WORKFLOW_LOG_DIR, exist_ok=True)
-    job_id = str(uuid.uuid4())
-    log_path = os.path.join(WORKFLOW_LOG_DIR, f"{workflow}_{job_id}.log")
-    command = [str(part) for part in command]
-    env = os.environ.copy()
-    env.update({k: str(v) for k, v in (env_overrides or {}).items()})
-
-    started_at = _utc_now_iso()
-    with open(log_path, "a", encoding="utf-8") as log_file:
-        process = subprocess.Popen(
-            command,
-            stdout=log_file,
-            stderr=subprocess.STDOUT,
-            text=True,
-            env=env,
-            cwd=os.getcwd(),
-        )
-
-    _insert_workflow_job_row(
-        db_path,
-        {
-            "job_id": job_id,
-            "workflow": str(workflow),
-            "status": "RUNNING",
-            "requested_mode": requested_mode,
-            "strategy": strategy,
-            "command_json": json.dumps(command, ensure_ascii=True),
-            "env_json": json.dumps(env_overrides or {}, ensure_ascii=True),
-            "pid": int(process.pid),
-            "run_id": run_id,
-            "started_at": started_at,
-            "ended_at": None,
-            "exit_code": None,
-            "log_path": log_path,
-            "stop_file": stop_file,
-            "metadata_json": json.dumps(metadata or {}, ensure_ascii=False),
-            "last_updated": started_at,
-        },
-    )
-
-    st.session_state["workflow_processes"][job_id] = {
-        "process": process,
-        "log_path": log_path,
-        "stop_file": stop_file,
-    }
-    return job_id
-
 
 def _request_job_stop(db_path, stop_file):
-    if not stop_file:
-        return False
-    parent = os.path.dirname(stop_file)
-    if parent:
-        os.makedirs(parent, exist_ok=True)
-    with open(stop_file, "w", encoding="utf-8") as f:
-        f.write(_utc_now_iso())
-    return True
+    return _request_job_stop_data(stop_file, timestamp=_utc_now_iso())
 
 
 @st.cache_data
@@ -1581,70 +1428,6 @@ def _parse_symbols_csv(raw_symbols):
     return [token.strip() for token in str(raw_symbols).split(",") if token.strip()]
 
 
-def _build_runtime_env_overrides(
-    *,
-    initial_capital,
-    leverage,
-    timeframe,
-    symbols,
-    strategy_name,
-    optuna_config,
-    grid_config,
-):
-    return {
-        "LQ__TRADING__INITIAL_CAPITAL": str(float(initial_capital)),
-        "LQ__BACKTEST__LEVERAGE": str(int(leverage)),
-        "LQ__TRADING__TIMEFRAME": str(timeframe),
-        "LQ__TRADING__SYMBOLS": json.dumps(list(symbols), ensure_ascii=True),
-        "LQ__OPTIMIZATION__STRATEGY": str(strategy_name),
-        "LQ__OPTIMIZATION__OPTUNA": json.dumps(optuna_config, ensure_ascii=True),
-        "LQ__OPTIMIZATION__GRID": json.dumps(grid_config, ensure_ascii=True),
-    }
-
-
-def _run_python_script(command, env_overrides, timeout_sec):
-    cmd = [str(part) for part in command]
-    env = os.environ.copy()
-    env.update({k: str(v) for k, v in env_overrides.items()})
-    started = time.time()
-    try:
-        completed = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            env=env,
-            timeout=max(30, int(timeout_sec)),
-            check=False,
-        )
-        elapsed = time.time() - started
-        output = completed.stdout or ""
-        if completed.stderr:
-            output += "\n" + completed.stderr
-        return {
-            "ok": completed.returncode == 0,
-            "returncode": completed.returncode,
-            "elapsed_sec": elapsed,
-            "command": cmd,
-            "output": output.strip(),
-        }
-    except subprocess.TimeoutExpired as exc:
-        elapsed = time.time() - started
-        out = exc.stdout or ""
-        err = exc.stderr or ""
-        if isinstance(out, bytes):
-            out = out.decode("utf-8", errors="replace")
-        if isinstance(err, bytes):
-            err = err.decode("utf-8", errors="replace")
-        if err:
-            out += "\n" + err
-        return {
-            "ok": False,
-            "returncode": None,
-            "elapsed_sec": elapsed,
-            "command": cmd,
-            "output": out.strip(),
-            "timed_out": True,
-        }
 
 
 def _run_ghost_cleanup_script(
@@ -1656,53 +1439,15 @@ def _run_ghost_cleanup_script(
     force_kill_stop_requested_after_sec,
     apply_changes,
 ):
-    cmd = [
-        sys.executable,
-        "scripts/cleanup_ghost_runs.py",
-        "--dsn",
-        str(dsn),
-        "--stale-sec",
-        str(int(stale_sec)),
-        "--startup-grace-sec",
-        str(int(startup_grace_sec)),
-        "--close-status",
-        str(close_status),
-        "--force-kill-stop-requested-after-sec",
-        str(int(force_kill_stop_requested_after_sec)),
-    ]
-    if apply_changes:
-        cmd.append("--apply")
-
-    started = time.time()
-    completed = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        check=False,
+    return _run_ghost_cleanup_script_data(
+        python_executable=sys.executable,
+        dsn=dsn,
+        stale_sec=stale_sec,
+        startup_grace_sec=startup_grace_sec,
+        close_status=close_status,
+        force_kill_stop_requested_after_sec=force_kill_stop_requested_after_sec,
+        apply_changes=apply_changes,
     )
-    elapsed = time.time() - started
-
-    payload = None
-    stdout_text = (completed.stdout or "").strip()
-    stderr_text = (completed.stderr or "").strip()
-    if stdout_text:
-        try:
-            payload = json.loads(stdout_text)
-        except Exception:
-            payload = None
-
-    output = stdout_text
-    if stderr_text:
-        output = (output + "\n" + stderr_text).strip()
-
-    return {
-        "ok": completed.returncode == 0,
-        "returncode": completed.returncode,
-        "elapsed_sec": elapsed,
-        "command": cmd,
-        "output": output,
-        "payload": payload,
-    }
 
 
 def _parse_json_dict(value):

@@ -28,6 +28,9 @@ from lumina_quant.symbols import (
     canonicalize_symbol_list,
     normalize_strategy_timeframes,
 )
+from lumina_quant.strategy_factory.research_reporting import ResearchReportBuilder
+from lumina_quant.strategy_factory.research_resources import ResearchResourceLoader
+from lumina_quant.strategy_factory.research_stage_selection import ResearchStageSelector
 from lumina_quant.strategy_factory.strategy_signal_dispatch import StrategySignalDispatcher
 from lumina_quant.utils.risk_free import (
     resolve_risk_free_config,
@@ -4948,6 +4951,17 @@ def _resolve_research_run_timeframes_and_universe(
     return normalized_timeframes, universe
 
 
+def _research_resource_loader() -> ResearchResourceLoader:
+    return ResearchResourceLoader(
+        split_window_bounds=_split_window_bounds,
+        datetime_to_iso_z=_datetime_to_iso_z,
+        load_bundle_cache=_load_bundle_cache,
+        load_feature_cache=_load_feature_cache,
+        benchmark_cache=_benchmark_cache,
+        canonicalize_symbol_list=canonicalize_symbol_list,
+    )
+
+
 def _load_research_run_resources(
     *,
     adapted: Sequence[dict[str, Any]],
@@ -4965,43 +4979,17 @@ def _load_research_run_resources(
     dict[str, pl.DataFrame],
     dict[str, dict[str, np.ndarray]],
 ]:
-    load_start, load_end = _split_window_bounds(resolved_split)
-    load_bundle_kwargs = {
-        "symbols": universe,
-        "timeframes": normalized_timeframes,
-    }
-    try:
-        cache, data_sources = _load_bundle_cache(
-            **load_bundle_kwargs,
-            start_date=_datetime_to_iso_z(load_start),
-            end_date=_datetime_to_iso_z(load_end),
-            data_mode=str(data_mode or "legacy"),
-            allow_csv_fallback=bool(allow_csv_fallback),
-            allow_synthetic_fallback=bool(allow_synthetic_fallback),
-            min_bars=max(1, int(min_bundle_bars)),
-            market_data_settings=market_data_settings,
-        )
-    except TypeError as exc:
-        if "unexpected keyword argument" not in str(exc):
-            raise
-        cache, data_sources = _load_bundle_cache(**load_bundle_kwargs)
-
-    support_feature_symbols = canonicalize_symbol_list(
-        itertools.chain.from_iterable(
-            list(row.get("symbols") or [])
-            for row in adapted
-            if str(row.get("strategy_class") or row.get("strategy") or "")
-            in {"PerpCrowdingCarryStrategy", "CompositeTrendStrategy"}
-        )
-    )
-    feature_cache = _load_feature_cache(
-        symbols=support_feature_symbols,
-        start_date=_datetime_to_iso_z(load_start),
-        end_date=_datetime_to_iso_z(load_end),
+    return _research_resource_loader().load(
+        adapted=adapted,
+        normalized_timeframes=normalized_timeframes,
+        universe=universe,
+        resolved_split=resolved_split,
+        data_mode=data_mode,
+        allow_csv_fallback=allow_csv_fallback,
+        allow_synthetic_fallback=allow_synthetic_fallback,
+        min_bundle_bars=min_bundle_bars,
         market_data_settings=market_data_settings,
     )
-    benchmark = _benchmark_cache(cache, normalized_timeframes)
-    return cache, data_sources, feature_cache, benchmark
 
 
 def _evaluate_candidate_with_optional_split(
@@ -5014,23 +5002,18 @@ def _evaluate_candidate_with_optional_split(
     scoring_config: Mapping[str, Any] | None,
     split: Mapping[str, Any],
 ) -> dict[str, Any]:
-    evaluate_kwargs = {
-        "cache": cache,
-        "feature_cache": feature_cache,
-        "benchmark_cache": benchmark_cache,
-        "candidate_count": max(1, candidate_count),
-        "scoring_config": scoring_config,
-    }
-    try:
-        return _evaluate_candidate(
-            candidate,
-            **evaluate_kwargs,
-            split=split,
-        )
-    except TypeError as exc:
-        if "unexpected keyword argument" not in str(exc):
-            raise
-        return _evaluate_candidate(candidate, **evaluate_kwargs)
+    return ResearchStageSelector(
+        evaluate_candidate=_evaluate_candidate,
+        stage1_prefilter_score=_stage1_prefilter_score,
+    ).evaluate_candidate_with_optional_split(
+        candidate,
+        cache=cache,
+        feature_cache=feature_cache,
+        benchmark_cache=benchmark_cache,
+        candidate_count=candidate_count,
+        scoring_config=scoring_config,
+        split=split,
+    )
 
 
 def _select_stage2_results(
@@ -5042,27 +5025,33 @@ def _select_stage2_results(
     scoring: _ResearchRunScoringConfig,
     resolved_split: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
-    scored_stage1: list[tuple[float, dict[str, Any]]] = []
-    for row in adapted:
-        result = _evaluate_candidate_with_optional_split(
-            row,
-            cache=cache,
-            feature_cache=feature_cache,
-            benchmark_cache=benchmark,
-            candidate_count=len(adapted),
-            scoring_config=scoring.resolved_scoring_config,
-            split=resolved_split,
-        )
-        score = _stage1_prefilter_score(
-            result,
-            stage1_weights=scoring.stage1_weights,
-            stage1_error_score=scoring.stage1_error_score,
-        )
-        scored_stage1.append((float(score), result))
+    return ResearchStageSelector(
+        evaluate_candidate=_evaluate_candidate,
+        stage1_prefilter_score=_stage1_prefilter_score,
+    ).select_stage2_results(
+        adapted=adapted,
+        cache=cache,
+        feature_cache=feature_cache,
+        benchmark=benchmark,
+        scoring=scoring,
+        resolved_split=resolved_split,
+    )
 
-    ranked = sorted(scored_stage1, key=lambda item: item[0], reverse=True)
-    keep_count = max(1, round(len(ranked) * scoring.keep_ratio_applied))
-    return [item[1] for item in ranked[:keep_count]]
+
+def _research_report_builder() -> ResearchReportBuilder:
+    return ResearchReportBuilder(
+        split_masks_from_datetimes=_split_masks_from_datetimes,
+        split_lengths=_split_lengths,
+        compute_metrics=_compute_metrics,
+        hurdle_fields=_hurdle_fields,
+        family_from_strategy=_family_from_strategy,
+        canonicalize_symbol_list=canonicalize_symbol_list,
+        series_to_stream=_series_to_stream,
+        candidate_rank_score=_candidate_rank_score,
+        correlation=_correlation,
+        periods_per_year=_PERIODS_PER_YEAR,
+        metric_config=BacktestConfig,
+    )
 
 
 def _result_timestamps_and_split_masks(
@@ -5070,27 +5059,10 @@ def _result_timestamps_and_split_masks(
     *,
     resolved_split: Mapping[str, Any],
 ) -> tuple[np.ndarray, dict[str, np.ndarray], bool]:
-    returns = np.asarray(result.get("returns"), dtype=float)
-    raw_timestamps = result.get("timestamps")
-    timestamps = (
-        np.asarray(raw_timestamps, dtype="datetime64[ms]")
-        if raw_timestamps is not None
-        else np.asarray([], dtype="datetime64[ms]")
+    return _research_report_builder().result_timestamps_and_split_masks(
+        result,
+        resolved_split=resolved_split,
     )
-    has_aligned_timestamps = timestamps.size == returns.size
-    if has_aligned_timestamps:
-        split_masks = _split_masks_from_datetimes(timestamps, split=resolved_split)
-    else:
-        train_slice, val_slice, oos_slice = _split_lengths(returns.size)
-        split_masks = {
-            "train": np.zeros(returns.size, dtype=bool),
-            "val": np.zeros(returns.size, dtype=bool),
-            "oos": np.zeros(returns.size, dtype=bool),
-        }
-        split_masks["train"][train_slice] = True
-        split_masks["val"][val_slice] = True
-        split_masks["oos"][oos_slice] = True
-    return timestamps, split_masks, has_aligned_timestamps
 
 
 def _error_candidate_report_payload(
@@ -5100,50 +5072,12 @@ def _error_candidate_report_payload(
     failed_candidate_selection_score: float,
     candidate_count: int,
 ) -> dict[str, Any]:
-    row = dict(result.get("candidate") or {})
-    timeframe = str(row.get("strategy_timeframe") or row.get("timeframe") or "1m")
-    empty_metrics = _compute_metrics(
-        np.asarray([], dtype=float),
-        turnover=np.asarray([], dtype=float),
-        exposure=np.asarray([], dtype=float),
-        benchmark_returns=np.asarray([], dtype=float),
-        periods_per_year=int(_PERIODS_PER_YEAR.get(timeframe, 365)),
-        num_trials=max(1, candidate_count),
-        metric_config=BacktestConfig,
-        timestamps=np.asarray([], dtype="datetime64[ms]"),
+    return _research_report_builder().error_candidate_report_payload(
+        result=result,
+        resolved_scoring_config=resolved_scoring_config,
+        failed_candidate_selection_score=failed_candidate_selection_score,
+        candidate_count=candidate_count,
     )
-    hurdles, passed, _ = _hurdle_fields(
-        empty_metrics,
-        empty_metrics,
-        empty_metrics,
-        scoring_config=resolved_scoring_config,
-    )
-    return {
-        "candidate_id": str(row.get("candidate_id")),
-        "name": str(row.get("name")),
-        "strategy_class": str(row.get("strategy_class")),
-        "strategy": str(row.get("strategy") or row.get("strategy_class") or ""),
-        "family": str(row.get("family") or _family_from_strategy(str(row.get("strategy_class")))),
-        "strategy_timeframe": timeframe,
-        "timeframe": timeframe,
-        "symbols": canonicalize_symbol_list(list(row.get("symbols") or [])),
-        "params": dict(row.get("params") or {}),
-        "train": empty_metrics,
-        "val": empty_metrics,
-        "oos": empty_metrics,
-        "hurdle_fields": hurdles,
-        "return_streams": {"train": [], "val": [], "oos": []},
-        "cost_metrics": {"turnover": 0.0, "fee_cost": 0.0, "slippage_cost": 0.0},
-        "oos_cost_stress": {
-            "x2": {"sharpe": 0.0, "return": 0.0},
-            "x3": {"sharpe": 0.0, "return": 0.0},
-        },
-        "hard_reject": True,
-        "hard_reject_reasons": {"insufficient_data": True},
-        "selection_score": failed_candidate_selection_score,
-        "pass": bool(passed),
-        "metadata": dict(result.get("metadata") or {}),
-    }
 
 
 def _candidate_return_streams(
@@ -5153,20 +5087,12 @@ def _candidate_return_streams(
     split_masks: Mapping[str, np.ndarray],
     has_aligned_timestamps: bool,
 ) -> dict[str, list[dict[str, float | int]]]:
-    return {
-        "train": _series_to_stream(
-            returns[split_masks["train"]],
-            timestamps=timestamps[split_masks["train"]] if has_aligned_timestamps else None,
-        ),
-        "val": _series_to_stream(
-            returns[split_masks["val"]],
-            timestamps=timestamps[split_masks["val"]] if has_aligned_timestamps else None,
-        ),
-        "oos": _series_to_stream(
-            returns[split_masks["oos"]],
-            timestamps=timestamps[split_masks["oos"]] if has_aligned_timestamps else None,
-        ),
-    }
+    return _research_report_builder().candidate_return_streams(
+        returns=returns,
+        timestamps=timestamps,
+        split_masks=split_masks,
+        has_aligned_timestamps=has_aligned_timestamps,
+    )
 
 
 def _successful_candidate_report_payload(
@@ -5175,64 +5101,11 @@ def _successful_candidate_report_payload(
     resolved_split: Mapping[str, Any],
     resolved_scoring_config: Mapping[str, Any],
 ) -> dict[str, Any]:
-    row = dict(result.get("candidate") or {})
-    timeframe = str(row.get("strategy_timeframe") or row.get("timeframe") or "1m")
-    returns = np.asarray(result.get("returns"), dtype=float)
-    timestamps, split_masks, has_aligned_timestamps = _result_timestamps_and_split_masks(
-        result,
+    return _research_report_builder().successful_candidate_report_payload(
+        result=result,
         resolved_split=resolved_split,
+        resolved_scoring_config=resolved_scoring_config,
     )
-    train = dict(result.get("train") or {})
-    val = dict(result.get("val") or {})
-    oos = dict(result.get("oos") or {})
-    hard_reject = dict(result.get("hard_reject_reasons") or {})
-    hard_reject_flag = bool(hard_reject)
-
-    candidate_payload = {
-        "candidate_id": str(row.get("candidate_id")),
-        "name": str(row.get("name")),
-        "strategy_class": str(row.get("strategy_class")),
-        "strategy": str(row.get("strategy") or row.get("strategy_class") or ""),
-        "family": str(row.get("family") or _family_from_strategy(str(row.get("strategy_class")))),
-        "strategy_timeframe": timeframe,
-        "timeframe": timeframe,
-        "symbols": canonicalize_symbol_list(list(row.get("symbols") or [])),
-        "params": dict(row.get("params") or {}),
-        "notes": str(row.get("notes") or result.get("notes") or ""),
-        "tags": [
-            str(tag)
-            for tag in list(row.get("tags") or result.get("tags") or [])
-            if str(tag)
-        ],
-        "train": train,
-        "val": val,
-        "oos": oos,
-        "hurdle_fields": dict(result.get("hurdle_fields") or {}),
-        "return_streams": _candidate_return_streams(
-            returns=returns,
-            timestamps=timestamps,
-            split_masks=split_masks,
-            has_aligned_timestamps=has_aligned_timestamps,
-        ),
-        "cost_metrics": {
-            "turnover": float(oos.get("turnover", 0.0)),
-            "fee_cost": float(result.get("metadata", {}).get("cost_rate", 0.0)),
-            "slippage_cost": float(result.get("metadata", {}).get("cost_rate", 0.0) * 0.7),
-        },
-        "oos_cost_stress": dict(result.get("oos_cost_stress") or {}),
-        "hard_reject": hard_reject_flag,
-        "hard_reject_reasons": hard_reject,
-        "pass": bool(result.get("pass", False)) and not hard_reject_flag,
-        "metadata": {
-            **dict(row.get("metadata") or {}),
-            **dict(result.get("metadata") or {}),
-        },
-    }
-    candidate_payload["selection_score"] = _candidate_rank_score(
-        candidate_payload,
-        scoring_config=resolved_scoring_config,
-    )
-    return candidate_payload
 
 
 def _report_candidates_from_stage2_results(
@@ -5242,48 +5115,16 @@ def _report_candidates_from_stage2_results(
     resolved_split: Mapping[str, Any],
     scoring: _ResearchRunScoringConfig,
 ) -> list[dict[str, Any]]:
-    report_candidates: list[dict[str, Any]] = []
-    for result in stage2_results:
-        if result.get("error"):
-            report_candidates.append(
-                _error_candidate_report_payload(
-                    result=result,
-                    resolved_scoring_config=scoring.resolved_scoring_config,
-                    failed_candidate_selection_score=scoring.failed_candidate_selection_score,
-                    candidate_count=candidate_count,
-                )
-            )
-            continue
-        report_candidates.append(
-            _successful_candidate_report_payload(
-                result=result,
-                resolved_split=resolved_split,
-                resolved_scoring_config=scoring.resolved_scoring_config,
-            )
-        )
-    return report_candidates
+    return _research_report_builder().report_candidates_from_stage2_results(
+        stage2_results=stage2_results,
+        candidate_count=candidate_count,
+        resolved_split=resolved_split,
+        scoring=scoring,
+    )
 
 
 def _attach_cross_candidate_correlations(report_candidates: Sequence[dict[str, Any]]) -> None:
-    oos_series = {
-        row["candidate_id"]: np.asarray([point["v"] for point in row["return_streams"]["oos"]], dtype=float)
-        for row in report_candidates
-        if row.get("return_streams", {}).get("oos")
-    }
-    for row in report_candidates:
-        cid = str(row.get("candidate_id"))
-        base = oos_series.get(cid)
-        if base is None or base.size < 8:
-            row.setdefault("oos", {})["cross_candidate_corr"] = 0.0
-            continue
-        corr_values: list[float] = []
-        for other_id, other in oos_series.items():
-            if other_id == cid:
-                continue
-            corr_values.append(_correlation(base, other))
-        row.setdefault("oos", {})["cross_candidate_corr"] = (
-            float(np.mean(corr_values)) if corr_values else 0.0
-        )
+    _research_report_builder().attach_cross_candidate_correlations(report_candidates)
 
 
 def run_candidate_research(

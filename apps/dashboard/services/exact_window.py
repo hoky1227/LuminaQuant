@@ -2,25 +2,20 @@
 
 from __future__ import annotations
 
-import importlib
 import json
-import sys
 from pathlib import Path
 from typing import Any
 
+from lumina_quant.eval.exact_window_decision import (
+    load_exact_window_decision_artifact,
+    resolve_exact_window_decision_paths,
+)
+from lumina_quant.eval.exact_window_reporting import (
+    resolve_backtest_registry,
+    resolve_exact_window_artifact_paths,
+)
+
 ROOT = Path(__file__).resolve().parents[3]
-SRC_ROOT = ROOT / "src"
-for candidate in (ROOT, SRC_ROOT):
-    if str(candidate) not in sys.path:
-        sys.path.insert(0, str(candidate))
-
-_reporting = importlib.import_module("lumina_quant.eval.exact_window_reporting")
-resolve_exact_window_artifact_paths = _reporting.resolve_exact_window_artifact_paths
-resolve_backtest_registry = _reporting.resolve_backtest_registry
-
-_decision = importlib.import_module("lumina_quant.eval.exact_window_decision")
-load_exact_window_decision_artifact = _decision.load_exact_window_decision_artifact
-resolve_exact_window_decision_paths = _decision.resolve_exact_window_decision_paths
 
 DEFAULT_REPORT_ROOT = ROOT / "var" / "reports" / "exact_window_backtests"
 

@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import html
-import importlib
-import sys
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,15 +12,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-ROOT = Path(__file__).resolve().parents[2]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
-load_exact_window_bundle = importlib.import_module(
-    "apps.dashboard.services.exact_window"
-).load_exact_window_bundle
-_eval_suite_module = importlib.import_module("lumina_quant.eval.exact_window_suite")
-_metrics_daily = _eval_suite_module._metrics_daily
+from apps.dashboard.services.exact_window import load_exact_window_bundle
+from lumina_quant.eval.exact_window_suite import _metrics_daily
 
 TIMEFRAME_ORDER = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"]
 TIMEFRAME_ORDER_MAP = {token: idx for idx, token in enumerate(TIMEFRAME_ORDER)}

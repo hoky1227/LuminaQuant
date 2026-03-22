@@ -191,3 +191,33 @@ def test_config_module_reexports_runtime_access_module(tmp_path, monkeypatch):
     assert "lumina_quant.configuration.runtime_access" in sys.modules
     assert config_module.BaseConfig.__module__ == "lumina_quant.configuration.runtime_access"
     assert config_module.BaseConfig.TIMEFRAME == "5m"
+
+
+def test_config_module_import_clears_views_without_resetting_runtime_cache(tmp_path, monkeypatch):
+    cfg_path = _write_config(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("LQ_CONFIG_PATH", cfg_path)
+
+    runtime_access = importlib.import_module("lumina_quant.configuration.runtime_access")
+    reset_calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+    clear_calls: list[str] = []
+
+    original_clear = runtime_access.clear_runtime_config_views
+
+    monkeypatch.setattr(
+        runtime_access,
+        "reset_runtime_config_cache",
+        lambda *args, **kwargs: reset_calls.append((args, kwargs)),
+    )
+    monkeypatch.setattr(
+        runtime_access,
+        "clear_runtime_config_views",
+        lambda: clear_calls.append("clear") or original_clear(),
+    )
+
+    sys.modules.pop("lumina_quant.config", None)
+    config_module = importlib.import_module("lumina_quant.config")
+
+    assert clear_calls == ["clear"]
+    assert reset_calls == []
+    assert "TIMEFRAME" not in config_module.BaseConfig.__dict__

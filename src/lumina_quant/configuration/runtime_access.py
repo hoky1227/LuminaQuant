@@ -351,6 +351,11 @@ def reset_runtime_config_cache(*, clear_seeded_defaults: bool = False) -> None:
         _clear_persisted_seed_metadata(os.environ)
 
 
+def clear_runtime_config_views() -> None:
+    """Clear materialized config class attributes without touching runtime/env caches."""
+    _clear_applied_config_values()
+
+
 def reload_runtime_config(*, environ: MutableMapping[str, str] | None = None):
     """Refresh runtime-derived class snapshots from the current config/env sources."""
     global _RUNTIME

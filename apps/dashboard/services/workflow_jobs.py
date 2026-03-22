@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import os
+import subprocess
+import uuid
+from collections.abc import Callable, MutableMapping
 
 DEFAULT_LQ_COMMAND = ("uv", "run", "lq")
 
@@ -14,6 +18,175 @@ def build_lq_command(subcommand: str, *args: str) -> tuple[str, ...]:
 def build_stop_file_path(job_id: str, *, control_dir: str = os.path.join("logs", "control")) -> str:
     os.makedirs(control_dir, exist_ok=True)
     return os.path.join(control_dir, f"{job_id}.stop")
+
+
+def build_runtime_env_overrides(
+    *,
+    initial_capital: float,
+    leverage: int,
+    timeframe: str,
+    symbols: tuple[str, ...] | list[str],
+    strategy_name: str,
+    optuna_config: dict[str, object],
+    grid_config: dict[str, object],
+) -> dict[str, str]:
+    return {
+        "LQ__TRADING__INITIAL_CAPITAL": str(float(initial_capital)),
+        "LQ__BACKTEST__LEVERAGE": str(int(leverage)),
+        "LQ__TRADING__TIMEFRAME": str(timeframe),
+        "LQ__TRADING__SYMBOLS": json.dumps(list(symbols), ensure_ascii=True),
+        "LQ__OPTIMIZATION__STRATEGY": str(strategy_name),
+        "LQ__OPTIMIZATION__OPTUNA": json.dumps(optuna_config, ensure_ascii=True),
+        "LQ__OPTIMIZATION__GRID": json.dumps(grid_config, ensure_ascii=True),
+    }
+
+
+def launch_managed_job(
+    *,
+    db_path: str,
+    workflow: str,
+    command: tuple[str, ...] | list[str],
+    env_overrides: dict[str, str] | None,
+    workflow_log_dir: str,
+    session_state: MutableMapping[str, object],
+    insert_workflow_job_row: Callable[[str, dict[str, object]], None],
+    utc_now_iso: Callable[[], str],
+    requested_mode: str | None = None,
+    strategy: str | None = None,
+    run_id: str | None = None,
+    stop_file: str | None = None,
+    metadata: dict[str, object] | None = None,
+    cwd: str | None = None,
+) -> str:
+    workflow_processes = session_state.setdefault("workflow_processes", {})
+    if not isinstance(workflow_processes, dict):
+        workflow_processes = {}
+        session_state["workflow_processes"] = workflow_processes
+
+    os.makedirs(workflow_log_dir, exist_ok=True)
+    job_id = str(uuid.uuid4())
+    log_path = os.path.join(workflow_log_dir, f"{workflow}_{job_id}.log")
+    normalized_command = [str(part) for part in command]
+    normalized_env = {str(key): str(value) for key, value in (env_overrides or {}).items()}
+    env = os.environ.copy()
+    env.update(normalized_env)
+
+    started_at = utc_now_iso()
+    with open(log_path, "a", encoding="utf-8") as log_file:
+        process = subprocess.Popen(
+            normalized_command,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            text=True,
+            env=env,
+            cwd=cwd or os.getcwd(),
+        )
+
+    insert_workflow_job_row(
+        db_path,
+        {
+            "job_id": job_id,
+            "workflow": str(workflow),
+            "status": "RUNNING",
+            "requested_mode": requested_mode,
+            "strategy": strategy,
+            "command_json": json.dumps(normalized_command, ensure_ascii=True),
+            "env_json": json.dumps(normalized_env, ensure_ascii=True),
+            "pid": int(process.pid),
+            "run_id": run_id,
+            "started_at": started_at,
+            "ended_at": None,
+            "exit_code": None,
+            "log_path": log_path,
+            "stop_file": stop_file,
+            "metadata_json": json.dumps(metadata or {}, ensure_ascii=False),
+            "last_updated": started_at,
+        },
+    )
+
+    workflow_processes[job_id] = {
+        "process": process,
+        "log_path": log_path,
+        "stop_file": stop_file,
+    }
+    return job_id
+
+
+def request_job_stop(stop_file: str | None, *, timestamp: str) -> bool:
+    if not stop_file:
+        return False
+    parent = os.path.dirname(stop_file)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    with open(stop_file, "w", encoding="utf-8") as f:
+        f.write(str(timestamp))
+    return True
+
+
+def refresh_workflow_jobs(
+    *,
+    db_path: str,
+    session_state: MutableMapping[str, object],
+    resolve_postgres_dsn: Callable[[str], str],
+    ensure_workflow_jobs_schema: Callable[[str], None],
+    connect_state_store: Callable[[str], object],
+    is_process_running: Callable[[object], bool],
+    update_workflow_job_row: Callable[..., None],
+    utc_now_iso: Callable[[], str],
+) -> None:
+    if not resolve_postgres_dsn(db_path):
+        return
+    ensure_workflow_jobs_schema(db_path)
+    workflow_processes = session_state.setdefault("workflow_processes", {})
+    if not isinstance(workflow_processes, dict):
+        workflow_processes = {}
+        session_state["workflow_processes"] = workflow_processes
+
+    try:
+        conn = connect_state_store(db_path)
+    except Exception:
+        return
+    try:
+        rows = conn.execute(
+            """
+            SELECT job_id, status, pid
+            FROM workflow_jobs
+            WHERE status IN ('RUNNING', 'STOP_REQUESTED')
+            """
+        ).fetchall()
+    finally:
+        conn.close()
+
+    for job_id, status, pid in rows:
+        entry = workflow_processes.get(job_id)
+        if entry is not None:
+            proc = entry.get("process") if isinstance(entry, dict) else None
+            if proc is None:
+                continue
+            exit_code = proc.poll()
+            if exit_code is None:
+                continue
+            final_status = "COMPLETED" if exit_code == 0 else "FAILED"
+            if status == "STOP_REQUESTED":
+                final_status = "STOPPED" if exit_code == 0 else "FAILED"
+            update_workflow_job_row(
+                db_path,
+                job_id,
+                status=final_status,
+                ended_at=utc_now_iso(),
+                exit_code=int(exit_code),
+            )
+            workflow_processes.pop(job_id, None)
+            continue
+
+        if not is_process_running(pid):
+            final_status = "STOPPED" if status == "STOP_REQUESTED" else "EXITED"
+            update_workflow_job_row(
+                db_path,
+                job_id,
+                status=final_status,
+                ended_at=utc_now_iso(),
+            )
 
 
 def build_backtest_job_launch_spec(
