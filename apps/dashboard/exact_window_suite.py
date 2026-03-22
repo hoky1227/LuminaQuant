@@ -14,7 +14,9 @@ import streamlit as st
 
 from apps.dashboard.services.exact_window import load_exact_window_bundle
 from apps.dashboard.services.exact_window_panels import (
+    render_exact_window_candidate_analysis,
     render_exact_window_control_strip,
+    render_exact_window_timeframe_overview,
     render_exact_window_visual_cockpit,
 )
 from apps.dashboard.services.exact_window_render import render_exact_window_card_grid
@@ -1701,35 +1703,14 @@ def _render_exact_window_timeframe_overview(
     context: _ExactWindowDashboardContext,
     selection: _ExactWindowDashboardSelection,
 ) -> None:
-    st.subheader('All Timeframes At a Glance')
-    st.markdown(
-        '<div class="exact-window-section-caption">Every timeframe, best candidate, risk/return profile, and rejection reason on one screen.</div>',
-        unsafe_allow_html=True,
+    render_exact_window_timeframe_overview(
+        context,
+        selection,
+        format_frame=_format_frame,
+        timeframe_card_html=_timeframe_card_html,
+        timeframe_sort_key=_timeframe_sort_key,
+        st_module=st,
     )
-    st.markdown(
-        '<div class="exact-window-tf-grid">'
-        + ''.join(
-            _timeframe_card_html(row)
-            for row in sorted(context.timeframe_rows, key=lambda item: _timeframe_sort_key(str(item.get('timeframe') or '')))
-        )
-        + '</div>',
-        unsafe_allow_html=True,
-    )
-    st.dataframe(_format_frame(selection.summary_frame), use_container_width=True, hide_index=True)
-
-    matrix_left, matrix_right = st.columns((1.4, 1.6))
-    with matrix_left:
-        st.subheader('Metric Matrix')
-        if selection.metric_matrix.empty:
-            st.info('No timeframe metric matrix available.')
-        else:
-            st.dataframe(_format_frame(selection.metric_matrix.reset_index()), use_container_width=True, hide_index=True)
-    with matrix_right:
-        st.subheader('Universe Coverage / Metals')
-        if context.coverage_status.empty:
-            st.info('No coverage table available.')
-        else:
-            st.dataframe(context.coverage_status, use_container_width=True, hide_index=True)
 
 
 
@@ -1737,115 +1718,17 @@ def _render_exact_window_candidate_analysis(
     context: _ExactWindowDashboardContext,
     selection: _ExactWindowDashboardSelection,
 ) -> None:
-    overview_left, overview_right = st.columns((3, 2))
-    with overview_left:
-        st.subheader('Selection / Promotion Overview')
-        candidate_pool_frame = _candidate_pool_frame(context.decision)
-        if candidate_pool_frame.empty:
-            st.info('No candidate-pool rows are currently saved.')
-        else:
-            st.dataframe(_format_frame(candidate_pool_frame), use_container_width=True, hide_index=True)
-    with overview_right:
-        st.subheader('Strict Pass Anchor')
-        strict_frame = _strict_pass_frame(context.decision)
-        if strict_frame.empty:
-            st.info('No strict-pass strategy saved.')
-        else:
-            st.dataframe(_format_frame(strict_frame), use_container_width=True, hide_index=True)
-
-    st.subheader('Candidate Leaderboards')
-    board_left, board_mid, board_right = st.columns(3)
-    with board_left:
-        st.caption('Top by OOS quality')
-        frame = (
-            selection.candidate_scope.sort_values(['oos_sharpe', 'oos_return'], ascending=[False, False])
-            if not selection.candidate_scope.empty
-            else pd.DataFrame()
-        )
-        st.dataframe(
-            _format_frame(
-                _top_candidates(
-                    frame,
-                    columns=['timeframe', 'asset_mix', 'strategy', 'name', 'symbols', 'oos_return', 'oos_sharpe', 'oos_sortino', 'oos_calmar', 'oos_mdd', 'oos_pbo'],
-                )
-            ),
-            use_container_width=True,
-            hide_index=True,
-        )
-    with board_mid:
-        st.caption('Top by validation')
-        frame = (
-            selection.candidate_scope.sort_values(['val_sharpe', 'val_return'], ascending=[False, False])
-            if not selection.candidate_scope.empty
-            else pd.DataFrame()
-        )
-        st.dataframe(
-            _format_frame(
-                _top_candidates(
-                    frame,
-                    columns=['timeframe', 'asset_mix', 'strategy', 'name', 'symbols', 'val_return', 'val_sharpe', 'val_pbo', 'oos_return', 'oos_sharpe'],
-                )
-            ),
-            use_container_width=True,
-            hide_index=True,
-        )
-    with board_right:
-        st.caption('Top by execution realism')
-        frame = (
-            selection.candidate_scope.sort_values(['oos_trades', 'oos_win_rate', 'oos_avg_trade'], ascending=[False, False, False])
-            if not selection.candidate_scope.empty
-            else pd.DataFrame()
-        )
-        st.dataframe(
-            _format_frame(
-                _top_candidates(
-                    frame,
-                    columns=['timeframe', 'asset_mix', 'strategy', 'name', 'symbols', 'oos_trades', 'oos_turnover', 'oos_win_rate', 'oos_avg_trade', 'rejects'],
-                )
-            ),
-            use_container_width=True,
-            hide_index=True,
-        )
-
-    family_frame, mix_frame = _family_mix_frame(context.details_frame)
-    mix_left, mix_right = st.columns(2)
-    with mix_left:
-        st.subheader('Family / Timeframe Distribution')
-        if family_frame.empty:
-            st.info('No family distribution available.')
-        else:
-            st.dataframe(family_frame, use_container_width=True, hide_index=True)
-    with mix_right:
-        st.subheader('Asset-Mix Distribution')
-        if mix_frame.empty:
-            st.info('No asset-mix distribution available.')
-        else:
-            st.dataframe(mix_frame, use_container_width=True, hide_index=True)
-
-    fail_by_reason, fail_by_timeframe, fail_proposals = _fail_reason_summary(context.bundle)
-    fail_left, fail_mid, fail_right = st.columns((1.2, 1.5, 2.1))
-    with fail_left:
-        st.subheader('Reject Reasons')
-        if fail_by_reason.empty:
-            st.info('No fail analysis available.')
-        else:
-            st.dataframe(fail_by_reason, use_container_width=True, hide_index=True)
-    with fail_mid:
-        st.subheader('Rejects by Timeframe')
-        if fail_by_timeframe.empty:
-            st.info('No timeframe breakdown available.')
-        else:
-            st.dataframe(fail_by_timeframe, use_container_width=True, hide_index=True)
-    with fail_right:
-        st.subheader('Next-Step Proposals')
-        if fail_proposals.empty:
-            st.info('No proposals generated.')
-        else:
-            st.dataframe(fail_proposals, use_container_width=True, hide_index=True)
-
-    if context.next_iteration:
-        with st.expander('Next Iteration Triage', expanded=True):
-            st.json(context.next_iteration)
+    render_exact_window_candidate_analysis(
+        context,
+        selection,
+        candidate_pool_frame=_candidate_pool_frame,
+        strict_pass_frame=_strict_pass_frame,
+        format_frame=_format_frame,
+        top_candidates=_top_candidates,
+        family_mix_frame=_family_mix_frame,
+        fail_reason_summary=_fail_reason_summary,
+        st_module=st,
+    )
 
 
 

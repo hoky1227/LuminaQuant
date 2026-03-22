@@ -28,6 +28,22 @@ class _FakeContainer:
     def info(self, value: str) -> None:
         self._calls.append(("info", value))
 
+    def caption(self, value: str) -> None:
+        self._calls.append(("caption", value))
+
+    def dataframe(self, data: Any, **_: Any) -> None:
+        if isinstance(data, pd.DataFrame):
+            self._calls.append(("dataframe", list(data.columns), len(data)))
+        else:
+            self._calls.append(("dataframe", type(data).__name__, None))
+
+    def expander(self, label: str, *, expanded: bool = False) -> _FakeContainer:
+        self._calls.append(("expander", label, expanded))
+        return _FakeContainer(self._calls, name=f"expander[{label}]")
+
+    def json(self, value: Any, **_: Any) -> None:
+        self._calls.append(("json", value))
+
     def plotly_chart(self, figure: Any, **_: Any) -> None:
         self._calls.append(("plotly_chart", figure))
 
@@ -117,3 +133,95 @@ def test_render_exact_window_control_strip_uses_panel_html_and_status_chip(monke
     assert any("Execution profile|" in value and "Requested TF:1m, 5m" in value for value in markdown_values)
     assert any("Metal / mixed-asset status|missing metals" in value for value in markdown_values)
     assert any("Memory discipline|" in value and "Decision peak:512.2 MiB" in value for value in markdown_values)
+
+
+def test_render_exact_window_timeframe_overview_renders_cards_and_frames(monkeypatch) -> None:
+    module, container, calls = _load_module(monkeypatch)
+    context = types.SimpleNamespace(
+        timeframe_rows=[{"timeframe": "5m"}, {"timeframe": "1m"}],
+        coverage_status=pd.DataFrame({"symbol": ["BTC/USDT"]}),
+    )
+    selection = types.SimpleNamespace(
+        summary_frame=pd.DataFrame({"timeframe": ["1m"], "oos_return": [0.1]}),
+        metric_matrix=pd.DataFrame({"oos_return": [0.1]}, index=["1m"]),
+    )
+
+    module.render_exact_window_timeframe_overview(
+        context,
+        selection,
+        format_frame=lambda frame: frame,
+        timeframe_card_html=lambda row: f"<card>{row['timeframe']}</card>",
+        timeframe_sort_key=lambda value: (0 if value == "1m" else 1, value),
+        st_module=container,
+    )
+
+    markdown_values = [call[1] for call in calls if call[0] == "markdown"]
+    assert any("exact-window-section-caption" in value for value in markdown_values)
+    assert any("<card>1m</card><card>5m</card>" in value for value in markdown_values)
+    assert ("subheader", "All Timeframes At a Glance") in calls
+    assert ("subheader", "Metric Matrix") in calls
+    assert ("subheader", "Universe Coverage / Metals") in calls
+    assert any(call[0] == "dataframe" and "timeframe" in call[1] for call in calls)
+
+
+def test_render_exact_window_candidate_analysis_renders_leaderboards_and_triage(monkeypatch) -> None:
+    module, container, calls = _load_module(monkeypatch)
+    candidate_scope = pd.DataFrame(
+        [
+            {
+                "timeframe": "1m",
+                "asset_mix": "crypto",
+                "strategy": "PairTrading",
+                "name": "alpha",
+                "symbols": ["BTC/USDT", "ETH/USDT"],
+                "oos_return": 0.12,
+                "oos_sharpe": 1.2,
+                "oos_sortino": 1.3,
+                "oos_calmar": 1.1,
+                "oos_mdd": -0.05,
+                "oos_pbo": 0.2,
+                "val_return": 0.11,
+                "val_sharpe": 1.1,
+                "val_pbo": 0.25,
+                "oos_trades": 10,
+                "oos_turnover": 0.3,
+                "oos_win_rate": 0.55,
+                "oos_avg_trade": 0.01,
+                "rejects": 0,
+            }
+        ]
+    )
+    context = types.SimpleNamespace(
+        decision={"generated_at": "2026-03-22T00:00:00Z"},
+        details_frame=pd.DataFrame({"family": ["pairs"], "asset_mix": ["crypto"]}),
+        bundle={"fail_analysis": {"reason": "gate"}},
+        next_iteration={"action": "rerun"},
+    )
+    selection = types.SimpleNamespace(candidate_scope=candidate_scope)
+
+    module.render_exact_window_candidate_analysis(
+        context,
+        selection,
+        candidate_pool_frame=lambda _decision: pd.DataFrame({"candidate": ["alpha"]}),
+        strict_pass_frame=lambda _decision: pd.DataFrame({"name": ["alpha"]}),
+        format_frame=lambda frame: frame,
+        top_candidates=lambda frame, columns: frame.loc[:, columns],
+        family_mix_frame=lambda _details: (
+            pd.DataFrame({"family": ["pairs"], "count": [1]}),
+            pd.DataFrame({"asset_mix": ["crypto"], "count": [1]}),
+        ),
+        fail_reason_summary=lambda _bundle: (
+            pd.DataFrame({"reason": ["gate"], "count": [1]}),
+            pd.DataFrame({"timeframe": ["1m"], "count": [1]}),
+            pd.DataFrame({"proposal": ["rerun"]}),
+        ),
+        st_module=container,
+    )
+
+    assert ("subheader", "Selection / Promotion Overview") in calls
+    assert ("subheader", "Candidate Leaderboards") in calls
+    assert ("caption", "Top by OOS quality") in calls
+    assert ("subheader", "Family / Timeframe Distribution") in calls
+    assert ("subheader", "Reject Reasons") in calls
+    assert ("expander", "Next Iteration Triage", True) in calls
+    assert ("json", {"action": "rerun"}) in calls
