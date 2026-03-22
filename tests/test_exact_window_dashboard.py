@@ -141,6 +141,7 @@ def _package(name: str, path: str | None = None) -> types.ModuleType:
 def _load_dashboard_module(monkeypatch) -> Any:
     root = Path(__file__).resolve().parents[1]
     module_path = root / "apps" / "dashboard" / "exact_window_suite.py"
+    panels_module_path = root / "apps" / "dashboard" / "services" / "exact_window_panels.py"
     render_module_path = root / "apps" / "dashboard" / "services" / "exact_window_render.py"
 
     streamlit_module = types.ModuleType("streamlit")
@@ -162,6 +163,13 @@ def _load_dashboard_module(monkeypatch) -> Any:
     if render_spec is None or render_spec.loader is None:
         raise RuntimeError("Failed to load exact-window render helper module")
     render_module = importlib.util.module_from_spec(render_spec)
+    panels_spec = importlib.util.spec_from_file_location(
+        "apps.dashboard.services.exact_window_panels",
+        panels_module_path,
+    )
+    if panels_spec is None or panels_spec.loader is None:
+        raise RuntimeError("Failed to load exact-window panels helper module")
+    panels_module = importlib.util.module_from_spec(panels_spec)
 
     lumina_quant_module = _package("lumina_quant", str(root / "src" / "lumina_quant"))
     eval_package = _package("lumina_quant.eval", str(root / "src" / "lumina_quant" / "eval"))
@@ -177,6 +185,7 @@ def _load_dashboard_module(monkeypatch) -> Any:
         "apps.dashboard": dashboard_module,
         "apps.dashboard.services": services_module,
         "apps.dashboard.services.exact_window": service_exact_window,
+        "apps.dashboard.services.exact_window_panels": panels_module,
         "apps.dashboard.services.exact_window_render": render_module,
         "lumina_quant": lumina_quant_module,
         "lumina_quant.eval": eval_package,
@@ -184,6 +193,7 @@ def _load_dashboard_module(monkeypatch) -> Any:
     }.items():
         monkeypatch.setitem(sys.modules, name, module)
 
+    panels_spec.loader.exec_module(panels_module)
     render_spec.loader.exec_module(render_module)
 
     spec = importlib.util.spec_from_file_location("dashboard_exact_window_renderer_test", module_path)
