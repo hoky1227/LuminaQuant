@@ -1095,6 +1095,28 @@ def test_liquidity_shock_reversion_strategy_signal_produces_exposure():
     assert np.any(turnover > 0.0)
 
 
+def test_shock_reversion_position_series_resumes_after_nonfinite_close():
+    position = research_runner._shock_reversion_position_series(
+        close=np.asarray([100.0, np.nan, 99.0], dtype=float),
+        returns=np.asarray([-0.05, -0.01, -0.01], dtype=float),
+        vol_z=np.asarray([2.0, 2.0, 0.0], dtype=float),
+        range_z=np.asarray([2.0, 2.0, 0.0], dtype=float),
+        config=research_runner._ShockReversionFadeConfig(
+            volume_window=24,
+            range_window=16,
+            volume_shock_z=0.8,
+            range_shock_z=0.8,
+            return_shock_pct=0.01,
+            revert_fraction=0.50,
+            max_hold_bars=18,
+            stop_loss_pct=0.03,
+            allow_short=True,
+        ),
+    )
+
+    assert np.array_equal(position, np.asarray([1.0, 0.0, 1.0], dtype=float))
+
+
 def test_session_liquidity_vacuum_fade_strategy_signal_respects_session_gate():
     length = 120
     close = np.linspace(100.0, 102.0, length, dtype=float)

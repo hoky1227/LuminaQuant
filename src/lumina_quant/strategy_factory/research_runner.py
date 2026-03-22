@@ -4176,6 +4176,13 @@ class _ShockReversionFadeConfig:
     allow_short: bool
 
 
+@dataclass(frozen=True, slots=True)
+class _ShockReversionStepInput:
+    close_i: float
+    ret_i: float
+    shock_ok: bool
+
+
 def _resolve_shock_reversion_fade_config(
     params: Mapping[str, Any],
     *,
@@ -4246,54 +4253,94 @@ def _shock_reversion_position_series(
     gate = np.ones(close.shape, dtype=bool) if entry_gate is None else np.asarray(entry_gate, dtype=bool)
 
     for idx in range(close.size):
-        close_i = float(close[idx])
-        if not np.isfinite(close_i):
-            continue
-
-        ret_i = float(returns[idx]) if np.isfinite(returns[idx]) else 0.0
-        shock_ok = gate[idx] and float(vol_z[idx]) >= config.volume_shock_z and float(range_z[idx]) >= config.range_shock_z
-
-        if mode == 1 and entry_price is not None and target_price is not None:
-            hold_bars += 1
-            stop_hit = close_i <= entry_price * (1.0 - config.stop_loss_pct)
-            revert_hit = close_i >= target_price
-            timeout_hit = hold_bars >= config.max_hold_bars
-            if stop_hit or revert_hit or timeout_hit:
-                mode = 0
-                entry_price = None
-                target_price = None
-                hold_bars = 0
-            else:
-                pos[idx] = 1.0
-                continue
-        elif mode == -1 and entry_price is not None and target_price is not None:
-            hold_bars += 1
-            stop_hit = close_i >= entry_price * (1.0 + config.stop_loss_pct)
-            revert_hit = close_i <= target_price
-            timeout_hit = hold_bars >= config.max_hold_bars
-            if stop_hit or revert_hit or timeout_hit:
-                mode = 0
-                entry_price = None
-                target_price = None
-                hold_bars = 0
-            else:
-                pos[idx] = -1.0
-                continue
-
-        if mode == 0 and shock_ok:
-            if ret_i <= -config.return_shock_pct:
-                mode = 1
-                entry_price = close_i
-                target_price = close_i * (1.0 + (abs(ret_i) * config.revert_fraction))
-                hold_bars = 0
-                pos[idx] = 1.0
-            elif config.allow_short and ret_i >= config.return_shock_pct:
-                mode = -1
-                entry_price = close_i
-                target_price = close_i * (1.0 - (abs(ret_i) * config.revert_fraction))
-                hold_bars = 0
-                pos[idx] = -1.0
+        step = _shock_reversion_step_input(
+            idx=idx,
+            close=close,
+            returns=returns,
+            vol_z=vol_z,
+            range_z=range_z,
+            gate=gate,
+            config=config,
+        )
+        mode, entry_price, target_price, hold_bars, pos[idx] = _shock_reversion_step(
+            mode=mode,
+            entry_price=entry_price,
+            target_price=target_price,
+            hold_bars=hold_bars,
+            step=step,
+            config=config,
+        )
     return pos
+
+
+def _shock_reversion_step_input(
+    *,
+    idx: int,
+    close: np.ndarray,
+    returns: np.ndarray,
+    vol_z: np.ndarray,
+    range_z: np.ndarray,
+    gate: np.ndarray,
+    config: _ShockReversionFadeConfig,
+) -> _ShockReversionStepInput:
+    close_i = float(close[idx])
+    ret_i = float(returns[idx]) if np.isfinite(returns[idx]) else 0.0
+    shock_ok = bool(gate[idx]) and float(vol_z[idx]) >= config.volume_shock_z and float(range_z[idx]) >= config.range_shock_z
+    return _ShockReversionStepInput(
+        close_i=close_i,
+        ret_i=ret_i,
+        shock_ok=shock_ok,
+    )
+
+
+def _shock_reversion_step(
+    *,
+    mode: int,
+    entry_price: float | None,
+    target_price: float | None,
+    hold_bars: int,
+    step: _ShockReversionStepInput,
+    config: _ShockReversionFadeConfig,
+) -> tuple[int, float | None, float | None, int, float]:
+    if not np.isfinite(step.close_i):
+        return mode, entry_price, target_price, hold_bars, 0.0
+
+    if mode == 1 and entry_price is not None and target_price is not None:
+        next_hold_bars = hold_bars + 1
+        stop_hit = step.close_i <= entry_price * (1.0 - config.stop_loss_pct)
+        revert_hit = step.close_i >= target_price
+        timeout_hit = next_hold_bars >= config.max_hold_bars
+        if stop_hit or revert_hit or timeout_hit:
+            return 0, None, None, 0, 0.0
+        return 1, entry_price, target_price, next_hold_bars, 1.0
+
+    if mode == -1 and entry_price is not None and target_price is not None:
+        next_hold_bars = hold_bars + 1
+        stop_hit = step.close_i >= entry_price * (1.0 + config.stop_loss_pct)
+        revert_hit = step.close_i <= target_price
+        timeout_hit = next_hold_bars >= config.max_hold_bars
+        if stop_hit or revert_hit or timeout_hit:
+            return 0, None, None, 0, 0.0
+        return -1, entry_price, target_price, next_hold_bars, -1.0
+
+    if mode == 0 and step.shock_ok:
+        if step.ret_i <= -config.return_shock_pct:
+            return (
+                1,
+                step.close_i,
+                step.close_i * (1.0 + (abs(step.ret_i) * config.revert_fraction)),
+                0,
+                1.0,
+            )
+        if config.allow_short and step.ret_i >= config.return_shock_pct:
+            return (
+                -1,
+                step.close_i,
+                step.close_i * (1.0 - (abs(step.ret_i) * config.revert_fraction)),
+                0,
+                -1.0,
+            )
+    return mode, entry_price, target_price, hold_bars, 0.0
 
 
 def _apply_liquidity_shock_reversion_strategy(
