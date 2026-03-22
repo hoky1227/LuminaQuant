@@ -4766,6 +4766,95 @@ def _frame_to_bundle(symbol: str, timeframe: str, frame: pl.DataFrame) -> Series
     )
 
 
+def _load_timeframe_parquet_frames(
+    *,
+    symbols: Sequence[str],
+    timeframe: str,
+    parquet_root: str,
+    exchange: str,
+    start_date: Any,
+    end_date: Any,
+    data_mode: str,
+) -> dict[str, pl.DataFrame]:
+    try:
+        return load_data_dict_from_parquet(
+            parquet_root,
+            exchange=exchange,
+            symbol_list=list(symbols),
+            timeframe=timeframe,
+            start_date=start_date,
+            end_date=end_date,
+            data_mode=str(data_mode or "legacy"),
+        )
+    except (FileNotFoundError, OSError, RuntimeError, ValueError):
+        return {}
+
+
+def _csv_bundle_candidates(symbol: str) -> list[Path]:
+    compact = symbol.replace("/", "")
+    return [
+        Path("data") / f"{compact}.csv",
+        Path("data") / f"{symbol}.csv",
+        Path("data") / f"{symbol.replace('/', '_')}.csv",
+    ]
+
+
+def _filter_csv_frame_date_bounds(
+    frame_csv: pl.DataFrame,
+    *,
+    start_date: Any,
+    end_date: Any,
+) -> pl.DataFrame:
+    if frame_csv.is_empty() or (start_date is None and end_date is None):
+        return frame_csv
+
+    start_bound = _coerce_utc_datetime(start_date)
+    end_bound = _coerce_utc_datetime(end_date, end_of_day=True)
+    if start_bound is not None:
+        frame_csv = frame_csv.filter(pl.col("datetime") >= start_bound.replace(tzinfo=None))
+    if end_bound is not None:
+        frame_csv = frame_csv.filter(pl.col("datetime") <= end_bound.replace(tzinfo=None))
+    return frame_csv
+
+
+def _load_csv_bundle(
+    *,
+    symbol: str,
+    timeframe: str,
+    start_date: Any,
+    end_date: Any,
+    min_bars: int,
+) -> SeriesBundle | None:
+    for csv_path in _csv_bundle_candidates(symbol):
+        if not csv_path.exists():
+            continue
+        try:
+            frame_csv = _read_csv_ohlcv(csv_path)
+        except (FileNotFoundError, OSError, RuntimeError, ValueError):
+            frame_csv = pl.DataFrame()
+        frame_csv = _filter_csv_frame_date_bounds(
+            frame_csv,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        if frame_csv.is_empty() or frame_csv.height < max(1, int(min_bars)):
+            continue
+        return _frame_to_bundle(symbol, timeframe, frame_csv)
+    return None
+
+
+def _strict_missing_bundle_error(*, symbol: str, timeframe: str) -> RawFirstDataMissingError:
+    return RawFirstDataMissingError(
+        f"Real market data missing for {symbol}@{timeframe} in strict mode."
+    )
+
+
+def _synthetic_disabled_bundle_error(*, symbol: str, timeframe: str) -> RawFirstDataMissingError:
+    return RawFirstDataMissingError(
+        f"Synthetic fallback is disabled and real market data is missing for {symbol}@{timeframe}."
+    )
+
+
 def _load_bundle_cache(
     *,
     symbols: Sequence[str],
@@ -4786,19 +4875,15 @@ def _load_bundle_cache(
     exchange = str(defaults["exchange"])
 
     for timeframe in timeframes:
-        loaded: dict[str, pl.DataFrame] = {}
-        try:
-            loaded = load_data_dict_from_parquet(
-                parquet_root,
-                exchange=exchange,
-                symbol_list=list(symbols),
-                timeframe=timeframe,
-                start_date=start_date,
-                end_date=end_date,
-                data_mode=str(data_mode or "legacy"),
-            )
-        except (FileNotFoundError, OSError, RuntimeError, ValueError):
-            loaded = {}
+        loaded = _load_timeframe_parquet_frames(
+            symbols=symbols,
+            timeframe=timeframe,
+            parquet_root=parquet_root,
+            exchange=exchange,
+            start_date=start_date,
+            end_date=end_date,
+            data_mode=data_mode,
+        )
 
         for symbol in symbols:
             key = (symbol, timeframe)
@@ -4809,51 +4894,23 @@ def _load_bundle_cache(
                 continue
 
             if not allow_csv_fallback and not allow_synthetic_fallback:
-                raise RawFirstDataMissingError(
-                    f"Real market data missing for {symbol}@{timeframe} in strict mode."
-                )
+                raise _strict_missing_bundle_error(symbol=symbol, timeframe=timeframe)
 
-            # CSV fallback (compact token layout).
             if allow_csv_fallback:
-                compact = symbol.replace("/", "")
-                csv_candidates = [
-                    Path("data") / f"{compact}.csv",
-                    Path("data") / f"{symbol}.csv",
-                    Path("data") / f"{symbol.replace('/', '_')}.csv",
-                ]
-                csv_bundle: SeriesBundle | None = None
-                for csv_path in csv_candidates:
-                    if not csv_path.exists():
-                        continue
-                    try:
-                        frame_csv = _read_csv_ohlcv(csv_path)
-                    except (FileNotFoundError, OSError, RuntimeError, ValueError):
-                        frame_csv = pl.DataFrame()
-                    if not frame_csv.is_empty() and (start_date is not None or end_date is not None):
-                        start_bound = _coerce_utc_datetime(start_date)
-                        end_bound = _coerce_utc_datetime(end_date, end_of_day=True)
-                        if start_bound is not None:
-                            frame_csv = frame_csv.filter(
-                                pl.col("datetime") >= start_bound.replace(tzinfo=None)
-                            )
-                        if end_bound is not None:
-                            frame_csv = frame_csv.filter(
-                                pl.col("datetime") <= end_bound.replace(tzinfo=None)
-                            )
-                    if frame_csv.is_empty() or frame_csv.height < max(1, int(min_bars)):
-                        continue
-                    csv_bundle = _frame_to_bundle(symbol, timeframe, frame_csv)
-                    break
-
+                csv_bundle = _load_csv_bundle(
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    start_date=start_date,
+                    end_date=end_date,
+                    min_bars=min_bars,
+                )
                 if csv_bundle is not None:
                     cache[key] = csv_bundle
                     source_map["csv"].append(f"{symbol}@{timeframe}")
                     continue
 
             if not allow_synthetic_fallback:
-                raise RawFirstDataMissingError(
-                    f"Synthetic fallback is disabled and real market data is missing for {symbol}@{timeframe}."
-                )
+                raise _synthetic_disabled_bundle_error(symbol=symbol, timeframe=timeframe)
 
             cache[key] = _synthetic_bundle(symbol, timeframe, start_date=start_date, end_date=end_date)
             source_map["synthetic"].append(f"{symbol}@{timeframe}")

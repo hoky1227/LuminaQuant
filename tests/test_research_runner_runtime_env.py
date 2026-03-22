@@ -186,6 +186,46 @@ def test_load_bundle_cache_honors_explicit_market_data_settings(
     assert captured["symbol_list"] == ["ETH/USDT"]
 
 
+def test_load_bundle_cache_uses_csv_fallback_with_date_bounds(
+    tmp_path: Path,
+    monkeypatch,
+):
+    monkeypatch.chdir(tmp_path)
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / "BTCUSDT.csv").write_text(
+        "\n".join(
+            [
+                "datetime,open,high,low,close,volume",
+                "2024-01-01T00:00:00,100,101,99,100.5,10",
+                "2024-01-02T00:00:00,101,102,100,101.5,12",
+                "2024-01-03T00:00:00,102,103,101,102.5,11",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(research_runner, "load_data_dict_from_parquet", lambda *args, **kwargs: {})
+
+    cache, source_map = research_runner._load_bundle_cache(
+        symbols=["BTC/USDT"],
+        timeframes=["1m"],
+        start_date="2024-01-02",
+        end_date="2024-01-02",
+        allow_synthetic_fallback=False,
+        min_bars=1,
+        market_data_settings={
+            "symbols": ["BTC/USDT"],
+            "market_data_parquet_path": "unused",
+            "market_data_exchange": "binance",
+        },
+    )
+
+    bundle = cache[("BTC/USDT", "1m")]
+    assert source_map["csv"] == ["BTC/USDT@1m"]
+    assert bundle.close.tolist() == [101.5]
+
+
 def test_load_feature_cache_uses_runtime_market_data_settings(
     tmp_path: Path,
     monkeypatch,
