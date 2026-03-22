@@ -59,6 +59,14 @@ from apps.dashboard.services.execution_dashboard import (
     build_trade_pnl_figure as _build_trade_pnl_figure_data,
     filter_closed_trade_analytics as _filter_closed_trade_analytics_data,
 )
+from apps.dashboard.services.overview_dashboard import (
+    build_benchmark_price_figure as _build_benchmark_price_figure_data,
+    build_cumulative_return_figure as _build_cumulative_return_figure_data,
+    build_drawdown_figure as _build_drawdown_figure_data,
+    build_equity_curve_figure as _build_equity_curve_figure_data,
+    build_funding_figure as _build_funding_figure_data,
+    build_monthly_returns_heatmap as _build_monthly_returns_heatmap_data,
+)
 from apps.dashboard.services.ghost_cleanup import (
     run_ghost_cleanup_script as _run_ghost_cleanup_script_data,
 )
@@ -3727,136 +3735,37 @@ def render_main_dashboard() -> None:
         )
 
         if not plot_equity.empty:
-            fig_equity = go.Figure()
-            fig_equity.add_trace(
-                go.Scatter(
-                    x=plot_equity["datetime"],
-                    y=plot_equity["total"],
-                    mode="lines",
-                    name="Strategy Equity",
-                    line=dict(color="#0db39e", width=2),
-                )
+            st.plotly_chart(
+                _build_equity_curve_figure_data(plot_equity),
+                use_container_width=True,
             )
-            fig_equity.update_layout(
-                title="Equity Curve",
-                xaxis_title="Date",
-                yaxis_title="Equity",
-                template="plotly_white",
-                hovermode="x unified",
+
+            benchmark_figure = _build_benchmark_price_figure_data(plot_equity)
+            if benchmark_figure is not None:
+                st.plotly_chart(benchmark_figure, use_container_width=True)
+
+            funding_figure = _build_funding_figure_data(plot_equity)
+            if funding_figure is not None:
+                st.plotly_chart(funding_figure, use_container_width=True)
+
+            cumulative_return_figure = _build_cumulative_return_figure_data(df_equity, performance)
+            if cumulative_return_figure is not None:
+                st.plotly_chart(cumulative_return_figure, use_container_width=True)
+
+            st.plotly_chart(
+                _build_drawdown_figure_data(plot_equity),
+                use_container_width=True,
             )
-            st.plotly_chart(fig_equity, use_container_width=True)
-
-            if "benchmark_price" in plot_equity.columns:
-                benchmark_series = pd.to_numeric(plot_equity["benchmark_price"], errors="coerce")
-                if benchmark_series.notna().any():
-                    fig_benchmark = go.Figure()
-                    fig_benchmark.add_trace(
-                        go.Scatter(
-                            x=plot_equity["datetime"],
-                            y=benchmark_series,
-                            mode="lines",
-                            line=dict(color="#805ad5", width=1.5),
-                            name="Benchmark Price",
-                        )
-                    )
-                    fig_benchmark.update_layout(
-                        title="Benchmark Price (from Equity Metadata)",
-                        xaxis_title="Date",
-                        yaxis_title="Price",
-                        template="plotly_white",
-                        hovermode="x unified",
-                    )
-                    st.plotly_chart(fig_benchmark, use_container_width=True)
-
-            if "funding" in plot_equity.columns:
-                funding_series = pd.to_numeric(plot_equity["funding"], errors="coerce")
-                if funding_series.notna().any():
-                    fig_funding = go.Figure()
-                    fig_funding.add_trace(
-                        go.Scatter(
-                            x=plot_equity["datetime"],
-                            y=funding_series,
-                            mode="lines",
-                            line=dict(color="#dd6b20", width=2),
-                            name="Funding (Net)",
-                        )
-                    )
-                    fig_funding.update_layout(
-                        title="Funding (Net) Over Time",
-                        xaxis_title="Date",
-                        yaxis_title="Funding",
-                        template="plotly_white",
-                        hovermode="x unified",
-                    )
-                    st.plotly_chart(fig_funding, use_container_width=True)
-
-            if (
-                performance
-                and len(performance.get("cum_return_series", [])) == len(df_equity.index) - 1
-            ):
-                cum_returns = pd.Series(performance["cum_return_series"])
-                fig_cum_ret = go.Figure()
-                fig_cum_ret.add_trace(
-                    go.Scatter(
-                        x=df_equity["datetime"].iloc[1:],
-                        y=cum_returns,
-                        mode="lines",
-                        line=dict(color="#2b6cb0", width=2),
-                        name="Cumulative Return",
-                    )
-                )
-                fig_cum_ret.update_layout(
-                    title="Cumulative Return",
-                    xaxis_title="Date",
-                    yaxis_title="Return",
-                    template="plotly_white",
-                    hovermode="x unified",
-                    yaxis_tickformat=".2%",
-                )
-                st.plotly_chart(fig_cum_ret, use_container_width=True)
-
-            roll_max = plot_equity["total"].cummax()
-            drawdown = (plot_equity["total"] - roll_max) / roll_max
-            fig_dd = go.Figure()
-            fig_dd.add_trace(
-                go.Scatter(
-                    x=plot_equity["datetime"],
-                    y=drawdown,
-                    fill="tozeroy",
-                    name="Drawdown",
-                    line=dict(color="#f05a66"),
-                )
-            )
-            fig_dd.update_layout(title="Drawdown", yaxis_title="Drawdown", template="plotly_white")
-            st.plotly_chart(fig_dd, use_container_width=True)
 
             monthly_table = _build_monthly_returns_table(df_equity, performance)
             if not monthly_table.empty:
-                values = monthly_table.to_numpy(dtype=float)
-                text_vals = [
-                    [f"{_safe_float(v):.2%}" if np.isfinite(v) else "" for v in row] for row in values
-                ]
-                fig_monthly = go.Figure(
-                    data=[
-                        go.Heatmap(
-                            z=values,
-                            x=list(monthly_table.columns),
-                            y=[str(idx) for idx in monthly_table.index],
-                            colorscale="RdBu",
-                            zmid=0.0,
-                            text=text_vals,
-                            texttemplate="%{text}",
-                            hovertemplate="Year %{y} | %{x}: %{z:.2%}<extra></extra>",
-                        )
-                    ]
+                st.plotly_chart(
+                    _build_monthly_returns_heatmap_data(
+                        monthly_table,
+                        safe_float=_safe_float,
+                    ),
+                    use_container_width=True,
                 )
-                fig_monthly.update_layout(
-                    title="Monthly Returns Heatmap",
-                    xaxis_title="Month",
-                    yaxis_title="Year",
-                    template="plotly_white",
-                )
-                st.plotly_chart(fig_monthly, use_container_width=True)
 
         if not plot_market.empty:
             fig_price = go.Figure()

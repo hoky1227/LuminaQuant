@@ -11,6 +11,7 @@ def test_dashboard_modules_do_not_mutate_sys_path() -> None:
         root / "apps" / "dashboard" / "services" / "execution_dashboard.py",
         root / "apps" / "dashboard" / "services" / "market_dashboard.py",
         root / "apps" / "dashboard" / "services" / "mirror_dashboard.py",
+        root / "apps" / "dashboard" / "services" / "overview_dashboard.py",
         root / "apps" / "dashboard" / "services" / "risk_dashboard.py",
         root / "apps" / "dashboard" / "services" / "exact_window.py",
     ]
