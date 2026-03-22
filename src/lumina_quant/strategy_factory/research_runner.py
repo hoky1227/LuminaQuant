@@ -2271,6 +2271,13 @@ class _MultiHorizonTrendExhaustionFadeConfig:
     allow_short: bool
 
 
+@dataclass(frozen=True, slots=True)
+class _MultiHorizonTrendExhaustionStepInput:
+    close_i: float
+    z_i: float
+    long_i: float
+
+
 def _resolve_multi_horizon_trend_exhaustion_fade_config(
     params: Mapping[str, Any],
 ) -> _MultiHorizonTrendExhaustionFadeConfig:
@@ -2301,60 +2308,83 @@ def _multi_horizon_trend_exhaustion_fade_position_series(
     hold_bars = 0
 
     for idx in range(close.size):
-        close_i = float(close[idx])
-        z_i = float(short_z[idx])
-        long_i = float(long_mom[idx]) if np.isfinite(long_mom[idx]) else 0.0
-        if not np.isfinite(close_i):
-            continue
-        if mode == 1:
-            hold_bars += 1
-            should_exit = (
-                z_i >= -config.exit_z
-                or long_i < 0.0
-                or hold_bars >= config.max_hold_bars
-                or (
-                    entry_price is not None
-                    and close_i <= float(entry_price) * (1.0 - config.stop_loss_pct)
-                )
-            )
-            if should_exit:
-                mode = 0
-                entry_price = None
-                hold_bars = 0
-            else:
-                position[idx] = 1.0
-                continue
-        elif mode == -1:
-            hold_bars += 1
-            should_exit = (
-                z_i <= config.exit_z
-                or long_i > 0.0
-                or hold_bars >= config.max_hold_bars
-                or (
-                    entry_price is not None
-                    and close_i >= float(entry_price) * (1.0 + config.stop_loss_pct)
-                )
-            )
-            if should_exit:
-                mode = 0
-                entry_price = None
-                hold_bars = 0
-            else:
-                position[idx] = -1.0
-                continue
-
-        if z_i >= config.entry_z and long_i <= 0.0 and config.allow_short:
-            mode = -1
-            entry_price = close_i
-            hold_bars = 0
-            position[idx] = -1.0
-        elif z_i <= -config.entry_z and long_i >= 0.0:
-            mode = 1
-            entry_price = close_i
-            hold_bars = 0
-            position[idx] = 1.0
+        step = _multi_horizon_trend_exhaustion_step_input(
+            idx=idx,
+            close=close,
+            short_z=short_z,
+            long_mom=long_mom,
+        )
+        mode, entry_price, hold_bars, position[idx] = _multi_horizon_trend_exhaustion_step(
+            mode=mode,
+            entry_price=entry_price,
+            hold_bars=hold_bars,
+            step=step,
+            config=config,
+        )
 
     return position
+
+
+def _multi_horizon_trend_exhaustion_step_input(
+    *,
+    idx: int,
+    close: np.ndarray,
+    short_z: np.ndarray,
+    long_mom: np.ndarray,
+) -> _MultiHorizonTrendExhaustionStepInput:
+    return _MultiHorizonTrendExhaustionStepInput(
+        close_i=float(close[idx]),
+        z_i=float(short_z[idx]),
+        long_i=float(long_mom[idx]) if np.isfinite(long_mom[idx]) else 0.0,
+    )
+
+
+def _multi_horizon_trend_exhaustion_step(
+    *,
+    mode: int,
+    entry_price: float | None,
+    hold_bars: int,
+    step: _MultiHorizonTrendExhaustionStepInput,
+    config: _MultiHorizonTrendExhaustionFadeConfig,
+) -> tuple[int, float | None, int, float]:
+    if not np.isfinite(step.close_i):
+        return mode, entry_price, hold_bars, 0.0
+
+    if mode == 1:
+        next_hold_bars = hold_bars + 1
+        should_exit = (
+            step.z_i >= -config.exit_z
+            or step.long_i < 0.0
+            or next_hold_bars >= config.max_hold_bars
+            or (
+                entry_price is not None
+                and step.close_i <= float(entry_price) * (1.0 - config.stop_loss_pct)
+            )
+        )
+        if should_exit:
+            return 0, None, 0, 0.0
+        return 1, entry_price, next_hold_bars, 1.0
+
+    if mode == -1:
+        next_hold_bars = hold_bars + 1
+        should_exit = (
+            step.z_i <= config.exit_z
+            or step.long_i > 0.0
+            or next_hold_bars >= config.max_hold_bars
+            or (
+                entry_price is not None
+                and step.close_i >= float(entry_price) * (1.0 + config.stop_loss_pct)
+            )
+        )
+        if should_exit:
+            return 0, None, 0, 0.0
+        return -1, entry_price, next_hold_bars, -1.0
+
+    if step.z_i >= config.entry_z and step.long_i <= 0.0 and config.allow_short:
+        return -1, step.close_i, 0, -1.0
+    if step.z_i <= -config.entry_z and step.long_i >= 0.0:
+        return 1, step.close_i, 0, 1.0
+    return 0, entry_price, hold_bars, 0.0
 
 
 def _apply_multi_horizon_trend_exhaustion_fade_strategy(

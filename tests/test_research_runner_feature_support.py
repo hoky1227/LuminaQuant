@@ -1789,6 +1789,33 @@ def test_multi_horizon_trend_exhaustion_fade_preserves_default_short_window(monk
     assert windows == [16]
 
 
+def test_multi_horizon_trend_exhaustion_fade_resumes_after_nonfinite_close(monkeypatch):
+    monkeypatch.setattr(
+        research_runner,
+        "_rolling_z",
+        lambda values, window: np.asarray([-2.0, -2.0, -2.0], dtype=float),
+    )
+    monkeypatch.setattr(
+        research_runner,
+        "_composite_momentum_series",
+        lambda values, **kwargs: np.asarray([1.0, 1.0, 1.0], dtype=float),
+    )
+
+    position = research_runner._multi_horizon_trend_exhaustion_fade_position_series(
+        close=np.asarray([100.0, np.nan, 101.0], dtype=float),
+        config=research_runner._MultiHorizonTrendExhaustionFadeConfig(
+            short_window=8,
+            entry_z=1.2,
+            exit_z=0.2,
+            max_hold_bars=12,
+            stop_loss_pct=0.02,
+            allow_short=True,
+        ),
+    )
+
+    assert np.array_equal(position, np.asarray([1.0, 0.0, 1.0], dtype=float))
+
+
 def test_vwap_reversion_strategy_signal_produces_exposure():
     length = 180
     close = np.full(length, 100.0, dtype=float)
