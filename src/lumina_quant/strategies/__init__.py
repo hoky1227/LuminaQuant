@@ -17,6 +17,7 @@ __all__ = [
     "get_strategy_names",
     "get_strategy_param_schema",
     "get_strategy_tier",
+    "registry",
     "resolve_grid_config",
     "resolve_optuna_config",
     "resolve_strategy_class",

@@ -66,7 +66,7 @@ class PublicStrategyRegistry:
         override: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         _ = strategy_name
-        cfg = {"n_trials": 20, "params": {}}
+        cfg: dict[str, Any] = {"n_trials": 20, "params": {}}
         if isinstance(override, dict):
             cfg.update(override)
         return cfg
@@ -77,7 +77,7 @@ class PublicStrategyRegistry:
         override: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         _ = strategy_name
-        cfg = {"params": {}}
+        cfg: dict[str, Any] = {"params": {}}
         if isinstance(override, dict):
             cfg.update(override)
         return cfg
