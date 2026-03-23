@@ -203,11 +203,11 @@ def refresh_workflow_jobs(
         conn.close()
 
     for job_id, status, pid in rows:
-                entry = workflow_processes.get(job_id)
-                if entry is not None:
-                    proc = entry.get("process") if isinstance(entry, dict) else None
-                    if proc is None:
-                        continue
+        entry = workflow_processes.get(job_id)
+        if entry is not None:
+            proc = entry.get("process") if isinstance(entry, dict) else None
+            if proc is None:
+                continue
             exit_code = proc.poll()
             if exit_code is None:
                 continue
