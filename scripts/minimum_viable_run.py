@@ -12,11 +12,12 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 
+_DEMO_START_DATE = datetime(2022, 1, 1)
+
 
 def _write_synthetic_ohlcv_csv(path: Path, *, days: int, seed: int) -> None:
     rng = np.random.default_rng(seed)
-    start_date = datetime(2022, 1, 1)
-    dates = [start_date + timedelta(days=i) for i in range(days)]
+    dates = [_DEMO_START_DATE + timedelta(days=i) for i in range(days)]
     returns = rng.normal(loc=0.0, scale=0.015, size=days)
     close = 100.0 * np.cumprod(1.0 + returns)
     open_ = close * (1.0 + rng.normal(loc=0.0, scale=0.002, size=days))
@@ -52,14 +53,16 @@ def ensure_sample_data(*, data_dir: Path, days: int) -> None:
         print(f"[INFO] Generated synthetic sample data: {path}")
 
 
-def build_demo_env(base_env: dict[str, str] | None = None) -> dict[str, str]:
+def build_demo_env(*, days: int, base_env: dict[str, str] | None = None) -> dict[str, str]:
+    effective_days = max(30, int(days))
+    end_date = _DEMO_START_DATE + timedelta(days=effective_days - 1)
     env = dict(base_env or os.environ)
     env.update(
         {
             "LQ__TRADING__SYMBOLS": '["BTC/USDT","ETH/USDT"]',
             "LQ__STORAGE__BACKEND": "local",
-            "LQ__BACKTEST__START_DATE": "2022-01-01",
-            "LQ__BACKTEST__END_DATE": "2022-04-30",
+            "LQ__BACKTEST__START_DATE": _DEMO_START_DATE.strftime("%Y-%m-%d"),
+            "LQ__BACKTEST__END_DATE": end_date.strftime("%Y-%m-%d"),
             "LQ_DATA_MODE": "legacy",
             "LQ_BACKTEST_MODE": "legacy_batch",
             "LQ_AUTO_COLLECT_DB": "0",
@@ -72,8 +75,9 @@ def build_demo_env(base_env: dict[str, str] | None = None) -> dict[str, str]:
 
 def run_minimum_viable_backtest(*, days: int) -> int:
     project_root = Path(__file__).resolve().parents[1]
-    ensure_sample_data(data_dir=project_root / "data", days=max(30, int(days)))
-    env = build_demo_env()
+    effective_days = max(30, int(days))
+    ensure_sample_data(data_dir=project_root / "data", days=effective_days)
+    env = build_demo_env(days=effective_days)
     cmd = [
         sys.executable,
         "-m",

@@ -13,14 +13,23 @@ _SPEC.loader.exec_module(mvr)
 
 
 def test_build_demo_env_contains_no_infra_overrides():
-    env = mvr.build_demo_env({})
+    env = mvr.build_demo_env(days=45, base_env={})
     assert env["LQ__TRADING__SYMBOLS"] == '["BTC/USDT","ETH/USDT"]'
     assert env["LQ__STORAGE__BACKEND"] == "local"
+    assert env["LQ__BACKTEST__START_DATE"] == "2022-01-01"
+    assert env["LQ__BACKTEST__END_DATE"] == "2022-02-14"
     assert env["LQ_DATA_MODE"] == "legacy"
     assert env["LQ_BACKTEST_MODE"] == "legacy_batch"
     assert env["LQ_AUTO_COLLECT_DB"] == "0"
     assert env["LQ_BACKTEST_LOW_MEMORY"] == "1"
     assert env["LQ_BACKTEST_PERSIST_OUTPUT"] == "0"
+
+
+def test_build_demo_env_clamps_short_ranges_to_minimum_days():
+    env = mvr.build_demo_env(days=5, base_env={})
+
+    assert env["LQ__BACKTEST__START_DATE"] == "2022-01-01"
+    assert env["LQ__BACKTEST__END_DATE"] == "2022-01-30"
 
 
 def test_run_minimum_viable_backtest_invokes_csv_backtest(monkeypatch):
@@ -59,5 +68,7 @@ def test_run_minimum_viable_backtest_invokes_csv_backtest(monkeypatch):
     ]
     assert "--no-auto-collect-db" in captured["cmd"]
     assert captured["env"]["LQ__TRADING__SYMBOLS"] == '["BTC/USDT","ETH/USDT"]'
+    assert captured["env"]["LQ__BACKTEST__START_DATE"] == "2022-01-01"
+    assert captured["env"]["LQ__BACKTEST__END_DATE"] == "2022-02-14"
     assert captured["env"]["LQ_DATA_MODE"] == "legacy"
     assert captured["env"]["LQ_BACKTEST_MODE"] == "legacy_batch"
