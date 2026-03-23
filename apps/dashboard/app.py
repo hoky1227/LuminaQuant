@@ -1,5 +1,6 @@
 import importlib
 import json
+import logging
 import math
 import os
 import sys
@@ -14,6 +15,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
+
+logger = logging.getLogger(__name__)
 
 from lumina_quant.config import BacktestConfig, BaseConfig, OptimizationConfig
 from lumina_quant.market_data import (
@@ -252,6 +255,9 @@ def _execute_query(dsn: str, query: str, params=None):
             try:
                 rows = cursor.fetchall()
             except Exception:
+                logger.warning(
+                    "Dashboard query helper fell back to an empty result set after fetchall failed."
+                )
                 rows = []
         conn.commit()
         return rows
@@ -275,6 +281,12 @@ def _count_market_rows(db_path):
             return 0
         return int(row[0])
     except Exception:
+        logger.warning(
+            "Dashboard market row count fell back to zero after a query failure."
+        )
+        st.warning(
+            "Unable to count market rows right now; dashboard is falling back to zero rows."
+        )
         return 0
 
 

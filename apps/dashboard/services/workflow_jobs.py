@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import json
 import os
 import subprocess
@@ -10,6 +11,8 @@ from pathlib import Path
 from collections.abc import Callable, MutableMapping
 
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW_RUNTIME_ROOT = PROJECT_ROOT / "var" / "dashboard"
@@ -93,6 +96,16 @@ def launch_managed_job(
     normalized_env = {str(key): str(value) for key, value in (env_overrides or {}).items()}
     env = os.environ.copy()
     env.update(normalized_env)
+    resolved_cwd = cwd or str(PROJECT_ROOT)
+    normalized_metadata = dict(metadata or {})
+    if not cwd:
+        logger.warning(
+            "launch_managed_job defaulted cwd to project root for workflow=%s job_id=%s",
+            workflow,
+            job_id,
+        )
+        normalized_metadata.setdefault("runtime_cwd", resolved_cwd)
+        normalized_metadata.setdefault("runtime_cwd_source", "project_root_fallback")
 
     started_at = utc_now_iso()
     with open(log_path, "a", encoding="utf-8") as log_file:
@@ -102,7 +115,7 @@ def launch_managed_job(
             stderr=subprocess.STDOUT,
             text=True,
             env=env,
-            cwd=cwd or str(PROJECT_ROOT),
+            cwd=resolved_cwd,
         )
 
     insert_workflow_job_row(
@@ -122,7 +135,7 @@ def launch_managed_job(
             "exit_code": None,
             "log_path": log_path,
             "stop_file": stop_file,
-            "metadata_json": json.dumps(metadata or {}, ensure_ascii=False),
+            "metadata_json": json.dumps(normalized_metadata, ensure_ascii=False),
             "last_updated": started_at,
         },
     )
@@ -158,6 +171,10 @@ def refresh_workflow_jobs(
     utc_now_iso: Callable[[], str],
 ) -> None:
     if not resolve_postgres_dsn(db_path):
+        logger.warning(
+            "Skipping workflow job refresh because no Postgres DSN resolved for db_path=%s",
+            db_path,
+        )
         return
     ensure_workflow_jobs_schema(db_path)
     workflow_processes = session_state.setdefault("workflow_processes", {})
@@ -168,6 +185,11 @@ def refresh_workflow_jobs(
     try:
         conn = connect_state_store(db_path)
     except Exception:
+        logger.warning(
+            "Unable to connect to workflow job store for db_path=%s; skipping refresh",
+            db_path,
+            exc_info=True,
+        )
         return
     try:
         rows = conn.execute(
@@ -222,11 +244,20 @@ def load_workflow_jobs_frame(
     coerce_datetime: Callable[[pd.DataFrame, str], pd.DataFrame],
 ) -> pd.DataFrame:
     if not resolve_postgres_dsn(db_path):
+        logger.warning(
+            "Skipping workflow job load because no Postgres DSN resolved for db_path=%s",
+            db_path,
+        )
         return pd.DataFrame()
     ensure_workflow_jobs_schema(db_path)
     try:
         conn = connect_state_store(db_path)
     except Exception:
+        logger.warning(
+            "Unable to connect to workflow job store for db_path=%s; returning empty frame",
+            db_path,
+            exc_info=True,
+        )
         return pd.DataFrame()
     try:
         try:
@@ -236,6 +267,11 @@ def load_workflow_jobs_frame(
                 params=[int(max(1, limit))],
             )
         except Exception:
+            logger.warning(
+                "Unable to query workflow jobs for db_path=%s; returning empty frame",
+                db_path,
+                exc_info=True,
+            )
             return pd.DataFrame()
     finally:
         conn.close()
