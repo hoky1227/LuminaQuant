@@ -16,8 +16,6 @@ import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
 
-logger = logging.getLogger(__name__)
-
 from lumina_quant.config import BacktestConfig, BaseConfig, OptimizationConfig
 from lumina_quant.market_data import (
     normalize_symbol,
@@ -112,6 +110,8 @@ from apps.dashboard.services.market_dashboard import (
     build_rsi_signal_figure as _build_rsi_signal_figure_data,
     build_rsi_summary_metrics as _build_rsi_summary_metrics_data,
 )
+
+logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
