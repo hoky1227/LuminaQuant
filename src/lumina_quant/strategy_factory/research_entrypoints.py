@@ -7,10 +7,17 @@ moving the orchestration-facing surface out of ``research_runner.py``.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
+from datetime import UTC, datetime
+from functools import lru_cache
 from importlib import import_module
 from typing import Any
 
+from lumina_quant.symbols import CANONICAL_STRATEGY_TIMEFRAMES
+from lumina_quant.strategy_factory.runtime_settings import (
+    current_research_market_data_settings as _current_research_market_data_settings_impl,
+)
 
+@lru_cache(maxsize=1)
 def _runner_module():
     """Resolve the legacy runner lazily to reduce import-time coupling."""
     return import_module("lumina_quant.strategy_factory.research_runner")
@@ -65,10 +72,9 @@ def _candidate_research_report_payload(
     data_sources: dict[str, list[str]],
     report_candidates: Sequence[dict[str, Any]],
 ) -> dict[str, Any]:
-    runner = _runner_module()
     return {
         "schema_version": "v2",
-        "generated_at": runner.datetime.now(runner.UTC).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "base_timeframe": base_tf,
         "strategy_timeframes": normalized_timeframes,
         "symbol_universe": universe,
@@ -166,7 +172,7 @@ def run_candidate_research(
     """Evaluate candidate manifest into train/val/OOS report contract (v2)."""
     runner = _runner_module()
     base_tf = runner._normalize_candidate_research_base_timeframe(base_timeframe)
-    market_data_settings = runner._current_research_market_data_settings()
+    market_data_settings = _current_research_market_data_settings_impl()
     scoring = runner._resolve_research_run_scoring_config(
         score_config=score_config,
         stage1_keep_ratio=stage1_keep_ratio,
@@ -207,11 +213,12 @@ def build_default_candidate_rows(
 ) -> list[dict[str, Any]]:
     """Build candidate rows from strategy-factory candidate library."""
     from lumina_quant.strategy_factory.candidate_library import build_binance_futures_candidates
+
     runner = _runner_module()
 
     rows = build_binance_futures_candidates(
-        symbols=symbols or runner._current_research_market_data_settings()["symbols"],
-        timeframes=timeframes or runner.CANONICAL_STRATEGY_TIMEFRAMES,
+        symbols=symbols or _current_research_market_data_settings_impl()["symbols"],
+        timeframes=timeframes or CANONICAL_STRATEGY_TIMEFRAMES,
     )
     out = [runner.adapt_legacy_candidate(item.to_dict()) for item in rows]
     if int(max_candidates) > 0:
