@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import io
+from contextlib import redirect_stderr
+
 from lumina_quant.cli._strategy_registry_fallback import (
     PublicStrategyRegistry,
     PublicStubStrategy,
@@ -20,11 +23,16 @@ def test_load_strategy_registry_uses_public_fallback_when_import_fails():
     def _raise():
         raise RuntimeError("boom")
 
-    registry = load_strategy_registry(_raise)
+    captured = io.StringIO()
+    with redirect_stderr(captured):
+        registry = load_strategy_registry(_raise)
 
     assert isinstance(registry, PublicStrategyRegistry)
     assert registry.DEFAULT_STRATEGY_NAME == "PublicStubStrategy"
     assert registry.get_strategy_map() == {"PublicStubStrategy": PublicStubStrategy}
+    stderr_text = captured.getvalue()
+    assert "using public fallback" in stderr_text
+    assert "RuntimeError: boom" in stderr_text
 
 
 def test_strategy_package_exports_registry_attribute():

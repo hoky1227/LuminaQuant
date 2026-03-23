@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Callable
 from importlib import import_module
 from typing import Any
@@ -87,10 +88,14 @@ def load_strategy_registry(importer: Callable[[], Any]) -> Any:
     """Load private strategy registry with a stable public fallback."""
     try:
         return importer()
-    except Exception:
+    except Exception as exc:
+        print(
+            f"[WARN] Strategy registry import failed; using public fallback: {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
         return PublicStrategyRegistry()
 
 
 def import_private_strategy_registry() -> Any:
     """Import the private/public strategy registry module when available."""
-    return import_module("lumina_quant.strategies").registry
+    return import_module("lumina_quant.strategies.registry")

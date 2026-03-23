@@ -16,6 +16,8 @@ def test_build_demo_env_contains_no_infra_overrides():
     env = mvr.build_demo_env({})
     assert env["LQ__TRADING__SYMBOLS"] == '["BTC/USDT","ETH/USDT"]'
     assert env["LQ__STORAGE__BACKEND"] == "local"
+    assert env["LQ_DATA_MODE"] == "legacy"
+    assert env["LQ_BACKTEST_MODE"] == "legacy_batch"
     assert env["LQ_AUTO_COLLECT_DB"] == "0"
     assert env["LQ_BACKTEST_LOW_MEMORY"] == "1"
     assert env["LQ_BACKTEST_PERSIST_OUTPUT"] == "0"
@@ -46,8 +48,16 @@ def test_run_minimum_viable_backtest_invokes_csv_backtest(monkeypatch):
         "-m",
         "lumina_quant.cli.main",
         "backtest",
+        "--data-mode",
+        "legacy",
+    ]
+    assert captured["cmd"][6:10] == [
         "--data-source",
         "csv",
+        "--backtest-mode",
+        "legacy_batch",
     ]
     assert "--no-auto-collect-db" in captured["cmd"]
     assert captured["env"]["LQ__TRADING__SYMBOLS"] == '["BTC/USDT","ETH/USDT"]'
+    assert captured["env"]["LQ_DATA_MODE"] == "legacy"
+    assert captured["env"]["LQ_BACKTEST_MODE"] == "legacy_batch"
