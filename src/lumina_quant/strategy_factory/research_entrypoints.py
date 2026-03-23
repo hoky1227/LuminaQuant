@@ -13,6 +13,7 @@ from importlib import import_module
 from typing import Any
 
 from lumina_quant.symbols import CANONICAL_STRATEGY_TIMEFRAMES
+from lumina_quant.strategy_factory import research_run_support as _research_run_support
 from lumina_quant.strategy_factory.runtime_settings import (
     current_research_market_data_settings as _current_research_market_data_settings_impl,
 )
@@ -107,7 +108,7 @@ def _run_candidate_research_with_adapted_candidates(
     market_data_settings: Mapping[str, Any],
 ) -> dict[str, Any]:
     runner = _runner_module()
-    normalized_timeframes, universe = runner._resolve_research_run_timeframes_and_universe(
+    normalized_timeframes, universe = _research_run_support._resolve_research_run_timeframes_and_universe(
         adapted=adapted,
         strategy_timeframes=strategy_timeframes,
         symbol_universe=symbol_universe,
@@ -214,13 +215,11 @@ def build_default_candidate_rows(
     """Build candidate rows from strategy-factory candidate library."""
     from lumina_quant.strategy_factory.candidate_library import build_binance_futures_candidates
 
-    runner = _runner_module()
-
     rows = build_binance_futures_candidates(
         symbols=symbols or _current_research_market_data_settings_impl()["symbols"],
         timeframes=timeframes or CANONICAL_STRATEGY_TIMEFRAMES,
     )
-    out = [runner.adapt_legacy_candidate(item.to_dict()) for item in rows]
+    out = [_research_run_support.adapt_legacy_candidate(item.to_dict()) for item in rows]
     if int(max_candidates) > 0:
         out = out[: int(max_candidates)]
     return out
