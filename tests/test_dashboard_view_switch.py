@@ -48,6 +48,9 @@ class _FakeStreamlit(types.ModuleType):
     def caption(self, value: str) -> None:
         self.calls.append(("caption", value))
 
+    def warning(self, value: str) -> None:
+        self.calls.append(("warning", value))
+
     def stop(self) -> None:
         self.calls.append(("stop",))
         raise _StopSignal()
@@ -430,6 +433,71 @@ def test_dashboard_app_main_stops_before_main_dashboard_on_exact_window_view(mon
 
     assert render_main_dashboard_calls == []
     assert render_exact_window.calls == [{"standalone": False}]
+
+
+def test_execute_query_logs_when_fetchall_fails(monkeypatch, caplog) -> None:
+    module, _, _ = _load_dashboard_app(monkeypatch)
+    caplog.set_level("WARNING")
+
+    class _Cursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query: str, params: tuple[Any, ...]) -> None:
+            self.query = query
+            self.params = params
+
+        def fetchall(self):
+            raise RuntimeError("fetchall failed")
+
+    class _Conn:
+        def __init__(self):
+            self.cursor_obj = _Cursor()
+            self.committed = False
+            self.closed = False
+
+        def cursor(self):
+            return self.cursor_obj
+
+        def commit(self):
+            self.committed = True
+
+        def close(self):
+            self.closed = True
+
+    conn = _Conn()
+    monkeypatch.setattr(module, "_connect_state_store", lambda _dsn: conn)
+
+    rows = module._execute_query("postgres://lumina", "SELECT 1")
+
+    assert rows == []
+    assert conn.committed is True
+    assert conn.closed is True
+    assert any(
+        "fell back to an empty result set" in record.message for record in caplog.records
+    )
+
+
+def test_count_market_rows_warns_and_returns_zero_on_query_failure(monkeypatch, caplog) -> None:
+    module, fake_st, _ = _load_dashboard_app(monkeypatch)
+    caplog.set_level("WARNING")
+    module.st = fake_st
+    monkeypatch.setattr(
+        module,
+        "_execute_query",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("query failed")),
+    )
+
+    count = module._count_market_rows("postgres://lumina")
+
+    assert count == 0
+    assert ("warning", "Unable to count market rows right now; dashboard is falling back to zero rows.") in fake_st.calls
+    assert any(
+        "fell back to zero" in record.message for record in caplog.records
+    )
 
 
 def test_render_snapshot_report_section_builds_preview_without_saving(monkeypatch) -> None:
