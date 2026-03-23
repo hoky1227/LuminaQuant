@@ -37,7 +37,7 @@ def _sorted_report_candidates(
     scoring: Any,
 ) -> list[dict[str, Any]]:
     rows = list(report_candidates)
-    _attach_cross_candidate_correlations(rows)
+    _runner._attach_cross_candidate_correlations(rows)
     rows.sort(
         key=lambda item: float(item.get("selection_score", scoring.sort_missing_selection_score)),
         reverse=True,
@@ -119,13 +119,13 @@ def _run_candidate_research_with_adapted_candidates(
         scoring=scoring,
         resolved_split=resolved_split,
     )
-    report_candidates = _report_candidates_from_stage2_results(
+    report_candidates = _runner._report_candidates_from_stage2_results(
         stage2_results=stage2_results,
         candidate_count=len(adapted),
         resolved_split=resolved_split,
         scoring=scoring,
     )
-    return _candidate_research_report_payload(
+    return _runner._candidate_research_report_payload(
         base_tf=base_tf,
         normalized_timeframes=normalized_timeframes,
         universe=universe,
@@ -135,7 +135,7 @@ def _run_candidate_research_with_adapted_candidates(
         stage1_keep_ratio=stage1_keep_ratio,
         scoring=scoring,
         data_sources=data_sources,
-        report_candidates=_sorted_report_candidates(report_candidates, scoring=scoring),
+        report_candidates=_runner._sorted_report_candidates(report_candidates, scoring=scoring),
     )
 
 

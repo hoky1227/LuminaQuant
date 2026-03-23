@@ -6214,6 +6214,114 @@ def _successful_candidate_report_payload(
     )
 
 
+def _report_candidates_from_stage2_results(
+    *,
+    stage2_results: Sequence[dict[str, Any]],
+    candidate_count: int,
+    resolved_split: Mapping[str, Any],
+    scoring: _ResearchRunScoringConfig,
+) -> list[dict[str, Any]]:
+    from lumina_quant.strategy_factory.research_entrypoints import (
+        _report_candidates_from_stage2_results as _report_candidates_from_stage2_results_impl,
+    )
+
+    return _report_candidates_from_stage2_results_impl(
+        stage2_results=stage2_results,
+        candidate_count=candidate_count,
+        resolved_split=resolved_split,
+        scoring=scoring,
+    )
+
+
+def _attach_cross_candidate_correlations(report_candidates: Sequence[dict[str, Any]]) -> None:
+    from lumina_quant.strategy_factory.research_entrypoints import (
+        _attach_cross_candidate_correlations as _attach_cross_candidate_correlations_impl,
+    )
+
+    _attach_cross_candidate_correlations_impl(report_candidates)
+
+
+def _sorted_report_candidates(
+    report_candidates: Sequence[dict[str, Any]],
+    *,
+    scoring: _ResearchRunScoringConfig,
+) -> list[dict[str, Any]]:
+    from lumina_quant.strategy_factory.research_entrypoints import (
+        _sorted_report_candidates as _sorted_report_candidates_impl,
+    )
+
+    return _sorted_report_candidates_impl(
+        report_candidates=report_candidates,
+        scoring=scoring,
+    )
+
+
+def _candidate_research_report_payload(
+    *,
+    base_tf: str,
+    normalized_timeframes: Sequence[str],
+    universe: Sequence[str],
+    resolved_split: Mapping[str, Any],
+    adapted: Sequence[dict[str, Any]],
+    stage2_results: Sequence[dict[str, Any]],
+    stage1_keep_ratio: float,
+    scoring: _ResearchRunScoringConfig,
+    data_sources: dict[str, list[str]],
+    report_candidates: Sequence[dict[str, Any]],
+) -> dict[str, Any]:
+    from lumina_quant.strategy_factory.research_entrypoints import (
+        _candidate_research_report_payload as _candidate_research_report_payload_impl,
+    )
+
+    return _candidate_research_report_payload_impl(
+        base_tf=base_tf,
+        normalized_timeframes=normalized_timeframes,
+        universe=universe,
+        resolved_split=resolved_split,
+        adapted=adapted,
+        stage2_results=stage2_results,
+        stage1_keep_ratio=stage1_keep_ratio,
+        scoring=scoring,
+        data_sources=data_sources,
+        report_candidates=report_candidates,
+    )
+
+
+def _run_candidate_research_with_adapted_candidates(
+    *,
+    base_tf: str,
+    adapted: Sequence[dict[str, Any]],
+    strategy_timeframes: Sequence[str] | None,
+    symbol_universe: Sequence[str] | None,
+    stage1_keep_ratio: float,
+    scoring: _ResearchRunScoringConfig,
+    split: Mapping[str, Any] | None,
+    data_mode: str,
+    allow_csv_fallback: bool,
+    allow_synthetic_fallback: bool,
+    min_bundle_bars: int,
+    market_data_settings: Mapping[str, Any],
+) -> dict[str, Any]:
+    from lumina_quant.strategy_factory.research_entrypoints import (
+        _run_candidate_research_with_adapted_candidates as _run_candidate_research_with_adapted_candidates_impl,
+    )
+
+    return _run_candidate_research_with_adapted_candidates_impl(
+        base_tf=base_tf,
+        adapted=adapted,
+        strategy_timeframes=strategy_timeframes,
+        symbol_universe=symbol_universe,
+        stage1_keep_ratio=stage1_keep_ratio,
+        scoring=scoring,
+        split=split,
+        data_mode=data_mode,
+        allow_csv_fallback=allow_csv_fallback,
+        allow_synthetic_fallback=allow_synthetic_fallback,
+        min_bundle_bars=min_bundle_bars,
+        market_data_settings=market_data_settings,
+    )
+
+
 def run_candidate_research(
     *,
     candidates: Iterable[dict[str, Any]],
