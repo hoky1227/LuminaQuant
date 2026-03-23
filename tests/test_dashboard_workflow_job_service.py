@@ -103,8 +103,9 @@ def test_launch_managed_job_records_process_and_row(tmp_path: Path, monkeypatch)
     assert session_state["workflow_processes"]["job-123"]["log_path"] == launched["log_path"]
 
 
-def test_launch_managed_job_defaults_cwd_to_project_root(tmp_path: Path, monkeypatch) -> None:
+def test_launch_managed_job_defaults_cwd_to_project_root(tmp_path: Path, monkeypatch, caplog) -> None:
     launched: dict[str, object] = {}
+    inserted: dict[str, object] = {}
     session_state: dict[str, object] = {}
 
     class _DummyProcess:
@@ -125,6 +126,7 @@ def test_launch_managed_job_defaults_cwd_to_project_root(tmp_path: Path, monkeyp
 
     monkeypatch.setattr(workflow_jobs.subprocess, "Popen", _fake_popen)
     monkeypatch.setattr(workflow_jobs.uuid, "uuid4", lambda: "job-456")
+    caplog.set_level("WARNING")
 
     job_id = workflow_jobs.launch_managed_job(
         db_path="postgres://lumina",
@@ -133,7 +135,7 @@ def test_launch_managed_job_defaults_cwd_to_project_root(tmp_path: Path, monkeyp
         env_overrides={},
         workflow_log_dir=str(tmp_path / "logs"),
         session_state=session_state,
-        insert_workflow_job_row=lambda *_args, **_kwargs: None,
+        insert_workflow_job_row=lambda db_path, row: inserted.update({"db_path": db_path, "row": row}),
         utc_now_iso=lambda: "2026-03-22T00:00:00+00:00",
         cwd=None,
     )
@@ -141,6 +143,16 @@ def test_launch_managed_job_defaults_cwd_to_project_root(tmp_path: Path, monkeyp
     assert job_id == "job-456"
     assert launched["cwd"] == str(workflow_jobs.PROJECT_ROOT)
     assert Path(launched["log_path"]).is_file()
+    assert inserted["row"]["metadata_json"] == json.dumps(
+        {
+            "runtime_cwd": str(workflow_jobs.PROJECT_ROOT),
+            "runtime_cwd_source": "project_root_fallback",
+        },
+        ensure_ascii=False,
+    )
+    assert any(
+        "defaulted cwd to project root" in record.message for record in caplog.records
+    )
 
 
 def test_build_stop_file_path_defaults_under_project_var_control(monkeypatch) -> None:
@@ -262,7 +274,8 @@ def test_load_workflow_jobs_frame_returns_query_results_with_datetime_coercion(m
     assert list(result["last_updated"]) == ["coerced:last_updated"]
 
 
-def test_load_workflow_jobs_frame_returns_empty_when_connection_or_query_fails(monkeypatch) -> None:
+def test_load_workflow_jobs_frame_returns_empty_when_connection_or_query_fails(monkeypatch, caplog) -> None:
+    caplog.set_level("WARNING")
     monkeypatch.setattr(
         workflow_jobs.pd,
         "read_sql_query",
@@ -286,6 +299,9 @@ def test_load_workflow_jobs_frame_returns_empty_when_connection_or_query_fails(m
     )
     assert query_result.empty
     assert conn.closed is True
+    assert any(
+        "Unable to query workflow jobs" in record.message for record in caplog.records
+    )
 
     connect_result = workflow_jobs.load_workflow_jobs_frame(
         db_path="postgres://lumina",
@@ -296,3 +312,6 @@ def test_load_workflow_jobs_frame_returns_empty_when_connection_or_query_fails(m
         coerce_datetime=lambda df, _col: df,
     )
     assert connect_result.empty
+    assert any(
+        "Unable to connect to workflow job store" in record.message for record in caplog.records
+    )
