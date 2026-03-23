@@ -12,7 +12,10 @@ import json
 from collections.abc import Iterable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Any
+
+import numpy as np
 
 from lumina_quant.symbols import (
     CANONICAL_STRATEGY_TIMEFRAMES,
@@ -226,14 +229,162 @@ def _resolve_research_run_timeframes_and_universe(
     return normalized_timeframes, universe
 
 
+def _coerce_utc_datetime(value: Any, *, end_of_day: bool = False) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        dt = value
+    elif isinstance(value, np.datetime64):
+        epoch_ms = int(value.astype("datetime64[ms]").astype(np.int64))
+        dt = datetime.fromtimestamp(epoch_ms / 1000.0, tz=UTC)
+    elif isinstance(value, (int, float)):
+        numeric = int(value)
+        if abs(numeric) < 100_000_000_000:
+            numeric *= 1000
+        dt = datetime.fromtimestamp(numeric / 1000.0, tz=UTC)
+    else:
+        text = str(value).strip()
+        if not text:
+            return None
+        if len(text) == 10 and text[4] == "-" and text[7] == "-":
+            dt = datetime.fromisoformat(text)
+            if end_of_day:
+                dt = dt + timedelta(days=1) - timedelta(milliseconds=1)
+        else:
+            dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
+
+
+def _datetime_to_iso_z(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _split_window_bounds(split: Mapping[str, Any] | None) -> tuple[datetime | None, datetime | None]:
+    if not isinstance(split, Mapping):
+        return None, None
+    starts = [
+        _coerce_utc_datetime(split.get("train_start")),
+        _coerce_utc_datetime(split.get("val_start")),
+        _coerce_utc_datetime(split.get("oos_start") or split.get("test_start")),
+    ]
+    ends = [
+        _coerce_utc_datetime(split.get("train_end"), end_of_day=True),
+        _coerce_utc_datetime(split.get("val_end"), end_of_day=True),
+        _coerce_utc_datetime(split.get("oos_end") or split.get("test_end"), end_of_day=True),
+    ]
+    valid_starts = [item for item in starts if item is not None]
+    valid_ends = [item for item in ends if item is not None]
+    return (
+        min(valid_starts) if valid_starts else None,
+        max(valid_ends) if valid_ends else None,
+    )
+
+
+def _build_default_split(strategy_timeframe: str) -> dict[str, Any]:
+    now = datetime.now(UTC)
+    train_start = now - timedelta(days=360)
+    train_end = now - timedelta(days=150)
+    val_start = train_end + timedelta(days=1)
+    val_end = now - timedelta(days=60)
+    oos_start = val_end + timedelta(days=1)
+    oos_end = now
+    return {
+        "train_start": train_start.isoformat(),
+        "train_end": train_end.isoformat(),
+        "val_start": val_start.isoformat(),
+        "val_end": val_end.isoformat(),
+        "oos_start": oos_start.isoformat(),
+        "oos_end": oos_end.isoformat(),
+        "strategy_timeframe": str(strategy_timeframe),
+    }
+
+
+def _resolve_split_config(
+    split: Mapping[str, Any] | None,
+    *,
+    strategy_timeframe: str,
+) -> dict[str, Any]:
+    resolved = dict(split) if isinstance(split, Mapping) else _build_default_split(strategy_timeframe)
+    train_start = _coerce_utc_datetime(resolved.get("train_start"))
+    train_end = _coerce_utc_datetime(resolved.get("train_end"), end_of_day=True)
+    val_start = _coerce_utc_datetime(resolved.get("val_start"))
+    val_end = _coerce_utc_datetime(resolved.get("val_end"), end_of_day=True)
+    oos_start = _coerce_utc_datetime(resolved.get("oos_start") or resolved.get("test_start"))
+    oos_end = _coerce_utc_datetime(
+        resolved.get("oos_end") or resolved.get("test_end"),
+        end_of_day=True,
+    )
+    return {
+        **resolved,
+        "train_start": _datetime_to_iso_z(train_start),
+        "train_end": _datetime_to_iso_z(train_end),
+        "val_start": _datetime_to_iso_z(val_start),
+        "val_end": _datetime_to_iso_z(val_end),
+        "oos_start": _datetime_to_iso_z(oos_start),
+        "oos_end": _datetime_to_iso_z(oos_end),
+        "strategy_timeframe": str(
+            resolved.get("strategy_timeframe") or resolved.get("timeframe") or strategy_timeframe
+        ),
+        "mode": str(resolved.get("mode") or ("exact_dates" if isinstance(split, Mapping) else "rolling_default")),
+    }
+
+
+def _empty_candidate_research_report(
+    *,
+    base_timeframe: str,
+    strategy_timeframes: Sequence[str] | None,
+    symbol_universe: Sequence[str] | None,
+    stage1_keep_ratio: float,
+    scoring: _ResearchRunScoringConfig,
+    split: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    normalized_timeframes = normalize_strategy_timeframes(
+        strategy_timeframes or CANONICAL_STRATEGY_TIMEFRAMES,
+        required=CANONICAL_STRATEGY_TIMEFRAMES,
+        strict_subset=True,
+    )
+    empty_split = _resolve_split_config(
+        split,
+        strategy_timeframe=normalized_timeframes[0] if normalized_timeframes else "1m",
+    )
+    return {
+        "schema_version": "v2",
+        "generated_at": datetime.now(UTC).isoformat(),
+        "base_timeframe": base_timeframe,
+        "strategy_timeframes": normalized_timeframes,
+        "symbol_universe": canonicalize_symbol_list(
+            symbol_universe or current_research_market_data_settings()["symbols"]
+        ),
+        "split": empty_split,
+        "candidates": [],
+        "stage1": {
+            "input_count": 0,
+            "selected_count": 0,
+            "keep_ratio": float(stage1_keep_ratio),
+            "keep_ratio_applied": float(scoring.keep_ratio_applied),
+        },
+        "scoring_config": scoring.resolved_scoring_config,
+    }
+
+
 __all__ = [
     "DEFAULT_RESEARCH_SCORING_CONFIG",
     "_ResearchRunScoringConfig",
     "_adapt_candidate_inputs",
+    "_build_default_split",
+    "_coerce_utc_datetime",
+    "_datetime_to_iso_z",
+    "_empty_candidate_research_report",
     "_family_from_strategy",
     "_normalize_candidate_research_base_timeframe",
     "_resolve_research_run_scoring_config",
     "_resolve_research_run_timeframes_and_universe",
     "_resolve_score_config",
+    "_resolve_split_config",
+    "_split_window_bounds",
     "adapt_legacy_candidate",
 ]

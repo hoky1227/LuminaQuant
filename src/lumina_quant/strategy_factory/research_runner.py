@@ -20,10 +20,8 @@ from lumina_quant.config import BacktestConfig
 from lumina_quant.market_data import load_futures_feature_points_from_db
 from lumina_quant.storage.parquet import load_data_dict_from_parquet
 from lumina_quant.symbols import (
-    CANONICAL_STRATEGY_TIMEFRAMES,
     canonical_symbol,
     canonicalize_symbol_list,
-    normalize_strategy_timeframes,
 )
 from lumina_quant.strategy_factory import research_run_support as _research_run_support
 from lumina_quant.strategy_factory.runtime_settings import (
@@ -479,37 +477,11 @@ def _family_from_strategy(strategy_class: str) -> str:
 
 
 def _coerce_utc_datetime(value: Any, *, end_of_day: bool = False) -> datetime | None:
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        dt = value
-    elif isinstance(value, np.datetime64):
-        epoch_ms = int(value.astype("datetime64[ms]").astype(np.int64))
-        dt = datetime.fromtimestamp(epoch_ms / 1000.0, tz=UTC)
-    elif isinstance(value, (int, float)):
-        numeric = int(value)
-        if abs(numeric) < 100_000_000_000:
-            numeric *= 1000
-        dt = datetime.fromtimestamp(numeric / 1000.0, tz=UTC)
-    else:
-        text = str(value).strip()
-        if not text:
-            return None
-        if len(text) == 10 and text[4] == "-" and text[7] == "-":
-            dt = datetime.fromisoformat(text)
-            if end_of_day:
-                dt = dt + timedelta(days=1) - timedelta(milliseconds=1)
-        else:
-            dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=UTC)
-    return dt.astimezone(UTC)
+    return _research_run_support._coerce_utc_datetime(value, end_of_day=end_of_day)
 
 
 def _datetime_to_iso_z(value: datetime | None) -> str | None:
-    if value is None:
-        return None
-    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+    return _research_run_support._datetime_to_iso_z(value)
 
 
 def _to_numpy_datetime64_ms(value: datetime | None) -> np.datetime64 | None:
@@ -519,24 +491,7 @@ def _to_numpy_datetime64_ms(value: datetime | None) -> np.datetime64 | None:
 
 
 def _split_window_bounds(split: Mapping[str, Any] | None) -> tuple[datetime | None, datetime | None]:
-    if not isinstance(split, Mapping):
-        return None, None
-    starts = [
-        _coerce_utc_datetime(split.get("train_start")),
-        _coerce_utc_datetime(split.get("val_start")),
-        _coerce_utc_datetime(split.get("oos_start") or split.get("test_start")),
-    ]
-    ends = [
-        _coerce_utc_datetime(split.get("train_end"), end_of_day=True),
-        _coerce_utc_datetime(split.get("val_end"), end_of_day=True),
-        _coerce_utc_datetime(split.get("oos_end") or split.get("test_end"), end_of_day=True),
-    ]
-    valid_starts = [item for item in starts if item is not None]
-    valid_ends = [item for item in ends if item is not None]
-    return (
-        min(valid_starts) if valid_starts else None,
-        max(valid_ends) if valid_ends else None,
-    )
+    return _research_run_support._split_window_bounds(split)
 
 
 def _resolve_split_config(
@@ -544,29 +499,10 @@ def _resolve_split_config(
     *,
     strategy_timeframe: str,
 ) -> dict[str, Any]:
-    resolved = dict(split) if isinstance(split, Mapping) else _build_default_split(strategy_timeframe)
-    train_start = _coerce_utc_datetime(resolved.get("train_start"))
-    train_end = _coerce_utc_datetime(resolved.get("train_end"), end_of_day=True)
-    val_start = _coerce_utc_datetime(resolved.get("val_start"))
-    val_end = _coerce_utc_datetime(resolved.get("val_end"), end_of_day=True)
-    oos_start = _coerce_utc_datetime(resolved.get("oos_start") or resolved.get("test_start"))
-    oos_end = _coerce_utc_datetime(
-        resolved.get("oos_end") or resolved.get("test_end"),
-        end_of_day=True,
+    return _research_run_support._resolve_split_config(
+        split,
+        strategy_timeframe=strategy_timeframe,
     )
-    return {
-        **resolved,
-        "train_start": _datetime_to_iso_z(train_start),
-        "train_end": _datetime_to_iso_z(train_end),
-        "val_start": _datetime_to_iso_z(val_start),
-        "val_end": _datetime_to_iso_z(val_end),
-        "oos_start": _datetime_to_iso_z(oos_start),
-        "oos_end": _datetime_to_iso_z(oos_end),
-        "strategy_timeframe": str(
-            resolved.get("strategy_timeframe") or resolved.get("timeframe") or strategy_timeframe
-        ),
-        "mode": str(resolved.get("mode") or ("exact_dates" if isinstance(split, Mapping) else "rolling_default")),
-    }
 
 
 def _split_lengths(total: int, *, train_frac: float = 0.60, val_frac: float = 0.20) -> tuple[slice, slice, slice]:
@@ -5816,22 +5752,7 @@ def _benchmark_cache(
 
 
 def _build_default_split(strategy_timeframe: str) -> dict[str, Any]:
-    now = datetime.now(UTC)
-    train_start = now - timedelta(days=360)
-    train_end = now - timedelta(days=150)
-    val_start = train_end + timedelta(days=1)
-    val_end = now - timedelta(days=60)
-    oos_start = val_end + timedelta(days=1)
-    oos_end = now
-    return {
-        "train_start": train_start.isoformat(),
-        "train_end": train_end.isoformat(),
-        "val_start": val_start.isoformat(),
-        "val_end": val_end.isoformat(),
-        "oos_start": oos_start.isoformat(),
-        "oos_end": oos_end.isoformat(),
-        "strategy_timeframe": str(strategy_timeframe),
-    }
+    return _research_run_support._build_default_split(strategy_timeframe)
 
 
 _ResearchRunScoringConfig = _research_run_support._ResearchRunScoringConfig
@@ -5872,33 +5793,14 @@ def _empty_candidate_research_report(
     scoring: _ResearchRunScoringConfig,
     split: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
-    normalized_timeframes = normalize_strategy_timeframes(
-        strategy_timeframes or CANONICAL_STRATEGY_TIMEFRAMES,
-        required=CANONICAL_STRATEGY_TIMEFRAMES,
-        strict_subset=True,
+    return _research_run_support._empty_candidate_research_report(
+        base_timeframe=base_timeframe,
+        strategy_timeframes=strategy_timeframes,
+        symbol_universe=symbol_universe,
+        stage1_keep_ratio=stage1_keep_ratio,
+        scoring=scoring,
+        split=split,
     )
-    empty_split = _resolve_split_config(
-        split,
-        strategy_timeframe=normalized_timeframes[0] if normalized_timeframes else "1m",
-    )
-    return {
-        "schema_version": "v2",
-        "generated_at": datetime.now(UTC).isoformat(),
-        "base_timeframe": base_timeframe,
-        "strategy_timeframes": normalized_timeframes,
-        "symbol_universe": canonicalize_symbol_list(
-            symbol_universe or _current_research_market_data_settings()["symbols"]
-        ),
-        "split": empty_split,
-        "candidates": [],
-        "stage1": {
-            "input_count": 0,
-            "selected_count": 0,
-            "keep_ratio": float(stage1_keep_ratio),
-            "keep_ratio_applied": float(scoring.keep_ratio_applied),
-        },
-        "scoring_config": scoring.resolved_scoring_config,
-    }
 
 
 def _resolve_research_run_timeframes_and_universe(
