@@ -24,12 +24,11 @@ from lumina_quant.symbols import (
     canonicalize_symbol_list,
 )
 from lumina_quant.strategy_factory import research_run_support as _research_run_support
+from lumina_quant.strategy_factory import research_stage_support as _research_stage_support
 from lumina_quant.strategy_factory.runtime_settings import (
     current_research_market_data_settings as _current_research_market_data_settings_impl,
 )
 from lumina_quant.strategy_factory.research_reporting import ResearchReportBuilder
-from lumina_quant.strategy_factory.research_resources import ResearchResourceLoader
-from lumina_quant.strategy_factory.research_stage_selection import ResearchStageSelector
 from lumina_quant.strategy_factory.strategy_signal_dispatch import StrategySignalDispatcher
 from lumina_quant.utils.risk_free import (
     resolve_risk_free_config,
@@ -5816,8 +5815,8 @@ def _resolve_research_run_timeframes_and_universe(
     )
 
 
-def _research_resource_loader() -> ResearchResourceLoader:
-    return ResearchResourceLoader(
+def _research_resource_loader():
+    return _research_stage_support.build_research_resource_loader(
         split_window_bounds=_split_window_bounds,
         datetime_to_iso_z=_datetime_to_iso_z,
         load_bundle_cache=_load_bundle_cache,
@@ -5844,7 +5843,8 @@ def _load_research_run_resources(
     dict[str, pl.DataFrame],
     dict[str, dict[str, np.ndarray]],
 ]:
-    return _research_resource_loader().load(
+    return _research_stage_support.load_research_run_resources(
+        loader=_research_resource_loader(),
         adapted=adapted,
         normalized_timeframes=normalized_timeframes,
         universe=universe,
@@ -5867,11 +5867,10 @@ def _evaluate_candidate_with_optional_split(
     scoring_config: Mapping[str, Any] | None,
     split: Mapping[str, Any],
 ) -> dict[str, Any]:
-    return ResearchStageSelector(
+    return _research_stage_support.evaluate_candidate_with_optional_split(
         evaluate_candidate=_evaluate_candidate,
         stage1_prefilter_score=_stage1_prefilter_score,
-    ).evaluate_candidate_with_optional_split(
-        candidate,
+        candidate=candidate,
         cache=cache,
         feature_cache=feature_cache,
         benchmark_cache=benchmark_cache,
@@ -5890,10 +5889,9 @@ def _select_stage2_results(
     scoring: _ResearchRunScoringConfig,
     resolved_split: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
-    return ResearchStageSelector(
+    return _research_stage_support.select_stage2_results(
         evaluate_candidate=_evaluate_candidate,
         stage1_prefilter_score=_stage1_prefilter_score,
-    ).select_stage2_results(
         adapted=adapted,
         cache=cache,
         feature_cache=feature_cache,
