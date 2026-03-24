@@ -10,6 +10,7 @@ import pandas as pd
 
 from lumina_quant.config import BaseConfig
 from lumina_quant.postgres_state import _connect_postgres
+from lumina_quant.dashboard.workflow_jobs_service import load_recent_workflow_jobs
 from lumina_quant.utils.performance import (
     create_annualized_volatility,
     create_cagr,
@@ -221,26 +222,7 @@ def load_overview_payload(
         runs = pd.DataFrame(run_rows, columns=run_columns)
         if runs.empty:
             return empty_overview_payload(contract=contract, reason="no_runs")
-        with conn.cursor() as cursor:
-            cursor.execute(
-                """
-                SELECT
-                    job_id,
-                    workflow,
-                    status,
-                    requested_mode,
-                    strategy,
-                    run_id,
-                    started_at,
-                    ended_at
-                FROM workflow_jobs
-                ORDER BY COALESCE(started_at, ended_at, last_updated) DESC
-                LIMIT 10
-                """
-            )
-            workflow_rows = cursor.fetchall()
-            workflow_columns = [description[0] for description in cursor.description or ()]
-        workflow_jobs = pd.DataFrame(workflow_rows, columns=workflow_columns)
+        workflow_jobs = load_recent_workflow_jobs(conn, limit=10)
         run_id = str(runs.iloc[0]["run_id"])
         with conn.cursor() as cursor:
             cursor.execute(
@@ -265,28 +247,8 @@ def load_overview_payload(
             runs_frame=runs,
             equity_frame=equity,
         )
-        if not workflow_jobs.empty:
-            payload["workflow_jobs"] = [
-                {
-                    "job_id": str(row.get("job_id") or ""),
-                    "workflow": str(row.get("workflow") or ""),
-                    "status": str(row.get("status") or ""),
-                    "requested_mode": str(row.get("requested_mode") or ""),
-                    "strategy": str(row.get("strategy") or ""),
-                    "run_id": str(row.get("run_id") or ""),
-                    "started_at": (
-                        None
-                        if pd.isna(row.get("started_at"))
-                        else pd.to_datetime(row.get("started_at"), errors="coerce", utc=True).isoformat()
-                    ),
-                    "ended_at": (
-                        None
-                        if pd.isna(row.get("ended_at"))
-                        else pd.to_datetime(row.get("ended_at"), errors="coerce", utc=True).isoformat()
-                    ),
-                }
-                for _, row in workflow_jobs.iterrows()
-            ]
+        if workflow_jobs:
+            payload["workflow_jobs"] = workflow_jobs
         return payload
     finally:
         conn.close()
