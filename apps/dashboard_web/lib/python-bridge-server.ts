@@ -24,6 +24,14 @@ export interface OverviewPoint {
 export interface OverviewPayload {
   as_of: string;
   summary_metrics: OverviewMetric[];
+  performance_metrics: {
+    cagr?: number;
+    annualized_volatility?: number;
+    sharpe_ratio?: number;
+    sortino_ratio?: number;
+    calmar_ratio?: number;
+    max_drawdown?: number;
+  };
   recent_runs: Array<{
     run_id: string;
     mode: string;

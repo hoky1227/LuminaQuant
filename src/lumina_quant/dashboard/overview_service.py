@@ -10,6 +10,14 @@ import pandas as pd
 
 from lumina_quant.config import BaseConfig
 from lumina_quant.postgres_state import _connect_postgres
+from lumina_quant.utils.performance import (
+    create_annualized_volatility,
+    create_cagr,
+    create_calmar_ratio,
+    create_drawdowns,
+    create_sharpe_ratio,
+    create_sortino_ratio,
+)
 
 
 def resolve_dashboard_postgres_dsn(dsn: str | None = None) -> str:
@@ -28,6 +36,7 @@ def empty_overview_payload(*, contract: Any, reason: str) -> dict[str, Any]:
     return {
         "as_of": datetime.now(UTC).isoformat(),
         "summary_metrics": [],
+        "performance_metrics": {},
         "recent_runs": [],
         "equity_curve": [],
         "drawdown_curve": [],
@@ -105,6 +114,24 @@ def build_overview_payload_from_frames(
 
     running_peak = totals.cummax().replace(0.0, pd.NA)
     drawdown = ((totals - running_peak) / running_peak).fillna(0.0)
+    prev = totals.to_numpy(dtype=float)[:-1]
+    nxt = totals.to_numpy(dtype=float)[1:]
+    returns = (
+        pd.Series(
+            (nxt - prev) / pd.Series(prev).replace(0.0, 1.0).to_numpy(dtype=float)
+        )
+        .replace([float("inf"), float("-inf")], 0.0)
+        .fillna(0.0)
+        .to_numpy(dtype=float)
+    )
+    periods = 252
+    cagr = create_cagr(latest_equity, initial_equity, len(totals), periods) if len(totals) > 1 else 0.0
+    annualized_vol = create_annualized_volatility(returns, periods) if returns.size else 0.0
+    sharpe = create_sharpe_ratio(returns, periods=periods) if returns.size else 0.0
+    sortino = create_sortino_ratio(returns, periods=periods) if returns.size else 0.0
+    drawdown_levels, _ = create_drawdowns(totals.to_numpy(dtype=float))
+    max_drawdown = max(drawdown_levels) if drawdown_levels else 0.0
+    calmar = create_calmar_ratio(cagr, max_drawdown)
 
     summary_metrics = [
         overview_metric("Run ID", run_id, key="run_id"),
@@ -119,6 +146,14 @@ def build_overview_payload_from_frames(
     return {
         "as_of": datetime.now(UTC).isoformat(),
         "summary_metrics": summary_metrics,
+        "performance_metrics": {
+            "cagr": round(float(cagr), 6),
+            "annualized_volatility": round(float(annualized_vol), 6),
+            "sharpe_ratio": round(float(sharpe), 6),
+            "sortino_ratio": round(float(sortino), 6),
+            "calmar_ratio": round(float(calmar), 6),
+            "max_drawdown": round(float(max_drawdown), 6),
+        },
         "recent_runs": recent_runs,
         "equity_curve": [
             {

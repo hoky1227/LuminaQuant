@@ -59,6 +59,8 @@ def test_build_overview_payload_from_frames_exposes_recent_runs_and_curves() -> 
     assert payload["recent_runs"][1]["status"] == "RUNNING"
     assert payload["summary_metrics"][4]["value"] == 1000.0
     assert payload["summary_metrics"][5]["value"] == 1050.0
+    assert payload["performance_metrics"]["sharpe_ratio"] != 0.0
+    assert payload["performance_metrics"]["max_drawdown"] > 0.0
     assert payload["equity_curve"][-1]["equity"] == 1050.0
     assert payload["drawdown_curve"][-1]["drawdown"] < 0.0
 
@@ -67,3 +69,4 @@ def test_load_overview_payload_short_circuits_for_blank_dsn() -> None:
     payload = overview_service.load_overview_payload(contract=_contract(), dsn="")
 
     assert payload["source"]["status"] == "missing_dsn"
+    assert payload["performance_metrics"] == {}

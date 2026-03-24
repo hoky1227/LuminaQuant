@@ -17,6 +17,14 @@ interface OverviewPoint {
 interface OverviewPayload {
   as_of: string;
   summary_metrics: OverviewMetric[];
+  performance_metrics: {
+    cagr?: number;
+    annualized_volatility?: number;
+    sharpe_ratio?: number;
+    sortino_ratio?: number;
+    calmar_ratio?: number;
+    max_drawdown?: number;
+  };
   recent_runs: Array<{
     run_id: string;
     mode: string;
@@ -105,6 +113,14 @@ export function OverviewRuntime() {
 
   const recentEquity = overview.equity_curve.slice(-5);
   const recentRuns = overview.recent_runs.slice(0, 5);
+  const performanceEntries: Array<[string, number]> = [
+    ['CAGR', overview.performance_metrics.cagr],
+    ['Ann. Volatility', overview.performance_metrics.annualized_volatility],
+    ['Sharpe', overview.performance_metrics.sharpe_ratio],
+    ['Sortino', overview.performance_metrics.sortino_ratio],
+    ['Calmar', overview.performance_metrics.calmar_ratio],
+    ['Max Drawdown', overview.performance_metrics.max_drawdown],
+  ].filter((entry): entry is [string, number] => typeof entry[1] === 'number');
   const equitySparkline = buildSparklinePath(
     overview.equity_curve.map((point) => point.equity),
   );
@@ -163,6 +179,28 @@ export function OverviewRuntime() {
                 ))}
               </tbody>
             </table>
+          </div>
+        ) : (
+          <p>{emptyStateMessage}</p>
+        )}
+      </section>
+
+      <section className="section-card">
+        <div className="section-header">
+          <div>
+            <p className="eyebrow">Performance parity</p>
+            <h3>Derived metrics</h3>
+          </div>
+          <div className="metric-badge">{performanceEntries.length} metrics</div>
+        </div>
+        {performanceEntries.length > 0 ? (
+          <div className="metric-grid">
+            {performanceEntries.map(([label, value]) => (
+              <article key={label}>
+                <span>{label}</span>
+                <strong>{String(value)}</strong>
+              </article>
+            ))}
           </div>
         ) : (
           <p>{emptyStateMessage}</p>
