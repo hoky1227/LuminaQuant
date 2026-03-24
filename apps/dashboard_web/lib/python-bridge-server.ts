@@ -1,11 +1,13 @@
 import { cache } from 'react';
-import { execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
+import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const REPO_ROOT = resolve(__dirname, '../../../');
+const execFileAsync = promisify(execFile);
 
 export interface OverviewMetric {
   key: string;
@@ -39,8 +41,8 @@ export interface OverviewPayload {
   };
 }
 
-export const loadOverviewPayloadFromPython = cache((): OverviewPayload => {
-  const stdout = execFileSync(
+export const loadOverviewPayloadFromPython = cache(async (): Promise<OverviewPayload> => {
+  const { stdout } = await execFileAsync(
     'uv',
     ['run', 'python', '-m', 'lumina_quant.dashboard.bridge', '--overview-json', '--mode', 'next'],
     {

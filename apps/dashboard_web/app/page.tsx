@@ -3,10 +3,53 @@ import { loadOverviewPayloadFromPython } from '@/lib/python-bridge-server';
 
 const overviewCards = buildOverviewCards();
 
-export default function Home() {
-  const overview = loadOverviewPayloadFromPython();
+function buildEmptyStateMessage(status: string): string {
+  switch (status) {
+    case 'missing_dsn':
+      return 'Set LQ_POSTGRES_DSN so the Next overview can read the same runtime state store as the Streamlit dashboard.';
+    case 'no_runs':
+      return 'No runs were found yet. Start a backtest/live workflow from the existing Streamlit path, then refresh this page.';
+    case 'no_equity':
+      return 'A run exists but no equity rows are available yet. Let the run emit telemetry or choose a different run once selection parity lands.';
+    default:
+      return 'The Python overview bridge returned no data.';
+  }
+}
+
+function buildSparklinePath(
+  values: number[],
+  width = 420,
+  height = 120,
+): string {
+  if (values.length === 0) {
+    return '';
+  }
+  if (values.length === 1) {
+    return `M 0 ${height / 2} L ${width} ${height / 2}`;
+  }
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  return values
+    .map((value, index) => {
+      const x = (index / (values.length - 1)) * width;
+      const y = height - ((value - min) / range) * height;
+      return `${index === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${y.toFixed(2)}`;
+    })
+    .join(' ');
+}
+
+export default async function Home() {
+  const overview = await loadOverviewPayloadFromPython();
   const recentEquity = overview.equity_curve.slice(-5);
   const recentRuns = overview.recent_runs.slice(0, 5);
+  const equitySparkline = buildSparklinePath(
+    overview.equity_curve.map((point) => point.equity),
+  );
+  const drawdownSparkline = buildSparklinePath(
+    overview.drawdown_curve.map((point) => point.drawdown),
+  );
+  const emptyStateMessage = buildEmptyStateMessage(overview.source.status);
   return (
     <div className="page-stack">
       <section className="hero-card">
@@ -79,10 +122,32 @@ export default function Home() {
         <div className="section-header">
           <div>
             <p className="eyebrow">Real overview payload</p>
-            <h3>Latest equity points</h3>
+            <h3>Equity and drawdown</h3>
           </div>
           <div className="metric-badge">{overview.source.status}</div>
         </div>
+        {equitySparkline ? (
+          <div className="card-grid">
+            <article className="feature-card">
+              <div className="feature-header">
+                <h4>Equity curve</h4>
+                <span className="status-pill status-available">live</span>
+              </div>
+              <svg viewBox="0 0 420 120" role="img" aria-label="Equity curve preview">
+                <path d={equitySparkline} fill="none" stroke="currentColor" strokeWidth="3" />
+              </svg>
+            </article>
+            <article className="feature-card">
+              <div className="feature-header">
+                <h4>Drawdown curve</h4>
+                <span className="status-pill status-available">live</span>
+              </div>
+              <svg viewBox="0 0 420 120" role="img" aria-label="Drawdown curve preview">
+                <path d={drawdownSparkline} fill="none" stroke="currentColor" strokeWidth="3" />
+              </svg>
+            </article>
+          </div>
+        ) : null}
         {recentEquity.length > 0 ? (
           <div className="table-wrap">
             <table>
@@ -103,7 +168,7 @@ export default function Home() {
             </table>
           </div>
         ) : (
-          <p>No live overview payload is available yet. Set `LQ_POSTGRES_DSN` and record runs/equity data.</p>
+          <p>{emptyStateMessage}</p>
         )}
       </section>
 
@@ -141,7 +206,7 @@ export default function Home() {
             </table>
           </div>
         ) : (
-          <p>No runs are available yet. The Streamlit dashboard remains the default path until more parity slices land.</p>
+          <p>{emptyStateMessage}</p>
         )}
       </section>
 

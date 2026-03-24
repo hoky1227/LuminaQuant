@@ -3,9 +3,9 @@ import { loadOverviewPayloadFromPython } from '@/lib/python-bridge-server';
 
 export const dynamic = 'force-dynamic';
 
-export function GET() {
+export async function GET() {
   try {
-    return NextResponse.json(loadOverviewPayloadFromPython());
+    return NextResponse.json(await loadOverviewPayloadFromPython());
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
