@@ -1,0 +1,92 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+
+interface RiskHealthPayload {
+  as_of: string;
+  run_id: string;
+  summary: {
+    risk_event_count: number;
+    heartbeat_count: number;
+    order_state_count: number;
+  };
+  risk_events: Array<{ event_time: string | null; reason: string | null }>;
+  heartbeats: Array<{ heartbeat_time: string | null; status: string | null }>;
+  order_states: Array<{ event_time: string | null; symbol: string | null; state: string | null; message: string | null }>;
+  status: string;
+}
+
+export function RiskHealthRuntime() {
+  const [payload, setPayload] = useState<RiskHealthPayload | null>(null);
+  const [error, setError] = useState<string>('');
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/python/dashboard/risk-health', { cache: 'no-store' })
+      .then(async (response) => {
+        const body = (await response.json()) as RiskHealthPayload | { detail?: string };
+        if (!response.ok) {
+          throw new Error('detail' in body ? body.detail ?? 'risk health bridge failed' : 'risk health bridge failed');
+        }
+        if (active) {
+          setPayload(body as RiskHealthPayload);
+        }
+      })
+      .catch((fetchError: unknown) => {
+        if (active) {
+          setError(fetchError instanceof Error ? fetchError.message : String(fetchError));
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  if (error) {
+    return <p>{error}</p>;
+  }
+  if (payload === null) {
+    return <p>Loading risk and health telemetry…</p>;
+  }
+  if (payload.status !== 'ok') {
+    return <p>No risk/health payload available yet.</p>;
+  }
+
+  return (
+    <div className="page-stack">
+      <div className="metric-grid">
+        <article>
+          <span>Risk Events</span>
+          <strong>{payload.summary.risk_event_count}</strong>
+        </article>
+        <article>
+          <span>Heartbeats</span>
+          <strong>{payload.summary.heartbeat_count}</strong>
+        </article>
+        <article>
+          <span>Order States</span>
+          <strong>{payload.summary.order_state_count}</strong>
+        </article>
+      </div>
+
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Recent Risk Events</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            {payload.risk_events.slice(0, 5).map((event, index) => (
+              <tr key={`${event.event_time}-${index}`}>
+                <td>{event.event_time ?? 'n/a'}</td>
+                <td>{event.reason ?? 'n/a'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}

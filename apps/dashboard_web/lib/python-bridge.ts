@@ -88,6 +88,14 @@ export const dashboardBridgeContract = {
       nextRoute: '/workflows',
       status: 'available',
     },
+    {
+      id: 'risk-health',
+      title: 'Risk & Health',
+      description: 'Recent risk events, heartbeats, and order-state changes for the active run.',
+      streamlitSource: 'apps/dashboard/app.py',
+      nextRoute: '/risk-health',
+      status: 'available',
+    },
   ] satisfies CapabilityItem[],
 } as const;
 
@@ -104,6 +112,13 @@ export const navigationItems: NavigationItem[] = [
     href: '/workflows',
     label: 'Workflow Jobs',
     summary: 'Managed run status, strategy, and mode parity from the Python workflow store.',
+    status: 'available',
+  },
+  {
+    id: 'risk-health',
+    href: '/risk-health',
+    label: 'Risk & Health',
+    summary: 'Recent risk, heartbeat, and order-state telemetry from the latest run.',
     status: 'available',
   },
   {
