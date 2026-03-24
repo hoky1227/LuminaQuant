@@ -25,16 +25,14 @@ from lumina_quant.symbols import (
 )
 from lumina_quant.strategy_factory import research_run_support as _research_run_support
 from lumina_quant.strategy_factory import research_stage_support as _research_stage_support
+from lumina_quant.strategy_factory import research_metrics as _research_metrics
 from lumina_quant.strategy_factory.runtime_settings import (
     current_research_market_data_settings as _current_research_market_data_settings_impl,
 )
 from lumina_quant.strategy_factory.research_reporting import ResearchReportBuilder
 from lumina_quant.strategy_factory.strategy_signal_dispatch import StrategySignalDispatcher
-from lumina_quant.utils.risk_free import (
-    resolve_risk_free_config,
-    sharpe_ratio as compute_sharpe_ratio,
-    sortino_ratio as compute_sortino_ratio,
-)
+
+resolve_risk_free_config = _research_metrics.resolve_risk_free_config
 
 _PERIODS_PER_YEAR = {
     "1s": 31_536_000,
@@ -514,161 +512,43 @@ def _split_lengths(total: int, *, train_frac: float = 0.60, val_frac: float = 0.
 
 
 def _safe_std(values: np.ndarray) -> float:
-    if values.size < 2:
-        return 0.0
-    out = float(np.std(values, ddof=1))
-    if not math.isfinite(out):
-        return 0.0
-    return out
+    return _research_metrics.safe_std(values)
 
 
 def _safe_mean(values: np.ndarray) -> float:
-    if values.size == 0:
-        return 0.0
-    out = float(np.mean(values))
-    if not math.isfinite(out):
-        return 0.0
-    return out
+    return _research_metrics.safe_mean(values)
 
 
 def _max_drawdown(returns: np.ndarray) -> float:
-    if returns.size == 0:
-        return 0.0
-    equity = np.cumprod(1.0 + returns)
-    peaks = np.maximum.accumulate(equity)
-    drawdown = 1.0 - np.divide(equity, np.maximum(peaks, 1e-12))
-    return float(np.max(drawdown)) if drawdown.size else 0.0
+    return _research_metrics.max_drawdown(returns)
 
 
 def _rolling_sharpe_min(returns: np.ndarray, *, window: int = 64, periods_per_year: int = 365) -> float:
-    if returns.size < max(8, window):
-        return 0.0
-    vals: list[float] = []
-    for idx in range(window, returns.size + 1):
-        tail = returns[idx - window : idx]
-        mu = _safe_mean(tail)
-        sigma = _safe_std(tail)
-        if sigma <= 1e-12:
-            continue
-        vals.append((mu / sigma) * math.sqrt(periods_per_year))
-    if not vals:
-        return 0.0
-    return float(min(vals))
+    return _research_metrics.rolling_sharpe_min(
+        returns,
+        window=window,
+        periods_per_year=periods_per_year,
+    )
 
 
 def _worst_month(returns: np.ndarray, *, bars_per_month: int) -> float:
-    if returns.size == 0:
-        return 0.0
-    bars = max(4, int(bars_per_month))
-    monthly: list[float] = []
-    for idx in range(0, returns.size, bars):
-        tail = returns[idx : idx + bars]
-        if tail.size == 0:
-            continue
-        monthly.append(float(np.prod(1.0 + tail) - 1.0))
-    if not monthly:
-        return 0.0
-    return float(min(monthly))
+    return _research_metrics.worst_month(returns, bars_per_month=bars_per_month)
 
 
 def _deflated_sharpe_ratio(returns: np.ndarray, *, num_trials: int = 1) -> float:
-    if returns.size < 16:
-        return 0.0
-    mu = _safe_mean(returns)
-    sigma = _safe_std(returns)
-    if sigma <= 1e-12:
-        return 0.0
-
-    sharpe = mu / sigma
-    n = float(max(2, returns.size))
-    k = float(max(1, num_trials))
-    expected_max = math.sqrt(2.0 * math.log(k)) / math.sqrt(n)
-
-    centered = returns - mu
-    m3 = float(np.mean(centered**3))
-    m4 = float(np.mean(centered**4))
-    skew = 0.0 if sigma <= 1e-12 else m3 / (sigma**3)
-    kurt = 3.0 if sigma <= 1e-12 else m4 / (sigma**4)
-
-    denom_term = 1.0 - (skew * sharpe) + (((kurt - 1.0) / 4.0) * (sharpe**2))
-    denom_term = max(1e-8, denom_term)
-    denom = math.sqrt(denom_term / max(1.0, n - 1.0))
-    z = (sharpe - expected_max) / max(1e-8, denom)
-
-    # Normal CDF.
-    cdf = 0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))
-    return float(max(0.0, min(1.0, cdf)))
+    return _research_metrics.deflated_sharpe_ratio(returns, num_trials=num_trials)
 
 
 def _approx_pbo(returns: np.ndarray) -> float:
-    """Approximate probability of backtest overfitting from fold instability."""
-    n = returns.size
-    if n < 64:
-        return 1.0
-    folds = min(8, max(4, n // 32))
-    fold_size = n // folds
-    if fold_size <= 0:
-        return 1.0
-
-    failures = 0
-    trials = 0
-    for idx in range(folds):
-        test_start = idx * fold_size
-        test_end = n if idx == folds - 1 else (idx + 1) * fold_size
-        test = returns[test_start:test_end]
-        train = np.concatenate((returns[:test_start], returns[test_end:]))
-        if train.size < 8 or test.size < 8:
-            continue
-        train_sharpe = 0.0
-        test_sharpe = 0.0
-        train_std = _safe_std(train)
-        test_std = _safe_std(test)
-        if train_std > 1e-12:
-            train_sharpe = _safe_mean(train) / train_std
-        if test_std > 1e-12:
-            test_sharpe = _safe_mean(test) / test_std
-        trials += 1
-        if train_sharpe > 0.0 and test_sharpe <= 0.0:
-            failures += 1
-    if trials <= 0:
-        return 1.0
-    return float(failures / trials)
+    return _research_metrics.approx_pbo(returns)
 
 
 def _spa_like_pvalue(returns: np.ndarray, *, bootstrap_rounds: int = 200) -> float:
-    """Simple bootstrap p-value proxy for data-snooping correction."""
-    if returns.size < 16:
-        return 1.0
-    observed = _safe_mean(returns)
-    if observed <= 0.0:
-        return 1.0
-
-    rng = np.random.default_rng(12345)
-    exceed = 0
-    centered = returns - _safe_mean(returns)
-    n = centered.size
-    for _ in range(max(64, int(bootstrap_rounds))):
-        idx = rng.integers(0, n, size=n)
-        sample = centered[idx]
-        if _safe_mean(sample) >= observed:
-            exceed += 1
-    return float(exceed / max(1, int(bootstrap_rounds)))
+    return _research_metrics.spa_like_pvalue(returns, bootstrap_rounds=bootstrap_rounds)
 
 
 def _correlation(x: np.ndarray, y: np.ndarray) -> float:
-    n = min(x.size, y.size)
-    if n < 8:
-        return 0.0
-    xa = x[-n:]
-    ya = y[-n:]
-    xs = _safe_std(xa)
-    ys = _safe_std(ya)
-    if xs <= 1e-12 or ys <= 1e-12:
-        return 0.0
-    corr = float(np.corrcoef(xa, ya)[0, 1])
-    if not math.isfinite(corr):
-        return 0.0
-    return corr
+    return _research_metrics.correlation(x, y)
 
 
 def _compute_metrics(
@@ -733,27 +613,8 @@ class _ComputedMetricPayload:
 
 
 def _empty_compute_metric_payload() -> _ComputedMetricPayload:
-    return _ComputedMetricPayload(
-        total_return=0.0,
-        cagr=0.0,
-        sharpe=0.0,
-        sortino=0.0,
-        calmar=0.0,
-        max_drawdown=0.0,
-        turnover=0.0,
-        trade_count=0.0,
-        win_rate=0.0,
-        avg_trade=0.0,
-        exposure=0.0,
-        volatility=0.0,
-        stability=0.0,
-        rolling_sharpe_min=0.0,
-        worst_month=0.0,
-        benchmark_corr=0.0,
-        deflated_sharpe=0.0,
-        pbo=1.0,
-        spa_pvalue=1.0,
-    )
+    payload = _research_metrics.empty_compute_metric_payload()
+    return _ComputedMetricPayload(**{field: getattr(payload, field) for field in payload.__slots__})
 
 
 def _resolve_compute_metric_payload(
@@ -766,61 +627,16 @@ def _resolve_compute_metric_payload(
     num_trials: int,
     resolved_rf: Any,
 ) -> _ComputedMetricPayload:
-    total_return = float(np.prod(1.0 + returns) - 1.0)
-    years = max(1.0 / float(periods_per_year), returns.size / float(periods_per_year))
-    cagr = float(math.exp(math.log1p(max(-0.999999, total_return)) / years) - 1.0)
-
-    sigma = _safe_std(returns)
-    sharpe = compute_sharpe_ratio(
+    payload = _research_metrics.resolve_compute_metric_payload(
         returns,
+        turnover=turnover,
+        exposure=exposure,
+        benchmark_returns=benchmark_returns,
         periods_per_year=periods_per_year,
-        risk_free_per_period=np.asarray(resolved_rf.periodic_rates, dtype=float),
+        num_trials=num_trials,
+        resolved_rf=resolved_rf,
     )
-    sortino = compute_sortino_ratio(
-        returns,
-        periods_per_year=periods_per_year,
-        target_per_period=np.asarray(resolved_rf.periodic_sortino_targets, dtype=float),
-    )
-
-    max_drawdown = _max_drawdown(returns)
-    calmar = 0.0 if max_drawdown <= 1e-12 else cagr / max_drawdown
-
-    trade_count = float(np.sum(turnover > 1e-9))
-    win_rate = float(np.sum(returns > 0.0) / returns.size)
-    avg_trade = float(np.sum(returns) / max(1.0, trade_count))
-
-    rolling_sharpe_min = _rolling_sharpe_min(
-        returns,
-        window=min(128, max(32, returns.size // 8)),
-        periods_per_year=periods_per_year,
-    )
-    worst_month = _worst_month(
-        returns,
-        bars_per_month=max(4, int(periods_per_year // 12)),
-    )
-    stability = 0.5 * max(-3.0, min(3.0, rolling_sharpe_min)) + 0.5 * worst_month
-
-    return _ComputedMetricPayload(
-        total_return=total_return,
-        cagr=cagr,
-        sharpe=float(sharpe),
-        sortino=float(sortino),
-        calmar=float(calmar),
-        max_drawdown=float(max_drawdown),
-        turnover=float(_safe_mean(turnover)),
-        trade_count=trade_count,
-        win_rate=win_rate,
-        avg_trade=avg_trade,
-        exposure=float(_safe_mean(np.abs(exposure))),
-        volatility=float(sigma * math.sqrt(periods_per_year)),
-        stability=float(stability),
-        rolling_sharpe_min=float(rolling_sharpe_min),
-        worst_month=float(worst_month),
-        benchmark_corr=float(_correlation(returns, benchmark_returns)),
-        deflated_sharpe=float(_deflated_sharpe_ratio(returns, num_trials=num_trials)),
-        pbo=float(_approx_pbo(returns)),
-        spa_pvalue=float(_spa_like_pvalue(returns)),
-    )
+    return _ComputedMetricPayload(**{field: getattr(payload, field) for field in payload.__slots__})
 
 
 def _compute_metric_summary(
@@ -828,38 +644,12 @@ def _compute_metric_summary(
     *,
     resolved_rf: Any | None,
 ) -> dict[str, float]:
-    risk_free_annual = 0.0 if resolved_rf is None else float(resolved_rf.annual_rate)
-    risk_free_per_period = 0.0 if resolved_rf is None else float(resolved_rf.per_period_rate)
-    sortino_target_annual = 0.0 if resolved_rf is None else float(resolved_rf.sortino_target_annual)
-    sortino_target_per_period = 0.0 if resolved_rf is None else float(resolved_rf.sortino_target_per_period)
-    return {
-        "return": metric_payload.total_return,
-        "total_return": metric_payload.total_return,
-        "cagr": metric_payload.cagr,
-        "sharpe": metric_payload.sharpe,
-        "sortino": metric_payload.sortino,
-        "calmar": metric_payload.calmar,
-        "mdd": metric_payload.max_drawdown,
-        "max_drawdown": metric_payload.max_drawdown,
-        "turnover": metric_payload.turnover,
-        "trades": metric_payload.trade_count,
-        "trade_count": metric_payload.trade_count,
-        "win_rate": metric_payload.win_rate,
-        "avg_trade": metric_payload.avg_trade,
-        "exposure": metric_payload.exposure,
-        "volatility": metric_payload.volatility,
-        "stability": metric_payload.stability,
-        "rolling_sharpe_min": metric_payload.rolling_sharpe_min,
-        "worst_month": metric_payload.worst_month,
-        "benchmark_corr": metric_payload.benchmark_corr,
-        "deflated_sharpe": metric_payload.deflated_sharpe,
-        "pbo": metric_payload.pbo,
-        "spa_pvalue": metric_payload.spa_pvalue,
-        "risk_free_annual": risk_free_annual,
-        "risk_free_per_period": risk_free_per_period,
-        "sortino_target_annual": sortino_target_annual,
-        "sortino_target_per_period": sortino_target_per_period,
-    }
+    return _research_metrics.compute_metric_summary(
+        _research_metrics.ComputedMetricPayload(
+            **{field: getattr(metric_payload, field) for field in metric_payload.__slots__}
+        ),
+        resolved_rf=resolved_rf,
+    )
 
 
 def _hurdle_fields(

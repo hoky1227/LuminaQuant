@@ -7,7 +7,7 @@ import sys
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
@@ -115,6 +115,16 @@ from apps.dashboard.services.state_store import (
     StateCursor as _StateCursor_data,
     connect_state_store as _connect_state_store_data,
     execute_query as _execute_query_data,
+    load_equity_state_frame as _load_equity_state_frame_data,
+    load_fills_state_frame as _load_fills_state_frame_data,
+    load_heartbeats_state_frame as _load_heartbeats_state_frame_data,
+    load_market_ohlcv_frame as _load_market_ohlcv_frame_data,
+    load_metrics_state_frame as _load_metrics_state_frame_data,
+    load_optimization_results_state_frame as _load_optimization_results_state_frame_data,
+    load_order_states_state_frame as _load_order_states_state_frame_data,
+    load_orders_state_frame as _load_orders_state_frame_data,
+    load_risk_events_state_frame as _load_risk_events_state_frame_data,
+    load_runs_frame as _load_runs_frame_data,
     read_sql_query as _read_sql_query_data,
     resolve_postgres_dsn as _resolve_postgres_dsn_data,
 )
@@ -956,316 +966,109 @@ def load_runs(db_path, refresh_counter=0):
     _ = refresh_counter
     if not _resolve_postgres_dsn(db_path):
         return pd.DataFrame()
-    conn = _connect_state_store(db_path)
-    try:
-        df = pd.read_sql_query(
-            """
-            SELECT
-                r.run_id,
-                r.mode,
-                r.started_at,
-                r.ended_at,
-                r.status,
-                r.metadata_json AS metadata,
-                COALESCE(
-                    (r.metadata_json ->> 'strategy'),
-                    (
-                        SELECT w.strategy
-                        FROM workflow_jobs w
-                        WHERE w.run_id = r.run_id
-                        ORDER BY w.started_at DESC
-                        LIMIT 1
-                    )
-                ) AS strategy,
-                COALESCE(eq.equity_rows, 0) AS equity_rows,
-                COALESCE(fl.fill_rows, 0) AS fill_rows,
-                COALESCE(od.order_rows, 0) AS order_rows,
-                COALESCE(rk.risk_rows, 0) AS risk_rows,
-                COALESCE(hb.hb_rows, 0) AS hb_rows,
-                eq.last_equity_at,
-                hb.last_heartbeat_at
-            FROM runs r
-            LEFT JOIN (
-                SELECT run_id, COUNT(*) AS equity_rows, MAX(timeindex) AS last_equity_at
-                FROM equity
-                GROUP BY run_id
-            ) eq ON eq.run_id = r.run_id
-            LEFT JOIN (SELECT run_id, COUNT(*) AS fill_rows FROM fills GROUP BY run_id) fl ON fl.run_id = r.run_id
-            LEFT JOIN (SELECT run_id, COUNT(*) AS order_rows FROM orders GROUP BY run_id) od ON od.run_id = r.run_id
-            LEFT JOIN (SELECT run_id, COUNT(*) AS risk_rows FROM risk_events GROUP BY run_id) rk ON rk.run_id = r.run_id
-            LEFT JOIN (
-                SELECT run_id, COUNT(*) AS hb_rows, MAX(heartbeat_time) AS last_heartbeat_at
-                FROM heartbeats
-                GROUP BY run_id
-            ) hb ON hb.run_id = r.run_id
-            ORDER BY r.started_at DESC
-            LIMIT 300
-            """,
-            conn,
-        )
-        df = _coerce_datetime(df, "started_at")
-        df = _coerce_datetime(df, "ended_at")
-        df = _coerce_datetime(df, "last_equity_at")
-        df = _coerce_datetime(df, "last_heartbeat_at")
-        return df
-    finally:
-        conn.close()
+    return _load_runs_frame_data(
+        db_path,
+        connect_state_store=_connect_state_store,
+        coerce_datetime=_coerce_datetime,
+    )
 
 
 @st.cache_data
 def load_equity_state(db_path, run_id, refresh_counter=0, max_points=DEFAULT_WINDOW_POINTS):
     _ = refresh_counter
-    conn = _connect_state_store(db_path)
-    try:
-        df = pd.read_sql_query(
-            """
-            SELECT timeindex AS datetime, total, cash, metadata_json AS metadata
-            FROM (
-                SELECT id, timeindex, total, cash, metadata_json
-                FROM equity
-                WHERE run_id = %s
-                ORDER BY id DESC
-                LIMIT %s
-            ) recent
-            ORDER BY id ASC
-            """,
-            conn,
-            params=[run_id, int(max(1, max_points))],
-        )
-        return _coerce_datetime(df, "datetime")
-    finally:
-        conn.close()
+    return _load_equity_state_frame_data(
+        db_path,
+        run_id,
+        connect_state_store=_connect_state_store,
+        coerce_datetime=_coerce_datetime,
+        max_points=max_points,
+    )
 
 
 @st.cache_data
 def load_metrics_state(db_path, run_id, refresh_counter=0, max_points=DEFAULT_WINDOW_POINTS):
     _ = refresh_counter
-    conn = _connect_state_store(db_path)
-    try:
-        df = pd.read_sql_query(
-            """
-            SELECT
-                timeindex AS datetime,
-                total,
-                cash,
-                metadata_json AS metadata
-            FROM (
-                SELECT id, timeindex, total, cash, metadata_json
-                FROM equity
-                WHERE run_id = %s
-                ORDER BY id DESC
-                LIMIT %s
-            ) recent
-            ORDER BY id ASC
-            """,
-            conn,
-            params=[run_id, int(max(1, max_points))],
-        )
-        df = _coerce_datetime(df, "datetime")
-        if df.empty:
-            return df
-
-        benchmark = []
-        funding = []
-        symbol = []
-        for meta in df["metadata"].tolist() if "metadata" in df.columns else []:
-            info = _parse_json_dict(meta)
-            benchmark.append(info.get("benchmark_price"))
-            funding.append(info.get("funding_total"))
-            symbol.append(info.get("symbol"))
-
-        if benchmark:
-            df["benchmark_price"] = pd.to_numeric(pd.Series(benchmark), errors="coerce")
-        if funding:
-            df["funding"] = pd.to_numeric(pd.Series(funding), errors="coerce").fillna(0.0)
-        if symbol:
-            df["event_symbol"] = pd.Series(symbol)
-        return df
-    finally:
-        conn.close()
+    return _load_metrics_state_frame_data(
+        db_path,
+        run_id,
+        connect_state_store=_connect_state_store,
+        coerce_datetime=_coerce_datetime,
+        parse_json_dict=_parse_json_dict,
+        max_points=max_points,
+    )
 
 
 @st.cache_data
 def load_fills_state(db_path, run_id, refresh_counter=0, max_points=DEFAULT_WINDOW_POINTS):
     _ = refresh_counter
-    conn = _connect_state_store(db_path)
-    try:
-        df = pd.read_sql_query(
-            """
-            SELECT
-                fill_time AS datetime,
-                symbol,
-                side AS direction,
-                quantity,
-                fill_cost,
-                commission,
-                fill_price AS price,
-                status,
-                metadata_json AS metadata,
-                exchange_order_id,
-                client_order_id
-            FROM (
-                SELECT id, fill_time, symbol, side, quantity, fill_cost, commission,
-                       fill_price, status, metadata_json, exchange_order_id, client_order_id
-                FROM fills
-                WHERE run_id = %s
-                ORDER BY id DESC
-                LIMIT %s
-            ) recent
-            ORDER BY id ASC
-            """,
-            conn,
-            params=[run_id, int(max(1, max_points))],
-        )
-        if not df.empty and "direction" in df.columns:
-            df["direction"] = (
-                df["direction"]
-                .fillna("")
-                .astype(str)
-                .str.upper()
-                .map({"BUY": "BUY", "SELL": "SELL", "BUY_LONG": "BUY", "SELL_SHORT": "SELL"})
-                .fillna(df["direction"])
-            )
-        return _coerce_datetime(df, "datetime")
-    finally:
-        conn.close()
+    return _load_fills_state_frame_data(
+        db_path,
+        run_id,
+        connect_state_store=_connect_state_store,
+        coerce_datetime=_coerce_datetime,
+        max_points=max_points,
+    )
 
 
 @st.cache_data
 def load_orders_state(db_path, run_id, refresh_counter=0, max_points=DEFAULT_WINDOW_POINTS):
     _ = refresh_counter
-    conn = _connect_state_store(db_path)
-    try:
-        df = pd.read_sql_query(
-            """
-            SELECT created_at, symbol, side, order_type, quantity, price, status,
-                   client_order_id, exchange_order_id, metadata_json AS metadata
-            FROM (
-                SELECT id, created_at, symbol, side, order_type, quantity, price, status,
-                       client_order_id, exchange_order_id, metadata_json
-                FROM orders
-                WHERE run_id = %s
-                ORDER BY id DESC
-                LIMIT %s
-            ) recent
-            ORDER BY id ASC
-            """,
-            conn,
-            params=[run_id, int(max(1, max_points))],
-        )
-        return _coerce_datetime(df, "created_at")
-    finally:
-        conn.close()
+    return _load_orders_state_frame_data(
+        db_path,
+        run_id,
+        connect_state_store=_connect_state_store,
+        coerce_datetime=_coerce_datetime,
+        max_points=max_points,
+    )
 
 
 @st.cache_data
 def load_risk_events_state(db_path, run_id, refresh_counter=0, max_points=5000):
     _ = refresh_counter
-    conn = _connect_state_store(db_path)
-    try:
-        df = pd.read_sql_query(
-            """
-            SELECT event_time, reason, details_json AS details
-            FROM (
-                SELECT id, event_time, reason, details_json
-                FROM risk_events
-                WHERE run_id = %s
-                ORDER BY id DESC
-                LIMIT %s
-            ) recent
-            ORDER BY id ASC
-            """,
-            conn,
-            params=[run_id, int(max(1, max_points))],
-        )
-        return _coerce_datetime(df, "event_time")
-    finally:
-        conn.close()
+    return _load_risk_events_state_frame_data(
+        db_path,
+        run_id,
+        connect_state_store=_connect_state_store,
+        coerce_datetime=_coerce_datetime,
+        max_points=max_points,
+    )
 
 
 @st.cache_data
 def load_heartbeats_state(db_path, run_id, refresh_counter=0, max_points=5000):
     _ = refresh_counter
-    conn = _connect_state_store(db_path)
-    try:
-        df = pd.read_sql_query(
-            """
-            SELECT heartbeat_time, status, details_json AS details
-            FROM (
-                SELECT id, heartbeat_time, status, details_json
-                FROM heartbeats
-                WHERE run_id = %s
-                ORDER BY id DESC
-                LIMIT %s
-            ) recent
-            ORDER BY id ASC
-            """,
-            conn,
-            params=[run_id, int(max(1, max_points))],
-        )
-        return _coerce_datetime(df, "heartbeat_time")
-    finally:
-        conn.close()
+    return _load_heartbeats_state_frame_data(
+        db_path,
+        run_id,
+        connect_state_store=_connect_state_store,
+        coerce_datetime=_coerce_datetime,
+        max_points=max_points,
+    )
 
 
 @st.cache_data
 def load_order_states_state(db_path, run_id, refresh_counter=0, max_points=10000):
     _ = refresh_counter
-    conn = _connect_state_store(db_path)
-    try:
-        df = pd.read_sql_query(
-            """
-            SELECT event_time, symbol, client_order_id, exchange_order_id, state, message, details_json AS details
-            FROM (
-                SELECT id, event_time, symbol, client_order_id, exchange_order_id, state, message, details_json
-                FROM order_state_events
-                WHERE run_id = %s
-                ORDER BY id DESC
-                LIMIT %s
-            ) recent
-            ORDER BY id ASC
-            """,
-            conn,
-            params=[run_id, int(max(1, max_points))],
-        )
-        return _coerce_datetime(df, "event_time")
-    finally:
-        conn.close()
+    return _load_order_states_state_frame_data(
+        db_path,
+        run_id,
+        connect_state_store=_connect_state_store,
+        coerce_datetime=_coerce_datetime,
+        max_points=max_points,
+    )
 
 
 @st.cache_data
 def load_optimization_results_state(db_path, refresh_counter=0, max_points=10000):
     _ = refresh_counter
-    if not _resolve_postgres_dsn(db_path):
-        return pd.DataFrame()
-    conn = _connect_state_store(db_path)
-    try:
-        df = pd.read_sql_query(
-            """
-            SELECT id, run_id, stage, created_at, params_json, sharpe, cagr, mdd,
-                   train_sharpe, robustness_score, extra_json
-            FROM (
-                SELECT id, run_id, stage, created_at, params_json, sharpe, cagr, mdd,
-                       train_sharpe, robustness_score, extra_json
-                FROM optimization_results
-                ORDER BY id DESC
-                LIMIT %s
-            ) recent
-            ORDER BY id ASC
-            """,
-            conn,
-            params=[int(max(1, max_points))],
-        )
-        if df.empty:
-            return df
-        df = _coerce_datetime(df, "created_at")
-        df["params"] = df["params_json"].apply(_parse_json_dict)
-        df["extra"] = df["extra_json"].apply(_parse_json_dict)
-        return df
-    except Exception:
-        return pd.DataFrame()
-    finally:
-        conn.close()
+    return _load_optimization_results_state_frame_data(
+        db_path,
+        resolve_postgres_dsn=_resolve_postgres_dsn,
+        connect_state_store=_connect_state_store,
+        coerce_datetime=_coerce_datetime,
+        parse_json_dict=_parse_json_dict,
+        max_points=max_points,
+    )
 
 
 @st.cache_data
@@ -1278,32 +1081,17 @@ def load_market_ohlcv_state(
     max_points=DEFAULT_WINDOW_POINTS,
 ):
     _ = refresh_counter
-    root_path = str(db_path or "").strip()
-    if not root_path:
-        return pd.DataFrame()
-    symbol_token = normalize_symbol(symbol)
-    timeframe_token, _ = _resolve_dashboard_market_timeframe(timeframe)
-    try:
-        from lumina_quant.parquet_market_data import ParquetMarketDataRepository
-
-        repo = ParquetMarketDataRepository(root_path)
-        interval_ms = max(1, int(timeframe_to_milliseconds(timeframe_token)))
-        end_dt = datetime.now(UTC).replace(tzinfo=None)
-        start_dt = end_dt - timedelta(milliseconds=interval_ms * int(max(2, max_points) * 2))
-        frame = repo.load_ohlcv(
-            exchange=str(exchange_id).strip().lower(),
-            symbol=symbol_token,
-            timeframe=timeframe_token,
-            start_date=start_dt,
-            end_date=end_dt,
-        )
-        if frame.is_empty():
-            return pd.DataFrame()
-        if frame.height > max_points:
-            frame = frame.tail(int(max_points))
-        return _coerce_datetime(frame.to_pandas(), "datetime")
-    except Exception:
-        return pd.DataFrame()
+    return _load_market_ohlcv_frame_data(
+        str(db_path or ""),
+        symbol,
+        timeframe,
+        exchange_id,
+        normalize_symbol=normalize_symbol,
+        resolve_dashboard_market_timeframe=_resolve_dashboard_market_timeframe,
+        timeframe_to_milliseconds=timeframe_to_milliseconds,
+        coerce_datetime=_coerce_datetime,
+        max_points=max_points,
+    )
 
 
 @st.cache_data
