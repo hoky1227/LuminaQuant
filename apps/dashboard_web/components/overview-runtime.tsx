@@ -32,6 +32,16 @@ interface OverviewPayload {
     strategy: string;
     started_at: string | null;
   }>;
+  workflow_jobs: Array<{
+    job_id: string;
+    workflow: string;
+    status: string;
+    requested_mode: string;
+    strategy: string;
+    run_id: string;
+    started_at: string | null;
+    ended_at: string | null;
+  }>;
   equity_curve: Array<OverviewPoint & { equity: number }>;
   drawdown_curve: Array<OverviewPoint & { drawdown: number }>;
   source: {
@@ -113,6 +123,7 @@ export function OverviewRuntime() {
 
   const recentEquity = overview.equity_curve.slice(-5);
   const recentRuns = overview.recent_runs.slice(0, 5);
+  const recentJobs = overview.workflow_jobs.slice(0, 5);
   const performanceEntries: Array<[string, number]> = [
     ['CAGR', overview.performance_metrics.cagr],
     ['Ann. Volatility', overview.performance_metrics.annualized_volatility],
@@ -182,6 +193,44 @@ export function OverviewRuntime() {
           </div>
         ) : (
           <p>{emptyStateMessage}</p>
+        )}
+      </section>
+
+      <section className="section-card">
+        <div className="section-header">
+          <div>
+            <p className="eyebrow">Workflow parity</p>
+            <h3>Recent jobs</h3>
+          </div>
+          <div className="metric-badge">{recentJobs.length} jobs</div>
+        </div>
+        {recentJobs.length > 0 ? (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Workflow</th>
+                  <th>Status</th>
+                  <th>Mode</th>
+                  <th>Strategy</th>
+                  <th>Run ID</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentJobs.map((job) => (
+                  <tr key={job.job_id}>
+                    <td>{job.workflow}</td>
+                    <td>{job.status}</td>
+                    <td>{job.requested_mode || 'n/a'}</td>
+                    <td>{job.strategy || 'n/a'}</td>
+                    <td>{job.run_id || 'n/a'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p>No managed workflow jobs have been recorded yet.</p>
         )}
       </section>
 

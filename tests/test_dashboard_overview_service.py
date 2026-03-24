@@ -16,6 +16,7 @@ def test_empty_overview_payload_tracks_reason() -> None:
 
     assert payload["source"]["status"] == "missing_dsn"
     assert payload["recent_runs"] == []
+    assert payload["workflow_jobs"] == []
     assert payload["equity_curve"] == []
 
 

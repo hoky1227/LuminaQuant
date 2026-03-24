@@ -38,6 +38,7 @@ def empty_overview_payload(*, contract: Any, reason: str) -> dict[str, Any]:
         "summary_metrics": [],
         "performance_metrics": {},
         "recent_runs": [],
+        "workflow_jobs": [],
         "equity_curve": [],
         "drawdown_curve": [],
         "source": {
@@ -220,6 +221,26 @@ def load_overview_payload(
         runs = pd.DataFrame(run_rows, columns=run_columns)
         if runs.empty:
             return empty_overview_payload(contract=contract, reason="no_runs")
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    job_id,
+                    workflow,
+                    status,
+                    requested_mode,
+                    strategy,
+                    run_id,
+                    started_at,
+                    ended_at
+                FROM workflow_jobs
+                ORDER BY COALESCE(started_at, ended_at, last_updated) DESC
+                LIMIT 10
+                """
+            )
+            workflow_rows = cursor.fetchall()
+            workflow_columns = [description[0] for description in cursor.description or ()]
+        workflow_jobs = pd.DataFrame(workflow_rows, columns=workflow_columns)
         run_id = str(runs.iloc[0]["run_id"])
         with conn.cursor() as cursor:
             cursor.execute(
@@ -239,11 +260,34 @@ def load_overview_payload(
             equity_rows = cursor.fetchall()
             equity_columns = [description[0] for description in cursor.description or ()]
         equity = pd.DataFrame(equity_rows, columns=equity_columns)
-        return build_overview_payload_from_frames(
+        payload = build_overview_payload_from_frames(
             contract=contract,
             runs_frame=runs,
             equity_frame=equity,
         )
+        if not workflow_jobs.empty:
+            payload["workflow_jobs"] = [
+                {
+                    "job_id": str(row.get("job_id") or ""),
+                    "workflow": str(row.get("workflow") or ""),
+                    "status": str(row.get("status") or ""),
+                    "requested_mode": str(row.get("requested_mode") or ""),
+                    "strategy": str(row.get("strategy") or ""),
+                    "run_id": str(row.get("run_id") or ""),
+                    "started_at": (
+                        None
+                        if pd.isna(row.get("started_at"))
+                        else pd.to_datetime(row.get("started_at"), errors="coerce", utc=True).isoformat()
+                    ),
+                    "ended_at": (
+                        None
+                        if pd.isna(row.get("ended_at"))
+                        else pd.to_datetime(row.get("ended_at"), errors="coerce", utc=True).isoformat()
+                    ),
+                }
+                for _, row in workflow_jobs.iterrows()
+            ]
+        return payload
     finally:
         conn.close()
 
