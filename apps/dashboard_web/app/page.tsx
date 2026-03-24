@@ -1,8 +1,11 @@
 import { buildOverviewCards, dashboardBridgeContract } from '@/lib/python-bridge';
+import { loadOverviewPayloadFromPython } from '@/lib/python-bridge-server';
 
 const overviewCards = buildOverviewCards();
 
 export default function Home() {
+  const overview = loadOverviewPayloadFromPython();
+  const recentEquity = overview.equity_curve.slice(-5);
   return (
     <div className="page-stack">
       <section className="hero-card">
@@ -23,14 +26,12 @@ export default function Home() {
           <div className="metric-badge">Target peak RSS: {dashboardBridgeContract.memoryBudget.targetPeakRssGb} GB</div>
         </div>
         <div className="metric-grid">
-          <article>
-            <span>Host baseline</span>
-            <strong>{dashboardBridgeContract.memoryBudget.hostRamGb} GB</strong>
-          </article>
-          <article>
-            <span>Legacy entry point</span>
-            <strong>{dashboardBridgeContract.legacyEntryPoint}</strong>
-          </article>
+          {overview.summary_metrics.slice(0, 4).map((metric) => (
+            <article key={metric.key}>
+              <span>{metric.label}</span>
+              <strong>{String(metric.value)}</strong>
+            </article>
+          ))}
         </div>
         <ul className="guidance-list">
           {dashboardBridgeContract.memoryBudget.guidance.map((item) => (
@@ -71,6 +72,38 @@ export default function Home() {
             </tbody>
           </table>
         </div>
+      </section>
+
+      <section className="section-card">
+        <div className="section-header">
+          <div>
+            <p className="eyebrow">Real overview payload</p>
+            <h3>Latest equity points</h3>
+          </div>
+          <div className="metric-badge">{overview.source.status}</div>
+        </div>
+        {recentEquity.length > 0 ? (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>Equity</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentEquity.map((point) => (
+                  <tr key={point.timestamp}>
+                    <td>{point.timestamp}</td>
+                    <td>{point.equity}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p>No live overview payload is available yet. Set `LQ_POSTGRES_DSN` and record runs/equity data.</p>
+        )}
       </section>
 
       <section className="section-card">

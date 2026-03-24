@@ -264,6 +264,12 @@ AGENTS.md
 .omx/
 .sisyphus/
 
+# Next.js migration app generated artifacts
+apps/dashboard_web/node_modules/
+apps/dashboard_web/.next/
+apps/dashboard_web/tsconfig.tsbuildinfo
+apps/dashboard_web/package-lock.json
+
 # Keep canonical runtime layout directories (contents remain ignored).
 !var/
 var/*

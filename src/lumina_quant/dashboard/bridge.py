@@ -4,9 +4,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+import pandas as pd
+
+from lumina_quant.config import BaseConfig
+from lumina_quant.postgres_state import _connect_postgres
 
 DEFAULT_DASHBOARD_COMPAT_PATH = "/api/python/dashboard/overview"
 
@@ -45,6 +52,10 @@ class DashboardBridgeContract:
         payload = asdict(self)
         payload["contract_version"] = 1
         return payload
+
+
+def resolve_dashboard_postgres_dsn(dsn: str | None = None) -> str:
+    return str(dsn or os.getenv("LQ_POSTGRES_DSN") or getattr(BaseConfig, "POSTGRES_DSN", "") or "").strip()
 
 
 def normalize_dashboard_launch_mode(value: str | None, default: str = "auto") -> str:
@@ -109,13 +120,204 @@ def resolve_dashboard_bridge_contract(
     )
 
 
+def _coerce_datetime_series(frame: pd.DataFrame, column: str) -> pd.DataFrame:
+    if frame.empty or column not in frame.columns:
+        return frame
+    frame = frame.copy()
+    frame[column] = pd.to_datetime(frame[column], errors="coerce", utc=True)
+    return frame
+
+
+def _empty_overview_payload(
+    *,
+    contract: DashboardBridgeContract,
+    reason: str,
+) -> dict[str, Any]:
+    return {
+        "as_of": datetime.now(UTC).isoformat(),
+        "summary_metrics": [],
+        "equity_curve": [],
+        "drawdown_curve": [],
+        "source": {
+            "mode": contract.launch_mode,
+            "backend": contract.python_backend,
+            "status": reason,
+        },
+    }
+
+
+def _overview_metric(label: str, value: Any, *, key: str | None = None) -> dict[str, Any]:
+    return {
+        "key": key or label.lower().replace(" ", "_"),
+        "label": label,
+        "value": value,
+    }
+
+
+def build_overview_payload_from_frames(
+    *,
+    contract: DashboardBridgeContract,
+    runs_frame: pd.DataFrame,
+    equity_frame: pd.DataFrame,
+) -> dict[str, Any]:
+    if runs_frame.empty:
+        return _empty_overview_payload(contract=contract, reason="no_runs")
+
+    run = runs_frame.iloc[0]
+    run_id = str(run.get("run_id") or "")
+    strategy = ""
+    metadata = run.get("metadata")
+    if isinstance(metadata, dict):
+        strategy = str(metadata.get("strategy") or "")
+    strategy = strategy or str(run.get("strategy") or "")
+
+    equity = _coerce_datetime_series(equity_frame, "datetime")
+    if equity.empty:
+        summary_metrics = [
+            _overview_metric("Run ID", run_id, key="run_id"),
+            _overview_metric("Mode", str(run.get("mode") or "")),
+            _overview_metric("Status", str(run.get("status") or "")),
+            _overview_metric("Strategy", strategy or "unknown"),
+            _overview_metric("Equity Points", 0, key="equity_points"),
+        ]
+        payload = _empty_overview_payload(contract=contract, reason="no_equity")
+        payload["summary_metrics"] = summary_metrics
+        payload["source"]["run_id"] = run_id
+        return payload
+
+    totals = pd.to_numeric(equity["total"], errors="coerce").fillna(0.0)
+    timestamps = equity["datetime"]
+    initial_equity = float(totals.iloc[0]) if not totals.empty else 0.0
+    latest_equity = float(totals.iloc[-1]) if not totals.empty else 0.0
+    total_return = 0.0
+    if initial_equity:
+        total_return = (latest_equity - initial_equity) / initial_equity
+
+    running_peak = totals.cummax().replace(0.0, pd.NA)
+    drawdown = ((totals - running_peak) / running_peak).fillna(0.0)
+
+    summary_metrics = [
+        _overview_metric("Run ID", run_id, key="run_id"),
+        _overview_metric("Mode", str(run.get("mode") or "")),
+        _overview_metric("Status", str(run.get("status") or "")),
+        _overview_metric("Strategy", strategy or "unknown"),
+        _overview_metric("Initial Equity", round(initial_equity, 4), key="initial_equity"),
+        _overview_metric("Latest Equity", round(latest_equity, 4), key="latest_equity"),
+        _overview_metric("Total Return", round(total_return, 6), key="total_return"),
+        _overview_metric("Equity Points", len(equity), key="equity_points"),
+    ]
+    return {
+        "as_of": datetime.now(UTC).isoformat(),
+        "summary_metrics": summary_metrics,
+        "equity_curve": [
+            {
+                "timestamp": value.isoformat(),
+                "equity": float(total),
+            }
+            for value, total in zip(timestamps.tolist(), totals.tolist(), strict=False)
+            if value is not pd.NaT
+        ],
+        "drawdown_curve": [
+            {
+                "timestamp": value.isoformat(),
+                "drawdown": float(level),
+            }
+            for value, level in zip(timestamps.tolist(), drawdown.tolist(), strict=False)
+            if value is not pd.NaT
+        ],
+        "source": {
+            "mode": contract.launch_mode,
+            "backend": contract.python_backend,
+            "status": "ok",
+            "run_id": run_id,
+        },
+    }
+
+
+def load_overview_payload(
+    *,
+    launch_mode: str | None = "next",
+    dsn: str | None = None,
+    limit: int = 120,
+    compatibility_path: str | None = None,
+) -> dict[str, Any]:
+    repo_root = Path(__file__).resolve().parents[3]
+    contract = resolve_dashboard_bridge_contract(
+        launch_mode=launch_mode,
+        streamlit_app_path=repo_root / "apps" / "dashboard" / "app.py",
+        next_app_dir=repo_root / "apps" / "dashboard_web",
+        compatibility_path=compatibility_path,
+    )
+    if dsn is not None and not str(dsn).strip():
+        return _empty_overview_payload(contract=contract, reason="missing_dsn")
+    resolved_dsn = resolve_dashboard_postgres_dsn(dsn)
+    if not resolved_dsn:
+        return _empty_overview_payload(contract=contract, reason="missing_dsn")
+
+    conn = _connect_postgres(resolved_dsn)
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    run_id,
+                    mode,
+                    started_at,
+                    ended_at,
+                    status,
+                    metadata_json AS metadata,
+                    COALESCE(
+                        (metadata_json ->> 'strategy'),
+                        ''
+                    ) AS strategy
+                FROM runs
+                ORDER BY started_at DESC
+                LIMIT 1
+                """
+            )
+            run_rows = cursor.fetchall()
+            run_columns = [description[0] for description in cursor.description or ()]
+        runs = pd.DataFrame(run_rows, columns=run_columns)
+        if runs.empty:
+            return _empty_overview_payload(contract=contract, reason="no_runs")
+        run_id = str(runs.iloc[0]["run_id"])
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT timeindex AS datetime, total
+                FROM (
+                    SELECT id, timeindex, total
+                    FROM equity
+                    WHERE run_id = %s
+                    ORDER BY id DESC
+                    LIMIT %s
+                ) recent
+                ORDER BY id ASC
+                """,
+                (run_id, int(max(10, limit))),
+            )
+            equity_rows = cursor.fetchall()
+            equity_columns = [description[0] for description in cursor.description or ()]
+        equity = pd.DataFrame(equity_rows, columns=equity_columns)
+        return build_overview_payload_from_frames(
+            contract=contract,
+            runs_frame=runs,
+            equity_frame=equity,
+        )
+    finally:
+        conn.close()
+
+
 __all__ = [
     "DEFAULT_DASHBOARD_COMPAT_PATH",
     "DashboardBridgeContract",
     "DashboardCompatibilityError",
     "DashboardSliceContract",
+    "build_overview_payload_from_frames",
+    "load_overview_payload",
     "normalize_dashboard_launch_mode",
     "resolve_dashboard_bridge_contract",
+    "resolve_dashboard_postgres_dsn",
 ]
 
 
@@ -132,7 +334,21 @@ def main(argv: list[str] | None = None) -> int:
         default=str(Path(__file__).resolve().parents[3] / "apps" / "dashboard_web"),
     )
     parser.add_argument("--compat-path", default=DEFAULT_DASHBOARD_COMPAT_PATH)
+    parser.add_argument("--overview-json", action="store_true", help="Print overview payload JSON.")
     args = parser.parse_args(argv)
+
+    if args.overview_json:
+        print(
+            json.dumps(
+                load_overview_payload(
+                    launch_mode=args.mode,
+                    compatibility_path=args.compat_path,
+                ),
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 0
 
     contract = resolve_dashboard_bridge_contract(
         launch_mode=args.mode,
