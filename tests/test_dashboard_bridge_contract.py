@@ -86,6 +86,15 @@ def test_build_overview_payload_from_frames_uses_real_run_and_equity_data() -> N
                 "status": "COMPLETED",
                 "metadata": {"strategy": "RsiStrategy"},
                 "strategy": "RsiStrategy",
+                "started_at": "2026-03-01T00:00:00Z",
+            },
+            {
+                "run_id": "run-122",
+                "mode": "live",
+                "status": "RUNNING",
+                "metadata": {"strategy": "MomentumStrategy"},
+                "strategy": "MomentumStrategy",
+                "started_at": "2026-02-28T00:00:00Z",
             }
         ]
     )
@@ -105,6 +114,8 @@ def test_build_overview_payload_from_frames_uses_real_run_and_equity_data() -> N
     assert payload["source"]["status"] == "ok"
     assert payload["source"]["run_id"] == "run-123"
     assert payload["summary_metrics"][0]["value"] == "run-123"
+    assert payload["recent_runs"][0]["run_id"] == "run-123"
+    assert payload["recent_runs"][1]["status"] == "RUNNING"
     assert payload["equity_curve"][-1]["equity"] == 1050.0
     assert payload["drawdown_curve"][-1]["drawdown"] == 0.0
 
@@ -117,3 +128,4 @@ def test_load_overview_payload_without_dsn_returns_safe_empty_payload() -> None:
 
     assert payload["source"]["status"] == "missing_dsn"
     assert payload["summary_metrics"] == []
+    assert payload["recent_runs"] == []

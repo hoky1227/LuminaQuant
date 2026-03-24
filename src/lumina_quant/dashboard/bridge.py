@@ -105,6 +105,15 @@ def resolve_dashboard_bridge_contract(
             "summary_metrics": [
                 {"key": "string", "label": "string", "value": "number|string|null"}
             ],
+            "recent_runs": [
+                {
+                    "run_id": "string",
+                    "mode": "string",
+                    "status": "string",
+                    "strategy": "string",
+                    "started_at": "iso8601-datetime|null",
+                }
+            ],
             "equity_curve": [{"timestamp": "iso8601-datetime", "equity": "number"}],
             "drawdown_curve": [{"timestamp": "iso8601-datetime", "drawdown": "number"}],
             "source": {"mode": resolved_mode, "backend": python_backend},
@@ -136,6 +145,7 @@ def _empty_overview_payload(
     return {
         "as_of": datetime.now(UTC).isoformat(),
         "summary_metrics": [],
+        "recent_runs": [],
         "equity_curve": [],
         "drawdown_curve": [],
         "source": {
@@ -170,6 +180,24 @@ def build_overview_payload_from_frames(
     if isinstance(metadata, dict):
         strategy = str(metadata.get("strategy") or "")
     strategy = strategy or str(run.get("strategy") or "")
+    recent_runs = []
+    for _, item in runs_frame.iterrows():
+        started_at = item.get("started_at")
+        started_at_value = None
+        if pd.notna(started_at):
+            started_at_value = pd.to_datetime(started_at, errors="coerce", utc=True)
+            started_at_value = (
+                None if pd.isna(started_at_value) else started_at_value.isoformat()
+            )
+        recent_runs.append(
+            {
+                "run_id": str(item.get("run_id") or ""),
+                "mode": str(item.get("mode") or ""),
+                "status": str(item.get("status") or ""),
+                "strategy": str(item.get("strategy") or ""),
+                "started_at": started_at_value,
+            }
+        )
 
     equity = _coerce_datetime_series(equity_frame, "datetime")
     if equity.empty:
@@ -182,6 +210,7 @@ def build_overview_payload_from_frames(
         ]
         payload = _empty_overview_payload(contract=contract, reason="no_equity")
         payload["summary_metrics"] = summary_metrics
+        payload["recent_runs"] = recent_runs
         payload["source"]["run_id"] = run_id
         return payload
 
@@ -209,6 +238,7 @@ def build_overview_payload_from_frames(
     return {
         "as_of": datetime.now(UTC).isoformat(),
         "summary_metrics": summary_metrics,
+        "recent_runs": recent_runs,
         "equity_curve": [
             {
                 "timestamp": value.isoformat(),
@@ -239,6 +269,7 @@ def load_overview_payload(
     launch_mode: str | None = "next",
     dsn: str | None = None,
     limit: int = 120,
+    run_limit: int = 10,
     compatibility_path: str | None = None,
 ) -> dict[str, Any]:
     repo_root = Path(__file__).resolve().parents[3]
@@ -272,8 +303,10 @@ def load_overview_payload(
                     ) AS strategy
                 FROM runs
                 ORDER BY started_at DESC
-                LIMIT 1
+                    LIMIT %s
                 """
+                ,
+                (int(max(1, run_limit)),),
             )
             run_rows = cursor.fetchall()
             run_columns = [description[0] for description in cursor.description or ()]

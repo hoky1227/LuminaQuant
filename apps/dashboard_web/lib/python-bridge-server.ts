@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import { execFileSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,6 +22,13 @@ export interface OverviewPoint {
 export interface OverviewPayload {
   as_of: string;
   summary_metrics: OverviewMetric[];
+  recent_runs: Array<{
+    run_id: string;
+    mode: string;
+    status: string;
+    strategy: string;
+    started_at: string | null;
+  }>;
   equity_curve: Array<OverviewPoint & { equity: number }>;
   drawdown_curve: Array<OverviewPoint & { drawdown: number }>;
   source: {
@@ -31,7 +39,7 @@ export interface OverviewPayload {
   };
 }
 
-export function loadOverviewPayloadFromPython(): OverviewPayload {
+export const loadOverviewPayloadFromPython = cache((): OverviewPayload => {
   const stdout = execFileSync(
     'uv',
     ['run', 'python', '-m', 'lumina_quant.dashboard.bridge', '--overview-json', '--mode', 'next'],
@@ -41,4 +49,4 @@ export function loadOverviewPayloadFromPython(): OverviewPayload {
     },
   );
   return JSON.parse(stdout.trim()) as OverviewPayload;
-}
+});

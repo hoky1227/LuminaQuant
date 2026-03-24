@@ -6,14 +6,15 @@ const overviewCards = buildOverviewCards();
 export default function Home() {
   const overview = loadOverviewPayloadFromPython();
   const recentEquity = overview.equity_curve.slice(-5);
+  const recentRuns = overview.recent_runs.slice(0, 5);
   return (
     <div className="page-stack">
       <section className="hero-card">
         <p className="eyebrow">Migration foundation</p>
-        <h2>Overview placeholder</h2>
+        <h2>Overview parity slice</h2>
         <p>
-          This first web view mirrors the Streamlit dashboard&apos;s landing intent while keeping data access stubbed behind a typed
-          compatibility bridge.
+          This web view now mirrors the Streamlit dashboard&apos;s landing intent with a real Python-backed overview payload while keeping
+          the compatibility bridge explicit.
         </p>
       </section>
 
@@ -103,6 +104,44 @@ export default function Home() {
           </div>
         ) : (
           <p>No live overview payload is available yet. Set `LQ_POSTGRES_DSN` and record runs/equity data.</p>
+        )}
+      </section>
+
+      <section className="section-card">
+        <div className="section-header">
+          <div>
+            <p className="eyebrow">Run selection parity</p>
+            <h3>Recent runs</h3>
+          </div>
+          <div className="metric-badge">{recentRuns.length} rows</div>
+        </div>
+        {recentRuns.length > 0 ? (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Run ID</th>
+                  <th>Mode</th>
+                  <th>Status</th>
+                  <th>Strategy</th>
+                  <th>Started</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentRuns.map((run) => (
+                  <tr key={run.run_id}>
+                    <td>{run.run_id}</td>
+                    <td>{run.mode}</td>
+                    <td>{run.status}</td>
+                    <td>{run.strategy || 'unknown'}</td>
+                    <td>{run.started_at ?? 'n/a'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p>No runs are available yet. The Streamlit dashboard remains the default path until more parity slices land.</p>
         )}
       </section>
 
