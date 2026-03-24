@@ -13,11 +13,11 @@ class StateCursor:
     def __init__(self, cursor: Any):
         self._cursor = cursor
 
-    def execute(self, query: Any, params: Any = None) -> "StateCursor":
+    def execute(self, query: Any, params: Any = None) -> StateCursor:
         self._cursor.execute(str(query), tuple(params or ()))
         return self
 
-    def __enter__(self) -> "StateCursor":
+    def __enter__(self) -> StateCursor:
         return self
 
     def __exit__(self, exc_type, exc, tb) -> bool:
