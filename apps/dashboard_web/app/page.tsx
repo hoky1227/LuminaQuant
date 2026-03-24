@@ -45,6 +45,7 @@ export default function Home() {
             <p className="eyebrow">Python compatibility bridge</p>
             <h3>Legacy-to-web route contract</h3>
           </div>
+          <div className="metric-badge">{dashboardBridgeContract.compatibilityPath}</div>
         </div>
         <div className="table-wrap">
           <table>

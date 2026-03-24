@@ -6,7 +6,7 @@ This workspace contains the first React/Next.js migration slice for the existing
 
 - minimal Next.js + TypeScript app-router scaffold
 - shell/navigation that mirrors the current Streamlit information architecture
-- typed Python compatibility bridge exposed at `/api/python-bridge`
+- typed frontend metadata plus a Python-backed compatibility bridge exposed at `/api/python/dashboard/overview`
 - first Overview placeholder view with 8GB memory-budget guardrails
 
 ## Commands

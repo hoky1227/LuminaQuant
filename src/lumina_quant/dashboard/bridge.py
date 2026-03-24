@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import argparse
+import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -115,3 +117,35 @@ __all__ = [
     "normalize_dashboard_launch_mode",
     "resolve_dashboard_bridge_contract",
 ]
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Print the dashboard migration bridge contract.")
+    parser.add_argument("--json", action="store_true", help="Print the contract as JSON.")
+    parser.add_argument("--mode", default="auto", help="Dashboard launch mode.")
+    parser.add_argument(
+        "--streamlit-app-path",
+        default=str(Path(__file__).resolve().parents[3] / "apps" / "dashboard" / "app.py"),
+    )
+    parser.add_argument(
+        "--next-app-dir",
+        default=str(Path(__file__).resolve().parents[3] / "apps" / "dashboard_web"),
+    )
+    parser.add_argument("--compat-path", default=DEFAULT_DASHBOARD_COMPAT_PATH)
+    args = parser.parse_args(argv)
+
+    contract = resolve_dashboard_bridge_contract(
+        launch_mode=args.mode,
+        streamlit_app_path=args.streamlit_app_path,
+        next_app_dir=args.next_app_dir,
+        compatibility_path=args.compat_path,
+    )
+    if args.json:
+        print(json.dumps(contract.to_dict(), indent=2, sort_keys=True))
+    else:
+        print(contract.compatibility_path)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
