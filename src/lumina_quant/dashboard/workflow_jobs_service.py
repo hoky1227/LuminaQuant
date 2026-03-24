@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+import os
+import signal
+import subprocess
+import sys
 from typing import Any
 
 import pandas as pd
@@ -11,9 +16,41 @@ from lumina_quant.postgres_state import _connect_postgres
 
 
 def resolve_dashboard_postgres_dsn(dsn: str | None = None) -> str:
-    import os
-
     return str(dsn or os.getenv("LQ_POSTGRES_DSN") or getattr(BaseConfig, "POSTGRES_DSN", "") or "").strip()
+
+
+def request_job_stop(stop_file: str | None, *, timestamp: str) -> bool:
+    if not stop_file:
+        return False
+    parent = os.path.dirname(stop_file)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    with open(stop_file, "w", encoding="utf-8") as handle:
+        handle.write(str(timestamp))
+    return True
+
+
+def terminate_process(pid: object) -> tuple[bool, str]:
+    try:
+        resolved_pid = int(pid)
+    except (TypeError, ValueError):
+        return False, "invalid pid"
+    if resolved_pid <= 0:
+        return False, "invalid pid"
+    if sys.platform.startswith("win"):
+        proc = subprocess.run(
+            ["taskkill", "/PID", str(resolved_pid), "/T", "/F"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        detail = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
+        return proc.returncode == 0, detail
+    try:
+        os.kill(resolved_pid, signal.SIGTERM)
+    except OSError as exc:
+        return False, str(exc)
+    return True, "terminated"
 
 
 def normalize_workflow_jobs_frame(frame: pd.DataFrame) -> list[dict[str, Any]]:
@@ -88,7 +125,72 @@ def load_recent_workflow_jobs_payload(*, dsn: str | None = None, limit: int = 10
         conn.close()
 
 
+def control_workflow_job(
+    *,
+    dsn: str | None,
+    job_id: str,
+    action: str,
+) -> dict[str, Any]:
+    if dsn is not None and not str(dsn).strip():
+        return {"ok": False, "error": "missing_dsn"}
+    resolved_dsn = resolve_dashboard_postgres_dsn(dsn)
+    if not resolved_dsn:
+        return {"ok": False, "error": "missing_dsn"}
+
+    conn = _connect_postgres(resolved_dsn)
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT job_id, pid, stop_file, status
+                FROM workflow_jobs
+                WHERE job_id = %s
+                LIMIT 1
+                """,
+                (job_id,),
+            )
+            row = cursor.fetchone()
+        if row is None:
+            return {"ok": False, "error": "job_not_found"}
+        _, pid, stop_file, status = row
+        normalized_action = str(action or "").strip().lower()
+        if normalized_action == "stop":
+            ok = request_job_stop(stop_file, timestamp=datetime.now(tz=UTC).isoformat())
+            if ok:
+                with conn.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        UPDATE workflow_jobs
+                        SET status = 'STOP_REQUESTED'
+                        WHERE job_id = %s
+                        """,
+                        (job_id,),
+                    )
+                conn.commit()
+                return {"ok": True, "action": "stop", "job_id": job_id, "previous_status": status}
+            return {"ok": False, "error": "missing_stop_file", "job_id": job_id}
+        if normalized_action == "kill":
+            ok, detail = terminate_process(pid)
+            if ok:
+                with conn.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        UPDATE workflow_jobs
+                        SET status = 'KILLED', exit_code = -9
+                        WHERE job_id = %s
+                        """,
+                        (job_id,),
+                    )
+                conn.commit()
+                return {"ok": True, "action": "kill", "job_id": job_id, "detail": detail}
+            return {"ok": False, "error": "kill_failed", "detail": detail, "job_id": job_id}
+        return {"ok": False, "error": "unsupported_action", "job_id": job_id}
+    finally:
+        conn.close()
+
+
 __all__ = [
+    "control_workflow_job",
     "load_recent_workflow_jobs",
     "load_recent_workflow_jobs_payload",
     "normalize_workflow_jobs_frame",

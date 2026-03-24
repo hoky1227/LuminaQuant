@@ -22,18 +22,32 @@ export function WorkflowJobsRuntime() {
   const [payload, setPayload] = useState<WorkflowJobsPayload | null>(null);
   const [error, setError] = useState<string>('');
 
+  async function refresh() {
+    const response = await fetch('/api/python/dashboard/workflow-jobs', { cache: 'no-store' });
+    const body = (await response.json()) as WorkflowJobsPayload | { detail?: string };
+    if (!response.ok) {
+      throw new Error('detail' in body ? body.detail ?? 'workflow jobs bridge failed' : 'workflow jobs bridge failed');
+    }
+    setPayload(body as WorkflowJobsPayload);
+  }
+
+  async function triggerAction(jobId: string, action: 'stop' | 'kill') {
+    const response = await fetch('/api/python/dashboard/workflow-jobs/control', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ job_id: jobId, action }),
+    });
+    const body = (await response.json()) as { ok?: boolean; detail?: string; error?: string };
+    if (!response.ok || body.ok === false) {
+      throw new Error(body.detail ?? body.error ?? 'workflow job action failed');
+    }
+    await refresh();
+  }
+
   useEffect(() => {
     let active = true;
-    fetch('/api/python/dashboard/workflow-jobs', { cache: 'no-store' })
-      .then(async (response) => {
-        const body = (await response.json()) as WorkflowJobsPayload | { detail?: string };
-        if (!response.ok) {
-          throw new Error('detail' in body ? body.detail ?? 'workflow jobs bridge failed' : 'workflow jobs bridge failed');
-        }
-        if (active) {
-          setPayload(body as WorkflowJobsPayload);
-        }
-      })
+    refresh()
+      .then(() => undefined)
       .catch((fetchError: unknown) => {
         if (active) {
           setError(fetchError instanceof Error ? fetchError.message : String(fetchError));
@@ -64,6 +78,7 @@ export function WorkflowJobsRuntime() {
             <th>Mode</th>
             <th>Strategy</th>
             <th>Run ID</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -74,6 +89,14 @@ export function WorkflowJobsRuntime() {
               <td>{job.requested_mode || 'n/a'}</td>
               <td>{job.strategy || 'n/a'}</td>
               <td>{job.run_id || 'n/a'}</td>
+              <td>
+                <button type="button" onClick={() => void triggerAction(job.job_id, 'stop')}>
+                  Stop
+                </button>
+                <button type="button" onClick={() => void triggerAction(job.job_id, 'kill')}>
+                  Kill
+                </button>
+              </td>
             </tr>
           ))}
         </tbody>
