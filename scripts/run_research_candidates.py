@@ -12,7 +12,7 @@ from typing import Any
 
 from lumina_quant.config import BaseConfig
 from lumina_quant.storage.parquet import load_data_dict_from_parquet
-from lumina_quant.strategy_factory.research_runner import (
+from lumina_quant.strategy_factory import (
     build_default_candidate_rows,
     run_candidate_research,
 )

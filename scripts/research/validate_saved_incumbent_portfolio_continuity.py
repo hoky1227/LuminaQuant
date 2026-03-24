@@ -22,7 +22,7 @@ from lumina_quant.portfolio_split_contract import (
     resolve_incumbent_bundle_path,
 )
 from lumina_quant.storage.parquet import normalize_symbol, timeframe_to_milliseconds
-from lumina_quant.strategy_factory.research_runner import run_candidate_research
+from lumina_quant.strategy_factory import run_candidate_research
 from lumina_quant.utils.risk_free import resolve_risk_free_config
 
 FEATURE_REQUIRED_STRATEGIES = {"CompositeTrendStrategy", "PerpCrowdingCarryStrategy"}
