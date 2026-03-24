@@ -80,6 +80,14 @@ export const dashboardBridgeContract = {
       nextRoute: '/exact-window',
       status: 'planned',
     },
+    {
+      id: 'workflow-jobs',
+      title: 'Workflow jobs',
+      description: 'Managed backtest/optimize/live job status and control parity for the web dashboard.',
+      streamlitSource: 'apps/dashboard/app.py',
+      nextRoute: '/workflows',
+      status: 'available',
+    },
   ] satisfies CapabilityItem[],
 } as const;
 
@@ -89,6 +97,13 @@ export const navigationItems: NavigationItem[] = [
     href: '/',
     label: 'Overview',
     summary: 'First parity slice backed by the Python compatibility contract.',
+    status: 'available',
+  },
+  {
+    id: 'workflows',
+    href: '/workflows',
+    label: 'Workflow Jobs',
+    summary: 'Managed run status, strategy, and mode parity from the Python workflow store.',
     status: 'available',
   },
   {

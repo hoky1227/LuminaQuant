@@ -22,8 +22,8 @@ describe('dashboard bridge contract', () => {
   it('marks overview as the only currently available page surface', () => {
     const availableRoutes = navigationItems.filter((item) => item.status === 'available');
 
-    expect(availableRoutes).toHaveLength(1);
-    expect(availableRoutes[0]?.href).toBe('/');
+    expect(availableRoutes).toHaveLength(2);
+    expect(availableRoutes.map((item) => item.href)).toEqual(['/', '/workflows']);
   });
 
   it('builds overview cards from capability metadata', () => {
