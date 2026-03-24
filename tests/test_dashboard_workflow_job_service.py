@@ -217,6 +217,34 @@ def test_refresh_workflow_jobs_updates_finished_process_and_exited_pid() -> None
     ]
 
 
+def test_refresh_workflow_jobs_returns_early_without_postgres_dsn(caplog) -> None:
+    caplog.set_level("WARNING")
+    session_state: dict[str, object] = {}
+
+    workflow_jobs.refresh_workflow_jobs(
+        db_path="postgres://lumina",
+        session_state=session_state,
+        resolve_postgres_dsn=lambda _db_path: "",
+        ensure_workflow_jobs_schema=lambda _db_path: (_ for _ in ()).throw(
+            AssertionError("schema setup should be skipped")
+        ),
+        connect_state_store=lambda _db_path: (_ for _ in ()).throw(
+            AssertionError("connection should be skipped")
+        ),
+        is_process_running=lambda _pid: True,
+        update_workflow_job_row=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("row updates should be skipped")
+        ),
+        utc_now_iso=lambda: "2026-03-22T00:00:00Z",
+    )
+
+    assert session_state == {}
+    assert any(
+        "Skipping workflow job refresh because no Postgres DSN resolved" in record.message
+        for record in caplog.records
+    )
+
+
 def test_load_workflow_jobs_frame_returns_query_results_with_datetime_coercion(monkeypatch) -> None:
     called: dict[str, object] = {}
     frame = pd.DataFrame(
@@ -272,6 +300,29 @@ def test_load_workflow_jobs_frame_returns_query_results_with_datetime_coercion(m
     assert list(result["started_at"]) == ["coerced:started_at"]
     assert list(result["ended_at"]) == ["coerced:ended_at"]
     assert list(result["last_updated"]) == ["coerced:last_updated"]
+
+
+def test_load_workflow_jobs_frame_returns_empty_when_postgres_dsn_missing(caplog) -> None:
+    caplog.set_level("WARNING")
+
+    result = workflow_jobs.load_workflow_jobs_frame(
+        db_path="postgres://lumina",
+        limit=10,
+        resolve_postgres_dsn=lambda _db_path: "",
+        ensure_workflow_jobs_schema=lambda _db_path: (_ for _ in ()).throw(
+            AssertionError("schema setup should be skipped")
+        ),
+        connect_state_store=lambda _db_path: (_ for _ in ()).throw(
+            AssertionError("connection should be skipped")
+        ),
+        coerce_datetime=lambda df, _col: df,
+    )
+
+    assert result.empty
+    assert any(
+        "Skipping workflow job load because no Postgres DSN resolved" in record.message
+        for record in caplog.records
+    )
 
 
 def test_load_workflow_jobs_frame_returns_empty_when_connection_or_query_fails(monkeypatch, caplog) -> None:
