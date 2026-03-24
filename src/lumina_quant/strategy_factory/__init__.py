@@ -14,6 +14,7 @@ from .pipeline import (
     render_shortlist_markdown,
     write_candidate_manifest,
 )
+from .research_entrypoints import build_default_candidate_rows, run_candidate_research
 from .strategy_signal_dispatch import StrategySignalDispatcher
 from .selection import (
     DEFAULT_ROBUST_SCORE_PARAMS,
@@ -39,6 +40,7 @@ __all__ = [
     "allocate_portfolio_weights",
     "build_binance_futures_candidates",
     "build_candidate_manifest",
+    "build_default_candidate_rows",
     "build_research_command",
     "build_shortlist_payload",
     "build_single_asset_portfolio_sets",
@@ -48,6 +50,7 @@ __all__ = [
     "hurdle_score",
     "render_shortlist_markdown",
     "robust_score_from_metrics",
+    "run_candidate_research",
     "select_diversified_shortlist",
     "strategy_family",
     "summarize_shortlist",

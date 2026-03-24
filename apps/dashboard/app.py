@@ -110,10 +110,20 @@ from apps.dashboard.services.market_dashboard import (
     build_rsi_signal_figure as _build_rsi_signal_figure_data,
     build_rsi_summary_metrics as _build_rsi_summary_metrics_data,
 )
+from apps.dashboard.services.state_store import (
+    StateConnection as _StateConnection_data,
+    StateCursor as _StateCursor_data,
+    connect_state_store as _connect_state_store_data,
+    execute_query as _execute_query_data,
+    read_sql_query as _read_sql_query_data,
+    resolve_postgres_dsn as _resolve_postgres_dsn_data,
+)
 
 logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_StateCursor = _StateCursor_data
+_StateConnection = _StateConnection_data
 
 
 def _ensure_project_strategies_module(project_root: Path) -> None:
@@ -167,110 +177,33 @@ DEFAULT_DB_PATH = str(
 
 
 def _resolve_postgres_dsn(dsn: str | None = None) -> str:
-    token = str(
-        dsn
-        or os.getenv("LQ_POSTGRES_DSN")
-        or getattr(BaseConfig, "POSTGRES_DSN", "")
-        or ""
-    ).strip()
-    return token
-
-
-class _StateCursor:
-    def __init__(self, cursor):
-        self._cursor = cursor
-
-    def execute(self, query, params=None):
-        self._cursor.execute(str(query), tuple(params or ()))
-        return self
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        self.close()
-        return False
-
-    def fetchone(self):
-        return self._cursor.fetchone()
-
-    def fetchall(self):
-        return self._cursor.fetchall()
-
-    def close(self):
-        self._cursor.close()
-
-    @property
-    def description(self):
-        return self._cursor.description
-
-
-class _StateConnection:
-    def __init__(self, connection):
-        self._conn = connection
-
-    def cursor(self):
-        return _StateCursor(self._conn.cursor())
-
-    def execute(self, query, params=None):
-        cursor = self.cursor()
-        cursor.execute(query, params)
-        return cursor
-
-    def executescript(self, script):
-        with self._conn.cursor() as cursor:
-            for statement in str(script).split(";"):
-                payload = statement.strip()
-                if not payload:
-                    continue
-                cursor.execute(payload)
-
-    def commit(self):
-        self._conn.commit()
-
-    def rollback(self):
-        self._conn.rollback()
-
-    def close(self):
-        self._conn.close()
-
-    def __getattr__(self, name):
-        return getattr(self._conn, name)
+    return _resolve_postgres_dsn_data(dsn, base_config=BaseConfig)
 
 
 def _connect_state_store(dsn: str):
-    resolved = _resolve_postgres_dsn(dsn)
-    if not resolved:
-        raise RuntimeError("Postgres DSN is required.")
-    from lumina_quant.postgres_state import _connect_postgres
-
-    return _StateConnection(_connect_postgres(resolved))
+    return _connect_state_store_data(
+        dsn,
+        resolve_postgres_dsn=_resolve_postgres_dsn,
+    )
 
 
 def _execute_query(dsn: str, query: str, params=None):
-    conn = _connect_state_store(dsn)
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute(query, tuple(params or ()))
-            try:
-                rows = cursor.fetchall()
-            except Exception:
-                logger.warning(
-                    "Dashboard query helper fell back to an empty result set after fetchall failed."
-                )
-                rows = []
-        conn.commit()
-        return rows
-    finally:
-        conn.close()
+    return _execute_query_data(
+        dsn,
+        query,
+        params=params,
+        connect_state_store=_connect_state_store,
+        logger=logger,
+    )
 
 
 def _read_sql_query(dsn: str, query: str, params=None):
-    conn = _connect_state_store(dsn)
-    try:
-        return pd.read_sql_query(query, conn, params=params)
-    finally:
-        conn.close()
+    return _read_sql_query_data(
+        dsn,
+        query,
+        params=params,
+        connect_state_store=_connect_state_store,
+    )
 
 
 def _count_market_rows(db_path):

@@ -8,13 +8,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from lumina_quant.config import BaseConfig
+from lumina_quant.strategy_factory import run_candidate_research
 from lumina_quant.strategy_factory.candidate_library import build_candidate_manifest
 from lumina_quant.strategy_factory.pipeline import (
     build_shortlist_payload,
     render_shortlist_markdown,
     write_candidate_manifest,
 )
-from lumina_quant.strategy_factory.research_runner import run_candidate_research
 
 
 def _build_parser() -> argparse.ArgumentParser:

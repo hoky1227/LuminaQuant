@@ -13,10 +13,11 @@ from importlib import import_module
 from typing import Any
 
 from lumina_quant.symbols import CANONICAL_STRATEGY_TIMEFRAMES
-from lumina_quant.strategy_factory import research_run_support as _research_run_support
 from lumina_quant.strategy_factory.runtime_settings import (
     current_research_market_data_settings as _current_research_market_data_settings_impl,
 )
+
+from . import research_run_support as _research_run_support
 
 @lru_cache(maxsize=1)
 def _runner_module():
