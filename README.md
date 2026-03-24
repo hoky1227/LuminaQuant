@@ -284,6 +284,8 @@ uv run lq optimize --data-mode raw-first
 uv run lq live --transport poll
 uv run lq live --transport ws
 uv run lq dashboard --run
+uv run lq dashboard --mode next --print-contract
+uv run lq dashboard --mode next --run
 ```
 
 **Simple local start/stop wrappers (Linux/macOS shell):**

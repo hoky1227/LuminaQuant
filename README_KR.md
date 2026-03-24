@@ -282,6 +282,8 @@ uv run lq optimize --data-mode raw-first
 uv run lq live --transport poll
 uv run lq live --transport ws
 uv run lq dashboard --run
+uv run lq dashboard --mode next --print-contract
+uv run lq dashboard --mode next --run
 ```
 
 **간단한 로컬 시작/중지 래퍼 (Linux/macOS 셸):**
