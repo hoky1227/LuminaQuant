@@ -29,6 +29,36 @@ export interface OverviewCard {
   status: NavigationStatus;
 }
 
+export const dashboardCutoverGate = {
+  defaultLauncher: 'streamlit',
+  launcherStatus: 'guarded',
+  readyRoutes: ['/performance-price', '/execution-analytics', '/report-export'],
+  evidence: [
+    {
+      label: 'Performance & Price parity slice',
+      detail: 'Python-backed route is available at /performance-price for the equity, drawdown, and benchmark view.',
+      status: 'available',
+    },
+    {
+      label: 'Execution Analytics parity slice',
+      detail: 'Python-backed route is available at /execution-analytics for fills, streaks, and order status breakdowns.',
+      status: 'available',
+    },
+    {
+      label: 'Report Export parity slice',
+      detail: 'Python-backed route is available at /report-export with JSON and Markdown snapshot exports.',
+      status: 'available',
+    },
+    {
+      label: 'Default launcher preserved',
+      detail: 'uv run lq dashboard --run still targets Streamlit until explicit cutover review closes the gate.',
+      status: 'guarded',
+    },
+  ],
+  remainingGate:
+    'Keep Streamlit as the default launcher until end-to-end parity verification approves the Next cutover.',
+} as const;
+
 export const dashboardBridgeContract = {
   legacyEntryPoint: 'uv run lq dashboard --run',
   compatibilityPath: '/api/python/dashboard/overview',
@@ -81,6 +111,22 @@ export const dashboardBridgeContract = {
       status: 'available',
     },
     {
+      id: 'performance-price',
+      title: 'Performance & Price',
+      description: 'Equity, drawdown, benchmark price, funding, and trade-marker parity from Python state.',
+      streamlitSource: 'apps/dashboard/app.py',
+      nextRoute: '/performance-price',
+      status: 'available',
+    },
+    {
+      id: 'execution-analytics',
+      title: 'Execution Analytics',
+      description: 'Fill quality, closed-trade outcomes, streaks, and order-status distribution from Python telemetry.',
+      streamlitSource: 'apps/dashboard/app.py',
+      nextRoute: '/execution-analytics',
+      status: 'available',
+    },
+    {
       id: 'workflow-jobs',
       title: 'Workflow jobs',
       description: 'Managed backtest/optimize/live job status and control parity for the web dashboard.',
@@ -96,6 +142,14 @@ export const dashboardBridgeContract = {
       nextRoute: '/risk-health',
       status: 'available',
     },
+    {
+      id: 'report-export',
+      title: 'Report Export',
+      description: 'JSON + Markdown snapshot export preview while the Streamlit launcher remains the default path.',
+      streamlitSource: 'apps/dashboard/app.py',
+      nextRoute: '/report-export',
+      status: 'available',
+    },
   ] satisfies CapabilityItem[],
 } as const;
 
@@ -105,6 +159,20 @@ export const navigationItems: NavigationItem[] = [
     href: '/',
     label: 'Overview',
     summary: 'First parity slice backed by the Python compatibility contract.',
+    status: 'available',
+  },
+  {
+    id: 'performance-price',
+    href: '/performance-price',
+    label: 'Performance & Price',
+    summary: 'Equity, drawdown, benchmark, funding, and trade-marker parity from the latest run.',
+    status: 'available',
+  },
+  {
+    id: 'execution-analytics',
+    href: '/execution-analytics',
+    label: 'Execution Analytics',
+    summary: 'Closed-trade outcomes, streaks, and order status telemetry for the active run.',
     status: 'available',
   },
   {
@@ -126,6 +194,13 @@ export const navigationItems: NavigationItem[] = [
     href: '/exact-window',
     label: 'Exact-window',
     summary: 'Latest exact-window artifact summary from the Python research bundle.',
+    status: 'available',
+  },
+  {
+    id: 'report-export',
+    href: '/report-export',
+    label: 'Report Export',
+    summary: 'Snapshot JSON/Markdown export preview plus explicit cutover gate evidence.',
     status: 'available',
   },
 ];
