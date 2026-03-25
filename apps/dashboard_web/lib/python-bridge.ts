@@ -51,7 +51,7 @@ export const dashboardCutoverGate = {
     },
     {
       label: 'Default launcher preserved',
-      detail: 'uv run lq dashboard --run still targets Streamlit until explicit cutover review closes the gate.',
+      detail: 'uv run lq dashboard --run still targets the Streamlit default launcher until explicit cutover review closes the gate.',
       status: 'guarded',
     },
   ],

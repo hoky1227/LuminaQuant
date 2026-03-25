@@ -1,4 +1,4 @@
-import { buildOverviewCards, dashboardBridgeContract } from '@/lib/python-bridge';
+import { buildOverviewCards, dashboardBridgeContract, dashboardCutoverGate } from '@/lib/python-bridge';
 import { OverviewRuntime } from '@/components/overview-runtime';
 
 const overviewCards = buildOverviewCards();
@@ -85,6 +85,34 @@ export default function Home() {
             </tbody>
           </table>
         </div>
+      </section>
+
+      <section className="section-card">
+        <div className="section-header">
+          <div>
+            <p className="eyebrow">Cutover gate evidence</p>
+            <h3>Default launcher remains guarded</h3>
+          </div>
+          <div className="metric-badge">{dashboardCutoverGate.defaultLauncher}</div>
+        </div>
+        <div className="metric-grid">
+          <article>
+            <span>Ready Next routes</span>
+            <strong>{dashboardCutoverGate.readyRoutes.length}</strong>
+          </article>
+          <article>
+            <span>Launcher status</span>
+            <strong>{dashboardCutoverGate.launcherStatus}</strong>
+          </article>
+        </div>
+        <ul className="guidance-list">
+          {dashboardCutoverGate.evidence.map((item) => (
+            <li key={item.label}>
+              <strong>{item.label}:</strong> {item.detail}
+            </li>
+          ))}
+        </ul>
+        <p>{dashboardCutoverGate.remainingGate}</p>
       </section>
 
       <OverviewRuntime />

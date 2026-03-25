@@ -348,7 +348,7 @@ def build_execution_analytics_payload(
             "long_win_rate": 0.0,
             "short_trades": 0,
             "short_win_rate": 0.0,
-            "order_count": int(len(orders_frame.index)),
+            "order_count": len(orders_frame.index),
             "closed_trade_count": 0,
         },
         "direction_breakdown": [],
@@ -378,7 +378,7 @@ def build_execution_analytics_payload(
         returns = pd.to_numeric(closed["realized_return_pct"], errors="coerce").dropna()
         pnls = pd.to_numeric(closed["realized_pnl"], errors="coerce").fillna(0.0)
         decisive = pnls[pnls != 0.0]
-        summary["closed_trade_count"] = int(len(closed.index))
+        summary["closed_trade_count"] = len(closed.index)
         summary["avg_trade_return_pct"] = round(_safe_float(returns.mean()), 6)
         summary["best_trade_pnl"] = round(_safe_float(pnls.max()), 6)
         summary["worst_trade_pnl"] = round(_safe_float(pnls.min()), 6)
@@ -397,7 +397,7 @@ def build_execution_analytics_payload(
 
         for label, close_side in (("Long", "LONG"), ("Short", "SHORT")):
             part = closed[closed["close_side"] == close_side]
-            trade_count = int(len(part.index))
+            trade_count = len(part.index)
             win_rate = 0.0
             if trade_count:
                 win_rate = float((pd.to_numeric(part["realized_pnl"], errors="coerce").fillna(0.0) > 0.0).mean())
@@ -517,9 +517,9 @@ def build_report_export_payload(
         "total_return": total_return,
         "latest_equity": latest_equity,
         "realized_pnl": round(_safe_float(closed.get("realized_pnl", pd.Series(dtype="float64")).sum()), 6),
-        "closed_trade_count": int(len(closed.index)),
-        "risk_event_count": int(len(risk_frame.index)),
-        "heartbeat_count": int(len(heartbeats_frame.index)),
+        "closed_trade_count": len(closed.index),
+        "risk_event_count": len(risk_frame.index),
+        "heartbeat_count": len(heartbeats_frame.index),
         "performance_metrics": overview_payload.get("performance_metrics", {}),
     }
     date_prefix = generated_at[:10]
