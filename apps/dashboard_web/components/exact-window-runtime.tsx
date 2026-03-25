@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { buildExactWindowEmptyState } from '@/lib/exact-window-status';
 
 interface ExactWindowPayload {
   as_of: string;
@@ -90,19 +91,6 @@ function formatPercent(value: number | null): string {
   return `${(value * 100).toFixed(2)}%`;
 }
 
-function buildEmptyStateMessage(status: string): string {
-  switch (status) {
-    case 'missing_bundle':
-      return 'No exact-window artifact bundle is available yet. Run the existing exact-window workflow first, then refresh this page.';
-    case 'missing_summary':
-      return 'The exact-window bundle exists, but the latest summary artifact is missing.';
-    case 'load_failed':
-      return 'The exact-window bundle could not be loaded cleanly.';
-    default:
-      return 'No exact-window payload is available yet.';
-  }
-}
-
 export function ExactWindowRuntime() {
   const [payload, setPayload] = useState<ExactWindowPayload | null>(null);
   const [error, setError] = useState<string>('');
@@ -136,7 +124,43 @@ export function ExactWindowRuntime() {
     return <p>Loading exact-window parity payload…</p>;
   }
   if (payload.status !== 'ok') {
-    return <p>{buildEmptyStateMessage(payload.status)}</p>;
+    const emptyState = buildExactWindowEmptyState(payload.status, payload.error);
+
+    return (
+      <section className="section-card">
+        <div className="section-header">
+          <div>
+            <p className="eyebrow">Exact-window parity</p>
+            <h3>Artifact bundle unavailable</h3>
+          </div>
+          <div className="metric-badge">{payload.status}</div>
+        </div>
+        <p>{emptyState.message}</p>
+        {emptyState.detail ? <p>{emptyState.detail}</p> : null}
+        {payload.root || payload.run_root ? (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Field</th>
+                  <th>Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Bundle Root</td>
+                  <td>{payload.root || 'n/a'}</td>
+                </tr>
+                <tr>
+                  <td>Run Root</td>
+                  <td>{payload.run_root || 'n/a'}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+      </section>
+    );
   }
 
   const windowEntries = Object.entries(payload.time_window);
