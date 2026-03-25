@@ -32,7 +32,14 @@ export interface OverviewCard {
 export const dashboardCutoverGate = {
   defaultLauncher: 'streamlit',
   launcherStatus: 'guarded',
-  readyRoutes: ['/performance-price', '/execution-analytics', '/report-export'],
+  readyRoutes: [
+    '/performance-price',
+    '/execution-analytics',
+    '/market-data',
+    '/optimization-insights',
+    '/raw-data',
+    '/report-export',
+  ],
   evidence: [
     {
       label: 'Performance & Price parity slice',
@@ -42,6 +49,21 @@ export const dashboardCutoverGate = {
     {
       label: 'Execution Analytics parity slice',
       detail: 'Python-backed route is available at /execution-analytics for fills, streaks, and order status breakdowns.',
+      status: 'available',
+    },
+    {
+      label: 'Market Data parity surface',
+      detail: 'Python-backed route is available at /market-data for latest OHLCV context and market summary telemetry.',
+      status: 'available',
+    },
+    {
+      label: 'Optimization Insights parity surface',
+      detail: 'Python-backed route is available at /optimization-insights for latest candidate quality and stage summaries.',
+      status: 'available',
+    },
+    {
+      label: 'Raw Data parity surface',
+      detail: 'Python-backed route is available at /raw-data with frame counts and capped previews for the latest run.',
       status: 'available',
     },
     {
@@ -127,6 +149,22 @@ export const dashboardBridgeContract = {
       status: 'available',
     },
     {
+      id: 'market-data',
+      title: 'Market Data',
+      description: 'Latest market OHLCV context, summary metrics, and capped price-bar parity for the active run.',
+      streamlitSource: 'apps/dashboard/app.py',
+      nextRoute: '/market-data',
+      status: 'available',
+    },
+    {
+      id: 'optimization-insights',
+      title: 'Optimization Insights',
+      description: 'Optimization candidate quality, stage medians, and best-parameter previews from Python state.',
+      streamlitSource: 'apps/dashboard/app.py',
+      nextRoute: '/optimization-insights',
+      status: 'available',
+    },
+    {
       id: 'workflow-jobs',
       title: 'Workflow jobs',
       description: 'Managed backtest/optimize/live job status and control parity for the web dashboard.',
@@ -148,6 +186,14 @@ export const dashboardBridgeContract = {
       description: 'JSON + Markdown snapshot export preview while the Streamlit launcher remains the default path.',
       streamlitSource: 'apps/dashboard/app.py',
       nextRoute: '/report-export',
+      status: 'available',
+    },
+    {
+      id: 'raw-data',
+      title: 'Raw Data',
+      description: 'Capped frame-count and preview parity for the latest runs, execution, market, and optimization tables.',
+      streamlitSource: 'apps/dashboard/app.py',
+      nextRoute: '/raw-data',
       status: 'available',
     },
   ] satisfies CapabilityItem[],
@@ -176,6 +222,20 @@ export const navigationItems: NavigationItem[] = [
     status: 'available',
   },
   {
+    id: 'market-data',
+    href: '/market-data',
+    label: 'Market Data',
+    summary: 'Latest OHLCV bars, market context, and price-range telemetry for the active run.',
+    status: 'available',
+  },
+  {
+    id: 'optimization-insights',
+    href: '/optimization-insights',
+    label: 'Optimization Insights',
+    summary: 'Candidate quality, stage breakdowns, and best-parameter previews from Python optimization results.',
+    status: 'available',
+  },
+  {
     id: 'workflows',
     href: '/workflows',
     label: 'Workflow Jobs',
@@ -201,6 +261,13 @@ export const navigationItems: NavigationItem[] = [
     href: '/report-export',
     label: 'Report Export',
     summary: 'Snapshot JSON/Markdown export preview plus explicit cutover gate evidence.',
+    status: 'available',
+  },
+  {
+    id: 'raw-data',
+    href: '/raw-data',
+    label: 'Raw Data',
+    summary: 'Frame counts and capped previews for runs, execution, market, optimization, and workflow state.',
     status: 'available',
   },
 ];
