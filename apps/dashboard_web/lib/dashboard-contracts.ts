@@ -61,6 +61,20 @@ export interface WorkflowJobsPayload {
   status: string;
 }
 
+export interface CutoverGateEvidence {
+  label: string;
+  detail: string;
+  status: 'available' | 'guarded';
+}
+
+export interface CutoverGate {
+  defaultLauncher: 'streamlit';
+  launcherStatus: 'guarded';
+  readyRoutes: string[];
+  evidence: CutoverGateEvidence[];
+  remainingGate: string;
+}
+
 export interface RiskHealthPayload {
   as_of: string;
   run_id: string;
@@ -147,4 +161,106 @@ export interface ExactWindowPayload {
   }>;
   notes: Array<{ label: string; value: string }>;
   warnings: string[];
+}
+
+export interface PerformancePricePayload {
+  as_of: string;
+  run_id: string;
+  status: string;
+  source: {
+    mode?: string;
+    backend?: string;
+    status?: string;
+    run_id?: string;
+  };
+  summary_metrics: OverviewMetric[];
+  performance_metrics: OverviewPayload['performance_metrics'];
+  equity_curve: Array<OverviewPoint & { equity: number }>;
+  drawdown_curve: Array<OverviewPoint & { drawdown: number }>;
+  benchmark_curve: Array<{ timestamp: string; price: number }>;
+  funding_curve: Array<{ timestamp: string; funding: number }>;
+  trade_markers: Array<{
+    timestamp: string;
+    symbol: string;
+    direction: string;
+    price: number;
+    quantity: number;
+    realized_pnl: number;
+    realized_return_pct: number | null;
+    position_after: number;
+  }>;
+}
+
+export interface ExecutionAnalyticsPayload {
+  as_of: string;
+  run_id: string;
+  status: string;
+  summary: {
+    buy_fills: number;
+    sell_fills: number;
+    avg_qty: number;
+    avg_notional: number;
+    total_commission: number;
+    avg_trade_return_pct: number;
+    best_trade_pnl: number;
+    worst_trade_pnl: number;
+    win_streak_max: number;
+    loss_streak_max: number;
+    win_streak_avg: number;
+    loss_streak_avg: number;
+    holding_time_avg_sec: number;
+    long_trades: number;
+    long_win_rate: number;
+    short_trades: number;
+    short_win_rate: number;
+    order_count: number;
+    closed_trade_count: number;
+  };
+  direction_breakdown: Array<{
+    direction: string;
+    closed_trades: number;
+    win_rate: number;
+  }>;
+  order_status: Array<{ status: string; count: number }>;
+  recent_closed_trades: Array<{
+    timestamp: string;
+    symbol: string;
+    close_side: string;
+    realized_pnl: number;
+    realized_return_pct: number | null;
+    holding_sec: number | null;
+  }>;
+}
+
+export interface ReportExportPayload {
+  as_of: string;
+  run_id: string;
+  status: string;
+  filenames: {
+    json?: string;
+    markdown?: string;
+  };
+  json_report: {
+    title?: string;
+    generated_at?: string;
+    run_id?: string;
+    strategy?: string;
+    mode?: string;
+    status?: string;
+    period_start?: string | null;
+    period_end?: string | null;
+    total_return?: number | string | null;
+    latest_equity?: number | string | null;
+    realized_pnl?: number;
+    closed_trade_count?: number;
+    risk_event_count?: number;
+    heartbeat_count?: number;
+    performance_metrics?: OverviewPayload['performance_metrics'];
+  };
+  markdown_report: string;
+  cutover_gate: {
+    default_launcher?: string;
+    status?: string;
+    evidence?: string[];
+  };
 }
