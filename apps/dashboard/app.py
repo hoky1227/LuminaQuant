@@ -96,11 +96,7 @@ from apps.dashboard.services.report_snapshot import (
     serialize_balance_equity_frame as _serialize_balance_equity_frame_data,
 )
 from apps.dashboard.services.risk_dashboard import (
-    build_heartbeat_interval_figure as _build_heartbeat_interval_figure_data,
-    build_order_state_figure as _build_order_state_figure_data,
-    build_risk_reason_figure as _build_risk_reason_figure_data,
-    build_strategy_process_trace_frame as _build_strategy_process_trace_frame_data,
-    prepare_heartbeat_interval_frame as _prepare_heartbeat_interval_frame_data,
+    render_risk_health_section as _render_risk_health_section_data,
 )
 from apps.dashboard.services.market_dashboard import (
     build_market_close_figure as _build_market_close_figure_data,
@@ -2464,6 +2460,16 @@ def _render_missing_equity_warning(df_equity, runner_initial_capital) -> None:
         )
 
 
+def _render_risk_health_section(*, df_orders, df_risk, df_hb, df_order_states) -> None:
+    _render_risk_health_section_data(
+        streamlit=st,
+        df_orders=df_orders,
+        df_risk=df_risk,
+        df_hb=df_hb,
+        df_order_states=df_order_states,
+    )
+
+
 def _render_ghost_cleanup_section(*, db_path, run_stale_sec) -> None:
     st.subheader("Ghost Cleanup")
     st.caption(
@@ -3524,39 +3530,12 @@ def render_main_dashboard() -> None:
             )
 
     with tab_risk:
-        if not df_risk.empty:
-            st.plotly_chart(
-                _build_risk_reason_figure_data(df_risk),
-                use_container_width=True,
-            )
-        else:
-            st.info("No risk events recorded for selected run/data source.")
-
-        if not df_hb.empty:
-            hb, avg_hb = _prepare_heartbeat_interval_frame_data(df_hb)
-            st.metric("Avg Heartbeat Interval (sec)", f"{avg_hb:.2f}")
-            st.plotly_chart(
-                _build_heartbeat_interval_figure_data(hb),
-                use_container_width=True,
-            )
-        else:
-            st.info("No heartbeats recorded for selected run/data source.")
-
-        if not df_order_states.empty:
-            st.plotly_chart(
-                _build_order_state_figure_data(df_order_states),
-                use_container_width=True,
-            )
-
-        trace_df = _build_strategy_process_trace_frame_data(
+        _render_risk_health_section(
             df_orders=df_orders,
             df_risk=df_risk,
             df_hb=df_hb,
             df_order_states=df_order_states,
         )
-        if not trace_df.empty:
-            st.subheader("Strategy Process Trace")
-            st.dataframe(trace_df, use_container_width=True)
 
     with tab_market:
         if not plot_market.empty:
