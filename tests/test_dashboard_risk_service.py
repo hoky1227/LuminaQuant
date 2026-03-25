@@ -34,6 +34,26 @@ class _FakeFigure:
                 setattr(self.layout, key, value)
 
 
+class _FakeStreamlit:
+    def __init__(self) -> None:
+        self.calls: list[tuple[Any, ...]] = []
+
+    def dataframe(self, value: Any, **kwargs: Any) -> None:
+        self.calls.append(("dataframe", value, kwargs))
+
+    def info(self, value: str) -> None:
+        self.calls.append(("info", value))
+
+    def metric(self, label: str, value: str) -> None:
+        self.calls.append(("metric", label, value))
+
+    def plotly_chart(self, figure: Any, **kwargs: Any) -> None:
+        self.calls.append(("plotly_chart", figure, kwargs))
+
+    def subheader(self, value: str) -> None:
+        self.calls.append(("subheader", value))
+
+
 ROOT = Path(__file__).resolve().parents[1]
 MODULE_PATH = ROOT / "apps" / "dashboard" / "services" / "risk_dashboard.py"
 
@@ -168,3 +188,55 @@ def test_build_strategy_process_trace_frame_combines_sources_and_limits_rows(mon
     assert trace["event_type"].tolist() == ["order_state", "risk", "heartbeat", "order"]
     assert trace.iloc[0]["event_detail"] == "accepted"
     assert trace.iloc[-1]["event_detail"] == "BUY"
+
+
+def test_render_risk_health_section_renders_figures_metrics_and_trace(monkeypatch) -> None:
+    risk_dashboard = _load_module(monkeypatch)
+    fake_st = _FakeStreamlit()
+    trace_frame = pd.DataFrame([{"event_type": "risk"}])
+    recorded_hb_inputs: list[pd.DataFrame] = []
+
+    monkeypatch.setattr(risk_dashboard, "build_risk_reason_figure", lambda frame: ("risk", frame))
+    monkeypatch.setattr(
+        risk_dashboard,
+        "prepare_heartbeat_interval_frame",
+        lambda frame: recorded_hb_inputs.append(frame) or (pd.DataFrame({"delta_sec": [None, 5.0]}), 5.0),
+    )
+    monkeypatch.setattr(risk_dashboard, "build_heartbeat_interval_figure", lambda frame: ("hb", frame))
+    monkeypatch.setattr(risk_dashboard, "build_order_state_figure", lambda frame: ("order-state", frame))
+    monkeypatch.setattr(risk_dashboard, "build_strategy_process_trace_frame", lambda **_: trace_frame)
+
+    risk_dashboard.render_risk_health_section(
+        streamlit=fake_st,
+        df_orders=pd.DataFrame([{"created_at": "2026-03-22T00:00:00Z"}]),
+        df_risk=pd.DataFrame([{"reason": "STOP_HIT"}]),
+        df_hb=pd.DataFrame([{"heartbeat_time": "2026-03-22T00:00:05Z"}]),
+        df_order_states=pd.DataFrame([{"state": "ACKED"}]),
+    )
+
+    assert recorded_hb_inputs and list(recorded_hb_inputs[0].columns) == ["heartbeat_time"]
+    assert ("metric", "Avg Heartbeat Interval (sec)", "5.00") in fake_st.calls
+    assert ("subheader", "Strategy Process Trace") in fake_st.calls
+    plotted = [call[1] for call in fake_st.calls if call[0] == "plotly_chart"]
+    assert [item[0] for item in plotted] == ["risk", "hb", "order-state"]
+    assert ("dataframe", trace_frame, {"use_container_width": True}) in fake_st.calls
+
+
+def test_render_risk_health_section_reports_empty_states_without_trace(monkeypatch) -> None:
+    risk_dashboard = _load_module(monkeypatch)
+    fake_st = _FakeStreamlit()
+
+    monkeypatch.setattr(risk_dashboard, "build_strategy_process_trace_frame", lambda **_: pd.DataFrame())
+
+    risk_dashboard.render_risk_health_section(
+        streamlit=fake_st,
+        df_orders=pd.DataFrame(),
+        df_risk=pd.DataFrame(),
+        df_hb=pd.DataFrame(),
+        df_order_states=pd.DataFrame(),
+    )
+
+    assert ("info", "No risk events recorded for selected run/data source.") in fake_st.calls
+    assert ("info", "No heartbeats recorded for selected run/data source.") in fake_st.calls
+    assert [call for call in fake_st.calls if call[0] == "plotly_chart"] == []
+    assert [call for call in fake_st.calls if call[0] == "subheader"] == []

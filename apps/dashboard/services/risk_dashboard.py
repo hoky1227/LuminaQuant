@@ -85,10 +85,54 @@ def build_strategy_process_trace_frame(
     return trace_df.sort_values("event_time", ascending=False).head(500)
 
 
+def render_risk_health_section(
+    *,
+    streamlit,
+    df_orders: pd.DataFrame,
+    df_risk: pd.DataFrame,
+    df_hb: pd.DataFrame,
+    df_order_states: pd.DataFrame,
+) -> None:
+    if not df_risk.empty:
+        streamlit.plotly_chart(
+            build_risk_reason_figure(df_risk),
+            use_container_width=True,
+        )
+    else:
+        streamlit.info("No risk events recorded for selected run/data source.")
+
+    if not df_hb.empty:
+        hb, avg_hb = prepare_heartbeat_interval_frame(df_hb)
+        streamlit.metric("Avg Heartbeat Interval (sec)", f"{avg_hb:.2f}")
+        streamlit.plotly_chart(
+            build_heartbeat_interval_figure(hb),
+            use_container_width=True,
+        )
+    else:
+        streamlit.info("No heartbeats recorded for selected run/data source.")
+
+    if not df_order_states.empty:
+        streamlit.plotly_chart(
+            build_order_state_figure(df_order_states),
+            use_container_width=True,
+        )
+
+    trace_df = build_strategy_process_trace_frame(
+        df_orders=df_orders,
+        df_risk=df_risk,
+        df_hb=df_hb,
+        df_order_states=df_order_states,
+    )
+    if not trace_df.empty:
+        streamlit.subheader("Strategy Process Trace")
+        streamlit.dataframe(trace_df, use_container_width=True)
+
+
 __all__ = [
     "build_heartbeat_interval_figure",
     "build_order_state_figure",
     "build_risk_reason_figure",
     "build_strategy_process_trace_frame",
     "prepare_heartbeat_interval_frame",
+    "render_risk_health_section",
 ]

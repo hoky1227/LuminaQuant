@@ -706,6 +706,38 @@ def test_render_missing_equity_warning_only_when_equity_is_empty(monkeypatch) ->
     assert "Configured initial equity is 1000.00." in warnings[0]
 
 
+def test_render_risk_health_section_delegates_to_service_seam(monkeypatch) -> None:
+    module, _, _ = _load_dashboard_app(monkeypatch)
+    helper_st = _GhostCleanupStreamlit(button_results=[])
+    captured: dict[str, Any] = {}
+    df_orders = object()
+    df_risk = object()
+    df_hb = object()
+    df_order_states = object()
+
+    module.st = helper_st
+    monkeypatch.setattr(
+        module,
+        "_render_risk_health_section_data",
+        lambda **kwargs: captured.update(kwargs),
+    )
+
+    module._render_risk_health_section(
+        df_orders=df_orders,
+        df_risk=df_risk,
+        df_hb=df_hb,
+        df_order_states=df_order_states,
+    )
+
+    assert captured == {
+        "streamlit": helper_st,
+        "df_orders": df_orders,
+        "df_risk": df_risk,
+        "df_hb": df_hb,
+        "df_order_states": df_order_states,
+    }
+
+
 def test_build_backtest_job_launch_spec_keeps_runner_and_metadata_fields(monkeypatch) -> None:
     module, _, _ = _load_dashboard_app(monkeypatch)
 
