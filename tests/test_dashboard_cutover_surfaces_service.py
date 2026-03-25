@@ -4,11 +4,17 @@ import pandas as pd
 
 from lumina_quant.dashboard.cutover_surfaces_service import (
     build_execution_analytics_payload,
+    build_market_data_payload,
+    build_optimization_insights_payload,
     build_performance_price_payload,
+    build_raw_data_payload,
     build_report_export_payload,
     compute_trade_analytics,
     load_execution_analytics_payload,
+    load_market_data_payload,
+    load_optimization_insights_payload,
     load_performance_price_payload,
+    load_raw_data_payload,
     load_report_export_payload,
 )
 
@@ -217,9 +223,117 @@ def test_build_report_export_payload_generates_json_and_markdown() -> None:
     assert payload["json_report"]["risk_event_count"] == 1
     assert "Streamlit remains the default launcher" in payload["markdown_report"]
     assert payload["filenames"]["json"].endswith("-dashboard-report.json")
+    assert "Market Data route is available in Next.js." in payload["cutover_gate"]["evidence"]
+
+
+def test_build_market_data_payload_exposes_context_and_recent_bars() -> None:
+    fills = pd.DataFrame(
+        [
+            {
+                "datetime": "2026-03-21T00:00:00Z",
+                "symbol": "BTC/USDT",
+                "direction": "BUY",
+                "quantity": 1.0,
+                "price": 100.0,
+                "commission": 0.0,
+            }
+        ]
+    )
+    market = pd.DataFrame(
+        [
+            {
+                "datetime": "2026-03-21T00:00:00Z",
+                "open": 99.0,
+                "high": 101.0,
+                "low": 98.5,
+                "close": 100.0,
+                "volume": 12.0,
+            },
+            {
+                "datetime": "2026-03-21T00:01:00Z",
+                "open": 100.0,
+                "high": 102.0,
+                "low": 99.5,
+                "close": 101.5,
+                "volume": 18.0,
+            },
+        ]
+    )
+
+    payload = build_market_data_payload(
+        run_row={"run_id": "run-123", "strategy": "RsiStrategy"},
+        fills_frame=fills,
+        market_frame=market,
+    )
+
+    assert payload["status"] == "ok"
+    assert payload["market_context"]["symbol"] == "BTC/USDT"
+    assert payload["summary_metrics"][0]["value"] == 2
+    assert payload["recent_bars"][-1]["close"] == 101.5
+
+
+def test_build_optimization_insights_payload_exposes_stage_breakdown_and_best_candidate() -> None:
+    optimization = pd.DataFrame(
+        [
+            {
+                "created_at": "2026-03-21T00:00:00Z",
+                "run_id": "run-123",
+                "stage": "explore",
+                "sharpe": 1.1,
+                "train_sharpe": 1.3,
+                "robustness_score": 0.7,
+                "cagr": 0.2,
+                "mdd": -0.1,
+                "params": {"window": 10},
+            },
+            {
+                "created_at": "2026-03-21T00:05:00Z",
+                "run_id": "run-123",
+                "stage": "promote",
+                "sharpe": 1.4,
+                "train_sharpe": 1.5,
+                "robustness_score": 0.8,
+                "cagr": 0.24,
+                "mdd": -0.08,
+                "params": {"window": 20},
+            },
+        ]
+    )
+
+    payload = build_optimization_insights_payload(
+        run_id="run-123",
+        optimization_frame=optimization,
+    )
+
+    assert payload["status"] == "ok"
+    assert payload["summary_metrics"][0]["value"] == 2
+    assert payload["stage_breakdown"][0]["stage"] == "explore"
+    assert payload["best_candidate"]["stage"] == "promote"
+    assert payload["top_candidates"][0]["params"] == {"window": 20}
+
+
+def test_build_raw_data_payload_exposes_frame_summaries_and_previews() -> None:
+    payload = build_raw_data_payload(
+        run_id="run-123",
+        context={"source": "postgres", "market": "BTC/USDT 1m (binance)"},
+        frames=[
+            ("Runs", pd.DataFrame([{"run_id": "run-123", "status": "COMPLETED"}])),
+            ("Orders", pd.DataFrame([{"status": "FILLED", "quantity": 1.0}])),
+        ],
+    )
+
+    assert payload["status"] == "ok"
+    assert payload["frame_summaries"] == [
+        {"label": "Runs", "rows": 1, "columns": 2},
+        {"label": "Orders", "rows": 1, "columns": 2},
+    ]
+    assert payload["previews"][0]["rows"][0]["run_id"] == "run-123"
 
 
 def test_cutover_surface_loaders_short_circuit_on_blank_dsn() -> None:
     assert load_performance_price_payload(dsn="")["status"] == "missing_dsn"
     assert load_execution_analytics_payload(dsn="")["status"] == "missing_dsn"
+    assert load_market_data_payload(dsn="")["status"] == "missing_dsn"
+    assert load_optimization_insights_payload(dsn="")["status"] == "missing_dsn"
+    assert load_raw_data_payload(dsn="")["status"] == "missing_dsn"
     assert load_report_export_payload(dsn="")["status"] == "missing_dsn"
