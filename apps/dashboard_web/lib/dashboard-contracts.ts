@@ -4,6 +4,47 @@ export interface BridgeErrorBody {
   ok?: boolean;
 }
 
+export interface OverviewMetric {
+  key: string;
+  label: string;
+  value: number | string | null;
+}
+
+export interface OverviewPoint {
+  timestamp: string;
+  equity?: number;
+  drawdown?: number;
+}
+
+export interface OverviewPayload {
+  as_of: string;
+  summary_metrics: OverviewMetric[];
+  performance_metrics: {
+    cagr?: number;
+    annualized_volatility?: number;
+    sharpe_ratio?: number;
+    sortino_ratio?: number;
+    calmar_ratio?: number;
+    max_drawdown?: number;
+  };
+  recent_runs: Array<{
+    run_id: string;
+    mode: string;
+    status: string;
+    strategy: string;
+    started_at: string | null;
+  }>;
+  workflow_jobs: WorkflowJobRecord[];
+  equity_curve: Array<OverviewPoint & { equity: number }>;
+  drawdown_curve: Array<OverviewPoint & { drawdown: number }>;
+  source: {
+    mode: string;
+    backend: string;
+    status: string;
+    run_id?: string;
+  };
+}
+
 export interface WorkflowJobRecord {
   job_id: string;
   workflow: string;

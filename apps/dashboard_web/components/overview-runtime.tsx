@@ -3,69 +3,8 @@
 import { useEffect, useState } from 'react';
 
 import { readJsonOrThrow } from '@/lib/bridge-fetch';
-
-interface OverviewMetric {
-  key: string;
-  label: string;
-  value: number | string | null;
-}
-
-interface OverviewPoint {
-  timestamp: string;
-  equity?: number;
-  drawdown?: number;
-}
-
-interface OverviewPayload {
-  as_of: string;
-  summary_metrics: OverviewMetric[];
-  performance_metrics: {
-    cagr?: number;
-    annualized_volatility?: number;
-    sharpe_ratio?: number;
-    sortino_ratio?: number;
-    calmar_ratio?: number;
-    max_drawdown?: number;
-  };
-  recent_runs: Array<{
-    run_id: string;
-    mode: string;
-    status: string;
-    strategy: string;
-    started_at: string | null;
-  }>;
-  workflow_jobs: Array<{
-    job_id: string;
-    workflow: string;
-    status: string;
-    requested_mode: string;
-    strategy: string;
-    run_id: string;
-    started_at: string | null;
-    ended_at: string | null;
-  }>;
-  equity_curve: Array<OverviewPoint & { equity: number }>;
-  drawdown_curve: Array<OverviewPoint & { drawdown: number }>;
-  source: {
-    mode: string;
-    backend: string;
-    status: string;
-    run_id?: string;
-  };
-}
-
-function buildEmptyStateMessage(status: string): string {
-  switch (status) {
-    case 'missing_dsn':
-      return 'Set LQ_POSTGRES_DSN so the Next overview can read the same runtime state store as the Streamlit dashboard.';
-    case 'no_runs':
-      return 'No runs were found yet. Start a backtest/live workflow from the existing Streamlit path, then refresh this page.';
-    case 'no_equity':
-      return 'A run exists but no equity rows are available yet. Let the run emit telemetry or choose a different run once selection parity lands.';
-    default:
-      return 'The Python overview bridge returned no data.';
-  }
-}
+import type { OverviewPayload } from '@/lib/dashboard-contracts';
+import { buildOverviewEmptyStateMessage } from '@/lib/overview-status';
 
 function buildSparklinePath(
   values: number[],
@@ -137,7 +76,7 @@ export function OverviewRuntime() {
   const drawdownSparkline = buildSparklinePath(
     overview.drawdown_curve.map((point) => point.drawdown),
   );
-  const emptyStateMessage = buildEmptyStateMessage(overview.source.status);
+  const emptyStateMessage = buildOverviewEmptyStateMessage(overview.source.status);
 
   return (
     <>
