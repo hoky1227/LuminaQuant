@@ -123,8 +123,8 @@ def _frame_preview(frame: pd.DataFrame, *, row_limit: int = 5, column_limit: int
 def _frame_summary(label: str, frame: pd.DataFrame) -> dict[str, Any]:
     return {
         "label": label,
-        "rows": int(len(frame.index)),
-        "columns": int(len(frame.columns)),
+        "rows": len(frame.index),
+        "columns": len(frame.columns),
     }
 
 
@@ -738,7 +738,7 @@ def build_optimization_insights_payload(
         payload["stage_breakdown"].append(
             {
                 "stage": str(stage_name),
-                "count": int(len(group.index)),
+                "count": len(group.index),
                 "median_sharpe": (
                     None if stage_sharpe.dropna().empty else round(float(stage_sharpe.median()), 6)
                 ),
