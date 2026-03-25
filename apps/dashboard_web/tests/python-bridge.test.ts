@@ -23,15 +23,18 @@ describe('dashboard bridge contract', () => {
   it('marks the migrated routes as available in navigation order', () => {
     const availableRoutes = navigationItems.filter((item) => item.status === 'available');
 
-    expect(availableRoutes).toHaveLength(7);
+    expect(availableRoutes).toHaveLength(10);
     expect(availableRoutes.map((item) => item.href)).toEqual([
       '/',
       '/performance-price',
       '/execution-analytics',
+      '/market-data',
+      '/optimization-insights',
       '/workflows',
       '/risk-health',
       '/exact-window',
       '/report-export',
+      '/raw-data',
     ]);
   });
 
@@ -47,6 +50,9 @@ describe('dashboard bridge contract', () => {
     expect(dashboardCutoverGate.readyRoutes).toEqual([
       '/performance-price',
       '/execution-analytics',
+      '/market-data',
+      '/optimization-insights',
+      '/raw-data',
       '/report-export',
     ]);
     expect(dashboardCutoverGate.evidence.at(-1)?.detail).toContain('default launcher');

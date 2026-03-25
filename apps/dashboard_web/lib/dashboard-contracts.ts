@@ -232,6 +232,88 @@ export interface ExecutionAnalyticsPayload {
   }>;
 }
 
+export interface MarketDataPayload {
+  as_of: string;
+  run_id: string;
+  status: string;
+  market_context: {
+    symbol?: string;
+    timeframe?: string;
+    timeframe_clamped?: boolean;
+    exchange?: string;
+    strategy?: string;
+    market_db_path?: string;
+    source?: string;
+  };
+  summary_metrics: OverviewMetric[];
+  recent_bars: Array<{
+    timestamp: string;
+    open?: number | null;
+    high?: number | null;
+    low?: number | null;
+    close?: number | null;
+    volume?: number | null;
+  }>;
+  indicator_summary: OverviewMetric[];
+  warnings: string[];
+}
+
+export interface OptimizationInsightsPayload {
+  as_of: string;
+  run_id: string;
+  status: string;
+  summary_metrics: OverviewMetric[];
+  stage_breakdown: Array<{
+    stage: string;
+    count: number;
+    median_sharpe: number | null;
+    median_robustness: number | null;
+  }>;
+  top_candidates: Array<{
+    created_at: string | null;
+    run_id: string;
+    stage: string;
+    sharpe: number | null;
+    train_sharpe: number | null;
+    robustness_score: number | null;
+    cagr: number | null;
+    mdd: number | null;
+    params: Record<string, unknown>;
+  }>;
+  best_candidate: {
+    created_at: string | null;
+    run_id: string;
+    stage: string;
+    sharpe: number | null;
+    train_sharpe: number | null;
+    robustness_score: number | null;
+    cagr: number | null;
+    mdd: number | null;
+    params: Record<string, unknown>;
+  } | null;
+}
+
+export interface RawDataPayload {
+  as_of: string;
+  run_id: string;
+  status: string;
+  context: {
+    run_id?: string;
+    source?: string;
+    market?: string;
+  };
+  frame_summaries: Array<{
+    label: string;
+    rows: number;
+    columns: number;
+  }>;
+  previews: Array<{
+    label: string;
+    columns: string[];
+    rows: Array<Record<string, unknown>>;
+  }>;
+}
+
 export interface ReportExportPayload {
   as_of: string;
   run_id: string;
