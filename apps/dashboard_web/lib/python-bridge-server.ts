@@ -1,13 +1,6 @@
 import { cache } from 'react';
-import { execFile } from 'node:child_process';
-import { dirname, resolve } from 'node:path';
-import { promisify } from 'node:util';
-import { fileURLToPath } from 'node:url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const REPO_ROOT = resolve(__dirname, '../../../');
-const execFileAsync = promisify(execFile);
+import { runUvPythonModuleJson } from '@/lib/python-runtime';
 
 export interface OverviewMetric {
   key: string;
@@ -49,14 +42,6 @@ export interface OverviewPayload {
   };
 }
 
-export const loadOverviewPayloadFromPython = cache(async (): Promise<OverviewPayload> => {
-  const { stdout } = await execFileAsync(
-    'uv',
-    ['run', 'python', '-m', 'lumina_quant.dashboard.bridge', '--overview-json', '--mode', 'next'],
-    {
-      cwd: REPO_ROOT,
-      encoding: 'utf-8',
-    },
-  );
-  return JSON.parse(stdout.trim()) as OverviewPayload;
-});
+export const loadOverviewPayloadFromPython = cache(async (): Promise<OverviewPayload> => (
+  runUvPythonModuleJson<OverviewPayload>('lumina_quant.dashboard.bridge', '--overview-json', '--mode', 'next')
+));

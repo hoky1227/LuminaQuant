@@ -2,21 +2,8 @@
 
 import { useEffect, useState } from 'react';
 
-interface WorkflowJobRecord {
-  job_id: string;
-  workflow: string;
-  status: string;
-  requested_mode: string;
-  strategy: string;
-  run_id: string;
-  started_at: string | null;
-  ended_at: string | null;
-}
-
-interface WorkflowJobsPayload {
-  jobs: WorkflowJobRecord[];
-  status: string;
-}
+import { readJsonOrThrow } from '@/lib/bridge-fetch';
+import type { BridgeErrorBody, WorkflowJobsPayload } from '@/lib/dashboard-contracts';
 
 export function WorkflowJobsRuntime() {
   const [payload, setPayload] = useState<WorkflowJobsPayload | null>(null);
@@ -24,11 +11,8 @@ export function WorkflowJobsRuntime() {
 
   async function refresh() {
     const response = await fetch('/api/python/dashboard/workflow-jobs', { cache: 'no-store' });
-    const body = (await response.json()) as WorkflowJobsPayload | { detail?: string };
-    if (!response.ok) {
-      throw new Error('detail' in body ? body.detail ?? 'workflow jobs bridge failed' : 'workflow jobs bridge failed');
-    }
-    setPayload(body as WorkflowJobsPayload);
+    const body = await readJsonOrThrow<WorkflowJobsPayload>(response, 'workflow jobs bridge failed');
+    setPayload(body);
   }
 
   async function triggerAction(jobId: string, action: 'stop' | 'kill') {
@@ -37,7 +21,7 @@ export function WorkflowJobsRuntime() {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ job_id: jobId, action }),
     });
-    const body = (await response.json()) as { ok?: boolean; detail?: string; error?: string };
+    const body = (await response.json()) as BridgeErrorBody;
     if (!response.ok || body.ok === false) {
       throw new Error(body.detail ?? body.error ?? 'workflow job action failed');
     }

@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+
+import { readJsonOrThrow } from '@/lib/bridge-fetch';
 import { buildExactWindowEmptyState } from '@/lib/exact-window-status';
 
 interface ExactWindowPayload {
@@ -99,12 +101,9 @@ export function ExactWindowRuntime() {
     let active = true;
     fetch('/api/python/dashboard/exact-window', { cache: 'no-store' })
       .then(async (response) => {
-        const body = (await response.json()) as ExactWindowPayload | { detail?: string };
-        if (!response.ok) {
-          throw new Error('detail' in body ? body.detail ?? 'exact-window bridge failed' : 'exact-window bridge failed');
-        }
+        const body = await readJsonOrThrow<ExactWindowPayload>(response, 'exact-window bridge failed');
         if (active) {
-          setPayload(body as ExactWindowPayload);
+          setPayload(body);
         }
       })
       .catch((fetchError: unknown) => {

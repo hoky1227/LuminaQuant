@@ -75,6 +75,9 @@ from apps.dashboard.services.ghost_cleanup import (
 from apps.dashboard.services.dashboard_navigation import (
     select_dashboard_view as _select_dashboard_view_data,
 )
+from apps.dashboard.services.workflow_jobs_view import (
+    render_workflow_jobs_section as _render_workflow_jobs_section_data,
+)
 from apps.dashboard.services.mirror_dashboard import (
     apply_mirror_figure_style as _apply_mirror_figure_style_data,
     build_mirror_balance_equity_figure as _build_mirror_balance_equity_figure_data,
@@ -2589,53 +2592,15 @@ def _render_active_workflow_job_controls(*, db_path, active_jobs) -> None:
             st.error(f"Kill failed: {detail}")
 
 
-def _render_workflow_job_log_viewer(workflow_jobs) -> None:
-    log_job_id = st.selectbox(
-        "Job Log Viewer",
-        workflow_jobs["job_id"].astype(str).tolist(),
-        key="workflow_log_viewer_job",
-    )
-    log_row = workflow_jobs[workflow_jobs["job_id"].astype(str) == str(log_job_id)].iloc[0]
-    st.caption(f"Log path: {log_row.get('log_path')}")
-    st.text_area(
-        "Job Log Tail",
-        value=_tail_text_file(str(log_row.get("log_path") or ""), max_chars=25000),
-        height=260,
-        key="workflow_log_tail_view",
-    )
-
-
 def _render_workflow_jobs_section(*, db_path, refresh_counter) -> None:
-    st.subheader("Workflow Jobs")
-    workflow_jobs = load_workflow_jobs(db_path, refresh_counter=refresh_counter)
-    if workflow_jobs.empty:
-        st.info("No workflow jobs recorded yet.")
-        return
-
-    jobs_view = workflow_jobs.copy()
-    jobs_view["command"] = jobs_view["command_json"].fillna("").astype(str).str.slice(0, 120)
-    st.dataframe(
-        jobs_view[
-            [
-                "started_at",
-                "workflow",
-                "status",
-                "requested_mode",
-                "strategy",
-                "pid",
-                "run_id",
-                "exit_code",
-                "command",
-            ]
-        ],
-        use_container_width=True,
+    _render_workflow_jobs_section_data(
+        streamlit=st,
+        db_path=db_path,
+        refresh_counter=refresh_counter,
+        load_workflow_jobs=load_workflow_jobs,
+        render_active_workflow_job_controls=_render_active_workflow_job_controls,
+        tail_text_file=_tail_text_file,
     )
-
-    active_jobs = workflow_jobs[workflow_jobs["status"].isin(["RUNNING", "STOP_REQUESTED"])].copy()
-    if not active_jobs.empty:
-        _render_active_workflow_job_controls(db_path=db_path, active_jobs=active_jobs)
-
-    _render_workflow_job_log_viewer(workflow_jobs)
 
 
 def _render_optimization_results_tab(df_optimize) -> None:

@@ -1,10 +1,4 @@
-import { execFileSync } from 'node:child_process';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const REPO_ROOT = resolve(__dirname, '../../../');
+import { runUvPythonSnippetJson } from '@/lib/python-runtime';
 
 export interface ExactWindowPayload {
   as_of: string;
@@ -81,17 +75,9 @@ export interface ExactWindowPayload {
 }
 
 export async function loadExactWindowFromPython(): Promise<ExactWindowPayload> {
-  const stdout = execFileSync(
-    'uv',
-    ['run', 'python', '-c', `
+  return runUvPythonSnippetJson<ExactWindowPayload>(`
 from lumina_quant.dashboard.exact_window_service import load_exact_window_summary_payload
 import json
 print(json.dumps(load_exact_window_summary_payload(), sort_keys=True))
-`],
-    {
-      cwd: REPO_ROOT,
-      encoding: 'utf-8',
-    },
-  );
-  return JSON.parse(stdout.trim()) as ExactWindowPayload;
+`);
 }

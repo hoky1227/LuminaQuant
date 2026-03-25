@@ -2,19 +2,8 @@
 
 import { useEffect, useState } from 'react';
 
-interface RiskHealthPayload {
-  as_of: string;
-  run_id: string;
-  summary: {
-    risk_event_count: number;
-    heartbeat_count: number;
-    order_state_count: number;
-  };
-  risk_events: Array<{ event_time: string | null; reason: string | null }>;
-  heartbeats: Array<{ heartbeat_time: string | null; status: string | null }>;
-  order_states: Array<{ event_time: string | null; symbol: string | null; state: string | null; message: string | null }>;
-  status: string;
-}
+import { readJsonOrThrow } from '@/lib/bridge-fetch';
+import type { RiskHealthPayload } from '@/lib/dashboard-contracts';
 
 export function RiskHealthRuntime() {
   const [payload, setPayload] = useState<RiskHealthPayload | null>(null);
@@ -24,12 +13,9 @@ export function RiskHealthRuntime() {
     let active = true;
     fetch('/api/python/dashboard/risk-health', { cache: 'no-store' })
       .then(async (response) => {
-        const body = (await response.json()) as RiskHealthPayload | { detail?: string };
-        if (!response.ok) {
-          throw new Error('detail' in body ? body.detail ?? 'risk health bridge failed' : 'risk health bridge failed');
-        }
+        const body = await readJsonOrThrow<RiskHealthPayload>(response, 'risk health bridge failed');
         if (active) {
-          setPayload(body as RiskHealthPayload);
+          setPayload(body);
         }
       })
       .catch((fetchError: unknown) => {

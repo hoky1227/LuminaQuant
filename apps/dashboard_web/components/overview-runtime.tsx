@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 
+import { readJsonOrThrow } from '@/lib/bridge-fetch';
+
 interface OverviewMetric {
   key: string;
   label: string;
@@ -96,12 +98,9 @@ export function OverviewRuntime() {
     let active = true;
     fetch('/api/python/dashboard/overview', { cache: 'no-store' })
       .then(async (response) => {
-        const payload = (await response.json()) as OverviewPayload | { detail?: string };
-        if (!response.ok) {
-          throw new Error('detail' in payload ? payload.detail ?? 'overview bridge failed' : 'overview bridge failed');
-        }
+        const payload = await readJsonOrThrow<OverviewPayload>(response, 'overview bridge failed');
         if (active) {
-          setOverview(payload as OverviewPayload);
+          setOverview(payload);
         }
       })
       .catch((fetchError: unknown) => {

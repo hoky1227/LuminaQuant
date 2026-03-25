@@ -1,6 +1,19 @@
 from __future__ import annotations
 
-from apps.dashboard.services.dashboard_navigation import select_dashboard_view
+import importlib.util
+import sys
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+MODULE_PATH = ROOT / "apps" / "dashboard" / "services" / "dashboard_navigation.py"
+SPEC = importlib.util.spec_from_file_location("dashboard_navigation_service_test", MODULE_PATH)
+if SPEC is None or SPEC.loader is None:
+    raise RuntimeError("Failed to load dashboard navigation service module")
+MODULE = importlib.util.module_from_spec(SPEC)
+sys.modules[SPEC.name] = MODULE
+SPEC.loader.exec_module(MODULE)
+select_dashboard_view = MODULE.select_dashboard_view
 
 
 class _FakeSidebar:
