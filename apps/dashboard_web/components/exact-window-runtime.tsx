@@ -1,0 +1,401 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+
+interface ExactWindowPayload {
+  as_of: string;
+  generated_at: string | null;
+  status: string;
+  error: string | null;
+  root: string;
+  run_root: string;
+  summary: {
+    candidate_count: number;
+    evaluated_count: number;
+    promoted_count: number;
+    btc_beating_candidate_count: number;
+    provisional_candidate_count: number;
+    candidate_pool_count: number;
+    requested_timeframes: string[];
+    requested_symbols: string[];
+    low_ram_profile: boolean;
+  };
+  decision: {
+    next_action: string;
+    promoted_total: number;
+    total_evaluated: number;
+    max_peak_rss_mib: number | null;
+    valid_strategy_found: boolean;
+  };
+  memory: {
+    status: string;
+    peak_rss_mib: number | null;
+    soft_limit_mib: number | null;
+    hard_limit_mib: number | null;
+  };
+  portfolio: {
+    construction_basis: string;
+    oos_return: number | null;
+    oos_sharpe: number | null;
+    oos_max_drawdown: number | null;
+  };
+  time_window: Record<string, string>;
+  timeframes: Array<{
+    timeframe: string;
+    candidate_id: string;
+    name: string;
+    family: string;
+    promoted: boolean;
+    oos_return: number | null;
+    oos_sharpe: number | null;
+    oos_max_drawdown: number | null;
+    trade_count: number | null;
+    reject_reasons: string[];
+  }>;
+  top_candidates: Array<{
+    timeframe: string;
+    candidate_id: string;
+    name: string;
+    family: string;
+    promoted: boolean;
+    oos_return: number | null;
+    oos_sharpe: number | null;
+    oos_max_drawdown: number | null;
+    trade_count: number | null;
+    reject_reasons: string[];
+  }>;
+  portfolio_weights: Array<{
+    name: string;
+    timeframe: string;
+    family: string;
+    weight: number | null;
+    oos_return: number | null;
+    oos_sharpe: number | null;
+  }>;
+  notes: Array<{ label: string; value: string }>;
+  warnings: string[];
+}
+
+function formatNumber(value: number | null, digits = 2): string {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return 'n/a';
+  }
+  return value.toFixed(digits);
+}
+
+function formatPercent(value: number | null): string {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return 'n/a';
+  }
+  return `${(value * 100).toFixed(2)}%`;
+}
+
+function buildEmptyStateMessage(status: string): string {
+  switch (status) {
+    case 'missing_bundle':
+      return 'No exact-window artifact bundle is available yet. Run the existing exact-window workflow first, then refresh this page.';
+    case 'missing_summary':
+      return 'The exact-window bundle exists, but the latest summary artifact is missing.';
+    case 'load_failed':
+      return 'The exact-window bundle could not be loaded cleanly.';
+    default:
+      return 'No exact-window payload is available yet.';
+  }
+}
+
+export function ExactWindowRuntime() {
+  const [payload, setPayload] = useState<ExactWindowPayload | null>(null);
+  const [error, setError] = useState<string>('');
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/python/dashboard/exact-window', { cache: 'no-store' })
+      .then(async (response) => {
+        const body = (await response.json()) as ExactWindowPayload | { detail?: string };
+        if (!response.ok) {
+          throw new Error('detail' in body ? body.detail ?? 'exact-window bridge failed' : 'exact-window bridge failed');
+        }
+        if (active) {
+          setPayload(body as ExactWindowPayload);
+        }
+      })
+      .catch((fetchError: unknown) => {
+        if (active) {
+          setError(fetchError instanceof Error ? fetchError.message : String(fetchError));
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  if (error) {
+    return <p>{error}</p>;
+  }
+  if (payload === null) {
+    return <p>Loading exact-window parity payload…</p>;
+  }
+  if (payload.status !== 'ok') {
+    return <p>{buildEmptyStateMessage(payload.status)}</p>;
+  }
+
+  const windowEntries = Object.entries(payload.time_window);
+
+  return (
+    <div className="page-stack">
+      <div className="metric-grid">
+        <article>
+          <span>Candidate Count</span>
+          <strong>{payload.summary.candidate_count}</strong>
+        </article>
+        <article>
+          <span>Promoted</span>
+          <strong>{payload.summary.promoted_count}</strong>
+        </article>
+        <article>
+          <span>Next Action</span>
+          <strong>{payload.decision.next_action || 'n/a'}</strong>
+        </article>
+        <article>
+          <span>Peak RSS</span>
+          <strong>{formatNumber(payload.memory.peak_rss_mib)} MiB</strong>
+        </article>
+      </div>
+
+      <section className="section-card">
+        <div className="section-header">
+          <div>
+            <p className="eyebrow">Execution profile</p>
+            <h3>Scope and guardrails</h3>
+          </div>
+          <div className="metric-badge">{payload.memory.status || 'artifact'}</div>
+        </div>
+        <div className="metric-grid">
+          <article>
+            <span>Requested timeframes</span>
+            <strong>{payload.summary.requested_timeframes.join(', ') || 'n/a'}</strong>
+          </article>
+          <article>
+            <span>Requested symbols</span>
+            <strong>{payload.summary.requested_symbols.join(', ') || 'n/a'}</strong>
+          </article>
+          <article>
+            <span>Low-RAM profile</span>
+            <strong>{payload.summary.low_ram_profile ? 'enabled' : 'disabled'}</strong>
+          </article>
+          <article>
+            <span>Construction basis</span>
+            <strong>{payload.portfolio.construction_basis || 'n/a'}</strong>
+          </article>
+        </div>
+        {windowEntries.length > 0 ? (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Window</th>
+                  <th>Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {windowEntries.map(([label, value]) => (
+                  <tr key={label}>
+                    <td>{label}</td>
+                    <td>{value}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+      </section>
+
+      <section className="section-card">
+        <div className="section-header">
+          <div>
+            <p className="eyebrow">Timeframe parity</p>
+            <h3>Best row per timeframe</h3>
+          </div>
+          <div className="metric-badge">{payload.timeframes.length} rows</div>
+        </div>
+        {payload.timeframes.length > 0 ? (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Timeframe</th>
+                  <th>Candidate</th>
+                  <th>Family</th>
+                  <th>OOS Return</th>
+                  <th>Sharpe</th>
+                  <th>Max DD</th>
+                  <th>Trades</th>
+                  <th>Reject Reasons</th>
+                </tr>
+              </thead>
+              <tbody>
+                {payload.timeframes.map((row) => (
+                  <tr key={`${row.timeframe}-${row.candidate_id}`}>
+                    <td>{row.timeframe || 'n/a'}</td>
+                    <td>{row.name || row.candidate_id || 'n/a'}</td>
+                    <td>{row.family || 'n/a'}</td>
+                    <td>{formatPercent(row.oos_return)}</td>
+                    <td>{formatNumber(row.oos_sharpe, 3)}</td>
+                    <td>{formatPercent(row.oos_max_drawdown)}</td>
+                    <td>{formatNumber(row.trade_count, 0)}</td>
+                    <td>{row.reject_reasons.join(', ') || (row.promoted ? 'promoted' : 'n/a')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p>No timeframe-level summary rows were exported in the latest artifact bundle.</p>
+        )}
+      </section>
+
+      <section className="section-card">
+        <div className="section-header">
+          <div>
+            <p className="eyebrow">Candidate parity</p>
+            <h3>Top strategy rows</h3>
+          </div>
+          <div className="metric-badge">{payload.top_candidates.length} rows</div>
+        </div>
+        {payload.top_candidates.length > 0 ? (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Candidate</th>
+                  <th>Timeframe</th>
+                  <th>Family</th>
+                  <th>OOS Return</th>
+                  <th>Sharpe</th>
+                  <th>Max DD</th>
+                </tr>
+              </thead>
+              <tbody>
+                {payload.top_candidates.map((row) => (
+                  <tr key={`${row.candidate_id}-${row.timeframe}`}>
+                    <td>{row.name || row.candidate_id || 'n/a'}</td>
+                    <td>{row.timeframe || 'n/a'}</td>
+                    <td>{row.family || 'n/a'}</td>
+                    <td>{formatPercent(row.oos_return)}</td>
+                    <td>{formatNumber(row.oos_sharpe, 3)}</td>
+                    <td>{formatPercent(row.oos_max_drawdown)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p>No top-strategy rows are available yet.</p>
+        )}
+      </section>
+
+      <section className="section-card">
+        <div className="section-header">
+          <div>
+            <p className="eyebrow">Portfolio parity</p>
+            <h3>Current fallback construction</h3>
+          </div>
+          <div className="metric-badge">{payload.portfolio_weights.length} sleeves</div>
+        </div>
+        <div className="metric-grid">
+          <article>
+            <span>Portfolio OOS Return</span>
+            <strong>{formatPercent(payload.portfolio.oos_return)}</strong>
+          </article>
+          <article>
+            <span>Portfolio OOS Sharpe</span>
+            <strong>{formatNumber(payload.portfolio.oos_sharpe, 3)}</strong>
+          </article>
+          <article>
+            <span>Portfolio Max DD</span>
+            <strong>{formatPercent(payload.portfolio.oos_max_drawdown)}</strong>
+          </article>
+          <article>
+            <span>Valid Strategy Found</span>
+            <strong>{payload.decision.valid_strategy_found ? 'yes' : 'no'}</strong>
+          </article>
+        </div>
+        {payload.portfolio_weights.length > 0 ? (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Timeframe</th>
+                  <th>Family</th>
+                  <th>Weight</th>
+                  <th>OOS Return</th>
+                  <th>OOS Sharpe</th>
+                </tr>
+              </thead>
+              <tbody>
+                {payload.portfolio_weights.map((row, index) => (
+                  <tr key={`${row.name}-${index}`}>
+                    <td>{row.name || 'n/a'}</td>
+                    <td>{row.timeframe || 'n/a'}</td>
+                    <td>{row.family || 'n/a'}</td>
+                    <td>{formatPercent(row.weight)}</td>
+                    <td>{formatPercent(row.oos_return)}</td>
+                    <td>{formatNumber(row.oos_sharpe, 3)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p>No portfolio weights were exported in the latest exact-window bundle.</p>
+        )}
+      </section>
+
+      {payload.notes.length > 0 ? (
+        <section className="section-card">
+          <div className="section-header">
+            <div>
+              <p className="eyebrow">Operator notes</p>
+              <h3>Migration-safe context</h3>
+            </div>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Note</th>
+                  <th>Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {payload.notes.map((note) => (
+                  <tr key={note.label}>
+                    <td>{note.label}</td>
+                    <td>{note.value}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
+
+      {payload.warnings.length > 0 ? (
+        <section className="section-card">
+          <div className="section-header">
+            <div>
+              <p className="eyebrow">Warnings</p>
+              <h3>Artifact drift to watch</h3>
+            </div>
+          </div>
+          <ul className="guidance-list">
+            {payload.warnings.map((warning) => (
+              <li key={warning}>{warning}</li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+    </div>
+  );
+}

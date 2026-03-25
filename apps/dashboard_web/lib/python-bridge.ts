@@ -75,10 +75,10 @@ export const dashboardBridgeContract = {
     {
       id: 'exact-window',
       title: 'Exact-window migration',
-      description: 'Deferred until later waves after the overview slice reaches parity.',
+      description: 'Latest exact-window artifact summary and portfolio fallback parity from the Python bundle.',
       streamlitSource: 'apps/dashboard/exact_window_suite.py',
       nextRoute: '/exact-window',
-      status: 'planned',
+      status: 'available',
     },
     {
       id: 'workflow-jobs',
@@ -125,8 +125,8 @@ export const navigationItems: NavigationItem[] = [
     id: 'exact-window',
     href: '/exact-window',
     label: 'Exact-window',
-    summary: 'Planned follow-on route after the migration foundation settles.',
-    status: 'planned',
+    summary: 'Latest exact-window artifact summary from the Python research bundle.',
+    status: 'available',
   },
 ];
 

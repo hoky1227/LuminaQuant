@@ -19,11 +19,11 @@ describe('dashboard bridge contract', () => {
     ]);
   });
 
-  it('marks overview as the only currently available page surface', () => {
+  it('marks the migrated routes as available in navigation order', () => {
     const availableRoutes = navigationItems.filter((item) => item.status === 'available');
 
-    expect(availableRoutes).toHaveLength(3);
-    expect(availableRoutes.map((item) => item.href)).toEqual(['/', '/workflows', '/risk-health']);
+    expect(availableRoutes).toHaveLength(4);
+    expect(availableRoutes.map((item) => item.href)).toEqual(['/', '/workflows', '/risk-health', '/exact-window']);
   });
 
   it('builds overview cards from capability metadata', () => {
