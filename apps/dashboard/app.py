@@ -72,6 +72,9 @@ from apps.dashboard.services.overview_dashboard import (
 from apps.dashboard.services.ghost_cleanup import (
     run_ghost_cleanup_script as _run_ghost_cleanup_script_data,
 )
+from apps.dashboard.services.dashboard_navigation import (
+    select_dashboard_view as _select_dashboard_view_data,
+)
 from apps.dashboard.services.mirror_dashboard import (
     apply_mirror_figure_style as _apply_mirror_figure_style_data,
     build_mirror_balance_equity_figure as _build_mirror_balance_equity_figure_data,
@@ -168,9 +171,10 @@ def _render_dashboard_page_shell() -> None:
 
 
 def _route_dashboard_view() -> str:
-    dashboard_view = st.sidebar.radio(
-        "Dashboard View",
-        list(_DASHBOARD_VIEW_OPTIONS),
+    dashboard_view = _select_dashboard_view_data(
+        streamlit=st,
+        label="Dashboard View",
+        view_options=_DASHBOARD_VIEW_OPTIONS,
         index=0,
     )
     if dashboard_view == "Exact-Window Suite":

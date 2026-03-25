@@ -213,6 +213,40 @@ export function ExactWindowRuntime() {
       <section className="section-card">
         <div className="section-header">
           <div>
+            <p className="eyebrow">Artifact provenance</p>
+            <h3>Latest bundle pointers</h3>
+          </div>
+          <div className="metric-badge">{payload.generated_at ?? 'pending'}</div>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Field</th>
+                <th>Value</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Generated At</td>
+                <td>{payload.generated_at ?? 'n/a'}</td>
+              </tr>
+              <tr>
+                <td>Bundle Root</td>
+                <td>{payload.root || 'n/a'}</td>
+              </tr>
+              <tr>
+                <td>Run Root</td>
+                <td>{payload.run_root || 'n/a'}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="section-card">
+        <div className="section-header">
+          <div>
             <p className="eyebrow">Timeframe parity</p>
             <h3>Best row per timeframe</h3>
           </div>
