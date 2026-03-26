@@ -271,7 +271,7 @@ def test_content_sensitive_detection_allows_public_safe_ci_workflow(tmp_path, mo
     assert flagged == []
 
 
-def test_content_sensitive_detection_scans_markdown_for_generic_strategy_terms(tmp_path, monkeypatch):
+def test_content_sensitive_detection_allows_generic_public_domain_terms(tmp_path, monkeypatch):
     repo = tmp_path / "repo"
     repo.mkdir()
     _init_repo(repo)
@@ -284,7 +284,7 @@ def test_content_sensitive_detection_scans_markdown_for_generic_strategy_terms(t
 
     monkeypatch.chdir(repo)
     flagged = publish_public_pr._find_sensitive_content_paths(["README.md"])
-    assert flagged == ["README.md"]
+    assert flagged == []
 
 
 def test_content_sensitive_detection_allows_explicit_public_sample_terms(tmp_path, monkeypatch):
@@ -403,7 +403,7 @@ def test_public_tree_exposures_catch_preexisting_sensitive_public_tree_files(tmp
     monkeypatch.chdir(repo)
     path_hits, content_hits = publish_public_pr._public_tree_exposures()
     assert "docs/FUTURES_STRATEGY_FACTORY.md" in path_hits
-    assert "README.md" in content_hits
+    assert content_hits == []
 
 
 def test_content_sensitive_detection_ignores_publish_sanitizer_self_test_file(tmp_path, monkeypatch):

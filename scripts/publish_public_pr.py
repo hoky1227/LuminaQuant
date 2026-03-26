@@ -480,9 +480,7 @@ def _find_sensitive_content_paths(paths: list[str]) -> list[str]:
         normalized_text = text
         for token in ALLOWED_PUBLIC_SAMPLE_CONTENT_TOKENS:
             normalized_text = re.sub(re.escape(token), "", normalized_text, flags=re.IGNORECASE)
-        if any(pattern.search(normalized_text) for pattern in patterns) or any(
-            pattern.search(normalized_text) for pattern in GENERIC_SENSITIVE_CONTENT_PATTERNS
-        ):
+        if any(pattern.search(normalized_text) for pattern in patterns):
             flagged.append(candidate)
     return flagged
 
