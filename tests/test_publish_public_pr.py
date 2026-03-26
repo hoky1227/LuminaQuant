@@ -54,6 +54,10 @@ def test_sensitive_path_detection_allows_public_runtime_paths():
     assert not publish_public_pr.is_sensitive_path("lumina_quant/backtesting/chunked_runner.py")
     assert not publish_public_pr.is_sensitive_path("docs/RUNBOOK_1Y_1S_LOCAL.md")
     assert not publish_public_pr.is_sensitive_path(".github/workflows/ci.yml")
+    assert not publish_public_pr.is_sensitive_path("src/lumina_quant/strategy.py")
+    assert not publish_public_pr.is_sensitive_path("src/lumina_quant/services/portfolio.py")
+    assert not publish_public_pr.is_sensitive_path("src/lumina_quant/backtesting/portfolio_backtest.py")
+    assert not publish_public_pr.is_sensitive_path("tests/test_portfolio_sizing.py")
     assert not publish_public_pr.is_sensitive_path("src/lumina_quant/dashboard/retired_stub.py")
     assert not publish_public_pr.is_sensitive_path(
         "src/lumina_quant/strategies/sample_public_strategy.py"
@@ -66,7 +70,6 @@ def test_sensitive_path_detection_allows_public_runtime_paths():
 def test_sensitive_path_detection_blocks_generic_strategy_indicator_like_names():
     assert publish_public_pr.is_sensitive_path("docs/FUTURES_STRATEGY_FACTORY.md")
     assert publish_public_pr.is_sensitive_path("configs/profiles/research.yaml")
-    assert publish_public_pr.is_sensitive_path("src/lumina_quant/compute/indicators.py")
     assert publish_public_pr.is_sensitive_path("scripts/build_live_portfolio_dashboard_summary.py")
 
 
@@ -179,6 +182,14 @@ def test_drop_paths_from_public_removes_existing_public_publish_tooling(tmp_path
     assert not workflow_doc.exists()
     staged_deleted = _run_git(repo, "diff", "--cached", "--name-status").stdout.splitlines()
     assert staged_deleted == ["D\tdocs/WORKFLOW.md", "D\tscripts/publish_public_pr.py"]
+
+
+def test_legacy_public_cleanup_inventory_covers_known_private_paths():
+    assert "AGENTS.md" in publish_public_pr.DROP_FROM_PUBLIC_PATHS
+    assert "configs/quant_framework/strategies" in publish_public_pr.DROP_FROM_PUBLIC_PATHS
+    assert "src/lumina_quant/strategies/registry.py" in publish_public_pr.DROP_FROM_PUBLIC_PATHS
+    assert "tests/test_strategy_registry_defaults.py" in publish_public_pr.DROP_FROM_PUBLIC_PATHS
+    assert "var" in publish_public_pr.DROP_FROM_PUBLIC_PATHS
 
 
 def test_publish_flow_keeps_source_gitignore_for_safe_generated_artifacts(tmp_path, monkeypatch):

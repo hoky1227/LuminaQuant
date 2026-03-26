@@ -114,6 +114,70 @@ PROTECTED_PATHS: tuple[str, ...] = (
 
 DROP_FROM_PUBLIC_PATHS: tuple[str, ...] = INTERNAL_PUBLISH_PATHS
 
+LEGACY_PUBLIC_CLEANUP_PATHS: tuple[str, ...] = (
+    ".github/hardcoded_params_baseline.json",
+    "AGENTS.md",
+    "configs/profiles/research.yaml",
+    "configs/quant_framework/strategies",
+    "docs/FUTURES_STRATEGY_FACTORY.md",
+    "docs/QUANT_RESEARCH_FACTORY.md",
+    "docs/STRATEGY_FACTORY_WORKER3_REPORT.md",
+    "docs/STRATEGY_FACTORY_WORKER4_REPORT.md",
+    "docs/kr/FUTURES_STRATEGY_FACTORY.md",
+    "scripts/benchmark_indicators.py",
+    "scripts/build_live_portfolio_dashboard_summary.py",
+    "scripts/build_strategy_support_inventory.py",
+    "scripts/collect_strategy_support_data.py",
+    "scripts/export_research_candidates.py",
+    "scripts/generate_alpha_card_template.py",
+    "scripts/run_bulk_research.py",
+    "scripts/run_portfolio_optimization.py",
+    "scripts/run_research_candidates.py",
+    "scripts/run_research_hurdle.py",
+    "scripts/run_research_pipeline.py",
+    "scripts/select_research_shortlist.py",
+    "src/lumina_quant/data_collector.py",
+    "src/lumina_quant/data_sync.py",
+    "src/lumina_quant/indicators/__init__.py",
+    "src/lumina_quant/strategies/__init__.py",
+    "src/lumina_quant/strategies/registry.py",
+    "src/lumina_quant/strategy_factory/candidate_library.py",
+    "src/lumina_quant/strategy_factory/research_runner.py",
+    "tests/test_accelerated_indicators.py",
+    "tests/test_advanced_alpha_indicators.py",
+    "tests/test_advanced_strategy_state.py",
+    "tests/test_alpha101_registry_compiler.py",
+    "tests/test_alpha_card_template.py",
+    "tests/test_bulk_research_script.py",
+    "tests/test_candidate_strategy_factory.py",
+    "tests/test_factory_fast_indicators.py",
+    "tests/test_formulaic_alpha_runtime.py",
+    "tests/test_formulaic_alpha_subset.py",
+    "tests/test_indicator_expansion.py",
+    "tests/test_indicators_core.py",
+    "tests/test_indicators_extended.py",
+    "tests/test_rare_event_indicator.py",
+    "tests/test_rare_event_strategy.py",
+    "tests/test_research_pipeline.py",
+    "tests/test_research_runner_feature_support.py",
+    "tests/test_research_runner_scoring_config.py",
+    "tests/test_run_portfolio_optimization_script.py",
+    "tests/test_run_research_candidates_script.py",
+    "tests/test_run_research_hurdle_script.py",
+    "tests/test_run_research_pipeline_script.py",
+    "tests/test_select_research_shortlist_script.py",
+    "tests/test_strategy_catalog_new_strategies.py",
+    "tests/test_strategy_factory_library.py",
+    "tests/test_strategy_long_short_support.py",
+    "tests/test_strategy_plugins_timeframe.py",
+    "tests/test_strategy_registry_defaults.py",
+    "tests/test_strategy_support_inventory.py",
+    "tests/test_topcap_tsmom_strategy.py",
+    "var",
+)
+
+DROP_FROM_PUBLIC_PATHS = DROP_FROM_PUBLIC_PATHS + LEGACY_PUBLIC_CLEANUP_PATHS
+
 SENSITIVE_PATH_RE = re.compile(
     r"^src/lumina_quant/strategies/"
     r"|^lumina_quant/strategies/"
@@ -215,11 +279,19 @@ CONTENT_SCAN_EXTENSIONS: tuple[str, ...] = (
 )
 CONTENT_SCAN_EXEMPT_PATHS: tuple[str, ...] = ()
 
-ALLOWED_PUBLIC_SAMPLE_PATHS: tuple[str, ...] = (
+ALLOWED_PUBLIC_PATHS: tuple[str, ...] = (
     "src/lumina_quant/strategies/sample_public_strategy.py",
     "lumina_quant/strategies/sample_public_strategy.py",
     "src/lumina_quant/indicators/sample_public_indicator.py",
     "lumina_quant/indicators/sample_public_indicator.py",
+    "src/lumina_quant/backtesting/portfolio_backtest.py",
+    "src/lumina_quant/compute/indicators.py",
+    "src/lumina_quant/services/portfolio.py",
+    "src/lumina_quant/strategy.py",
+    "tests/test_funding_liquidation.py",
+    "tests/test_portfolio_fast_stats.py",
+    "tests/test_portfolio_sizing.py",
+    "tests/test_portfolio_trade_recording.py",
 )
 
 ALLOWED_PUBLIC_SAMPLE_CONTENT_TOKENS: tuple[str, ...] = (
@@ -311,16 +383,16 @@ def _tracked_names() -> list[str]:
     return [line.strip() for line in out.splitlines() if line.strip()]
 
 
-def _is_allowed_public_sample_path(path: str) -> bool:
+def _is_allowed_public_path(path: str) -> bool:
     normalized = str(path or "").strip()
-    return normalized in ALLOWED_PUBLIC_SAMPLE_PATHS
+    return normalized in ALLOWED_PUBLIC_PATHS
 
 
 def is_sensitive_path(path: str) -> bool:
     normalized = str(path or "").strip()
     if not normalized:
         return False
-    if _is_allowed_public_sample_path(normalized):
+    if _is_allowed_public_path(normalized):
         return False
     return bool(
         SENSITIVE_PATH_RE.search(normalized)
@@ -385,6 +457,8 @@ def _content_sensitive_patterns() -> tuple[re.Pattern[str], ...]:
 def _should_content_scan(path: str) -> bool:
     normalized = str(path or "").strip()
     if not normalized or is_sensitive_path(normalized):
+        return False
+    if _is_allowed_public_path(normalized):
         return False
     if normalized in CONTENT_SCAN_EXEMPT_PATHS:
         return False
