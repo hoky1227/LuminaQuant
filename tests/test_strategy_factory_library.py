@@ -689,6 +689,7 @@ def test_strategy_library_rows_include_tags_and_metadata():
     assert any("trend-following" in row["tags"] for row in row_dicts)
     assert any("vol_compression" in row["tags"] for row in row_dicts)
     assert any("pair" in row["tags"] for row in row_dicts)
-    assert any("carry" in row["tags"] for row in row_dicts)
     assert any("leadlag" in row["tags"] for row in row_dicts)
+    carry_rows = [row for row in row_dicts if "carry" in row["tags"]]
+    assert all(row["metadata"].get("data_dependent") is True for row in carry_rows)
     assert any(item["metadata"].get("timeframe") is not None for item in row_dicts)

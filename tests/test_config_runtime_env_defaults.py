@@ -123,6 +123,8 @@ def test_config_module_keeps_runtime_alias_fields_in_sync(tmp_path, monkeypatch)
     cfg_path = _write_config(tmp_path)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("LQ_CONFIG_PATH", cfg_path)
+    monkeypatch.delenv("LQ_GPU_MODE", raising=False)
+    monkeypatch.delenv("LQ__EXECUTION__GPU_MODE", raising=False)
     import lumina_quant.config as config_module
 
     config_module = importlib.reload(config_module)

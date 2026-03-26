@@ -72,7 +72,9 @@ def test_compute_trade_analytics_tracks_realized_pnl_and_position() -> None:
 
     assert analytics["position_after"].tolist() == [2.0, 1.0]
     assert analytics["realized_pnl"].tolist() == [0.0, 9.5]
-    assert analytics["close_side"].tolist() == [None, "LONG"]
+    close_side = analytics["close_side"].tolist()
+    assert pd.isna(close_side[0])
+    assert close_side[1] == "LONG"
 
 
 def test_build_performance_price_payload_exposes_benchmark_and_trade_markers() -> None:
