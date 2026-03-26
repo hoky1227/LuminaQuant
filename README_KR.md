@@ -24,7 +24,6 @@
 | **[1년+ 1초 로컬 런북](docs/kr/RUNBOOK_1Y_1S_LOCAL.md)** | 8GB RAM / 8GB VRAM 기준 장기 로컬 실행/튜닝 절차. |
 | **[선물 전략 팩토리](docs/kr/FUTURES_STRATEGY_FACTORY.md)** | 후보 생성, 가중치 기반 숏리스트, 단일-자산 조합 정책. |
 | **[스코어 설정 가이드](docs/kr/SCORING_CONFIG_GUIDE.md)** | 리서치/숏리스트/최적화 스크립트 공용 score-config 템플릿 사용법. |
-| **[대시보드 실시간 분석 리포트](docs/DASHBOARD_REALTIME_ANALYSIS_REPORT.md)** | 실시간 갱신 동작 개선 분석 및 구현 결과. |
 | **[거래소 가이드](docs/kr/EXCHANGES.md)** | **바이낸스 USDⓈ-M 선물**, **MetaTrader 5 (MT5)**, **Polymarket** 상세 설정법. |
 | **[외부 데이터 가이드](docs/kr/EXTERNAL_DATA.md)** | 사용자 보유 데이터를 백테스트/라이브에 연결하는 canonical contract 설명. |
 | **[최소 설치 프로필](docs/kr/MINIMAL_INSTALLS.md)** | 백테스트 전용 / 라이브 전용 설치를 위한 persona-oriented extras. |
@@ -417,7 +416,7 @@ uv run python scripts/run_research_pipeline.py \
 
 **결과 시각화 (대시보드):**
 ```bash
-uv run streamlit run apps/dashboard/app.py
+uv run lq dashboard --run
 ```
 
 대시보드 개선 사항:
@@ -425,9 +424,10 @@ uv run streamlit run apps/dashboard/app.py
 - 감사 상태(PostgreSQL)와 시장 OHLCV(Parquet) 소스를 분리하여 표시
 - 런타임 데이터가 없을 때 CSV fallback 상태를 명시적으로 경고
 
-**대시보드 실시간 스모크 체크 (equity row 증가 확인):**
+**대시보드 스모크 체크 (런처 + 빌드 경로):**
 ```bash
-uv run python -m streamlit run apps/dashboard/app.py --server.headless true
+uv run lq dashboard --print-contract
+cd apps/dashboard_web && npm run build
 ```
 
 **Ghost RUNNING 정리 (PostgreSQL):**

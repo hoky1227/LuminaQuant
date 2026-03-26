@@ -15,8 +15,7 @@ describe('dashboard bridge contract', () => {
 
   it('maps both legacy dashboard entry views', () => {
     expect(dashboardBridgeContract.legacyViews.map((view) => view.id)).toEqual([
-      'main-dashboard',
-      'exact-window-suite',
+      'dashboard-stub',
     ]);
   });
 
@@ -45,8 +44,8 @@ describe('dashboard bridge contract', () => {
     expect(cards.some((card) => card.title === 'Python compatibility contract')).toBe(true);
   });
 
-  it('keeps cutover-gate evidence explicit while preserving Streamlit as the launcher', () => {
-    expect(dashboardCutoverGate.defaultLauncher).toBe('streamlit');
+  it('keeps cutover-gate evidence explicit after flipping the launcher to Next', () => {
+    expect(dashboardCutoverGate.defaultLauncher).toBe('next');
     expect(dashboardCutoverGate.readyRoutes).toEqual([
       '/performance-price',
       '/execution-analytics',
@@ -55,6 +54,6 @@ describe('dashboard bridge contract', () => {
       '/raw-data',
       '/report-export',
     ]);
-    expect(dashboardCutoverGate.evidence.at(-1)?.detail).toContain('default launcher');
+    expect(dashboardCutoverGate.evidence.at(-1)?.detail).toContain('Next dashboard');
   });
 });

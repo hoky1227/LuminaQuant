@@ -25,7 +25,7 @@ def _overview_payload() -> dict[str, object]:
             "status": "ok",
             "run_id": "run-123",
             "mode": "next",
-            "backend": "streamlit",
+            "backend": "python",
         },
         "summary_metrics": [
             {"key": "latest_equity", "label": "Latest Equity", "value": 1105.0},
@@ -221,7 +221,7 @@ def test_build_report_export_payload_generates_json_and_markdown() -> None:
     assert payload["status"] == "ok"
     assert payload["json_report"]["closed_trade_count"] == 1
     assert payload["json_report"]["risk_event_count"] == 1
-    assert "Streamlit remains the default launcher" in payload["markdown_report"]
+    assert "Default Launcher: next" in payload["markdown_report"]
     assert payload["filenames"]["json"].endswith("-dashboard-report.json")
     assert "Market Data route is available in Next.js." in payload["cutover_gate"]["evidence"]
 

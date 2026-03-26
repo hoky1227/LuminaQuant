@@ -221,10 +221,10 @@ uv run lq optimize \
 
 ---
 
-## 7) Streamlit GUI (monitor + launcher)
+## 7) Dashboard Web UI (monitor + launcher)
 
 ```bash
-uv run python -m streamlit run apps/dashboard/app.py
+uv run lq dashboard --run
 ```
 
 Live real mode remains gated by dashboard arming phrase: **ENABLE REAL**.

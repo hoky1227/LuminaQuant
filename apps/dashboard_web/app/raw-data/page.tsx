@@ -7,8 +7,8 @@ export default function RawDataPage() {
         <p className="eyebrow">Raw Data parity</p>
         <h2>Capped frame previews for debugging and cutover evidence</h2>
         <p>
-          This route exposes bounded raw-state previews for the latest run so Next cutover work can be reviewed without
-          changing the Streamlit-first launcher contract.
+          This route exposes bounded raw-state previews for the latest run so the Next-default dashboard can be reviewed
+          without falling back to the retired Streamlit runtime.
         </p>
       </section>
       <section className="section-card">

@@ -6,11 +6,11 @@ export default function Home() {
   return (
     <div className="page-stack">
       <section className="hero-card">
-        <p className="eyebrow">Migration foundation</p>
+        <p className="eyebrow">Next-default dashboard</p>
         <h2>Overview parity slice</h2>
         <p>
-          This web view now mirrors the Streamlit dashboard&apos;s landing intent with a real Python-backed overview payload while keeping
-          the compatibility bridge explicit.
+          This web view now serves as the default LuminaQuant dashboard runtime while keeping the Python-backed compatibility bridge
+          explicit for the migrated surfaces.
         </p>
       </section>
 
@@ -28,8 +28,8 @@ export default function Home() {
             <strong>{dashboardBridgeContract.memoryBudget.hostRamGb} GB</strong>
           </article>
           <article>
-            <span>Legacy entry point</span>
-            <strong>{dashboardBridgeContract.legacyEntryPoint}</strong>
+            <span>Default entry point</span>
+            <strong>{dashboardBridgeContract.defaultEntryPoint}</strong>
           </article>
           <article>
             <span>Compatibility path</span>
@@ -66,7 +66,7 @@ export default function Home() {
             <thead>
               <tr>
                 <th>Surface</th>
-                <th>Streamlit source</th>
+                <th>Python source</th>
                 <th>Next route</th>
                 <th>Status</th>
               </tr>
@@ -75,7 +75,7 @@ export default function Home() {
               {dashboardBridgeContract.capabilities.map((capability) => (
                 <tr key={capability.id}>
                   <td>{capability.title}</td>
-                  <td>{capability.streamlitSource}</td>
+                  <td>{capability.sourceModule}</td>
                   <td>{capability.nextRoute}</td>
                   <td>
                     <span className={`status-pill status-${capability.status}`}>{capability.status}</span>
@@ -91,7 +91,7 @@ export default function Home() {
         <div className="section-header">
           <div>
             <p className="eyebrow">Cutover gate evidence</p>
-            <h3>Default launcher remains guarded</h3>
+            <h3>Default launcher is live</h3>
           </div>
           <div className="metric-badge">{dashboardCutoverGate.defaultLauncher}</div>
         </div>

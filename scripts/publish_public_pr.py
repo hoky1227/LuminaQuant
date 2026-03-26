@@ -59,9 +59,7 @@ PROTECTED_PATHS: tuple[str, ...] = (
     "src/lumina_quant/strategy_factory/candidate_library.py",
     "src/lumina_quant/strategy_factory/research_runner.py",
     "src/lumina_quant/workflows/alpha_research_pipeline.py",
-    "apps/dashboard/app.py",
-    "apps/dashboard/exact_window_suite.py",
-    "apps/dashboard/services/exact_window.py",
+    "src/lumina_quant/dashboard/exact_window_bundle.py",
     "src/lumina_quant/cli/exact_window.py",
     "src/lumina_quant/eval/exact_window_decision.py",
     "src/lumina_quant/eval/exact_window_log_archive.py",
@@ -140,9 +138,7 @@ SENSITIVE_PATH_RE = re.compile(
     r"|^src/lumina_quant/strategy_factory/candidate_library\.py$"
     r"|^src/lumina_quant/strategy_factory/research_runner\.py$"
     r"|^src/lumina_quant/workflows/alpha_research_pipeline\.py$"
-    r"|^apps/dashboard/app\.py$"
-    r"|^apps/dashboard/exact_window_suite\.py$"
-    r"|^apps/dashboard/services/exact_window\.py$"
+    r"|^src/lumina_quant/dashboard/exact_window_bundle\.py$"
     r"|^src/lumina_quant/cli/exact_window\.py$"
     r"|^src/lumina_quant/eval/exact_window_decision\.py$"
     r"|^src/lumina_quant/eval/exact_window_log_archive\.py$"

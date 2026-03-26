@@ -29,7 +29,7 @@ def test_sensitive_path_detection_blocks_private_trees():
     assert publish_public_pr.is_sensitive_path("src/lumina_quant/strategy_factory/research_runner.py")
     assert publish_public_pr.is_sensitive_path("src/lumina_quant/workflows/alpha_research_pipeline.py")
     assert publish_public_pr.is_sensitive_path("src/lumina_quant/eval/exact_window_suite.py")
-    assert publish_public_pr.is_sensitive_path("apps/dashboard/exact_window_suite.py")
+    assert publish_public_pr.is_sensitive_path("src/lumina_quant/dashboard/exact_window_bundle.py")
     assert publish_public_pr.is_sensitive_path("scripts/run_research_candidates.py")
     assert publish_public_pr.is_sensitive_path("tests/test_exact_window_suite.py")
     assert publish_public_pr.is_sensitive_path("scripts/research/run_llm_alpha_pipeline.py")
@@ -52,6 +52,7 @@ def test_sensitive_path_detection_allows_public_runtime_paths():
     assert not publish_public_pr.is_sensitive_path("run_backtest.py")
     assert not publish_public_pr.is_sensitive_path("lumina_quant/backtesting/chunked_runner.py")
     assert not publish_public_pr.is_sensitive_path("docs/RUNBOOK_1Y_1S_LOCAL.md")
+    assert not publish_public_pr.is_sensitive_path("src/lumina_quant/dashboard/retired_stub.py")
     assert not publish_public_pr.is_sensitive_path(
         "src/lumina_quant/strategies/sample_public_strategy.py"
     )

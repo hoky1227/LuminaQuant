@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 
@@ -25,6 +26,7 @@ SLIPPAGE = _load(ROOT / "scripts" / "ops" / "summarize_fill_slippage.py", "summa
 
 
 def test_live_readiness_preflight_reports_ready_for_paper(tmp_path: Path) -> None:
+    fresh_cutoff = (datetime.now(UTC) - timedelta(minutes=5)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
         "\n".join(
@@ -44,8 +46,8 @@ def test_live_readiness_preflight_reports_ready_for_paper(tmp_path: Path) -> Non
         json.dumps(
             {
                 "status": "completed",
-                "collection_cutoff_utc": "2026-03-19T11:39:51Z",
-                "feature_results": [{"last_timestamp_utc": "2026-03-19T11:39:00Z"}],
+                "collection_cutoff_utc": fresh_cutoff,
+                "feature_results": [{"last_timestamp_utc": fresh_cutoff}],
             }
         ),
         encoding="utf-8",

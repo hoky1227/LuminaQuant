@@ -39,7 +39,7 @@ def test_load_exact_window_summary_payload_normalizes_bundle(monkeypatch) -> Non
                 },
                 "notes": {
                     "selection_basis": "validation_only",
-                    "operator_note": "retain streamlit fallback",
+                    "operator_note": "retain latest exact-window bundle",
                 },
                 "best_per_strategy": [
                     {

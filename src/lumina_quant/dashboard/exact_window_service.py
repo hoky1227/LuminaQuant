@@ -3,22 +3,9 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-import importlib.util
-from pathlib import Path
 from typing import Any
 
-
-def _load_exact_window_bundle_loader() -> Any:
-    module_path = Path(__file__).resolve().parents[3] / 'apps' / 'dashboard' / 'services' / 'exact_window.py'
-    spec = importlib.util.spec_from_file_location('lumina_quant_dashboard_exact_window_loader', module_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f'Failed to load exact-window loader from {module_path}')
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module.load_exact_window_bundle
-
-
-load_exact_window_bundle = _load_exact_window_bundle_loader()
+from lumina_quant.dashboard.exact_window_bundle import load_exact_window_bundle
 
 
 def _safe_float(value: Any) -> float | None:

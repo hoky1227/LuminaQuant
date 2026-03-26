@@ -8,7 +8,7 @@ from lumina_quant.dashboard import overview_service
 
 
 def _contract() -> SimpleNamespace:
-    return SimpleNamespace(launch_mode="next", python_backend="streamlit")
+    return SimpleNamespace(launch_mode="next", python_backend="python")
 
 
 def test_empty_overview_payload_tracks_reason() -> None:

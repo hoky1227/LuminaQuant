@@ -195,13 +195,13 @@
 1. **heartbeat**
    - `src/lumina_quant/live/trader.py`
    - `src/lumina_quant/postgres_state.py`
-   - `apps/dashboard/app.py`
+   - `uv run lq dashboard --run`
 
 2. **reconciliation drift / stale feed / risk events**
    - audit store / dashboard / notifier 경로 존재
 
 3. **dashboard**
-   - `apps/dashboard/app.py`
+   - `apps/dashboard_web`
 
 ### 아직 부족한 것
 

@@ -69,7 +69,8 @@ uv run lq live --no-selection --run-id shadow-$(date +%Y%m%d-%H%M%S) --stop-file
 ## 5) Dashboard smoke
 
 ```bash
-uv run python -m streamlit run apps/dashboard/app.py --server.headless true
+uv run lq dashboard --print-contract
+cd apps/dashboard_web && npm run build
 ```
 
 ## 6) Safe stop

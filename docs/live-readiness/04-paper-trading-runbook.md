@@ -204,7 +204,7 @@ baseline vs candidate divergence를 보는 shadow 경로를 운영 가능하게 
 관련 코드:
 - `src/lumina_quant/live/trader.py`
 - `src/lumina_quant/live/execution_live.py`
-- `apps/dashboard/app.py`
+- `apps/dashboard_web`
 
 ---
 

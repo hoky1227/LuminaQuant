@@ -26,7 +26,6 @@
 | **[Scoring Config Guide](docs/SCORING_CONFIG_GUIDE.md)** | Shared score-config template usage across research/shortlist/optimization scripts. |
 | **[Workflow Guide](docs/WORKFLOW.md)** | Private/Public branch operation and publish checklist. |
 | **[8GB Baseline Quickstart](docs/QUICKSTART_8GB_BASELINE.md)** | Minimal install/smoke/replay/shadow-live/dashboard/safe-stop/cleanup flow. |
-| **[Dashboard Realtime Report](docs/DASHBOARD_REALTIME_ANALYSIS_REPORT.md)** | Analysis + implementation report for live-refresh dashboard behavior. |
 | **[Exchange Guide](docs/EXCHANGES.md)** | Detailed setup for **Binance USDⓈ-M Futures**, **MetaTrader 5**, and **Polymarket**. |
 | **[External Data Guide](docs/EXTERNAL_DATA.md)** | Canonical contracts for user-managed backtest/live data. |
 | **[Minimal Installs](docs/MINIMAL_INSTALLS.md)** | Persona-oriented extras for backtest-only / live-only installs. |
@@ -379,7 +378,7 @@ Full 8GB workflow: [docs/QUICKSTART_8GB_BASELINE.md](docs/QUICKSTART_8GB_BASELIN
 
 **Visualize Results:**
 ```bash
-uv run streamlit run apps/dashboard/app.py
+uv run lq dashboard --run
 ```
 
 Dashboard now includes no-code workflow controls for backtest, optimization, and live launch/stop with:
@@ -401,10 +400,10 @@ uv run python scripts/cleanup_ghost_runs.py --dsn \"$LQ_POSTGRES_DSN\" --stale-s
 uv run python scripts/cleanup_ghost_runs.py --dsn \"$LQ_POSTGRES_DSN\" --stale-sec 300 --startup-grace-sec 90 --apply
 ```
 
-**Realtime Dashboard Smoke Check (equity row growth):**
+**Realtime Dashboard Smoke Check (launcher + build path):**
 ```bash
-# Headless startup check
-uv run python -m streamlit run apps/dashboard/app.py --server.headless true
+uv run lq dashboard --print-contract
+cd apps/dashboard_web && npm run build
 ```
 
 **Start Live Trading:**

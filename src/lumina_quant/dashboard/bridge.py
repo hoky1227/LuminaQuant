@@ -43,7 +43,7 @@ class DashboardBridgeContract:
     launch_mode: str
     python_backend: str
     frontend_target: str
-    streamlit_app_path: str
+    retired_stub_path: str
     compatibility_path: str
     slice_contract: DashboardSliceContract
 
@@ -51,12 +51,14 @@ class DashboardBridgeContract:
         payload = asdict(self)
         payload["contract_version"] = 1
         return payload
+
+
 def normalize_dashboard_launch_mode(value: str | None, default: str = "auto") -> str:
     token = str(value or default).strip().lower()
-    if token in {"auto", "streamlit", "next"}:
-        return token
+    if token in {"auto", "next"}:
+        return "next"
     raise DashboardCompatibilityError(
-        f"Unsupported dashboard launch mode '{value}'. Expected one of: auto, streamlit, next."
+        f"Unsupported dashboard launch mode '{value}'. Expected one of: auto, next."
     )
 
 
@@ -74,19 +76,18 @@ def _normalize_compatibility_path(value: str | None) -> str:
 def resolve_dashboard_bridge_contract(
     *,
     launch_mode: str | None,
-    streamlit_app_path: str | Path,
+    retired_stub_path: str | Path,
     next_app_dir: str | Path,
     compatibility_path: str | None = None,
 ) -> DashboardBridgeContract:
     """Resolve the launch mode and minimal bridge contract for the first migrated slice."""
-    requested_mode = normalize_dashboard_launch_mode(launch_mode, default="auto")
-    resolved_mode = "streamlit" if requested_mode == "auto" else requested_mode
+    resolved_mode = normalize_dashboard_launch_mode(launch_mode, default="auto")
     compat_path = _normalize_compatibility_path(compatibility_path)
-    streamlit_target = str(Path(streamlit_app_path).resolve())
+    retired_stub_target = str(Path(retired_stub_path).resolve())
     next_target = str(Path(next_app_dir).resolve())
 
-    frontend_target = streamlit_target if resolved_mode == "streamlit" else next_target
-    python_backend = "streamlit"
+    frontend_target = next_target
+    python_backend = "python"
     slice_contract = DashboardSliceContract(
         slice_id="overview",
         title="Dashboard overview compatibility slice",
@@ -116,10 +117,12 @@ def resolve_dashboard_bridge_contract(
         launch_mode=resolved_mode,
         python_backend=python_backend,
         frontend_target=frontend_target,
-        streamlit_app_path=streamlit_target,
+        retired_stub_path=retired_stub_target,
         compatibility_path=compat_path,
         slice_contract=slice_contract,
     )
+
+
 def load_overview_payload(
     *,
     launch_mode: str | None = "next",
@@ -131,7 +134,7 @@ def load_overview_payload(
     repo_root = Path(__file__).resolve().parents[3]
     contract = resolve_dashboard_bridge_contract(
         launch_mode=launch_mode,
-        streamlit_app_path=repo_root / "apps" / "dashboard" / "app.py",
+        retired_stub_path=repo_root / "src" / "lumina_quant" / "dashboard" / "retired_stub.py",
         next_app_dir=repo_root / "apps" / "dashboard_web",
         compatibility_path=compatibility_path,
     )
@@ -159,14 +162,13 @@ __all__ = [
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Print the dashboard migration bridge contract.")
     parser.add_argument("--json", action="store_true", help="Print the contract as JSON.")
-    parser.add_argument("--mode", default="auto", help="Dashboard launch mode.")
-    parser.add_argument(
-        "--streamlit-app-path",
-        default=str(Path(__file__).resolve().parents[3] / "apps" / "dashboard" / "app.py"),
-    )
     parser.add_argument(
         "--next-app-dir",
         default=str(Path(__file__).resolve().parents[3] / "apps" / "dashboard_web"),
+    )
+    parser.add_argument(
+        "--retired-stub-path",
+        default=str(Path(__file__).resolve().parents[3] / "src" / "lumina_quant" / "dashboard" / "retired_stub.py"),
     )
     parser.add_argument("--compat-path", default=DEFAULT_DASHBOARD_COMPAT_PATH)
     parser.add_argument("--overview-json", action="store_true", help="Print overview payload JSON.")
@@ -176,7 +178,7 @@ def main(argv: list[str] | None = None) -> int:
         print(
             json.dumps(
                 load_overview_payload(
-                    launch_mode=args.mode,
+                    launch_mode="next",
                     compatibility_path=args.compat_path,
                 ),
                 indent=2,
@@ -186,8 +188,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     contract = resolve_dashboard_bridge_contract(
-        launch_mode=args.mode,
-        streamlit_app_path=args.streamlit_app_path,
+        launch_mode="next",
+        retired_stub_path=args.retired_stub_path,
         next_app_dir=args.next_app_dir,
         compatibility_path=args.compat_path,
     )

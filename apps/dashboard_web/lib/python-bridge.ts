@@ -18,7 +18,7 @@ export interface CapabilityItem {
   id: string;
   title: string;
   description: string;
-  streamlitSource: string;
+  sourceModule: string;
   nextRoute: string;
   status: NavigationStatus;
 }
@@ -30,8 +30,8 @@ export interface OverviewCard {
 }
 
 export const dashboardCutoverGate = {
-  defaultLauncher: 'streamlit',
-  launcherStatus: 'guarded',
+  defaultLauncher: 'next',
+  launcherStatus: 'available',
   readyRoutes: [
     '/performance-price',
     '/execution-analytics',
@@ -72,17 +72,17 @@ export const dashboardCutoverGate = {
       status: 'available',
     },
     {
-      label: 'Default launcher preserved',
-      detail: 'uv run lq dashboard --run still targets the Streamlit default launcher until explicit cutover review closes the gate.',
-      status: 'guarded',
+      label: 'Default launcher flipped',
+      detail: 'uv run lq dashboard --run now targets the Next dashboard by default, while the legacy Streamlit entrypoint only remains as an explicit compatibility stub.',
+      status: 'available',
     },
   ],
   remainingGate:
-    'Keep Streamlit as the default launcher until end-to-end parity verification approves the Next cutover.',
+    'Next is the only primary dashboard runtime. The legacy Streamlit path is retired to explicit compatibility guidance.',
 } as const;
 
 export const dashboardBridgeContract = {
-  legacyEntryPoint: 'uv run lq dashboard --run',
+  defaultEntryPoint: 'uv run lq dashboard --run',
   compatibilityPath: '/api/python/dashboard/overview',
   memoryBudget: {
     hostRamGb: 8,
@@ -90,19 +90,14 @@ export const dashboardBridgeContract = {
     guidance: [
       'Keep heavy verification sequential.',
       'Prefer one active web build/test lane at a time.',
-      'Retain Streamlit as the default compatibility path during migration.',
+      'Treat Next as the single primary dashboard runtime.',
     ],
   },
   legacyViews: [
     {
-      id: 'main-dashboard',
-      label: 'Main Dashboard',
+      id: 'dashboard-stub',
+      label: 'Retired Dashboard Stub',
       source: 'apps/dashboard/app.py',
-    },
-    {
-      id: 'exact-window-suite',
-      label: 'Exact-Window Suite',
-      source: 'apps/dashboard/exact_window_suite.py',
     },
   ] satisfies LegacyView[],
   capabilities: [
@@ -110,8 +105,8 @@ export const dashboardBridgeContract = {
       id: 'overview',
       title: 'Overview placeholder',
       description:
-        'First migrated route that mirrors the Streamlit landing surface while staying data-contract first.',
-      streamlitSource: 'apps/dashboard/app.py',
+        'First migrated route that anchors the Next dashboard while staying data-contract first.',
+      sourceModule: 'src/lumina_quant/dashboard/overview_service.py',
       nextRoute: '/',
       status: 'available',
     },
@@ -120,7 +115,7 @@ export const dashboardBridgeContract = {
       title: 'Python compatibility contract',
       description:
         'Python-backed compatibility metadata for the first slice, exposed to Next.js via the bridge route.',
-      streamlitSource: 'src/lumina_quant/dashboard/bridge.py',
+      sourceModule: 'src/lumina_quant/dashboard/bridge.py',
       nextRoute: '/api/python/dashboard/overview',
       status: 'available',
     },
@@ -128,7 +123,7 @@ export const dashboardBridgeContract = {
       id: 'exact-window',
       title: 'Exact-window migration',
       description: 'Latest exact-window artifact summary and portfolio fallback parity from the Python bundle.',
-      streamlitSource: 'apps/dashboard/exact_window_suite.py',
+      sourceModule: 'src/lumina_quant/dashboard/exact_window_service.py',
       nextRoute: '/exact-window',
       status: 'available',
     },
@@ -136,7 +131,7 @@ export const dashboardBridgeContract = {
       id: 'performance-price',
       title: 'Performance & Price',
       description: 'Equity, drawdown, benchmark price, funding, and trade-marker parity from Python state.',
-      streamlitSource: 'apps/dashboard/app.py',
+      sourceModule: 'src/lumina_quant/dashboard/cutover_surfaces_service.py',
       nextRoute: '/performance-price',
       status: 'available',
     },
@@ -144,7 +139,7 @@ export const dashboardBridgeContract = {
       id: 'execution-analytics',
       title: 'Execution Analytics',
       description: 'Fill quality, closed-trade outcomes, streaks, and order-status distribution from Python telemetry.',
-      streamlitSource: 'apps/dashboard/app.py',
+      sourceModule: 'src/lumina_quant/dashboard/cutover_surfaces_service.py',
       nextRoute: '/execution-analytics',
       status: 'available',
     },
@@ -152,7 +147,7 @@ export const dashboardBridgeContract = {
       id: 'market-data',
       title: 'Market Data',
       description: 'Latest market OHLCV context, summary metrics, and capped price-bar parity for the active run.',
-      streamlitSource: 'apps/dashboard/app.py',
+      sourceModule: 'src/lumina_quant/dashboard/cutover_surfaces_service.py',
       nextRoute: '/market-data',
       status: 'available',
     },
@@ -160,7 +155,7 @@ export const dashboardBridgeContract = {
       id: 'optimization-insights',
       title: 'Optimization Insights',
       description: 'Optimization candidate quality, stage medians, and best-parameter previews from Python state.',
-      streamlitSource: 'apps/dashboard/app.py',
+      sourceModule: 'src/lumina_quant/dashboard/cutover_surfaces_service.py',
       nextRoute: '/optimization-insights',
       status: 'available',
     },
@@ -168,7 +163,7 @@ export const dashboardBridgeContract = {
       id: 'workflow-jobs',
       title: 'Workflow jobs',
       description: 'Managed backtest/optimize/live job status and control parity for the web dashboard.',
-      streamlitSource: 'apps/dashboard/app.py',
+      sourceModule: 'src/lumina_quant/dashboard/workflow_jobs_service.py',
       nextRoute: '/workflows',
       status: 'available',
     },
@@ -176,15 +171,15 @@ export const dashboardBridgeContract = {
       id: 'risk-health',
       title: 'Risk & Health',
       description: 'Recent risk events, heartbeats, and order-state changes for the active run.',
-      streamlitSource: 'apps/dashboard/app.py',
+      sourceModule: 'src/lumina_quant/dashboard/cutover_surfaces_service.py',
       nextRoute: '/risk-health',
       status: 'available',
     },
     {
       id: 'report-export',
       title: 'Report Export',
-      description: 'JSON + Markdown snapshot export preview while the Streamlit launcher remains the default path.',
-      streamlitSource: 'apps/dashboard/app.py',
+      description: 'JSON + Markdown snapshot export preview for the retired-to-Next cutover state.',
+      sourceModule: 'src/lumina_quant/dashboard/cutover_surfaces_service.py',
       nextRoute: '/report-export',
       status: 'available',
     },
@@ -192,7 +187,7 @@ export const dashboardBridgeContract = {
       id: 'raw-data',
       title: 'Raw Data',
       description: 'Capped frame-count and preview parity for the latest runs, execution, market, and optimization tables.',
-      streamlitSource: 'apps/dashboard/app.py',
+      sourceModule: 'src/lumina_quant/dashboard/cutover_surfaces_service.py',
       nextRoute: '/raw-data',
       status: 'available',
     },

@@ -96,7 +96,7 @@ export function ReportExportRuntime() {
         <div className="section-header">
           <div>
             <p className="eyebrow">Cutover gate</p>
-            <h3>Launcher stays guarded</h3>
+            <h3>Launcher cutover is complete</h3>
           </div>
           <div className="metric-badge">{payload.cutover_gate.default_launcher}</div>
         </div>

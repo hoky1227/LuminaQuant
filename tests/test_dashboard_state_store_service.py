@@ -6,7 +6,7 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-MODULE_PATH = ROOT / "apps" / "dashboard" / "services" / "state_store.py"
+MODULE_PATH = ROOT / "src" / "lumina_quant" / "dashboard" / "state_store_service.py"
 
 
 def _load_module():

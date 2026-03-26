@@ -11,7 +11,7 @@ from typing import Any
 import pandas as pd
 
 from lumina_quant.config import BaseConfig
-from apps.dashboard.services.state_store import (
+from lumina_quant.dashboard.state_store_service import (
     load_fills_state_frame,
     load_heartbeats_state_frame,
     load_market_ohlcv_frame,
@@ -38,7 +38,7 @@ def _dashboard_contract() -> Any:
     repo_root = Path(__file__).resolve().parents[3]
     return resolve_dashboard_bridge_contract(
         launch_mode="next",
-        streamlit_app_path=repo_root / "apps" / "dashboard" / "app.py",
+        retired_stub_path=repo_root / "src" / "lumina_quant" / "dashboard" / "retired_stub.py",
         next_app_dir=repo_root / "apps" / "dashboard_web",
     )
 
@@ -826,8 +826,8 @@ def build_report_export_payload(
         "json_report": {},
         "markdown_report": "",
         "cutover_gate": {
-            "default_launcher": "streamlit",
-            "status": "guarded",
+            "default_launcher": "next",
+            "status": "available",
             "evidence": [
                 "Performance & Price route is available in Next.js.",
                 "Execution Analytics route is available in Next.js.",
@@ -835,7 +835,7 @@ def build_report_export_payload(
                 "Optimization Insights route is available in Next.js.",
                 "Raw Data route is available in Next.js.",
                 "Report Export route is available in Next.js.",
-                "Streamlit remains the default launcher until full cutover review is approved.",
+                "Next is now the default launcher and the retired Streamlit entrypoint only remains as an explicit compatibility stub.",
             ],
         },
     }

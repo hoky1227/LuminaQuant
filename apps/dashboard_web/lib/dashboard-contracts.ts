@@ -68,8 +68,8 @@ export interface CutoverGateEvidence {
 }
 
 export interface CutoverGate {
-  defaultLauncher: 'streamlit';
-  launcherStatus: 'guarded';
+  defaultLauncher: 'next';
+  launcherStatus: 'available' | 'guarded';
   readyRoutes: string[];
   evidence: CutoverGateEvidence[];
   remainingGate: string;

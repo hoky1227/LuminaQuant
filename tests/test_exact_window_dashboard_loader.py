@@ -8,7 +8,7 @@ from pathlib import Path
 
 def _load_module():
     root = Path(__file__).resolve().parents[1]
-    module_path = root / "apps" / "dashboard" / "services" / "exact_window.py"
+    module_path = root / "src" / "lumina_quant" / "dashboard" / "exact_window_bundle.py"
     spec = importlib.util.spec_from_file_location("dashboard_exact_window_loader", module_path)
     if spec is None or spec.loader is None:
         raise RuntimeError("Failed to load dashboard exact-window loader")
@@ -132,21 +132,9 @@ def test_load_exact_window_bundle_records_followup_parse_warnings(tmp_path: Path
     assert payload["warnings"]
     assert "broken.json" in payload["warnings"][0]
 
-
-def test_exact_window_suite_module_exposes_embeddable_renderer():
+def test_main_dashboard_stub_points_users_to_next_dashboard():
     root = Path(__file__).resolve().parents[1]
-    source = (root / "apps" / "dashboard" / "exact_window_suite.py").read_text(
-        encoding="utf-8"
-    )
+    source = (root / "src" / "lumina_quant" / "dashboard" / "retired_stub.py").read_text(encoding="utf-8")
 
-    assert "def render_exact_window_dashboard" in source
-    assert 'if __name__ == "__main__":' in source
-
-
-def test_main_dashboard_exposes_exact_window_view_toggle():
-    root = Path(__file__).resolve().parents[1]
-    source = (root / "apps" / "dashboard" / "app.py").read_text(encoding="utf-8")
-
-    assert "Dashboard View" in source
-    assert "Exact-Window Suite" in source
-    assert "render_exact_window_dashboard(standalone=False)" in source
+    assert "Dashboard Runtime Retired" in source
+    assert "uv run lq dashboard --run" in source

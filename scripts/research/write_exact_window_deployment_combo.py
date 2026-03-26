@@ -15,7 +15,7 @@ for candidate in (REPO_ROOT, SRC_ROOT):
     if str(candidate) not in sys.path:
         sys.path.insert(0, str(candidate))
 
-from apps.dashboard.services.exact_window import load_exact_window_bundle  # noqa: E402
+from lumina_quant.dashboard.exact_window_bundle import load_exact_window_bundle  # noqa: E402
 from lumina_quant.eval.exact_window_suite import _metrics_daily  # noqa: E402
 
 REPORT_ROOT = REPO_ROOT / "var" / "reports" / "exact_window_backtests"
