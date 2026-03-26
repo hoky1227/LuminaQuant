@@ -180,6 +180,11 @@ def test_drop_paths_from_public_removes_existing_public_publish_tooling(tmp_path
 
     assert not publish_script.exists()
     assert not workflow_doc.exists()
+    assert publish_public_pr._staged_names() == []
+    assert set(publish_public_pr._staged_any_names()) == {
+        "docs/WORKFLOW.md",
+        "scripts/publish_public_pr.py",
+    }
     staged_deleted = _run_git(repo, "diff", "--cached", "--name-status").stdout.splitlines()
     assert staged_deleted == ["D\tdocs/WORKFLOW.md", "D\tscripts/publish_public_pr.py"]
 

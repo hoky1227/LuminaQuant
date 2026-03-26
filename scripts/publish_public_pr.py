@@ -378,6 +378,11 @@ def _staged_names() -> list[str]:
     return [line.strip() for line in out.splitlines() if line.strip()]
 
 
+def _staged_any_names() -> list[str]:
+    out = _git("diff", "--cached", "--name-only").stdout
+    return [line.strip() for line in out.splitlines() if line.strip()]
+
+
 def _tracked_names() -> list[str]:
     out = _git("ls-files").stdout
     return [line.strip() for line in out.splitlines() if line.strip()]
@@ -637,7 +642,7 @@ def main() -> int:
                 file=sys.stderr,
             )
 
-        if not staged:
+        if not _staged_any_names():
             print("[INFO] No public-safe changes to publish.")
             return 0
 
@@ -677,7 +682,7 @@ def main() -> int:
         return 0
     finally:
         if _current_branch() != original_branch:
-            _git("checkout", original_branch, check=False)
+            _git("checkout", "-f", original_branch, check=False)
 
 
 if __name__ == "__main__":
