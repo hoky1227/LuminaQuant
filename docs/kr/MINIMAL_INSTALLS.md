@@ -33,11 +33,14 @@ uv sync --extra live-polymarket --extra dev
 ### 대시보드
 ```bash
 uv sync --extra dashboard --extra dev
+cd apps/dashboard_web && npm install
 ```
+Python dashboard helper와 기본 Next.js 대시보드 런타임(Node 20+)이 필요한 경우 사용합니다.
 
 ### 전체 개발 설치
 ```bash
 uv sync --extra backtest --extra optimize --extra live-binance --extra live-mt5 --extra live-polymarket --extra dashboard --extra dev
+cd apps/dashboard_web && npm install
 ```
 
 ## 호환 alias

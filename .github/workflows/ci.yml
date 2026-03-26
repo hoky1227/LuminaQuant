@@ -72,6 +72,9 @@ jobs:
   quality:
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    env:
+      LQ_GPU_MODE: cpu
+      LQ__EXECUTION__GPU_MODE: cpu
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -85,13 +88,19 @@ jobs:
         uses: astral-sh/setup-uv@v7
 
       - name: Sync dependencies
-        run: uv sync --extra optimize --extra dev --extra live-binance --extra dashboard
+        run: uv sync --extra optimize --extra dev --extra live --extra dashboard
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dashboard frontend dependencies
+        working-directory: apps/dashboard_web
+        run: npm install --no-fund --no-audit
 
       - name: Ruff lint check
         run: uv run ruff check .
-
-      - name: Architecture gate (native Binance Futures / no-CCXT critical path)
-        run: bash scripts/ci/architecture_gate_binance_native.sh
 
       - name: Architecture gate (live data decoupling)
         run: bash scripts/ci/architecture_gate_live_data.sh
@@ -119,19 +128,7 @@ jobs:
             tests/test_materialize_from_raw.py \
             tests/test_market_data_loader_modes.py \
             tests/test_raw_first_lineage.py \
-            tests/test_raw_first_lineage_contract.py \
-            tests/test_refresh_final_portfolio_validation_data_script.py
-
-      - name: Native Binance Futures + strict validation contract tests
-        run: |
-          uv run pytest -q \
-            tests/test_binance_futures_exchange.py \
-            tests/test_binance_futures_exchange_factory.py \
-            tests/test_no_ccxt_runtime_dependency.py \
-            tests/test_final_validation_helpers.py \
-            tests/test_validate_saved_incumbent_portfolio_script.py \
-            tests/test_risk_free_metrics.py \
-            tests/test_risk_free_metric_consistency.py
+            tests/test_raw_first_lineage_contract.py
 
       - name: Architecture check
         run: uv run python scripts/check_architecture.py
@@ -141,6 +138,22 @@ jobs:
 
       - name: Documentation verification (EN/KR + docs)
         run: uv run python scripts/verify_docs.py
+
+      - name: Dashboard frontend lint
+        working-directory: apps/dashboard_web
+        run: npm run lint
+
+      - name: Dashboard frontend tests
+        working-directory: apps/dashboard_web
+        run: npm run test
+
+      - name: Dashboard frontend typecheck
+        working-directory: apps/dashboard_web
+        run: npm run typecheck
+
+      - name: Dashboard frontend build
+        working-directory: apps/dashboard_web
+        run: npm run build
 
       - name: Bytecode sanity check
         run: uv run python -m compileall -q src apps scripts tests
@@ -153,16 +166,16 @@ jobs:
           LQ_GPU_MODE: cpu
           LQ__EXECUTION__GPU_MODE: cpu
         run: |
-          mkdir -p logs reports/benchmarks
+          mkdir -p "$RUNNER_TEMP/lq-benchmarks"
           /usr/bin/time -v \
-            uv run python scripts/benchmark_backtest.py --iters 1 --warmup 0 --output reports/benchmarks/ci_smoke.json \
-            2>&1 | tee logs/ci_smoke.time.log
+            uv run python scripts/benchmark_backtest.py --iters 1 --warmup 0 --output "$RUNNER_TEMP/lq-benchmarks/ci_smoke.json" \
+            2>&1 | tee "$RUNNER_TEMP/lq-benchmarks/ci_smoke.time.log"
           uv run python scripts/verify_8gb_baseline.py \
-            --benchmark reports/benchmarks/ci_smoke.json \
-            --time-log logs/ci_smoke.time.log \
-            --oom-log logs/ci_smoke.time.log \
+            --benchmark "$RUNNER_TEMP/lq-benchmarks/ci_smoke.json" \
+            --time-log "$RUNNER_TEMP/lq-benchmarks/ci_smoke.time.log" \
+            --oom-log "$RUNNER_TEMP/lq-benchmarks/ci_smoke.time.log" \
             --skip-dmesg \
-            --output reports/benchmarks/ci_smoke_8gb_gate.json
+            --output "$RUNNER_TEMP/lq-benchmarks/ci_smoke_8gb_gate.json"
 
   gpu-contract:
     runs-on: ubuntu-latest
@@ -190,10 +203,10 @@ jobs:
 
       - name: Verify GPU contract (skip-safe on non-GPU runners)
         run: |
-          mkdir -p reports/benchmarks
+          mkdir -p "$RUNNER_TEMP/lq-benchmarks"
           uv run python scripts/ci/verify_polars_gpu_runtime.py \
             --mode auto \
-            --output-json reports/benchmarks/ci_gpu_contract.json
+            --output-json "$RUNNER_TEMP/lq-benchmarks/ci_gpu_contract.json"
 
   gpu-runtime-smoke:
     needs:
@@ -226,8 +239,8 @@ jobs:
           LQ_GPU_MODE: forced-gpu
           LQ_GPU_VERBOSE: "1"
         run: |
-          mkdir -p reports/benchmarks
+          mkdir -p "$RUNNER_TEMP/lq-benchmarks"
           uv run python scripts/ci/verify_polars_gpu_runtime.py \
             --require-gpu \
             --mode forced-gpu \
-            --output-json reports/benchmarks/ci_gpu_runtime.json
+            --output-json "$RUNNER_TEMP/lq-benchmarks/ci_gpu_runtime.json"

@@ -70,7 +70,7 @@ uv run lq live --no-selection --run-id shadow-$(date +%Y%m%d-%H%M%S) --stop-file
 
 ```bash
 uv run lq dashboard --print-contract
-cd apps/dashboard_web && npm run build
+cd apps/dashboard_web && npm install && npm run build
 ```
 
 ## 6) 안전 종료

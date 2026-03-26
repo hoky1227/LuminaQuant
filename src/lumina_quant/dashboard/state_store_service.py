@@ -1,4 +1,4 @@
-"""Dashboard data/state access helpers extracted from the Streamlit app."""
+"""Dashboard data/state access helpers retained from the retired legacy app."""
 
 from __future__ import annotations
 

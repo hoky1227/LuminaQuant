@@ -105,6 +105,9 @@ uv python pin 3.13
 # Example full local maintainer install
 uv sync --extra backtest --extra optimize --extra live-binance --extra live-mt5 --extra live-polymarket --extra dashboard --extra dev
 
+# Dashboard frontend (Next.js) also needs Node 20+ dependencies once
+cd apps/dashboard_web && npm install && cd ../..
+
 # (Optional) GPU runtime on Linux x86_64 + CUDA 12
 uv sync --extra gpu
 
@@ -283,8 +286,7 @@ uv run lq optimize --data-mode raw-first
 uv run lq live --transport poll
 uv run lq live --transport ws
 uv run lq dashboard --run
-uv run lq dashboard --mode next --print-contract
-uv run lq dashboard --mode next --run
+uv run lq dashboard --print-contract
 ```
 
 **Simple local start/stop wrappers (Linux/macOS shell):**
@@ -403,7 +405,7 @@ uv run python scripts/cleanup_ghost_runs.py --dsn \"$LQ_POSTGRES_DSN\" --stale-s
 **Realtime Dashboard Smoke Check (launcher + build path):**
 ```bash
 uv run lq dashboard --print-contract
-cd apps/dashboard_web && npm run build
+cd apps/dashboard_web && npm install && npm run build
 ```
 
 **Start Live Trading:**
@@ -564,7 +566,7 @@ uv run python scripts/quick_scan.py --profile quick --dry-run
 
 ## 📊 Dashboard Preview
 
-The included Streamlit dashboard provides professional-grade analytics:
+The included Next.js dashboard provides professional-grade analytics:
 
 - **Equity Curve & Drawdowns**: Visualize your portfolio growth and risk.
 - **Trade Analysis**: See exactly where buys and sells occurred on the chart.

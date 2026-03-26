@@ -105,6 +105,9 @@ uv python pin 3.13
 # 예시: 전체 로컬 개발 설치
 uv sync --extra backtest --extra optimize --extra live-binance --extra live-mt5 --extra live-polymarket --extra dashboard --extra dev
 
+# 대시보드 프런트엔드(Next.js)는 Node 20+ 의존성도 1회 설치 필요
+cd apps/dashboard_web && npm install && cd ../..
+
 # (선택 사항) Linux x86_64 + CUDA 12 GPU 런타임
 uv sync --extra gpu
 
@@ -281,8 +284,7 @@ uv run lq optimize --data-mode raw-first
 uv run lq live --transport poll
 uv run lq live --transport ws
 uv run lq dashboard --run
-uv run lq dashboard --mode next --print-contract
-uv run lq dashboard --mode next --run
+uv run lq dashboard --print-contract
 ```
 
 **간단한 로컬 시작/중지 래퍼 (Linux/macOS 셸):**
@@ -427,7 +429,7 @@ uv run lq dashboard --run
 **대시보드 스모크 체크 (런처 + 빌드 경로):**
 ```bash
 uv run lq dashboard --print-contract
-cd apps/dashboard_web && npm run build
+cd apps/dashboard_web && npm install && npm run build
 ```
 
 **Ghost RUNNING 정리 (PostgreSQL):**
@@ -490,7 +492,7 @@ uv run lq live --stop-file /tmp/lq.stop
 
 ## 📊 대시보드 미리보기
 
-내장된 Streamlit 대시보드는 전문가 수준의 분석을 제공합니다:
+내장된 Next.js 대시보드는 전문가 수준의 분석을 제공합니다:
 
 - **자산 곡선 & 낙폭**: 포트폴리오 성장과 리스크 시각화.
 - **매매 분석**: 차트상에서 매수/매도 타점 확인.

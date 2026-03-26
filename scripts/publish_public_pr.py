@@ -25,6 +25,7 @@ INTERNAL_PUBLISH_PATHS: tuple[str, ...] = (
     "publish_api.sh",
     "scripts/publish_public_pr.py",
     "tests/test_publish_public_pr.py",
+    ".github/workflows/private-ci.yml",
     "docs/WORKFLOW.md",
     "docs/WSL_CLONE_PRIVATE_PUBLIC.md",
     "docs/kr/WORKFLOW.md",
@@ -191,6 +192,7 @@ SENSITIVE_PATH_RE = re.compile(
     r"|^publish_api\.sh$"
     r"|^scripts/publish_public_pr\.py$"
     r"|^tests/test_publish_public_pr\.py$"
+    r"|^\.github/workflows/private-ci\.yml$"
     r"|^docs/WORKFLOW\.md$"
     r"|^docs/WSL_CLONE_PRIVATE_PUBLIC\.md$"
     r"|^docs/kr/WORKFLOW\.md$"

@@ -37,11 +37,14 @@ This lane supports market data, paper/shadow workflows, and experimental real ex
 ### Dashboard
 ```bash
 uv sync --extra dashboard --extra dev
+cd apps/dashboard_web && npm install
 ```
+Use when you need the Python dashboard helpers plus the primary Next.js dashboard runtime (Node 20+).
 
 ### Full local maintainer setup
 ```bash
 uv sync --extra backtest --extra optimize --extra live-binance --extra live-mt5 --extra live-polymarket --extra dashboard --extra dev
+cd apps/dashboard_web && npm install
 ```
 
 ## Compatibility aliases

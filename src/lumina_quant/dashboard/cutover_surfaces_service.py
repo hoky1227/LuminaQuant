@@ -835,7 +835,7 @@ def build_report_export_payload(
                 "Optimization Insights route is available in Next.js.",
                 "Raw Data route is available in Next.js.",
                 "Report Export route is available in Next.js.",
-                "Next is now the default launcher and the retired Streamlit entrypoint only remains as an explicit compatibility stub.",
+                "Next is now the default launcher and the retired legacy entrypoint only remains as an explicit compatibility stub.",
             ],
         },
     }

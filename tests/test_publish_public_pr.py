@@ -19,6 +19,7 @@ def test_sensitive_path_detection_blocks_private_trees():
     assert publish_public_pr.is_sensitive_path("publish_api.ps1")
     assert publish_public_pr.is_sensitive_path("publish_api.sh")
     assert publish_public_pr.is_sensitive_path("tests/test_publish_public_pr.py")
+    assert publish_public_pr.is_sensitive_path(".github/workflows/private-ci.yml")
     assert publish_public_pr.is_sensitive_path("docs/WORKFLOW.md")
     assert publish_public_pr.is_sensitive_path("docs/WSL_CLONE_PRIVATE_PUBLIC.md")
     assert publish_public_pr.is_sensitive_path("docs/kr/WORKFLOW.md")
@@ -52,6 +53,7 @@ def test_sensitive_path_detection_allows_public_runtime_paths():
     assert not publish_public_pr.is_sensitive_path("run_backtest.py")
     assert not publish_public_pr.is_sensitive_path("lumina_quant/backtesting/chunked_runner.py")
     assert not publish_public_pr.is_sensitive_path("docs/RUNBOOK_1Y_1S_LOCAL.md")
+    assert not publish_public_pr.is_sensitive_path(".github/workflows/ci.yml")
     assert not publish_public_pr.is_sensitive_path("src/lumina_quant/dashboard/retired_stub.py")
     assert not publish_public_pr.is_sensitive_path(
         "src/lumina_quant/strategies/sample_public_strategy.py"
@@ -194,6 +196,35 @@ def test_content_sensitive_detection_blocks_public_path_with_private_reference(t
     monkeypatch.chdir(repo)
     flagged = publish_public_pr._find_sensitive_content_paths([".github/workflows/ci.yml"])
     assert flagged == [".github/workflows/ci.yml"]
+
+
+def test_content_sensitive_detection_allows_public_safe_ci_workflow(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    workflow = repo / ".github" / "workflows" / "ci.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text(
+        "\n".join(
+            [
+                "name: ci",
+                "jobs:",
+                "  quality:",
+                "    steps:",
+                "      - run: uv sync --extra optimize --extra dev --extra live --extra dashboard",
+                "      - run: uv run python scripts/check_architecture.py",
+                "      - run: uv run pytest -q",
+                "      - run: cd apps/dashboard_web && npm run build",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(repo)
+    flagged = publish_public_pr._find_sensitive_content_paths([".github/workflows/ci.yml"])
+    assert flagged == []
 
 
 def test_content_sensitive_detection_scans_markdown_for_generic_strategy_terms(tmp_path, monkeypatch):

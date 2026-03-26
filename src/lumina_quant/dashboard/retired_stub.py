@@ -10,7 +10,7 @@ NEXT_DASHBOARD_ENTRY = "uv run lq dashboard --run"
 RETIREMENT_MESSAGE = f"""\
 LuminaQuant Dashboard Runtime Retired
 
-The legacy Streamlit dashboard runtime has been retired.
+The legacy dashboard runtime has been retired.
 
 Use the Next.js dashboard instead:
   {NEXT_DASHBOARD_ENTRY}
