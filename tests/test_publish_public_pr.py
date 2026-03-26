@@ -181,6 +181,39 @@ def test_drop_paths_from_public_removes_existing_public_publish_tooling(tmp_path
     assert staged_deleted == ["D\tdocs/WORKFLOW.md", "D\tscripts/publish_public_pr.py"]
 
 
+def test_publish_flow_keeps_source_gitignore_for_safe_generated_artifacts(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+
+    (repo / ".gitignore").write_text("", encoding="utf-8")
+    (repo / "README.md").write_text("public base\n", encoding="utf-8")
+    _run_git(repo, "add", ".")
+    _run_git(repo, "commit", "-m", "base")
+
+    _run_git(repo, "checkout", "-b", "source")
+    (repo / ".gitignore").write_text("generated/\n", encoding="utf-8")
+    (repo / "README.md").write_text("public safe change\n", encoding="utf-8")
+    generated = repo / "generated" / "artifact.txt"
+    generated.parent.mkdir(parents=True)
+    generated.write_text("local build output\n", encoding="utf-8")
+    _run_git(repo, "add", ".gitignore", "README.md")
+    _run_git(repo, "commit", "-m", "source")
+
+    monkeypatch.chdir(repo)
+    _run_git(repo, "checkout", "main")
+    merge = _run_git(repo, "merge", "source", "--no-commit", "--no-ff")
+    assert merge.returncode == 0
+
+    _run_git(repo, "reset")
+    _run_git(repo, "add", ".")
+
+    staged = _run_git(repo, "diff", "--cached", "--name-only").stdout.splitlines()
+    assert ".gitignore" in staged
+    assert "README.md" in staged
+    assert "generated/artifact.txt" not in staged
+
+
 def test_content_sensitive_detection_blocks_public_path_with_private_reference(tmp_path, monkeypatch):
     repo = tmp_path / "repo"
     repo.mkdir()

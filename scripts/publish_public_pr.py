@@ -539,7 +539,6 @@ def main() -> int:
             _git("checkout", "--theirs", "--", ".", check=False)
             _git("add", "-A", check=False)
 
-        _git("checkout", args.base_ref, "--", ".gitignore")
         _git("reset")
         _git("add", ".")
         _restore_protected_paths_from_base()
