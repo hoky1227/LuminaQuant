@@ -5,7 +5,7 @@ import { buildOverviewEmptyStateMessage } from '../lib/overview-status';
 describe('buildOverviewEmptyStateMessage', () => {
   it('keeps missing DSN guidance explicit', () => {
     expect(buildOverviewEmptyStateMessage('missing_dsn')).toBe(
-      'Set LQ_POSTGRES_DSN so the Next overview can read the same runtime state store as the Streamlit dashboard.',
+      'Set LQ_POSTGRES_DSN so the Next overview can read the same runtime state store as the dashboard services.',
     );
   });
 

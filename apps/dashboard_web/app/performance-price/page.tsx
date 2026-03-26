@@ -7,8 +7,7 @@ export default function PerformancePricePage() {
         <p className="eyebrow">Performance &amp; Price parity</p>
         <h2>Equity, drawdown, and benchmark telemetry</h2>
         <p>
-          This route covers the highest-priority performance slice from the Streamlit dashboard while staying Python-backed
-          and 8GB-safe.
+          This route covers the highest-priority performance slice while staying Python-backed and 8GB-safe.
         </p>
       </section>
       <section className="section-card">

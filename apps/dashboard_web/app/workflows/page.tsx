@@ -7,8 +7,7 @@ export default function WorkflowJobsPage() {
         <p className="eyebrow">Workflow parity</p>
         <h2>Managed jobs</h2>
         <p>
-          This route mirrors the Streamlit workflow job table so operators can inspect managed backtest, optimize, and live jobs from the
-          Next dashboard.
+          This route exposes managed backtest, optimize, and live jobs from the Next dashboard.
         </p>
       </section>
       <section className="section-card">

@@ -7,7 +7,7 @@ export default function RiskHealthPage() {
         <p className="eyebrow">Risk & Health parity</p>
         <h2>Operational telemetry</h2>
         <p>
-          This route mirrors the Streamlit risk and heartbeat tab with Python-backed telemetry from the latest run.
+          This route exposes risk and heartbeat telemetry from the latest run with Python-backed summaries.
         </p>
       </section>
       <section className="section-card">

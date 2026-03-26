@@ -8,7 +8,7 @@ export default function RawDataPage() {
         <h2>Capped frame previews for debugging and cutover evidence</h2>
         <p>
           This route exposes bounded raw-state previews for the latest run so the Next-default dashboard can be reviewed
-          without falling back to the retired Streamlit runtime.
+          without falling back to the retired legacy runtime.
         </p>
       </section>
       <section className="section-card">

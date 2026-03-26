@@ -11,7 +11,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
           <p className="eyebrow">LuminaQuant</p>
           <h1>Dashboard Web</h1>
           <p className="lede">
-            Next.js migration foundation for the Streamlit dashboard, kept intentionally lean for the 8GB baseline.
+            Next.js dashboard foundation, kept intentionally lean for the 8GB baseline.
           </p>
         </div>
         <nav aria-label="Dashboard sections">

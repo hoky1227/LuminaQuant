@@ -73,12 +73,12 @@ export const dashboardCutoverGate = {
     },
     {
       label: 'Default launcher flipped',
-      detail: 'uv run lq dashboard --run now targets the Next dashboard by default, while the legacy Streamlit entrypoint only remains as an explicit compatibility stub.',
+      detail: 'uv run lq dashboard --run now targets the Next dashboard by default, while the retired legacy entrypoint only remains as an explicit compatibility stub.',
       status: 'available',
     },
   ],
   remainingGate:
-    'Next is the only primary dashboard runtime. The legacy Streamlit path is retired to explicit compatibility guidance.',
+    'Next is the only primary dashboard runtime. The retired legacy path only remains for explicit compatibility guidance.',
 } as const;
 
 export const dashboardBridgeContract = {

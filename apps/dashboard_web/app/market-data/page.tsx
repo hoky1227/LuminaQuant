@@ -7,8 +7,7 @@ export default function MarketDataPage() {
         <p className="eyebrow">Market Data parity</p>
         <h2>Market bars and context under the cutover guardrail</h2>
         <p>
-          This route mirrors the Streamlit market-data tab with Python-backed OHLCV context while keeping the launcher
-          on Streamlit by default.
+          This route exposes Python-backed OHLCV context while keeping the default dashboard launcher on Next.
         </p>
       </section>
       <section className="section-card">

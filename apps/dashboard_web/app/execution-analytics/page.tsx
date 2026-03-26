@@ -7,7 +7,7 @@ export default function ExecutionAnalyticsPage() {
         <p className="eyebrow">Execution Analytics parity</p>
         <h2>Fill quality and closed-trade outcomes</h2>
         <p>
-          This route mirrors the Streamlit execution analytics tab with lean Python-backed summaries for the latest run.
+          This route exposes execution analytics with lean Python-backed summaries for the latest run.
         </p>
       </section>
       <section className="section-card">

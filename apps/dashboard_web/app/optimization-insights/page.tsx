@@ -7,8 +7,8 @@ export default function OptimizationInsightsPage() {
         <p className="eyebrow">Optimization Insights parity</p>
         <h2>Candidate quality and best-parameter previews</h2>
         <p>
-          This route keeps optimization evidence visible in Next.js without changing the guarded Streamlit launcher
-          default during cutover prep.
+          This route keeps optimization evidence visible in the Next dashboard while preserving the guarded default
+          launcher flow.
         </p>
       </section>
       <section className="section-card">

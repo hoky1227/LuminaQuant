@@ -7,7 +7,7 @@ export default function ReportExportPage() {
         <p className="eyebrow">Report Export parity</p>
         <h2>Snapshot JSON and Markdown export</h2>
         <p>
-          This cutover-prep route keeps report export explicit in Next.js while preserving Streamlit as the default launcher.
+          This route keeps report export explicit in Next.js for the default dashboard launcher.
         </p>
       </section>
       <section className="section-card">
