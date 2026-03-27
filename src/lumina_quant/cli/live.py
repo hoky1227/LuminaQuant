@@ -53,6 +53,14 @@ def _resolve_transport(value: str | None) -> str:
     raise ValueError(f"Unsupported --transport: {value}")
 
 
+def _resolve_effective_transport(*, transport: str, market_data_source: str) -> str:
+    selected_transport = str(transport or "poll").strip().lower() or "poll"
+    selected_source = str(market_data_source or "committed").strip().lower() or "committed"
+    if selected_source == "committed" and selected_transport == "ws":
+        return "poll"
+    return selected_transport
+
+
 def _shutdown_on_fatal(trader, exc: Exception) -> None:
     print(f"\nCritical live-data contract breach: {exc}")
     ordered_shutdown = getattr(trader, "_ordered_shutdown", None)
@@ -179,10 +187,15 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Exchange: {LiveConfig.EXCHANGE}")
     market_data_source = str(getattr(LiveConfig, "MARKET_DATA_SOURCE", "committed"))
     order_state_source = str(getattr(LiveConfig, "ORDER_STATE_SOURCE", "polling"))
+    effective_transport = _resolve_effective_transport(
+        transport=transport,
+        market_data_source=market_data_source,
+    )
     print(f"Market Data Source: {market_data_source}")
     print(f"Order State Source: {order_state_source}")
-    print(f"Transport: {transport}")
-    if market_data_source == "committed" and transport == "ws":
+    print(f"Requested Transport: {transport}")
+    print(f"Effective Transport: {effective_transport}")
+    if effective_transport != transport:
         print(
             "[WARN] --transport=ws is ignored when live.market_data_source=committed "
             "(committed reader path remains active)."
@@ -203,7 +216,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Strategy Params: {strategy_params}")
 
     try:
-        live_runtime = build_live_runtime_contract(transport=transport)
+        live_runtime = build_live_runtime_contract(transport=effective_transport)
         LiveTrader = live_runtime.engine_cls
         LiveDataFatalError = live_runtime.fatal_error_cls
         data_handler_cls = live_runtime.data_handler_cls

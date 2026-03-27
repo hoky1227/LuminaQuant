@@ -120,6 +120,66 @@ def test_run_live_ws_exits_with_code_2_on_fail_fast(monkeypatch):
     assert int(exc.value.code) == 2
 
 
+def test_committed_market_data_forces_poll_transport_even_when_ws_requested(monkeypatch, capsys):
+    captured: dict[str, object] = {}
+
+    class _LiveConfig:
+        SYMBOLS = ["BTC/USDT"]
+        IS_TESTNET = True
+        EXCHANGE = {"driver": "binance_futures", "name": "binance", "market_type": "future"}
+        TIMEFRAME = "1m"
+        MARKET_DATA_SOURCE = "committed"
+        ORDER_STATE_SOURCE = "polling"
+        MATERIALIZED_STALENESS_THRESHOLD_SECONDS = 45
+        MATERIALIZED_STALENESS_ALERT_COOLDOWN_SECONDS = 60
+
+        @classmethod
+        def validate(cls):
+            return None
+
+    class _Strategy:
+        __name__ = "RsiStrategy"
+
+    class _Trader:
+        def __init__(self, *args, **kwargs):
+            _ = args, kwargs
+            self.data_handler = SimpleNamespace(consume_fatal_error=lambda: None)
+
+        @staticmethod
+        def run():
+            return None
+
+    monkeypatch.setattr(live_cli, "LiveConfig", _LiveConfig)
+    monkeypatch.setattr(
+        live_cli,
+        "_strategy_helpers",
+        lambda: (
+            "RsiStrategy",
+            lambda include_opt_in=True: {"RsiStrategy": _Strategy},
+            lambda *_args, **_kwargs: _Strategy,
+        ),
+    )
+
+    def _capture_contract(*, transport="poll"):
+        captured["transport"] = transport
+        return SimpleNamespace(
+            engine_cls=_Trader,
+            data_handler_cls=object,
+            execution_handler_cls=object,
+            portfolio_cls=object,
+            fatal_error_cls=RuntimeError,
+            transport=transport,
+        )
+
+    monkeypatch.setattr(live_cli, "build_live_runtime_contract", _capture_contract)
+
+    assert live_cli.main(["--transport", "ws", "--no-selection"]) == 0
+    assert captured["transport"] == "poll"
+    captured_output = capsys.readouterr().out
+    assert "Requested Transport: ws" in captured_output
+    assert "Effective Transport: poll" in captured_output
+
+
 def test_selection_overrides_are_applied_before_live_config_validation(monkeypatch):
     observed: dict[str, object] = {}
     validate_calls: list[tuple[list[str], str]] = []
