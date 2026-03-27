@@ -4,7 +4,6 @@ import argparse
 import os
 
 from lumina_quant.backtesting.cli_contract import RawFirstDataMissingError
-from lumina_quant.backtesting.portfolio_backtest import Portfolio
 from lumina_quant.cli._strategy_registry_fallback import (
     import_private_strategy_registry,
     load_strategy_registry,
@@ -17,37 +16,12 @@ from lumina_quant.live_selection import (
     load_selection_payload,
     resolve_selection_file,
 )
+from lumina_quant.system_assembly import build_live_runtime_contract
+
 DEFAULT_LIVE_STRATEGY_NAME = "MovingAverageCrossStrategy"
 DEFAULT_WS_STRATEGY_NAME = "RsiStrategy"
 STRATEGY_MAP = None
 resolve_strategy_class = None
-LiveDataHandler = None
-LiveExecutionHandler = None
-LiveDataFatalError = None
-LiveTrader = None
-
-
-def _runtime_classes():
-    global LiveDataHandler, LiveExecutionHandler, LiveDataFatalError, LiveTrader
-    if LiveDataHandler is None:
-        from lumina_quant.live.data_poll import LiveDataHandler as _LiveDataHandler
-
-        LiveDataHandler = _LiveDataHandler
-    if LiveExecutionHandler is None:
-        from lumina_quant.live.execution_live import (
-            LiveExecutionHandler as _LiveExecutionHandler,
-        )
-
-        LiveExecutionHandler = _LiveExecutionHandler
-    if LiveDataFatalError is None or LiveTrader is None:
-        from lumina_quant.live.trader import (
-            LiveDataFatalError as _LiveDataFatalError,
-            LiveTrader as _LiveTrader,
-        )
-
-        LiveDataFatalError = LiveDataFatalError or _LiveDataFatalError
-        LiveTrader = LiveTrader or _LiveTrader
-    return LiveDataHandler, LiveExecutionHandler, LiveDataFatalError, LiveTrader
 
 
 def _strategy_helpers():
@@ -135,7 +109,6 @@ def main(argv: list[str] | None = None) -> int:
 
     default_strategy_registry_name, get_live_strategy_map, resolve_strategy_class = _strategy_helpers()
     strategy_map = STRATEGY_MAP if isinstance(STRATEGY_MAP, dict) else get_live_strategy_map(include_opt_in=True)
-    LiveDataHandler, LiveExecutionHandler, LiveDataFatalError, LiveTrader = _runtime_classes()
 
     transport = _resolve_transport(args.transport)
     if args.enable_live_real:
@@ -158,6 +131,8 @@ def main(argv: list[str] | None = None) -> int:
     strategy_name = strategy_cls.__name__
     selection_path = None
     selection_cfg = None
+    LiveDataFatalError = RuntimeError
+    trader = None
 
     if not bool(args.no_selection):
         selection_path = resolve_selection_file(args.selection_file)
@@ -227,19 +202,19 @@ def main(argv: list[str] | None = None) -> int:
     )
     print(f"Strategy Params: {strategy_params}")
 
-    data_handler_cls = LiveDataHandler
-    if transport == "ws":
-        from lumina_quant.live.data_ws import BinanceWebSocketDataHandler
-
-        data_handler_cls = BinanceWebSocketDataHandler
-
-    trader = None
     try:
+        live_runtime = build_live_runtime_contract(transport=transport)
+        LiveTrader = live_runtime["engine_cls"]
+        LiveDataFatalError = live_runtime["fatal_error_cls"]
+        data_handler_cls = live_runtime["data_handler_cls"]
+        execution_handler_cls = live_runtime["execution_handler_cls"]
+        portfolio_cls = live_runtime["portfolio_cls"]
+
         trader = LiveTrader(
             symbol_list=symbol_list,
             data_handler_cls=data_handler_cls,
-            execution_handler_cls=LiveExecutionHandler,
-            portfolio_cls=Portfolio,
+            execution_handler_cls=execution_handler_cls,
+            portfolio_cls=portfolio_cls,
             strategy_cls=strategy_cls,
             strategy_params=strategy_params,
             strategy_name=strategy_name,

@@ -64,6 +64,7 @@ class LiveTrader(TradingEngine):
     ):
         self.logger = setup_logging("LiveTrader")
         self._audit_closed = True
+        self._run_exit_status = "FAILED"
         self.run_id = None
         self.symbol_list = list(symbol_list or [])
         self.events = queue.Queue()
@@ -77,20 +78,6 @@ class LiveTrader(TradingEngine):
         self.external_run_id = str(external_run_id or "")
         self.state_manager = StateManager()
         self.risk_manager = RiskManager(self.config)
-        self.audit_store: AuditStore = AuditStore(self.config.POSTGRES_DSN)
-        self.run_id = self.audit_store.start_run(
-            mode="live",
-            metadata={
-                "symbols": self.symbol_list,
-                "exchange": self.config.EXCHANGE,
-                "mode": self.config.MODE,
-                "strategy": self.strategy_name,
-                "strategy_params": self.strategy_params,
-                "stop_file": self.stop_file,
-            },
-            run_id=self.external_run_id or None,
-        )
-        self._audit_closed = False
         self.heartbeat_interval_sec = max(1, int(self.config.HEARTBEAT_INTERVAL_SEC))
         self.reconciliation_interval_sec = max(
             5,
@@ -140,113 +127,141 @@ class LiveTrader(TradingEngine):
             float(getattr(self.config, "RECONCILIATION_FALLBACK_WINDOW_SECONDS", 120.0) or 120.0),
         )
         self._startup_reconciliation_complete = False
+        self._startup_state = "starting"
+        self._startup_state_reason = ""
+        self._startup_notification_sent = False
         self._user_stream_client: BinanceUserStreamClient | None = None
         self._user_stream_last_event_monotonic = time.monotonic()
         self._fallback_poll_until_monotonic = 0.0
         self._last_fallback_reason = ""
         self.outbox_events: list[dict] = []
-        atexit.register(self._close_audit_store)
 
         # Initialize Notification Manager
         self.notifier = NotificationManager(
             self.config.TELEGRAM_BOT_TOKEN, self.config.TELEGRAM_CHAT_ID
         )
-        self.notifier.send_message(
-            f"🚀 **LuminaQuant Started**\nSymbols: {symbol_list}\nStrategy: {self.strategy_name}"
-        )
 
-        # Initialize Exchange
-        self.logger.info("Initializing Exchange...")
-        self.exchange = get_exchange(self.config)
-        self.symbol_list = self._filter_unavailable_symbols(self.symbol_list)
-        if not self.symbol_list:
-            raise RuntimeError("No tradable symbols are available on exchange after market sync.")
-        self.config = _snapshot_live_config(self._config_source, symbols=self.symbol_list)
-        self.risk_manager.config = self.config
-
-        # Initialize Handlers with Exchange
-        self.data_handler = data_handler_cls(
-            self.events, self.symbol_list, self.config, self.exchange
-        )
-        self.execution_handler = execution_handler_cls(
-            self.events, self.data_handler, self.config, self.exchange
-        )
-        if hasattr(self.execution_handler, "set_order_state_callback"):
-            self.execution_handler.set_order_state_callback(self._on_order_state)
-        if self.order_state_source == "user_stream":
-            self._start_user_stream()
-        self._recovery_service = RecoveryReconciliationService(
-            reconcile_positions=lambda: self._reconcile_positions(force=True),
-            reconcile_orders=lambda: self._reconcile_orders(force=True),
-            tracked_orders_count=lambda: len(
-                getattr(self.execution_handler, "tracked_orders", {}) or {}
-            ),
-            cache_open_orders_count=lambda: len(self.runtime_cache.open_orders or {}),
-            exchange_open_orders_count=lambda: int(
-                getattr(self.execution_handler, "exchange_open_order_count", lambda: 0)()
-            ),
-            exchange_snapshot_ready=lambda: bool(
-                getattr(self.execution_handler, "exchange_open_snapshot_ready", lambda: False)()
-            ),
-            tracked_order_signature=lambda: tuple(
-                getattr(self.execution_handler, "tracked_order_signature", lambda: tuple())()
-            ),
-            cache_open_order_signature=self._cache_open_order_signature,
-            exchange_open_order_signature=lambda: tuple(
-                getattr(self.execution_handler, "exchange_open_order_signature", lambda: tuple())()
-            ),
-        )
-
-        self.portfolio = portfolio_cls(self.data_handler, self.events, time.time(), self.config)
-        self.strategy = strategy_cls(self.data_handler, self.events, **self.strategy_params)
         try:
-            configured_cadence = max(
-                1,
-                int(getattr(self.config, "DECISION_CADENCE_SECONDS", 20)),
+            # Initialize Exchange
+            self.logger.info("Initializing Exchange...")
+            self.exchange = get_exchange(self.config)
+            self.symbol_list = self._filter_unavailable_symbols(self.symbol_list)
+            if not self.symbol_list:
+                raise RuntimeError("No tradable symbols are available on exchange after market sync.")
+            self.config = _snapshot_live_config(self._config_source, symbols=self.symbol_list)
+            self.risk_manager.config = self.config
+
+            # Initialize Handlers with Exchange
+            self.data_handler = data_handler_cls(
+                self.events, self.symbol_list, self.config, self.exchange
             )
-            if int(getattr(self.strategy, "decision_cadence_seconds", 0) or 0) <= 0:
-                self.strategy.decision_cadence_seconds = configured_cadence
-        except Exception:
-            pass
-        self.materialized_staleness_threshold_seconds = max(
-            1,
-            int(
-                getattr(
-                    self.config,
-                    "MATERIALIZED_STALENESS_THRESHOLD_SECONDS",
-                    45,
-                )
-                or 45
-            ),
-        )
-        self.materialized_staleness_alert_cooldown_seconds = max(
-            1,
-            int(
-                getattr(
-                    self.config,
-                    "MATERIALIZED_STALENESS_ALERT_COOLDOWN_SECONDS",
-                    60,
-                )
-                or 60
-            ),
-        )
-        self._materialized_stale_block_active = False
-        self._materialized_fresh_streak = 0
-        self._materialized_last_alert_monotonic = 0.0
-        self._hard_halt_active = False
-        self._hard_halt_reason = ""
+            self.execution_handler = execution_handler_cls(
+                self.events, self.data_handler, self.config, self.exchange
+            )
+            if hasattr(self.execution_handler, "set_order_state_callback"):
+                self.execution_handler.set_order_state_callback(self._on_order_state)
 
-        # Initialize Base Engine
-        super().__init__(
-            self.events,
-            self.data_handler,
-            self.strategy,
-            self.portfolio,
-            self.execution_handler,
-        )
+            self.portfolio = portfolio_cls(
+                self.data_handler, self.events, time.time(), self.config
+            )
+            self.strategy = strategy_cls(self.data_handler, self.events, **self.strategy_params)
+            try:
+                configured_cadence = max(
+                    1,
+                    int(getattr(self.config, "DECISION_CADENCE_SECONDS", 20)),
+                )
+                if int(getattr(self.strategy, "decision_cadence_seconds", 0) or 0) <= 0:
+                    self.strategy.decision_cadence_seconds = configured_cadence
+            except Exception:
+                pass
+            self.materialized_staleness_threshold_seconds = max(
+                1,
+                int(
+                    getattr(
+                        self.config,
+                        "MATERIALIZED_STALENESS_THRESHOLD_SECONDS",
+                        45,
+                    )
+                    or 45
+                ),
+            )
+            self.materialized_staleness_alert_cooldown_seconds = max(
+                1,
+                int(
+                    getattr(
+                        self.config,
+                        "MATERIALIZED_STALENESS_ALERT_COOLDOWN_SECONDS",
+                        60,
+                    )
+                    or 60
+                ),
+            )
+            self._materialized_stale_block_active = False
+            self._materialized_fresh_streak = 0
+            self._materialized_last_alert_monotonic = 0.0
+            self._hard_halt_active = False
+            self._hard_halt_reason = ""
 
-        # Load State
-        self._load_state()
+            self.audit_store: AuditStore = AuditStore(self.config.POSTGRES_DSN)
+            self.run_id = self.audit_store.start_run(
+                mode="live",
+                metadata={
+                    "symbols": self.symbol_list,
+                    "exchange": self.config.EXCHANGE,
+                    "mode": self.config.MODE,
+                    "strategy": self.strategy_name,
+                    "strategy_params": self.strategy_params,
+                    "stop_file": self.stop_file,
+                    "startup_state": self._startup_state,
+                },
+                run_id=self.external_run_id or None,
+            )
+            self._audit_closed = False
+            atexit.register(self._close_audit_store)
+
+            if self.order_state_source == "user_stream":
+                self._start_user_stream()
+            self._recovery_service = RecoveryReconciliationService(
+                reconcile_positions=lambda: self._reconcile_positions(force=True),
+                reconcile_orders=lambda: self._reconcile_orders(force=True),
+                tracked_orders_count=lambda: len(
+                    getattr(self.execution_handler, "tracked_orders", {}) or {}
+                ),
+                cache_open_orders_count=lambda: len(self.runtime_cache.open_orders or {}),
+                exchange_open_orders_count=lambda: int(
+                    getattr(self.execution_handler, "exchange_open_order_count", lambda: 0)()
+                ),
+                exchange_snapshot_ready=lambda: bool(
+                    getattr(self.execution_handler, "exchange_open_snapshot_ready", lambda: False)()
+                ),
+                tracked_order_signature=lambda: tuple(
+                    getattr(self.execution_handler, "tracked_order_signature", lambda: tuple())()
+                ),
+                cache_open_order_signature=self._cache_open_order_signature,
+                exchange_open_order_signature=lambda: tuple(
+                    getattr(self.execution_handler, "exchange_open_order_signature", lambda: tuple())()
+                ),
+            )
+
+            # Initialize Base Engine
+            super().__init__(
+                self.events,
+                self.data_handler,
+                self.strategy,
+                self.portfolio,
+                self.execution_handler,
+            )
+
+            # Load State
+            self._load_state()
+        except Exception as exc:
+            self._set_startup_state("failed_init", error=exc)
+            try:
+                self._notify_startup_state()
+            except Exception:
+                pass
+            self._close_audit_store(status="FAILED")
+            raise
 
     def _filter_unavailable_symbols(self, symbols):
         requested = [str(symbol) for symbol in list(symbols or [])]
@@ -315,16 +330,76 @@ class LiveTrader(TradingEngine):
     def _close_audit_store(self, status=None):
         if self._audit_closed:
             return
+        final_status = str(status or self._run_exit_status or "").strip().upper() or "FAILED"
         try:
-            if status and self.run_id:
-                self.audit_store.end_run(self.run_id, status=status)
+            end_run = getattr(self.audit_store, "end_run", None)
+            if self.run_id and callable(end_run):
+                end_run(
+                    self.run_id,
+                    status=final_status,
+                    metadata={
+                        "startup_state": str(self._startup_state),
+                        "startup_reason": str(self._startup_state_reason),
+                    },
+                )
         except Exception:
             pass
         try:
-            self.audit_store.close()
+            close = getattr(self.audit_store, "close", None)
+            if callable(close):
+                close()
         except Exception:
             pass
         self._audit_closed = True
+
+    def _set_startup_state(self, state: str, *, reason: str = "", error: Exception | None = None) -> None:
+        self._startup_state = str(state)
+        self._startup_state_reason = str(reason or (str(error) if error is not None else ""))
+        logger = getattr(self, "logger", None)
+        if logger is not None:
+            logger.info(
+                "LIVE_STARTUP_STATE state=%s reason=%s",
+                self._startup_state,
+                self._startup_state_reason or "n/a",
+            )
+        if self.run_id and not self._audit_closed:
+            try:
+                self.audit_store.log_risk_event(
+                    self.run_id,
+                    reason=f"STARTUP_STATE_{self._startup_state.upper()}",
+                    details={
+                        "reason": self._startup_state_reason,
+                        "error": str(error) if error is not None else "",
+                    },
+                )
+            except Exception:
+                pass
+
+    def _notify_startup_state(self) -> None:
+        if self._startup_notification_sent:
+            return
+        if self._startup_state == "ready":
+            message = (
+                "🚀 **LuminaQuant Started**\n"
+                f"Symbols: {self.symbol_list}\n"
+                f"Strategy: {self.strategy_name}"
+            )
+        elif self._startup_state == "degraded":
+            message = (
+                "⚠️ **LuminaQuant Started in Degraded Mode**\n"
+                f"Reason: {self._startup_state_reason or 'startup_reconciliation_timeout'}\n"
+                f"Symbols: {self.symbol_list}\n"
+                f"Strategy: {self.strategy_name}"
+            )
+        elif self._startup_state == "failed_init":
+            message = (
+                "🛑 **LuminaQuant Failed During Startup**\n"
+                f"Reason: {self._startup_state_reason or 'initialization_error'}"
+            )
+        else:
+            return
+        self.notifier.send_message(message)
+        self._startup_notification_sent = True
 
     def _start_user_stream(self) -> None:
         if self.order_state_source != "user_stream":
@@ -1053,6 +1128,7 @@ class LiveTrader(TradingEngine):
     def _run_startup_reconciliation_gate(self) -> None:
         if self.order_state_source != "user_stream":
             self._startup_reconciliation_complete = True
+            self._set_startup_state("ready")
             return
 
         self.portfolio.trading_frozen = True
@@ -1062,6 +1138,7 @@ class LiveTrader(TradingEngine):
         if outcome.converged:
             self._startup_reconciliation_complete = True
             self.portfolio.trading_frozen = False
+            self._set_startup_state("ready")
             self.audit_store.log_risk_event(
                 self.run_id,
                 reason="STARTUP_RECONCILIATION_COMPLETE",
@@ -1095,6 +1172,7 @@ class LiveTrader(TradingEngine):
             raise LiveDataFatalError("startup_reconciliation_timeout")
         self._startup_reconciliation_complete = True
         self.portfolio.trading_frozen = False
+        self._set_startup_state("degraded", reason="startup_reconciliation_timeout")
         self.audit_store.log_risk_event(
             self.run_id,
             reason="STARTUP_RECONCILIATION_DEGRADED",
@@ -1107,8 +1185,17 @@ class LiveTrader(TradingEngine):
     def run(self):
         """Main Live Trading Loop."""
         self.logger.info(f"Starting Live Trading on {self.symbol_list}...")
-        self._sync_portfolio()
-        self._run_startup_reconciliation_gate()
+        try:
+            self._sync_portfolio()
+            self._run_startup_reconciliation_gate()
+            self._run_exit_status = "STOPPED"
+            self._notify_startup_state()
+        except Exception as exc:
+            self._set_startup_state("failed_init", error=exc)
+            self._notify_startup_state()
+            self._run_exit_status = "FAILED"
+            self._close_audit_store(status="FAILED")
+            raise
 
         while True:
             try:
@@ -1122,6 +1209,7 @@ class LiveTrader(TradingEngine):
                     self._trigger_hard_halt(reason=reason, error=fatal_exc)
                     self._save_state()
                     self._ordered_shutdown()
+                    self._run_exit_status = "FAILED"
                     self._close_audit_store(status="FAILED")
                     raise LiveDataFatalError(str(fatal_exc)) from fatal_exc
 
@@ -1132,6 +1220,7 @@ class LiveTrader(TradingEngine):
                     )
                     self._save_state()
                     self._ordered_shutdown()
+                    self._run_exit_status = "STOPPED"
                     self._close_audit_store(status="STOPPED")
                     break
 
@@ -1233,13 +1322,16 @@ class LiveTrader(TradingEngine):
                 self.logger.info("Stopping Live Trader...")
                 self._save_state()  # Save on exit
                 self._ordered_shutdown()
+                self._run_exit_status = "STOPPED"
                 self._close_audit_store(status="STOPPED")
                 break
             except LiveDataFatalError:
+                self._run_exit_status = "FAILED"
                 raise
             except Exception as e:
                 self.logger.error(f"Error in main loop: {e}")
                 self._save_state()  # Save on crash attempt
+                self._run_exit_status = "FAILED"
                 self.audit_store.log_risk_event(
                     self.run_id, reason="MAIN_LOOP_ERROR", details={"error": str(e)}
                 )

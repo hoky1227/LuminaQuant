@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import math
-import os
 import queue
 import random
 from collections.abc import Iterable, Mapping, Sequence
@@ -33,6 +32,7 @@ from lumina_quant.strategy_factory.research_reporting import ResearchReportBuild
 from lumina_quant.strategy_factory.strategy_signal_dispatch import StrategySignalDispatcher
 
 resolve_risk_free_config = _research_metrics.resolve_risk_free_config
+_resolve_feature_points_path = _research_run_support._resolve_feature_points_path
 
 _PERIODS_PER_YEAR = {
     "1s": 31_536_000,
@@ -70,38 +70,6 @@ def _current_research_market_data_settings(
 
 
 DEFAULT_RESEARCH_SCORING_CONFIG = _research_run_support.DEFAULT_RESEARCH_SCORING_CONFIG
-
-
-def _resolve_feature_points_path() -> Path:
-    candidates: list[Path] = []
-    defaults = _current_research_market_data_settings()
-
-    for raw in (
-        os.getenv("LQ_MARKET_PARQUET_PATH", ""),
-        defaults["parquet_root"],
-        "data/market_parquet",
-    ):
-        token = str(raw or "").strip()
-        if not token:
-            continue
-        path = Path(token).expanduser()
-        if not path.is_absolute():
-            path = (Path.cwd() / path).resolve()
-        candidates.append(path / "feature_points")
-
-    repo_root = Path(__file__).resolve()
-    for parent in repo_root.parents:
-        candidates.append(parent / "data" / "market_parquet" / "feature_points")
-
-    seen: set[Path] = set()
-    for candidate in candidates:
-        resolved = candidate.resolve()
-        if resolved in seen:
-            continue
-        seen.add(resolved)
-        if resolved.exists():
-            return resolved
-    return candidates[0].resolve() if candidates else (Path.cwd() / "data" / "market_parquet" / "feature_points").resolve()
 
 
 def _resolve_score_config(overrides: Mapping[str, Any] | None) -> dict[str, Any]:

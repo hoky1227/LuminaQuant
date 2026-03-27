@@ -55,7 +55,9 @@ def test_live_help_does_not_force_runtime_or_strategy_loading(monkeypatch):
     )
     monkeypatch.setattr(
         live_cli,
-        "_runtime_classes",
-        lambda: (_ for _ in ()).throw(AssertionError("runtime classes loaded during help")),
+        "build_live_runtime_contract",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("runtime contract loaded during help")
+        ),
     )
     assert cli_main.main(["live", "--help"]) == 0

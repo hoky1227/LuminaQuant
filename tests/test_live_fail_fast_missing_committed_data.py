@@ -92,7 +92,18 @@ def _patch_entrypoint_env(monkeypatch, module, *, strategy_name: str):
     monkeypatch.setattr(module, "LiveConfig", _LiveConfig)
     monkeypatch.setattr(module, "STRATEGY_MAP", {strategy_name: _Strategy})
     monkeypatch.setattr(module, "resolve_strategy_class", lambda *_args, **_kwargs: _Strategy)
-    monkeypatch.setattr(module, "LiveTrader", _Trader)
+    monkeypatch.setattr(
+        module,
+        "build_live_runtime_contract",
+        lambda **_kwargs: {
+            "engine_cls": _Trader,
+            "data_handler_cls": object,
+            "execution_handler_cls": object,
+            "portfolio_cls": object,
+            "fatal_error_cls": RuntimeError,
+            "transport": "poll",
+        },
+    )
 
 
 def test_run_live_exits_with_code_2_on_fail_fast(monkeypatch):
@@ -153,8 +164,15 @@ def test_selection_overrides_are_applied_before_live_config_validation(monkeypat
     )
     monkeypatch.setattr(
         live_cli,
-        "_runtime_classes",
-        lambda: (object, object, RuntimeError, _Trader),
+        "build_live_runtime_contract",
+        lambda **_kwargs: {
+            "engine_cls": _Trader,
+            "data_handler_cls": object,
+            "execution_handler_cls": object,
+            "portfolio_cls": object,
+            "fatal_error_cls": RuntimeError,
+            "transport": "poll",
+        },
     )
     monkeypatch.setattr(live_cli, "resolve_selection_file", lambda _path="": "fake-selection.json")
     monkeypatch.setattr(live_cli, "load_selection_payload", lambda _path: {"ok": True})
