@@ -204,11 +204,11 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         live_runtime = build_live_runtime_contract(transport=transport)
-        LiveTrader = live_runtime["engine_cls"]
-        LiveDataFatalError = live_runtime["fatal_error_cls"]
-        data_handler_cls = live_runtime["data_handler_cls"]
-        execution_handler_cls = live_runtime["execution_handler_cls"]
-        portfolio_cls = live_runtime["portfolio_cls"]
+        LiveTrader = live_runtime.engine_cls
+        LiveDataFatalError = live_runtime.fatal_error_cls
+        data_handler_cls = live_runtime.data_handler_cls
+        execution_handler_cls = live_runtime.execution_handler_cls
+        portfolio_cls = live_runtime.portfolio_cls
 
         trader = LiveTrader(
             symbol_list=symbol_list,
