@@ -314,3 +314,45 @@ def test_append_raw_aggtrades_compacts_back_to_single_part_when_batches_overlap(
     assert written == 2
     assert part_files == ["part-0000.parquet"]
     assert raw.height == 3
+
+
+def test_load_raw_aggtrades_skips_corrupt_incremental_parts(tmp_path):
+    repo = ParquetMarketDataRepository(str(tmp_path))
+    repo.append_raw_aggtrades(
+        exchange="binance",
+        symbol="BTC/USDT",
+        rows=[
+            {
+                "agg_trade_id": 1,
+                "timestamp_ms": 1_735_689_600_000,
+                "price": 100.0,
+                "quantity": 0.1,
+                "is_buyer_maker": False,
+            }
+        ],
+    )
+    repo.append_raw_aggtrades(
+        exchange="binance",
+        symbol="BTC/USDT",
+        rows=[
+            {
+                "agg_trade_id": 2,
+                "timestamp_ms": 1_735_689_601_000,
+                "price": 101.0,
+                "quantity": 0.2,
+                "is_buyer_maker": True,
+            }
+        ],
+    )
+
+    part_dir = repo.raw_partition_path(
+        exchange="binance",
+        symbol="BTC/USDT",
+        partition_date="2025-01-01",
+    ).parent
+    (part_dir / "part-0002.parquet").write_bytes(b"not-a-real-parquet-file")
+
+    raw = repo.load_raw_aggtrades(exchange="binance", symbol="BTC/USDT")
+
+    assert raw.height == 2
+    assert raw["agg_trade_id"].to_list() == [1, 2]

@@ -655,6 +655,27 @@ class ParquetMarketDataRepository:
         )
 
     @staticmethod
+    def _normalize_loaded_raw_aggtrades_frame(frame: pl.DataFrame) -> pl.DataFrame:
+        if frame.is_empty():
+            return ParquetMarketDataRepository._empty_raw_aggtrades_frame()
+        return (
+            frame.select(list(_RAW_AGGTRADES_REQUIRED_COLUMNS))
+            .with_columns(
+                [
+                    pl.col("agg_trade_id").cast(pl.Int64),
+                    pl.col("timestamp_ms").cast(pl.Int64),
+                    pl.col("price").cast(pl.Float64),
+                    pl.col("quantity").cast(pl.Float64),
+                    pl.col("is_buyer_maker").cast(pl.Boolean),
+                ]
+            )
+            .filter(pl.col("timestamp_ms").is_not_null())
+            .sort(["timestamp_ms", "agg_trade_id"])
+            .unique(subset=["timestamp_ms", "agg_trade_id"], keep="last")
+            .sort(["timestamp_ms", "agg_trade_id"])
+        )
+
+    @staticmethod
     def _ensure_raw_aggtrades_frame(
         rows: pl.DataFrame | list[dict[str, Any]] | tuple[dict[str, Any], ...],
     ) -> pl.DataFrame:
@@ -833,7 +854,9 @@ class ParquetMarketDataRepository:
         if not candidates:
             return self._empty_raw_aggtrades_frame()
 
-        frames: list[pl.DataFrame] = []
+        start_ms = self._datetime_to_ms(start_dt)
+        end_ms = self._datetime_to_ms(end_dt)
+        filtered_paths: list[Path] = []
         for path in candidates:
             try:
                 partition_token = path.parent.name.replace("date=", "", 1)
@@ -844,6 +867,25 @@ class ParquetMarketDataRepository:
                 continue
             if end_dt is not None and partition_dt is not None and partition_dt.date() > end_dt.date():
                 continue
+            filtered_paths.append(path)
+
+        if not filtered_paths:
+            return self._empty_raw_aggtrades_frame()
+
+        try:
+            lazy = pl.scan_parquet([str(path) for path in filtered_paths]).select(
+                list(_RAW_AGGTRADES_REQUIRED_COLUMNS)
+            )
+            if start_dt is not None:
+                lazy = lazy.filter(pl.col("timestamp_ms") >= int(start_ms or 0))
+            if end_dt is not None:
+                lazy = lazy.filter(pl.col("timestamp_ms") <= int(end_ms or 0))
+            return self._normalize_loaded_raw_aggtrades_frame(self._collect_lazy(lazy))
+        except Exception:
+            pass
+
+        frames: list[pl.DataFrame] = []
+        for path in filtered_paths:
             try:
                 loaded = pl.read_parquet(path).select(list(_RAW_AGGTRADES_REQUIRED_COLUMNS))
             except Exception:
@@ -855,14 +897,7 @@ class ParquetMarketDataRepository:
         if not frames:
             return self._empty_raw_aggtrades_frame()
 
-        merged = (
-            pl.concat(frames, how="vertical_relaxed")
-            .sort(["timestamp_ms", "agg_trade_id"])
-            .unique(subset=["timestamp_ms", "agg_trade_id"], keep="last")
-            .sort(["timestamp_ms", "agg_trade_id"])
-        )
-        start_ms = self._datetime_to_ms(start_dt)
-        end_ms = self._datetime_to_ms(end_dt)
+        merged = self._normalize_loaded_raw_aggtrades_frame(pl.concat(frames, how="vertical_relaxed"))
         if start_dt is not None:
             merged = merged.filter(pl.col("timestamp_ms") >= int(start_ms or 0))
         if end_dt is not None:
