@@ -12,7 +12,6 @@ import numpy as np
 
 from lumina_quant.backtesting.cli_contract import RawFirstDataMissingError
 from lumina_quant.config import BacktestConfig
-from lumina_quant.eval.exact_window_runtime import RSSGuard
 from lumina_quant.eval.final_validation import (
     build_latest_anchored_split,
     discover_latest_common_complete_timestamp,
@@ -23,10 +22,11 @@ from lumina_quant.portfolio_split_contract import (
     FOLLOWUP_ROOT,
     OOS_START,
     PORTFOLIO_CURRENT_OPTIMIZATION,
-    PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES,
     TRAIN_START,
     VAL_END_EXCLUSIVE,
     VAL_START,
+    acquire_portfolio_memory_guard,
+    portfolio_followup_default_budget_bytes,
     resolve_incumbent_bundle_path,
 )
 from lumina_quant.storage.parquet import normalize_symbol, timeframe_to_milliseconds
@@ -725,7 +725,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--memory-budget-bytes",
         type=int,
-        default=PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES,
+        default=portfolio_followup_default_budget_bytes(),
     )
     parser.add_argument("--soft-rss-bytes", type=int, default=DEFAULT_SOFT_RSS_BYTES)
     return parser
@@ -777,10 +777,19 @@ def main(argv: list[str] | None = None) -> int:
     )
     required_pairs = _required_symbol_timeframes(selected_team)
 
-    guard = RSSGuard(
-        log_path=Path(args.rss_log),
-        label="final_portfolio_validation",
+    guard = acquire_portfolio_memory_guard(
+        run_name="final_portfolio_validation",
+        output_dir=output_json.parent,
+        input_path=bundle_path,
+        metadata={
+            "portfolio_path": str(portfolio_path.resolve()),
+            "refresh_report_path": (
+                str(refresh_report_path.resolve()) if refresh_report_path.exists() else None
+            ),
+            "soft_rss_bytes": max(1, int(args.soft_rss_bytes)),
+        },
         budget_bytes=max(1, int(args.memory_budget_bytes)),
+        rss_log_path=Path(args.rss_log),
         soft_limit_bytes=max(1, int(args.soft_rss_bytes)),
         hard_limit_bytes=max(1, int(args.memory_budget_bytes)),
     )
@@ -959,6 +968,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         output_json.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
         output_md.write_text(build_markdown(payload), encoding="utf-8")
+        guard.release()
 
     print(json.dumps(payload, indent=2, sort_keys=True))
     return 0

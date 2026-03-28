@@ -123,6 +123,11 @@ def test_acquire_portfolio_memory_guard_propagates_explicit_budget(tmp_path: Pat
             {"acquire": staticmethod(lambda **kwargs: DummyLock())},
         ),
     )
+    monkeypatch.setattr(
+        portfolio_contract,
+        "acquire_session_memory_lease",
+        lambda **kwargs: DummyLock(),
+    )
     monkeypatch.setattr(portfolio_contract, "RSSGuard", DummyGuard)
 
     budget_bytes = 8 * 1024 * 1024 * 1024

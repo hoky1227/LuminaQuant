@@ -74,7 +74,12 @@ def test_run_portfolio_optimization_script_smoke(tmp_path: Path):
     result = subprocess.run(cmd, cwd=str(root), check=False, capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
     assert (out_dir / "portfolio_optimization_latest.json").exists()
-    assert (out_dir / "portfolio_optimization_latest.json").read_text(encoding="utf-8")
+    payload = json.loads((out_dir / "portfolio_optimization_latest.json").read_text(encoding="utf-8"))
+    assert payload["status"] == "completed"
+    assert str((payload.get("memory") or {}).get("artifact_kind") or "") == "portfolio_followup_memory_summary"
+    assert str(((payload.get("memory") or {}).get("memory_policy") or {}).get("session_memory_lease_path") or "").endswith(
+        "session_memory_budget.lock"
+    )
 
 
 def test_run_portfolio_optimization_uses_score_config_weights_and_caps(tmp_path: Path):

@@ -14,8 +14,9 @@ from typing import Any
 import numpy as np
 
 from lumina_quant.portfolio_split_contract import (
-    PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES,
+    acquire_portfolio_memory_guard,
     memory_policy_payload,
+    portfolio_followup_default_budget_bytes,
 )
 
 _METALS = {"XAU/USDT", "XAG/USDT", "XPT/USDT", "XPD/USDT"}
@@ -690,7 +691,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-family-cap", type=float, default=None)
     parser.add_argument("--max-asset-cap", type=float, default=None)
     parser.add_argument("--max-metals-cap", type=float, default=None)
-    parser.add_argument("--memory-budget-bytes", type=int, default=PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES)
+    parser.add_argument(
+        "--memory-budget-bytes",
+        type=int,
+        default=portfolio_followup_default_budget_bytes(),
+    )
     return parser
 
 
@@ -702,368 +707,402 @@ def main() -> int:
     score_config_payload: dict[str, Any] | None = None
     score_config_path = None
     memory_budget_bytes = max(1, int(args.memory_budget_bytes))
-    if str(args.score_config).strip():
-        score_config_path = Path(str(args.score_config)).resolve()
-        try:
-            score_config_payload = _load_score_config(score_config_path)
-        except ValueError as exc:
-            raise SystemExit(f"[PORTFOLIO] {exc}")
-    optimization_config = _resolve_portfolio_score_config(score_config_payload)
-    rank_weights = dict(optimization_config.get("candidate_rank_score_weights") or {})
-    allocation_quality_params = dict(optimization_config.get("allocation_quality_params") or {})
-    vol_targeting_params = dict(optimization_config.get("vol_targeting") or {})
-    sensitivity_params = dict(optimization_config.get("sensitivity") or {})
-    constraint_defaults = dict(optimization_config.get("constraints") or {})
-    fit_split = _canonical_split(args.fit_split, default="val")
-    report_split = _canonical_split(args.report_split, default="oos")
+    memory_guard = acquire_portfolio_memory_guard(
+        run_name="portfolio_optimization",
+        output_dir=output_dir,
+        input_path=args.research_report,
+        metadata={
+            "team_report": str(Path(args.team_report).resolve()) if str(args.team_report).strip() else None,
+            "soft_rss_bytes": memory_budget_bytes,
+            "max_strategies": int(args.max_strategies),
+        },
+        budget_bytes=memory_budget_bytes,
+    )
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    json_path = output_dir / f"portfolio_optimization_{stamp}.json"
+    json_latest = output_dir / "portfolio_optimization_latest.json"
+    md_path = output_dir / f"portfolio_optimization_{stamp}.md"
+    md_latest = output_dir / "portfolio_optimization_latest.md"
+    markdown = "# Portfolio Optimization Report\n\n- Status: failed\n"
+    report: dict[str, Any] = {
+        "artifact_kind": "portfolio_optimization",
+        "generated_at": datetime.now(UTC).isoformat(),
+        "status": "failed",
+        "error": None,
+        "memory_policy": memory_policy_payload(budget_bytes=memory_budget_bytes),
+    }
 
-    rows_raw, source_path = _load_rows(args)
-    if not rows_raw:
-        raise RuntimeError("No candidate rows available for optimization.")
+    try:
+        if str(args.score_config).strip():
+            score_config_path = Path(str(args.score_config)).resolve()
+            try:
+                score_config_payload = _load_score_config(score_config_path)
+            except ValueError as exc:
+                raise SystemExit(f"[PORTFOLIO] {exc}")
+        optimization_config = _resolve_portfolio_score_config(score_config_payload)
+        rank_weights = dict(optimization_config.get("candidate_rank_score_weights") or {})
+        allocation_quality_params = dict(optimization_config.get("allocation_quality_params") or {})
+        vol_targeting_params = dict(optimization_config.get("vol_targeting") or {})
+        sensitivity_params = dict(optimization_config.get("sensitivity") or {})
+        constraint_defaults = dict(optimization_config.get("constraints") or {})
+        fit_split = _canonical_split(args.fit_split, default="val")
+        report_split = _canonical_split(args.report_split, default="oos")
 
-    # Filter by pass + non-empty fit/report streams.
-    filtered = [
-        row
-        for row in rows_raw
-        if bool(row.get("pass", True))
-        and _split_stream(row, fit_split)
-        and _split_stream(row, report_split)
-    ]
-    if not filtered:
+        rows_raw, source_path = _load_rows(args)
+        if not rows_raw:
+            raise RuntimeError("No candidate rows available for optimization.")
+        memory_guard.checkpoint(
+            "start",
+            {
+                "source_report": source_path,
+                "fit_split": fit_split,
+                "report_split": report_split,
+                "candidate_count": len(rows_raw),
+            },
+        )
+
         filtered = [
             row
             for row in rows_raw
-            if _split_stream(row, fit_split) or _split_stream(row, report_split)
-        ] or rows_raw
+            if bool(row.get("pass", True))
+            and _split_stream(row, fit_split)
+            and _split_stream(row, report_split)
+        ]
+        if not filtered:
+            filtered = [
+                row
+                for row in rows_raw
+                if _split_stream(row, fit_split) or _split_stream(row, report_split)
+            ] or rows_raw
 
-    # Rank by robust fit-split quality.
-    def _score(row: dict[str, Any]) -> float:
-        fit_metrics = _split_metrics(row, fit_split)
-        return float(
-            (_safe_float(rank_weights.get("sharpe_weight"), 2.8) * _safe_float(fit_metrics.get("sharpe"), 0.0))
-            + (
-                _safe_float(rank_weights.get("deflated_sharpe_weight"), 1.5)
-                * _safe_float(fit_metrics.get("deflated_sharpe"), 0.0)
-            )
-            - (_safe_float(rank_weights.get("pbo_penalty"), 2.0) * _safe_float(fit_metrics.get("pbo"), 1.0))
-            + (_safe_float(rank_weights.get("return_weight"), 25.0) * _safe_float(fit_metrics.get("return"), 0.0))
-        )
-
-    filtered.sort(key=_score, reverse=True)
-    selected = filtered[: max(1, int(args.max_strategies))]
-
-    rows = {str(row.get("candidate_id") or row.get("name")): row for row in selected}
-    ids = list(rows.keys())
-    fit_streams = {cid: _split_stream(rows[cid], fit_split) for cid in ids}
-    fit_map = {cid: _stream_to_array(fit_streams[cid]) for cid in ids}
-
-    # 1) Correlation clustering.
-    clusters = _cluster_by_correlation(ids, fit_streams, threshold=float(args.correlation_threshold))
-
-    # 2) HRP-like allocation (inverse-vol cluster + member weights with turnover penalty).
-    cluster_weight_raw: dict[int, float] = {}
-    member_weight_raw: dict[str, float] = {}
-    for c_idx, cluster in enumerate(clusters):
-        cluster_rets = [fit_map[cid] for cid in cluster if fit_map[cid].size > 0]
-        min_len = min((arr.size for arr in cluster_rets), default=0)
-        if min_len <= 0:
-            cluster_weight_raw[c_idx] = 1.0
-            for cid in cluster:
-                member_weight_raw[cid] = 1.0 / max(1, len(cluster))
-            continue
-
-        cluster_port = np.zeros(min_len, dtype=float)
-        invs = np.asarray([_inverse_vol_weight(arr[-min_len:]) for arr in cluster_rets], dtype=float)
-        inv_sum = float(np.sum(invs))
-        invs = invs / inv_sum if inv_sum > 0 else np.ones_like(invs) / len(invs)
-
-        for arr_weight, arr in zip(invs, cluster_rets, strict=True):
-            cluster_port += arr_weight * arr[-min_len:]
-
-        cluster_weight_raw[c_idx] = _inverse_vol_weight(cluster_port)
-
-        for cid in cluster:
-            row = rows[cid]
+        def _score(row: dict[str, Any]) -> float:
             fit_metrics = _split_metrics(row, fit_split)
-            quality = max(
-                _safe_float(allocation_quality_params.get("deflated_sharpe_floor"), 0.01),
-                _safe_float(fit_metrics.get("deflated_sharpe"), 0.0)
-                + _safe_float(allocation_quality_params.get("deflated_sharpe_offset"), 0.5),
+            return float(
+                (_safe_float(rank_weights.get("sharpe_weight"), 2.8) * _safe_float(fit_metrics.get("sharpe"), 0.0))
+                + (
+                    _safe_float(rank_weights.get("deflated_sharpe_weight"), 1.5)
+                    * _safe_float(fit_metrics.get("deflated_sharpe"), 0.0)
+                )
+                - (_safe_float(rank_weights.get("pbo_penalty"), 2.0) * _safe_float(fit_metrics.get("pbo"), 1.0))
+                + (_safe_float(rank_weights.get("return_weight"), 25.0) * _safe_float(fit_metrics.get("return"), 0.0))
             )
-            inv_vol = _inverse_vol_weight(fit_map[cid])
-            turnover = _safe_float(fit_metrics.get("turnover"), 0.0)
-            penalty = 1.0 + (float(args.cost_penalty) * turnover)
-            member_weight_raw[cid] = (quality * inv_vol) / max(1e-9, penalty)
 
-    cluster_total = float(sum(cluster_weight_raw.values()))
-    cluster_weights = {
-        key: (value / cluster_total if cluster_total > 0 else 1.0 / max(1, len(cluster_weight_raw)))
-        for key, value in cluster_weight_raw.items()
-    }
+        filtered.sort(key=_score, reverse=True)
+        selected = filtered[: max(1, int(args.max_strategies))]
 
-    weights: dict[str, float] = {}
-    for c_idx, cluster in enumerate(clusters):
-        raw = np.asarray([member_weight_raw[cid] for cid in cluster], dtype=float)
-        raw_sum = float(np.sum(raw))
-        if raw_sum <= 0.0:
-            raw = np.ones(len(cluster), dtype=float)
-            raw_sum = float(len(cluster))
-        normalized = raw / raw_sum
-        for cid, w in zip(cluster, normalized, strict=True):
-            weights[cid] = float(cluster_weights[c_idx] * w)
+        rows = {str(row.get("candidate_id") or row.get("name")): row for row in selected}
+        ids = list(rows.keys())
+        fit_streams = {cid: _split_stream(rows[cid], fit_split) for cid in ids}
+        fit_map = {cid: _stream_to_array(fit_streams[cid]) for cid in ids}
+        clusters = _cluster_by_correlation(ids, fit_streams, threshold=float(args.correlation_threshold))
 
-    # 3) Apply constraints and caps.
-    configured_caps = {
-        "max_strategy": _resolved_cli_or_config_float(
-            args.max_strategy_cap,
-            constraint_defaults.get("max_strategy"),
-            default=0.15,
-        ),
-        "max_family": _resolved_cli_or_config_float(
-            args.max_family_cap,
-            constraint_defaults.get("max_family"),
-            default=0.40,
-        ),
-        "max_asset": _resolved_cli_or_config_float(
-            args.max_asset_cap,
-            constraint_defaults.get("max_asset"),
-            default=0.20,
-        ),
-        "max_metals": _resolved_cli_or_config_float(
-            args.max_metals_cap,
-            constraint_defaults.get("max_metals"),
-            default=0.15,
-        ),
-    }
-    weights, effective_caps = _apply_caps(
-        weights,
-        records=rows,
-        max_strategy=configured_caps["max_strategy"],
-        max_family=configured_caps["max_family"],
-        max_asset=configured_caps["max_asset"],
-        max_metals=configured_caps["max_metals"],
-    )
+        cluster_weight_raw: dict[int, float] = {}
+        member_weight_raw: dict[str, float] = {}
+        for c_idx, cluster in enumerate(clusters):
+            cluster_rets = [fit_map[cid] for cid in cluster if fit_map[cid].size > 0]
+            min_len = min((arr.size for arr in cluster_rets), default=0)
+            if min_len <= 0:
+                cluster_weight_raw[c_idx] = 1.0
+                for cid in cluster:
+                    member_weight_raw[cid] = 1.0 / max(1, len(cluster))
+                continue
 
-    # 4) Vol targeting.
-    target_vol_floor = max(0.0, _safe_float(vol_targeting_params.get("target_vol_floor"), 0.01))
-    vol_scale_cap = max(0.0, _safe_float(vol_targeting_params.get("vol_scale_cap"), 2.0))
-    vol_scale_epsilon = max(0.0, _safe_float(vol_targeting_params.get("vol_scale_epsilon"), 1e-12))
-    portfolio_fit = _build_portfolio_returns(weights, rows, split=fit_split)
-    fit_vol = _safe_float(np.std(portfolio_fit, ddof=1), 0.0)
-    target_vol = max(target_vol_floor, float(args.target_vol))
-    vol_scale = 1.0 if fit_vol <= vol_scale_epsilon else min(vol_scale_cap, target_vol / max(vol_scale_epsilon, fit_vol))
-    for key in weights:
-        weights[key] *= vol_scale
+            cluster_port = np.zeros(min_len, dtype=float)
+            invs = np.asarray([_inverse_vol_weight(arr[-min_len:]) for arr in cluster_rets], dtype=float)
+            inv_sum = float(np.sum(invs))
+            invs = invs / inv_sum if inv_sum > 0 else np.ones_like(invs) / len(invs)
 
-    # Re-normalize after vol scaling to keep full allocation.
-    total = float(sum(weights.values()))
-    if total > 0:
+            for arr_weight, arr in zip(invs, cluster_rets, strict=True):
+                cluster_port += arr_weight * arr[-min_len:]
+
+            cluster_weight_raw[c_idx] = _inverse_vol_weight(cluster_port)
+
+            for cid in cluster:
+                row = rows[cid]
+                fit_metrics = _split_metrics(row, fit_split)
+                quality = max(
+                    _safe_float(allocation_quality_params.get("deflated_sharpe_floor"), 0.01),
+                    _safe_float(fit_metrics.get("deflated_sharpe"), 0.0)
+                    + _safe_float(allocation_quality_params.get("deflated_sharpe_offset"), 0.5),
+                )
+                inv_vol = _inverse_vol_weight(fit_map[cid])
+                turnover = _safe_float(fit_metrics.get("turnover"), 0.0)
+                penalty = 1.0 + (float(args.cost_penalty) * turnover)
+                member_weight_raw[cid] = (quality * inv_vol) / max(1e-9, penalty)
+
+        cluster_total = float(sum(cluster_weight_raw.values()))
+        cluster_weights = {
+            key: (value / cluster_total if cluster_total > 0 else 1.0 / max(1, len(cluster_weight_raw)))
+            for key, value in cluster_weight_raw.items()
+        }
+
+        weights: dict[str, float] = {}
+        for c_idx, cluster in enumerate(clusters):
+            raw = np.asarray([member_weight_raw[cid] for cid in cluster], dtype=float)
+            raw_sum = float(np.sum(raw))
+            if raw_sum <= 0.0:
+                raw = np.ones(len(cluster), dtype=float)
+                raw_sum = float(len(cluster))
+            normalized = raw / raw_sum
+            for cid, w in zip(cluster, normalized, strict=True):
+                weights[cid] = float(cluster_weights[c_idx] * w)
+
+        configured_caps = {
+            "max_strategy": _resolved_cli_or_config_float(
+                args.max_strategy_cap,
+                constraint_defaults.get("max_strategy"),
+                default=0.15,
+            ),
+            "max_family": _resolved_cli_or_config_float(
+                args.max_family_cap,
+                constraint_defaults.get("max_family"),
+                default=0.40,
+            ),
+            "max_asset": _resolved_cli_or_config_float(
+                args.max_asset_cap,
+                constraint_defaults.get("max_asset"),
+                default=0.20,
+            ),
+            "max_metals": _resolved_cli_or_config_float(
+                args.max_metals_cap,
+                constraint_defaults.get("max_metals"),
+                default=0.15,
+            ),
+        }
+        weights, effective_caps = _apply_caps(
+            weights,
+            records=rows,
+            max_strategy=configured_caps["max_strategy"],
+            max_family=configured_caps["max_family"],
+            max_asset=configured_caps["max_asset"],
+            max_metals=configured_caps["max_metals"],
+        )
+
+        target_vol_floor = max(0.0, _safe_float(vol_targeting_params.get("target_vol_floor"), 0.01))
+        vol_scale_cap = max(0.0, _safe_float(vol_targeting_params.get("vol_scale_cap"), 2.0))
+        vol_scale_epsilon = max(0.0, _safe_float(vol_targeting_params.get("vol_scale_epsilon"), 1e-12))
+        portfolio_fit = _build_portfolio_returns(weights, rows, split=fit_split)
+        fit_vol = _safe_float(np.std(portfolio_fit, ddof=1), 0.0)
+        target_vol = max(target_vol_floor, float(args.target_vol))
+        vol_scale = 1.0 if fit_vol <= vol_scale_epsilon else min(
+            vol_scale_cap,
+            target_vol / max(vol_scale_epsilon, fit_vol),
+        )
         for key in weights:
-            weights[key] /= total
+            weights[key] *= vol_scale
 
-    # Portfolio metrics across splits.
-    portfolio_train_stream = _build_portfolio_stream(weights, rows, split="train")
-    portfolio_val_stream = _build_portfolio_stream(weights, rows, split="val")
-    portfolio_oos_stream = _build_portfolio_stream(weights, rows, split="oos")
-    portfolio_fit_stream = _build_portfolio_stream(weights, rows, split=fit_split)
-    portfolio_report_stream = _build_portfolio_stream(weights, rows, split=report_split)
+        total = float(sum(weights.values()))
+        if total > 0:
+            for key in weights:
+                weights[key] /= total
 
-    portfolio_train = _stream_to_array(portfolio_train_stream)
-    portfolio_val = _stream_to_array(portfolio_val_stream)
-    portfolio_oos = _stream_to_array(portfolio_oos_stream)
-    portfolio_fit = _stream_to_array(portfolio_fit_stream)
-    portfolio_report = _stream_to_array(portfolio_report_stream)
+        portfolio_train_stream = _build_portfolio_stream(weights, rows, split="train")
+        portfolio_val_stream = _build_portfolio_stream(weights, rows, split="val")
+        portfolio_oos_stream = _build_portfolio_stream(weights, rows, split="oos")
+        portfolio_fit_stream = _build_portfolio_stream(weights, rows, split=fit_split)
+        portfolio_report_stream = _build_portfolio_stream(weights, rows, split=report_split)
 
-    train_metrics = _metrics(portfolio_train)
-    val_metrics = _metrics(portfolio_val)
-    oos_metrics = _metrics(portfolio_oos)
-    fit_metrics = _metrics(portfolio_fit)
-    report_metrics = _metrics(portfolio_report)
+        portfolio_train = _stream_to_array(portfolio_train_stream)
+        portfolio_val = _stream_to_array(portfolio_val_stream)
+        portfolio_oos = _stream_to_array(portfolio_oos_stream)
+        portfolio_fit = _stream_to_array(portfolio_fit_stream)
+        portfolio_report = _stream_to_array(portfolio_report_stream)
 
-    # Cost sensitivity (x2/x3).
-    weighted_turnover = 0.0
-    weighted_cost = 0.0
-    for cid, weight in weights.items():
-        row = rows[cid]
-        report_row_metrics = _split_metrics(row, report_split)
-        cost = _safe_float(((row.get("metadata") or {}).get("cost_rate")), 0.0005)
-        weighted_turnover += weight * _safe_float(report_row_metrics.get("turnover"), 0.0)
-        weighted_cost += weight * cost
+        train_metrics = _metrics(portfolio_train)
+        val_metrics = _metrics(portfolio_val)
+        oos_metrics = _metrics(portfolio_oos)
+        fit_metrics = _metrics(portfolio_fit)
+        report_metrics = _metrics(portfolio_report)
 
-    cost_stress_x2_multiplier = _safe_float(sensitivity_params.get("cost_stress_x2_multiplier"), 2.0)
-    cost_stress_x3_multiplier = _safe_float(sensitivity_params.get("cost_stress_x3_multiplier"), 3.0)
-    signal_drift_down_multiplier = _safe_float(sensitivity_params.get("signal_drift_down_multiplier"), 0.9)
-    signal_drift_up_multiplier = _safe_float(sensitivity_params.get("signal_drift_up_multiplier"), 1.1)
+        weighted_turnover = 0.0
+        weighted_cost = 0.0
+        for cid, weight in weights.items():
+            row = rows[cid]
+            report_row_metrics = _split_metrics(row, report_split)
+            cost = _safe_float(((row.get("metadata") or {}).get("cost_rate")), 0.0005)
+            weighted_turnover += weight * _safe_float(report_row_metrics.get("turnover"), 0.0)
+            weighted_cost += weight * cost
 
-    report_x2 = portfolio_report - (max(0.0, cost_stress_x2_multiplier - 1.0) * weighted_turnover * weighted_cost)
-    report_x3 = portfolio_report - (max(0.0, cost_stress_x3_multiplier - 1.0) * weighted_turnover * weighted_cost)
+        cost_stress_x2_multiplier = _safe_float(sensitivity_params.get("cost_stress_x2_multiplier"), 2.0)
+        cost_stress_x3_multiplier = _safe_float(sensitivity_params.get("cost_stress_x3_multiplier"), 3.0)
+        signal_drift_down_multiplier = _safe_float(sensitivity_params.get("signal_drift_down_multiplier"), 0.9)
+        signal_drift_up_multiplier = _safe_float(sensitivity_params.get("signal_drift_up_multiplier"), 1.1)
 
-    sensitivity = {
-        "cost_stress": {
-            "x2": _metrics(report_x2),
-            "x3": _metrics(report_x3),
-        },
-        "param_drift": {
-            "minus_10pct_signal": _metrics(portfolio_report * signal_drift_down_multiplier),
-            "plus_10pct_signal": _metrics(portfolio_report * signal_drift_up_multiplier),
-        },
-    }
+        report_x2 = portfolio_report - (
+            max(0.0, cost_stress_x2_multiplier - 1.0) * weighted_turnover * weighted_cost
+        )
+        report_x3 = portfolio_report - (
+            max(0.0, cost_stress_x3_multiplier - 1.0) * weighted_turnover * weighted_cost
+        )
 
-    # Sleeve budgets.
-    sleeve_budget: dict[str, float] = defaultdict(float)
-    for cid, weight in weights.items():
-        sleeve = str(rows[cid].get("family") or "other")
-        sleeve_budget[sleeve] += float(weight)
+        sensitivity = {
+            "cost_stress": {
+                "x2": _metrics(report_x2),
+                "x3": _metrics(report_x3),
+            },
+            "param_drift": {
+                "minus_10pct_signal": _metrics(portfolio_report * signal_drift_down_multiplier),
+                "plus_10pct_signal": _metrics(portfolio_report * signal_drift_up_multiplier),
+            },
+        }
 
-    ranked_weights = sorted(weights.items(), key=lambda item: item[1], reverse=True)
-    allocation_rows = []
-    for cid, weight in ranked_weights:
-        row = rows[cid]
-        fit_row_metrics = _split_metrics(row, fit_split)
-        report_row_metrics = _split_metrics(row, report_split)
-        allocation_rows.append(
-            {
-                "candidate_id": cid,
-                "name": row.get("name"),
-                "strategy_class": row.get("strategy_class"),
-                "family": row.get("family"),
-                "symbols": list(row.get("symbols") or []),
-                "timeframe": row.get("strategy_timeframe") or row.get("timeframe"),
-                "weight": float(weight),
+        sleeve_budget: dict[str, float] = defaultdict(float)
+        for cid, weight in weights.items():
+            sleeve = str(rows[cid].get("family") or "other")
+            sleeve_budget[sleeve] += float(weight)
+
+        ranked_weights = sorted(weights.items(), key=lambda item: item[1], reverse=True)
+        allocation_rows = []
+        for cid, weight in ranked_weights:
+            row = rows[cid]
+            fit_row_metrics = _split_metrics(row, fit_split)
+            report_row_metrics = _split_metrics(row, report_split)
+            allocation_rows.append(
+                {
+                    "candidate_id": cid,
+                    "name": row.get("name"),
+                    "strategy_class": row.get("strategy_class"),
+                    "family": row.get("family"),
+                    "symbols": list(row.get("symbols") or []),
+                    "timeframe": row.get("strategy_timeframe") or row.get("timeframe"),
+                    "weight": float(weight),
+                    "fit_split": fit_split,
+                    "fit_sharpe": _safe_float(fit_row_metrics.get("sharpe"), 0.0),
+                    "fit_return": _safe_float(fit_row_metrics.get("return"), 0.0),
+                    "report_split": report_split,
+                    "report_sharpe": _safe_float(report_row_metrics.get("sharpe"), 0.0),
+                    "report_return": _safe_float(report_row_metrics.get("return"), 0.0),
+                    "oos_sharpe": _safe_float((row.get("oos") or {}).get("sharpe"), 0.0),
+                    "oos_return": _safe_float((row.get("oos") or {}).get("return"), 0.0),
+                }
+            )
+
+        report = {
+            "artifact_kind": "portfolio_optimization",
+            "generated_at": datetime.now(UTC).isoformat(),
+            "status": "completed",
+            "error": None,
+            "source_report": source_path,
+            "selection": {
                 "fit_split": fit_split,
-                "fit_sharpe": _safe_float(fit_row_metrics.get("sharpe"), 0.0),
-                "fit_return": _safe_float(fit_row_metrics.get("return"), 0.0),
                 "report_split": report_split,
-                "report_sharpe": _safe_float(report_row_metrics.get("sharpe"), 0.0),
-                "report_return": _safe_float(report_row_metrics.get("return"), 0.0),
-                "oos_sharpe": _safe_float((row.get("oos") or {}).get("sharpe"), 0.0),
-                "oos_return": _safe_float((row.get("oos") or {}).get("return"), 0.0),
-            }
+                "selection_basis": "validation_only" if fit_split == "val" and report_split == "oos" else f"{fit_split}_fit",
+            },
+            "cluster_count": len(clusters),
+            "clusters": clusters,
+            "constraints": {
+                "max_strategy": float(effective_caps.get("max_strategy", configured_caps["max_strategy"])),
+                "max_family": float(effective_caps.get("max_family", configured_caps["max_family"])),
+                "max_asset": float(effective_caps.get("max_asset", configured_caps["max_asset"])),
+                "max_metals": float(effective_caps.get("max_metals", configured_caps["max_metals"])),
+                "family_caps": dict(effective_caps.get("family_caps") or {}),
+                "configured": configured_caps,
+            },
+            "scoring": {
+                "candidate_rank_score_weights": {
+                    "sharpe_weight": _safe_float(rank_weights.get("sharpe_weight"), 2.8),
+                    "deflated_sharpe_weight": _safe_float(rank_weights.get("deflated_sharpe_weight"), 1.5),
+                    "pbo_penalty": _safe_float(rank_weights.get("pbo_penalty"), 2.0),
+                    "return_weight": _safe_float(rank_weights.get("return_weight"), 25.0),
+                },
+                "vol_targeting": {
+                    "target_vol_floor": float(target_vol_floor),
+                    "vol_scale_cap": float(vol_scale_cap),
+                    "vol_scale_epsilon": float(vol_scale_epsilon),
+                },
+                "sensitivity": {
+                    "cost_stress_x2_multiplier": float(cost_stress_x2_multiplier),
+                    "cost_stress_x3_multiplier": float(cost_stress_x3_multiplier),
+                    "signal_drift_down_multiplier": float(signal_drift_down_multiplier),
+                    "signal_drift_up_multiplier": float(signal_drift_up_multiplier),
+                },
+                "source": str(score_config_path) if score_config_path is not None else "",
+            },
+            "memory_policy": memory_policy_payload(budget_bytes=memory_budget_bytes),
+            "weights": allocation_rows,
+            "sleeve_budget": dict(sorted(sleeve_budget.items())),
+            "portfolio_return_streams": {
+                "train": portfolio_train_stream,
+                "val": portfolio_val_stream,
+                "oos": portfolio_oos_stream,
+                fit_split: portfolio_fit_stream,
+                report_split: portfolio_report_stream,
+            },
+            "portfolio_metrics": {
+                "train": train_metrics,
+                "val": val_metrics,
+                "oos": oos_metrics,
+                fit_split: fit_metrics,
+                report_split: report_metrics,
+            },
+            "fit_metrics": fit_metrics,
+            "report_metrics": report_metrics,
+            "sensitivity": sensitivity,
+        }
+        memory_guard.checkpoint(
+            "completed",
+            {
+                "selected_candidates": len(allocation_rows),
+                "cluster_count": len(clusters),
+            },
         )
 
-    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    report = {
-        "generated_at": datetime.now(UTC).isoformat(),
-        "source_report": source_path,
-        "selection": {
-            "fit_split": fit_split,
-            "report_split": report_split,
-            "selection_basis": "validation_only" if fit_split == "val" and report_split == "oos" else f"{fit_split}_fit",
-        },
-        "cluster_count": len(clusters),
-        "clusters": clusters,
-        "constraints": {
-            "max_strategy": float(effective_caps.get("max_strategy", configured_caps["max_strategy"])),
-            "max_family": float(effective_caps.get("max_family", configured_caps["max_family"])),
-            "max_asset": float(effective_caps.get("max_asset", configured_caps["max_asset"])),
-            "max_metals": float(effective_caps.get("max_metals", configured_caps["max_metals"])),
-            "family_caps": dict(effective_caps.get("family_caps") or {}),
-            "configured": configured_caps,
-        },
-        "scoring": {
-            "candidate_rank_score_weights": {
-                "sharpe_weight": _safe_float(rank_weights.get("sharpe_weight"), 2.8),
-                "deflated_sharpe_weight": _safe_float(rank_weights.get("deflated_sharpe_weight"), 1.5),
-                "pbo_penalty": _safe_float(rank_weights.get("pbo_penalty"), 2.0),
-                "return_weight": _safe_float(rank_weights.get("return_weight"), 25.0),
-            },
-            "vol_targeting": {
-                "target_vol_floor": float(target_vol_floor),
-                "vol_scale_cap": float(vol_scale_cap),
-                "vol_scale_epsilon": float(vol_scale_epsilon),
-            },
-            "sensitivity": {
-                "cost_stress_x2_multiplier": float(cost_stress_x2_multiplier),
-                "cost_stress_x3_multiplier": float(cost_stress_x3_multiplier),
-                "signal_drift_down_multiplier": float(signal_drift_down_multiplier),
-                "signal_drift_up_multiplier": float(signal_drift_up_multiplier),
-            },
-            "source": str(score_config_path) if score_config_path is not None else "",
-        },
-        "memory_policy": memory_policy_payload(budget_bytes=memory_budget_bytes),
-        "weights": allocation_rows,
-        "sleeve_budget": dict(sorted(sleeve_budget.items())),
-        "portfolio_return_streams": {
-            "train": portfolio_train_stream,
-            "val": portfolio_val_stream,
-            "oos": portfolio_oos_stream,
-            fit_split: portfolio_fit_stream,
-            report_split: portfolio_report_stream,
-        },
-        "portfolio_metrics": {
-            "train": train_metrics,
-            "val": val_metrics,
-            "oos": oos_metrics,
-            fit_split: fit_metrics,
-            report_split: report_metrics,
-        },
-        "fit_metrics": fit_metrics,
-        "report_metrics": report_metrics,
-        "sensitivity": sensitivity,
-    }
-
-    json_path = output_dir / f"portfolio_optimization_{stamp}.json"
-    json_latest = output_dir / "portfolio_optimization_latest.json"
-    json_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
-    json_latest.write_text(json.dumps(report, indent=2), encoding="utf-8")
-
-    md_path = output_dir / f"portfolio_optimization_{stamp}.md"
-    lines = [
-        "# Portfolio Optimization Report",
-        "",
-        f"- Source report: `{source_path}`",
-        f"- Fit split: `{fit_split}`",
-        f"- Report split: `{report_split}`",
-        f"- Clusters: {len(clusters)}",
-        "",
-        "## Sleeve budgets",
-        "",
-    ]
-    for family, weight in sorted(sleeve_budget.items()):
-        lines.append(f"- {family}: {weight:.2%}")
-
-    lines.extend(
-        [
+        lines = [
+            "# Portfolio Optimization Report",
             "",
-            "## Top strategy weights",
+            f"- Source report: `{source_path}`",
+            f"- Fit split: `{fit_split}`",
+            f"- Report split: `{report_split}`",
+            f"- Clusters: {len(clusters)}",
             "",
-            "| # | Name | Strategy | Family | TF | Weight | Fit Sharpe | Fit Return | Report Sharpe | Report Return |",
-            "|---:|---|---|---|---|---:|---:|---:|---:|---:|",
+            "## Sleeve budgets",
+            "",
         ]
-    )
-    for idx, row in enumerate(allocation_rows[:20], start=1):
-        lines.append(
-            "| "
-            f"{idx} | {row.get('name', '')} | {row.get('strategy_class', '')} | {row.get('family', '')} | "
-            f"{row.get('timeframe', '')} | {float(row.get('weight', 0.0)):.2%} | "
-            f"{float(row.get('fit_sharpe', 0.0)):.3f} | {float(row.get('fit_return', 0.0)):.2%} | "
-            f"{float(row.get('report_sharpe', 0.0)):.3f} | {float(row.get('report_return', 0.0)):.2%} |"
+        for family, weight in sorted(sleeve_budget.items()):
+            lines.append(f"- {family}: {weight:.2%}")
+
+        lines.extend(
+            [
+                "",
+                "## Top strategy weights",
+                "",
+                "| # | Name | Strategy | Family | TF | Weight | Fit Sharpe | Fit Return | Report Sharpe | Report Return |",
+                "|---:|---|---|---|---|---:|---:|---:|---:|---:|",
+            ]
         )
+        for idx, row in enumerate(allocation_rows[:20], start=1):
+            lines.append(
+                "| "
+                f"{idx} | {row['name']} | {row['strategy_class']} | {row['family']} | {row['timeframe']} | "
+                f"{row['weight']:.2%} | {row['fit_sharpe']:.3f} | {row['fit_return']:.2%} | "
+                f"{row['report_sharpe']:.3f} | {row['report_return']:.2%} |"
+            )
 
-    lines.extend(
-        [
-            "",
-            "## Portfolio metrics",
-            "",
-            f"- Fit ({fit_split}): " + json.dumps(fit_metrics, sort_keys=True),
-            f"- Report ({report_split}): " + json.dumps(report_metrics, sort_keys=True),
-            "- Train: " + json.dumps(train_metrics, sort_keys=True),
-            "- Val: " + json.dumps(val_metrics, sort_keys=True),
-            "- OOS: " + json.dumps(oos_metrics, sort_keys=True),
-            "",
-            "## Sensitivity",
-            "",
-            "```json",
-            json.dumps(sensitivity, indent=2, sort_keys=True),
-            "```",
-            "",
-        ]
-    )
-    md_path.write_text("\n".join(lines), encoding="utf-8")
+        lines.extend(
+            [
+                "",
+                f"JSON: `{json_path}`",
+                f"Latest: `{json_latest}`",
+                "",
+            ]
+        )
+        markdown = "\n".join(lines) + "\n"
+    except Exception as exc:
+        report["status"] = "failed"
+        report["error"] = f"{type(exc).__name__}: {exc}"
+        raise
+    finally:
+        report["memory"] = memory_guard.finalize(
+            status=str(report.get("status") or "completed"),
+            error=str(report.get("error") or "") or None,
+        )
+        json_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        json_latest.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        md_path.write_text(markdown, encoding="utf-8")
+        md_latest.write_text(markdown, encoding="utf-8")
+        memory_guard.release()
 
-    print(f"Saved: {json_path}")
-    print(f"Saved latest: {json_latest}")
-    print(f"Saved markdown: {md_path}")
+    print(json.dumps(report, indent=2))
     return 0
 
 

@@ -18,6 +18,7 @@ from lumina_quant.eval.exact_window_log_archive import (
 from lumina_quant.portfolio_split_contract import (
     PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES,
     PORTFOLIO_FOLLOWUP_HEAVY_LOCK_PATH,
+    PORTFOLIO_FOLLOWUP_SESSION_MEMORY_LEASE_PATH,
 )
 from lumina_quant.strategy_factory.candidate_library import (
     DEFAULT_BINANCE_TOP10_PLUS_METALS,
@@ -552,7 +553,11 @@ def build_stack_audit(
         f"- Current promotion winner: `{winner.get('label') or 'unknown'}` ({winner.get('status') or 'unknown'})",
         f"- Exact-window promoted_total: `{promoted_total}` | next_action=`{next_action}`",
         f"- Heavy lock path: `{PORTFOLIO_FOLLOWUP_HEAVY_LOCK_PATH.resolve()}`",
-        f"- Explicit total-memory budget: `{PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES}` bytes (8 GiB)",
+        (
+            "- Explicit heavy-run memory budget: "
+            f"`{PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES}` bytes "
+            f"({PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES / (1024**3):.2f} GiB)"
+        ),
         "",
         "## Highest-impact instability drivers",
         "",
@@ -690,7 +695,11 @@ def build_ideas_backlog(
             "- Add stronger train-instability penalties or minimum-train gates before portfolio promotion.",
             "- Reuse exact-window validation artifacts as the canonical duplicate/history source instead of adding a parallel scheduler.",
             "- Keep HRP / risk-parity / volatility-managed portfolio variants behind the existing locked-OOS promotion rule.",
-            "- Keep dynamic and overlay allocators under the explicit 8 GiB memory contract and single-heavy-lane discipline.",
+            (
+                "- Keep dynamic and overlay allocators under the explicit "
+                f"{PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES / (1024**3):.2f} GiB "
+                "heavy-run contract and single-heavy-lane discipline."
+            ),
             "",
             "## Pipeline thesis map",
             "",
@@ -879,6 +888,9 @@ def run_autonomous_portfolio_research_loop(
         "memory_contract": {
             "total_budget_bytes": PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES,
             "heavy_lock_path": str(PORTFOLIO_FOLLOWUP_HEAVY_LOCK_PATH.resolve()),
+            "session_memory_lease_path": str(
+                PORTFOLIO_FOLLOWUP_SESSION_MEMORY_LEASE_PATH.resolve()
+            ),
             "single_heavy_lane": True,
             "registry_only_duplicate_guard": str((paths["report_root"] / "exact_window_run_registry.jsonl").resolve()),
             "explicit_budget_injection": {

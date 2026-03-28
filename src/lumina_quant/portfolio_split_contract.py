@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict, dataclass
 from datetime import date
 from pathlib import Path
 from typing import Any
 
 from lumina_quant.core.memory_budget import DEFAULT_EXECUTION_MEMORY_POLICY
+from lumina_quant.core.session_memory import (
+    DEFAULT_SESSION_MEMORY_LEASE_PATH,
+    acquire_session_memory_lease,
+)
 from lumina_quant.eval.exact_window_runtime import HeavyRunLock, RSSGuard
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -34,8 +39,42 @@ PORTFOLIO_CURRENT_OPTIMIZATION = (
 )
 
 PORTFOLIO_FOLLOWUP_HEAVY_LOCK_PATH = FOLLOWUP_ROOT / "portfolio_followup_heavy_run.lock"
-PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES = 8 * 1024 * 1024 * 1024
+PORTFOLIO_FOLLOWUP_SESSION_MEMORY_LEASE_PATH = DEFAULT_SESSION_MEMORY_LEASE_PATH
+_ENV_PORTFOLIO_FOLLOWUP_BUDGET_BYTES = "LQ_PORTFOLIO_FOLLOWUP_BUDGET_BYTES"
+_ENV_PORTFOLIO_FOLLOWUP_BUDGET_GIB = "LQ_PORTFOLIO_FOLLOWUP_BUDGET_GIB"
 MEMORY_GUARD_DIRNAME = "_memory_guard"
+
+
+def _read_portfolio_followup_env_budget_bytes() -> int | None:
+    raw_bytes = str(os.getenv(_ENV_PORTFOLIO_FOLLOWUP_BUDGET_BYTES, "")).strip()
+    if raw_bytes:
+        try:
+            value = int(float(raw_bytes))
+        except ValueError:
+            value = 0
+        if value > 0:
+            return value
+
+    raw_gib = str(os.getenv(_ENV_PORTFOLIO_FOLLOWUP_BUDGET_GIB, "")).strip()
+    if raw_gib:
+        try:
+            value = float(raw_gib)
+        except ValueError:
+            value = 0.0
+        if value > 0.0:
+            return int(value * 1024 * 1024 * 1024)
+    return None
+
+
+def portfolio_followup_default_budget_bytes() -> int:
+    """Resolve the default follow-up budget with env overrides and heavy-run headroom."""
+    env_budget = _read_portfolio_followup_env_budget_bytes()
+    if env_budget is not None:
+        return env_budget
+    return int(DEFAULT_EXECUTION_MEMORY_POLICY.heavy_run_cap_gib * 1024 * 1024 * 1024)
+
+
+PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES = portfolio_followup_default_budget_bytes()
 
 
 def split_windows() -> dict[str, str]:
@@ -95,6 +134,9 @@ def memory_policy_payload(*, budget_bytes: int | None = None) -> dict[str, Any]:
     policy["total_memory_cap_bytes"] = DEFAULT_EXECUTION_MEMORY_POLICY.total_memory_cap_bytes
     policy["rss_limit_gib"] = DEFAULT_EXECUTION_MEMORY_POLICY.rss_limit_gib
     policy["heavy_lock_path"] = str(PORTFOLIO_FOLLOWUP_HEAVY_LOCK_PATH.resolve())
+    policy["session_memory_lease_path"] = str(
+        PORTFOLIO_FOLLOWUP_SESSION_MEMORY_LEASE_PATH.resolve()
+    )
     if budget_bytes is not None:
         policy["explicit_budget_bytes"] = int(budget_bytes)
         policy["explicit_budget_gib"] = float(int(budget_bytes) / (1024**3))
@@ -112,6 +154,7 @@ class PortfolioMemoryGuard:
     summary_path: Path
     lock: HeavyRunLock
     guard: RSSGuard
+    session_lease: HeavyRunLock | None = None
 
     def sample(self, *, event: str, context: dict[str, Any] | None = None) -> dict[str, Any]:
         return self.guard.sample(event=event, context=context)
@@ -142,7 +185,11 @@ class PortfolioMemoryGuard:
         return summary
 
     def release(self) -> None:
-        self.lock.release()
+        try:
+            self.lock.release()
+        finally:
+            if self.session_lease is not None:
+                self.session_lease.release()
 
 
 def acquire_portfolio_memory_guard(
@@ -154,6 +201,10 @@ def acquire_portfolio_memory_guard(
     budget_bytes: int | None = None,
     memory_budget_bytes: int | None = None,
     fixed_budget_bytes: int | None = None,
+    rss_log_path: str | Path | None = None,
+    summary_path: str | Path | None = None,
+    soft_limit_bytes: int | None = None,
+    hard_limit_bytes: int | None = None,
 ) -> PortfolioMemoryGuard:
     """Acquire the shared heavy-run lock and RSS logger for a portfolio lane."""
     resolved_budget_bytes = next(
@@ -168,27 +219,73 @@ def acquire_portfolio_memory_guard(
     memory_dir = resolved_output_dir / MEMORY_GUARD_DIRNAME
     memory_dir.mkdir(parents=True, exist_ok=True)
     label = f"portfolio_followup::{run_name}"
-    lock = HeavyRunLock.acquire(
-        lock_path=PORTFOLIO_FOLLOWUP_HEAVY_LOCK_PATH,
-        label=label,
-        metadata={
-            "run_name": run_name,
-            "input_path": str(Path(input_path).resolve()) if input_path is not None else None,
-            **dict(metadata or {}),
-        },
+    effective_budget_bytes = max(
+        1,
+        int(
+            resolved_budget_bytes
+            if resolved_budget_bytes is not None
+            else PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES
+        ),
     )
-    rss_log_path = memory_dir / f"{run_name}_rss_latest.jsonl"
-    summary_path = memory_dir / f"{run_name}_memory_latest.json"
-    guard = RSSGuard(log_path=rss_log_path, label=label, budget_bytes=resolved_budget_bytes)
-    return PortfolioMemoryGuard(
-        run_name=run_name,
+    lock_metadata = {
+        "run_name": run_name,
+        "input_path": str(Path(input_path).resolve()) if input_path is not None else None,
+        "session_memory_lease_path": str(PORTFOLIO_FOLLOWUP_SESSION_MEMORY_LEASE_PATH.resolve()),
+        **dict(metadata or {}),
+    }
+    session_lease = acquire_session_memory_lease(
         label=label,
-        output_dir=resolved_output_dir,
-        rss_log_path=rss_log_path,
-        summary_path=summary_path,
-        lock=lock,
-        guard=guard,
+        requested_budget_bytes=effective_budget_bytes,
+        effective_budget_bytes=effective_budget_bytes,
+        metadata=lock_metadata,
+        lock_path=PORTFOLIO_FOLLOWUP_SESSION_MEMORY_LEASE_PATH,
     )
+    try:
+        lock = HeavyRunLock.acquire(
+            lock_path=PORTFOLIO_FOLLOWUP_HEAVY_LOCK_PATH,
+            label=label,
+            metadata=lock_metadata,
+        )
+    except Exception:
+        session_lease.release()
+        raise
+    try:
+        resolved_rss_log_path = (
+            Path(rss_log_path).resolve()
+            if rss_log_path is not None
+            else memory_dir / f"{run_name}_rss_latest.jsonl"
+        )
+        resolved_summary_path = (
+            Path(summary_path).resolve()
+            if summary_path is not None
+            else memory_dir / f"{run_name}_memory_latest.json"
+        )
+        resolved_rss_log_path.parent.mkdir(parents=True, exist_ok=True)
+        resolved_summary_path.parent.mkdir(parents=True, exist_ok=True)
+        guard_kwargs: dict[str, Any] = {
+            "log_path": resolved_rss_log_path,
+            "label": label,
+            "budget_bytes": effective_budget_bytes,
+        }
+        if soft_limit_bytes is not None:
+            guard_kwargs["soft_limit_bytes"] = max(1, int(soft_limit_bytes))
+        if hard_limit_bytes is not None:
+            guard_kwargs["hard_limit_bytes"] = max(1, int(hard_limit_bytes))
+        guard = RSSGuard(**guard_kwargs)
+        return PortfolioMemoryGuard(
+            run_name=run_name,
+            label=label,
+            output_dir=resolved_output_dir,
+            rss_log_path=resolved_rss_log_path,
+            summary_path=resolved_summary_path,
+            lock=lock,
+            guard=guard,
+            session_lease=session_lease,
+        )
+    except Exception:
+        lock.release()
+        session_lease.release()
+        raise
 
 
 __all__ = [
@@ -199,6 +296,7 @@ __all__ = [
     "PORTFOLIO_CURRENT_OPTIMIZATION",
     "PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES",
     "PORTFOLIO_FOLLOWUP_HEAVY_LOCK_PATH",
+    "PORTFOLIO_FOLLOWUP_SESSION_MEMORY_LEASE_PATH",
     "PORTFOLIO_ONE_SHOT_CURRENT_BUNDLE",
     "PORTFOLIO_ONE_SHOT_INCUMBENT_BUNDLE",
     "REPORT_ROOT",
@@ -211,6 +309,7 @@ __all__ = [
     "PortfolioMemoryGuard",
     "acquire_portfolio_memory_guard",
     "memory_policy_payload",
+    "portfolio_followup_default_budget_bytes",
     "resolve_incumbent_bundle_path",
     "split_dates",
     "split_for_date",

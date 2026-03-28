@@ -11,44 +11,41 @@ import pytest
 from lumina_quant import portfolio_split_contract as contract
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _load_script_module(module_name: str, path: Path):
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Failed to load {path.name} module")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 SEARCH_MODULE_PATH = ROOT / "scripts" / "research" / "search_portfolio_four_sleeve_anchored.py"
 SEARCH_MODULE = None
 if SEARCH_MODULE_PATH.exists():
-    spec = importlib.util.spec_from_file_location(
+    SEARCH_MODULE = _load_script_module(
         "search_portfolio_four_sleeve_anchored_contract",
         SEARCH_MODULE_PATH,
     )
-    if spec is None or spec.loader is None:
-        raise RuntimeError("Failed to load search_portfolio_four_sleeve_anchored module")
-    SEARCH_MODULE = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = SEARCH_MODULE
-    spec.loader.exec_module(SEARCH_MODULE)
 
 DYNAMIC_MODULE_PATH = ROOT / "scripts" / "research" / "run_causal_dynamic_portfolio.py"
 DYNAMIC_MODULE = None
 if DYNAMIC_MODULE_PATH.exists():
-    spec = importlib.util.spec_from_file_location(
+    DYNAMIC_MODULE = _load_script_module(
         "run_causal_dynamic_portfolio_contract",
         DYNAMIC_MODULE_PATH,
     )
-    if spec is None or spec.loader is None:
-        raise RuntimeError("Failed to load run_causal_dynamic_portfolio module")
-    DYNAMIC_MODULE = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = DYNAMIC_MODULE
-    spec.loader.exec_module(DYNAMIC_MODULE)
 
 OVERLAY_MODULE_PATH = ROOT / "scripts" / "research" / "run_causal_overlay_portfolio.py"
 OVERLAY_MODULE = None
 if OVERLAY_MODULE_PATH.exists():
-    spec = importlib.util.spec_from_file_location(
+    OVERLAY_MODULE = _load_script_module(
         "run_causal_overlay_portfolio_contract",
         OVERLAY_MODULE_PATH,
     )
-    if spec is None or spec.loader is None:
-        raise RuntimeError("Failed to load run_causal_overlay_portfolio module")
-    OVERLAY_MODULE = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = OVERLAY_MODULE
-    spec.loader.exec_module(OVERLAY_MODULE)
 
 
 class _DummyLock:
@@ -208,6 +205,7 @@ def test_portfolio_memory_guard_finalize_writes_memory_summary(
             {"acquire": staticmethod(lambda **kwargs: dummy_lock)},
         ),
     )
+    monkeypatch.setattr(contract, "acquire_session_memory_lease", lambda **kwargs: _DummyLock())
     monkeypatch.setattr(contract, "RSSGuard", _DummyRSSGuard)
 
     budget_bytes = 8 * 1024 * 1024 * 1024
@@ -233,9 +231,99 @@ def test_portfolio_memory_guard_finalize_writes_memory_summary(
     assert payload["memory_policy"]["heavy_lock_path"] == str(
         contract.PORTFOLIO_FOLLOWUP_HEAVY_LOCK_PATH.resolve()
     )
+    assert payload["memory_policy"]["session_memory_lease_path"] == str(
+        contract.PORTFOLIO_FOLLOWUP_SESSION_MEMORY_LEASE_PATH.resolve()
+    )
+    assert "/src/var/" not in payload["memory_policy"]["session_memory_lease_path"]
     assert payload["context"] == {"best_params": {"target_vol": 0.10}}
     assert payload["rss_log_path"] == str(guard.rss_log_path)
     assert dummy_lock.released is False
+
+
+def test_portfolio_followup_default_budget_bytes_prefers_env_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LQ_PORTFOLIO_FOLLOWUP_BUDGET_GIB", "5.5")
+
+    assert contract.portfolio_followup_default_budget_bytes() == int(5.5 * 1024 * 1024 * 1024)
+
+
+def test_portfolio_memory_guard_acquires_session_memory_lease(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+    heavy_lock = _DummyLock()
+    session_lock = _DummyLock()
+    monkeypatch.setattr(
+        contract,
+        "HeavyRunLock",
+        type(
+            "DummyHeavyRunLock",
+            (),
+            {"acquire": staticmethod(lambda **kwargs: heavy_lock)},
+        ),
+    )
+    monkeypatch.setattr(
+        contract,
+        "acquire_session_memory_lease",
+        lambda **kwargs: captured.update(kwargs) or session_lock,
+    )
+    monkeypatch.setattr(contract, "RSSGuard", _DummyRSSGuard)
+
+    budget_bytes = 6 * 1024 * 1024 * 1024
+    guard = contract.acquire_portfolio_memory_guard(
+        run_name="portfolio_optimizer",
+        output_dir=tmp_path / "optimizer",
+        input_path=tmp_path / "bundle.json",
+        budget_bytes=budget_bytes,
+    )
+    guard.release()
+
+    assert captured["requested_budget_bytes"] == budget_bytes
+    assert captured["effective_budget_bytes"] == budget_bytes
+    assert Path(captured["lock_path"]).resolve() == contract.PORTFOLIO_FOLLOWUP_SESSION_MEMORY_LEASE_PATH.resolve()
+    assert session_lock.released is True
+    assert heavy_lock.released is True
+
+
+@pytest.mark.parametrize(
+    ("module_name", "script_relpath", "parser_factory"),
+    [
+        (
+            "refresh_final_portfolio_validation_data_contract",
+            "scripts/research/refresh_final_portfolio_validation_data.py",
+            "build_parser",
+        ),
+        (
+            "validate_saved_incumbent_portfolio_contract",
+            "scripts/research/validate_saved_incumbent_portfolio.py",
+            "build_parser",
+        ),
+        (
+            "validate_saved_incumbent_portfolio_continuity_contract",
+            "scripts/research/validate_saved_incumbent_portfolio_continuity.py",
+            "build_parser",
+        ),
+        (
+            "run_portfolio_optimization_contract",
+            "scripts/run_portfolio_optimization.py",
+            "_build_parser",
+        ),
+    ],
+)
+def test_followup_parser_defaults_re_read_env_budget(
+    monkeypatch: pytest.MonkeyPatch,
+    module_name: str,
+    script_relpath: str,
+    parser_factory: str,
+) -> None:
+    module = _load_script_module(module_name, ROOT / script_relpath)
+    monkeypatch.setenv("LQ_PORTFOLIO_FOLLOWUP_BUDGET_GIB", "5.5")
+
+    args = getattr(module, parser_factory)().parse_args([])
+
+    assert args.memory_budget_bytes == int(5.5 * 1024 * 1024 * 1024)
 
 
 def test_anchored_search_finalizes_failed_guard_when_optimizer_crashes(

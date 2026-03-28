@@ -5,7 +5,7 @@ from typing import Any
 
 from lumina_quant.eval.exact_window_runtime import HeavyRunLock
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 FOLLOWUP_ROOT = ROOT / "var" / "reports" / "exact_window_backtests" / "followup_status"
 DEFAULT_SESSION_MEMORY_LEASE_PATH = FOLLOWUP_ROOT / "session_memory_budget.lock"
 
