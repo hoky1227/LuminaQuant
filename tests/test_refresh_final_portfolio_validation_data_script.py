@@ -304,6 +304,57 @@ def test_order_symbols_for_parallel_refresh_uses_previous_costs_and_live_support
     assert ordered == ["BTC/USDT", "ETH/USDT", "ADA/USDT", "XAU/USD"]
 
 
+def test_build_source_skew_summary_flags_unsupported_and_slowest_symbols() -> None:
+    summary = MODULE._build_source_skew_summary(
+        [
+            MODULE.OhlcvRefreshResult(
+                symbol="BTC/USDT",
+                before_ohlcv_max_utc=None,
+                after_ohlcv_max_utc=None,
+                before_raw_agg_trade_utc=None,
+                after_raw_agg_trade_utc=None,
+                resume_start_utc=None,
+                cutoff_utc="2026-03-28T04:00:00Z",
+                archive_days_considered=0,
+                archive_days_downloaded=0,
+                archive_days_missing=0,
+                archive_raw_rows_fetched=0,
+                archive_raw_rows_upserted=0,
+                live_raw_rows_fetched=1,
+                live_raw_rows_upserted=1,
+                live_tail_status="fetched",
+                derived_ohlcv_rows_upserted=1,
+                source_mix="live_only",
+                stage_timings_seconds={"live_fetch": 12.0, "total_refresh": 13.0},
+            ),
+            MODULE.OhlcvRefreshResult(
+                symbol="XAU/USD",
+                before_ohlcv_max_utc=None,
+                after_ohlcv_max_utc=None,
+                before_raw_agg_trade_utc=None,
+                after_raw_agg_trade_utc=None,
+                resume_start_utc=None,
+                cutoff_utc="2026-03-28T04:00:00Z",
+                archive_days_considered=0,
+                archive_days_downloaded=0,
+                archive_days_missing=1,
+                archive_raw_rows_fetched=0,
+                archive_raw_rows_upserted=0,
+                live_raw_rows_fetched=0,
+                live_raw_rows_upserted=0,
+                live_tail_status="skipped_unsupported_symbol",
+                derived_ohlcv_rows_upserted=0,
+                source_mix="noop_recent_archive_cutover",
+                stage_timings_seconds={"total_refresh": 0.5},
+            ),
+        ]
+    )
+
+    assert summary["unsupported_live_tail_symbols"] == ["XAU/USD"]
+    assert summary["symbols_with_live_tail"] == ["BTC/USDT"]
+    assert summary["top_live_fetch_seconds"][0] == {"symbol": "BTC/USDT", "seconds": 12.0}
+
+
 def test_estimate_parallel_workers_respects_memory_budget() -> None:
     workers = MODULE.estimate_parallel_workers(
         symbol_count=14,

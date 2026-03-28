@@ -284,6 +284,47 @@ def _order_symbols_for_parallel_refresh(
     return sorted(ordered_symbols, key=_score, reverse=True)
 
 
+def _build_source_skew_summary(results: list[OhlcvRefreshResult]) -> dict[str, Any]:
+    rows = list(results or [])
+    by_live_fetch = sorted(
+        rows,
+        key=lambda row: float((row.stage_timings_seconds or {}).get("live_fetch", 0.0) or 0.0),
+        reverse=True,
+    )
+    by_total = sorted(
+        rows,
+        key=lambda row: float((row.stage_timings_seconds or {}).get("total_refresh", 0.0) or 0.0),
+        reverse=True,
+    )
+    unsupported = [
+        row.symbol
+        for row in rows
+        if str(row.live_tail_status or "").strip().lower() == "skipped_unsupported_symbol"
+    ]
+    return {
+        "symbols_with_live_tail": [
+            row.symbol for row in rows if str(row.live_tail_status or "").strip().lower() == "fetched"
+        ],
+        "unsupported_live_tail_symbols": unsupported,
+        "top_live_fetch_seconds": [
+            {
+                "symbol": row.symbol,
+                "seconds": round(float((row.stage_timings_seconds or {}).get("live_fetch", 0.0) or 0.0), 6),
+            }
+            for row in by_live_fetch[:5]
+            if float((row.stage_timings_seconds or {}).get("live_fetch", 0.0) or 0.0) > 0.0
+        ],
+        "top_total_refresh_seconds": [
+            {
+                "symbol": row.symbol,
+                "seconds": round(float((row.stage_timings_seconds or {}).get("total_refresh", 0.0) or 0.0), 6),
+            }
+            for row in by_total[:5]
+            if float((row.stage_timings_seconds or {}).get("total_refresh", 0.0) or 0.0) > 0.0
+        ],
+    }
+
+
 def resolve_effective_memory_budget_bytes(requested_budget_bytes: int) -> tuple[int, int | None]:
     requested = max(1, int(requested_budget_bytes))
     system_budget = resolve_memory_budget_bytes()
@@ -1087,6 +1128,28 @@ def build_markdown(payload: dict[str, Any]) -> str:
         lines.append(
             f"| `{row['symbol']}` | `{row.get('before_ohlcv_max_utc')}` | `{row.get('after_ohlcv_max_utc')}` | `{row.get('before_raw_agg_trade_utc')}` | `{row.get('after_raw_agg_trade_utc')}` | {row.get('archive_days_downloaded', 0)} | {row.get('archive_days_missing', 0)} | `{row.get('source_mix')}` | `{row.get('live_tail_status')}` | {int(row.get('archive_raw_rows_upserted', 0) or 0)} | {int(row.get('live_raw_rows_upserted', 0) or 0)} | {int(row.get('derived_ohlcv_rows_upserted', 0) or 0)} |"
         )
+    skew = dict(payload.get("source_skew_summary") or {})
+    unsupported = list(skew.get("unsupported_live_tail_symbols") or [])
+    if unsupported:
+        lines.extend(
+            [
+                "",
+                "## Source skew / unsupported live tails",
+                "",
+                f"- unsupported_live_tail_symbols: `{', '.join(unsupported)}`",
+            ]
+        )
+    top_live_fetch = list(skew.get("top_live_fetch_seconds") or [])
+    if top_live_fetch:
+        lines.extend(
+            [
+                "",
+                "## Slowest live tail stages",
+                "",
+            ]
+        )
+        for row in top_live_fetch:
+            lines.append(f"- `{row.get('symbol')}`: `{row.get('seconds')}` sec")
     lines.extend(
         [
             "",
@@ -1290,6 +1353,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         payload["ohlcv_results"] = [asdict(result) for result in ohlcv_results]
         payload["parallel"] = dict(parallel_meta)
+        payload["source_skew_summary"] = _build_source_skew_summary(ohlcv_results)
         for symbol in feature_symbols:
             guard.checkpoint("before_feature_symbol", {"symbol": symbol})
             result = refresh_feature_tail(
