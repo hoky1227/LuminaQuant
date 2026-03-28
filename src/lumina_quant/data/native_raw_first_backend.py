@@ -68,45 +68,58 @@ def _discover_dll_candidates() -> list[str]:
     return [str(root / "native" / "rust_rawfirst" / "target" / "release" / _native_lib_filename("lumina_rawfirst"))]
 
 
-def _load_native_function() -> Any | None:
-    global _NATIVE_FN, _NATIVE_HANDLE, _NATIVE_DLL
-    if _NATIVE_FN is not None:
-        return _NATIVE_FN
+def load_rawfirst_native_library() -> Any | None:
+    global _NATIVE_HANDLE, _NATIVE_DLL
+    if _NATIVE_HANDLE is not None:
+        return _NATIVE_HANDLE
     for dll_path in _discover_dll_candidates():
         if not dll_path or not os.path.exists(dll_path):
             continue
         try:
             handle = ctypes.CDLL(dll_path)
-            fn = handle.aggregate_raw_aggtrades_to_1s
-            fn.argtypes = [
-                ctypes.POINTER(ctypes.c_longlong),
-                ctypes.POINTER(ctypes.c_double),
-                ctypes.POINTER(ctypes.c_double),
-                ctypes.c_int32,
-                ctypes.c_longlong,
-                ctypes.c_int32,
-                ctypes.c_longlong,
-                ctypes.c_int32,
-                ctypes.c_double,
-                ctypes.c_int32,
-                ctypes.c_longlong,
-                ctypes.POINTER(ctypes.c_longlong),
-                ctypes.POINTER(ctypes.c_double),
-                ctypes.POINTER(ctypes.c_double),
-                ctypes.POINTER(ctypes.c_double),
-                ctypes.POINTER(ctypes.c_double),
-                ctypes.POINTER(ctypes.c_double),
-                ctypes.c_int32,
-                ctypes.POINTER(ctypes.c_int32),
-            ]
-            fn.restype = ctypes.c_int32
         except Exception:
             continue
         _NATIVE_HANDLE = handle
-        _NATIVE_FN = fn
         _NATIVE_DLL = dll_path
-        return fn
+        return handle
     return None
+
+
+def _load_native_function() -> Any | None:
+    global _NATIVE_FN
+    if _NATIVE_FN is not None:
+        return _NATIVE_FN
+    handle = load_rawfirst_native_library()
+    if handle is None:
+        return None
+    try:
+        fn = handle.aggregate_raw_aggtrades_to_1s
+        fn.argtypes = [
+            ctypes.POINTER(ctypes.c_longlong),
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.c_int32,
+            ctypes.c_longlong,
+            ctypes.c_int32,
+            ctypes.c_longlong,
+            ctypes.c_int32,
+            ctypes.c_double,
+            ctypes.c_int32,
+            ctypes.c_longlong,
+            ctypes.POINTER(ctypes.c_longlong),
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.c_int32,
+            ctypes.POINTER(ctypes.c_int32),
+        ]
+        fn.restype = ctypes.c_int32
+    except Exception:
+        return None
+    _NATIVE_FN = fn
+    return fn
 
 
 def native_backend_available() -> bool:
@@ -224,6 +237,7 @@ __all__ = [
     "RAW_FIRST_BACKEND_RUST",
     "aggregate_raw_aggtrades_to_1s_native",
     "describe_raw_first_backend",
+    "load_rawfirst_native_library",
     "native_backend_available",
     "normalize_raw_first_backend",
 ]

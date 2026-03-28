@@ -1,3 +1,8 @@
+use std::ffi::CStr;
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::os::raw::c_char;
+use std::path::PathBuf;
 use std::slice;
 
 #[derive(Clone, Copy, Debug)]
@@ -16,6 +21,53 @@ fn latest_complete_bucket_start_ms(complete_through_ms: i64) -> Option<i64> {
         return None;
     }
     Some((((complete_through_ms + 1) / bucket_ms) * bucket_ms) - bucket_ms)
+}
+
+fn crc32(payload: &[u8]) -> u32 {
+    let mut crc = 0xFFFF_FFFFu32;
+    for &byte in payload {
+        crc ^= byte as u32;
+        for _ in 0..8 {
+            if (crc & 1) != 0 {
+                crc = (crc >> 1) ^ 0xEDB8_8320;
+            } else {
+                crc >>= 1;
+            }
+        }
+    }
+    !crc
+}
+
+fn encode_wal_record(
+    ts_ms: i64,
+    open: f64,
+    high: f64,
+    low: f64,
+    close: f64,
+    volume: f64,
+) -> Option<[u8; 64]> {
+    if ts_ms % 1_000 != 0 {
+        return None;
+    }
+
+    let mut body = Vec::with_capacity(56);
+    body.push(1u8);
+    body.push(0u8);
+    body.extend_from_slice(&0u16.to_le_bytes());
+    body.extend_from_slice(&64u32.to_le_bytes());
+    body.extend_from_slice(&ts_ms.to_le_bytes());
+    body.extend_from_slice(&open.to_le_bytes());
+    body.extend_from_slice(&high.to_le_bytes());
+    body.extend_from_slice(&low.to_le_bytes());
+    body.extend_from_slice(&close.to_le_bytes());
+    body.extend_from_slice(&volume.to_le_bytes());
+    let crc = crc32(&body);
+
+    let mut record = [0u8; 64];
+    record[0..4].copy_from_slice(b"LQWB");
+    record[4..60].copy_from_slice(&body);
+    record[60..64].copy_from_slice(&crc.to_le_bytes());
+    Some(record)
 }
 
 fn aggregate_present_buckets(
@@ -235,6 +287,93 @@ pub extern "C" fn aggregate_raw_aggtrades_to_1s(
 
     unsafe {
         *out_len = idx as i32;
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn append_ohlcv_1s_wal(
+    wal_path: *const c_char,
+    timestamps_ms: *const i64,
+    open: *const f64,
+    high: *const f64,
+    low: *const f64,
+    close: *const f64,
+    volume: *const f64,
+    len: i32,
+    fsync_after_write: i32,
+    out_written: *mut i32,
+) -> i32 {
+    if wal_path.is_null()
+        || timestamps_ms.is_null()
+        || open.is_null()
+        || high.is_null()
+        || low.is_null()
+        || close.is_null()
+        || volume.is_null()
+        || out_written.is_null()
+        || len < 0
+    {
+        return 2;
+    }
+
+    let wal_path_buf = match unsafe { CStr::from_ptr(wal_path) }.to_str() {
+        Ok(text) if !text.is_empty() => PathBuf::from(text),
+        _ => return 2,
+    };
+
+    let len_usize = len as usize;
+    if len_usize == 0 {
+        unsafe {
+            *out_written = 0;
+        }
+        return 0;
+    }
+
+    let timestamps = unsafe { slice::from_raw_parts(timestamps_ms, len_usize) };
+    let opens = unsafe { slice::from_raw_parts(open, len_usize) };
+    let highs = unsafe { slice::from_raw_parts(high, len_usize) };
+    let lows = unsafe { slice::from_raw_parts(low, len_usize) };
+    let closes = unsafe { slice::from_raw_parts(close, len_usize) };
+    let volumes = unsafe { slice::from_raw_parts(volume, len_usize) };
+
+    let mut encoded = Vec::with_capacity(len_usize * 64);
+    for idx in 0..len_usize {
+        let record = match encode_wal_record(
+            timestamps[idx],
+            opens[idx],
+            highs[idx],
+            lows[idx],
+            closes[idx],
+            volumes[idx],
+        ) {
+            Some(value) => value,
+            None => return 5,
+        };
+        encoded.extend_from_slice(&record);
+    }
+
+    let mut file = match OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&wal_path_buf)
+    {
+        Ok(handle) => handle,
+        Err(_) => return 4,
+    };
+
+    if file.write_all(&encoded).is_err() {
+        return 4;
+    }
+    if file.flush().is_err() {
+        return 4;
+    }
+    if fsync_after_write != 0 && file.sync_data().is_err() {
+        return 4;
+    }
+
+    unsafe {
+        *out_written = len;
     }
     0
 }

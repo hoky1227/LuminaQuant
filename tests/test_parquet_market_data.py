@@ -3,10 +3,16 @@ from __future__ import annotations
 from pathlib import Path
 
 import polars as pl
+import pytest
 from lumina_quant.storage.parquet import (
     ParquetMarketDataRepository,
     is_parquet_market_data_store,
     load_data_dict_from_parquet,
+)
+from lumina_quant.storage.wal import BinaryWAL
+from lumina_quant.storage.wal.native_backend import (
+    append_ohlcv_frame_native,
+    native_wal_append_available,
 )
 
 
@@ -37,6 +43,57 @@ def test_upsert_1s_writes_wal(tmp_path: Path):
     symbol_root = tmp_path / "market_ohlcv_1s" / "binance" / "BTCUSDT"
     assert (symbol_root / "wal.bin").exists()
     assert not list(symbol_root.glob("*.parquet"))
+
+
+def test_upsert_1s_prefers_native_append_when_available(monkeypatch, tmp_path: Path):
+    repo = ParquetMarketDataRepository(tmp_path)
+    seen: dict[str, object] = {}
+
+    def _fake_native(path, frame, *, fsync_after_write):
+        seen["path"] = Path(path)
+        seen["height"] = int(frame.height)
+        seen["fsync_after_write"] = bool(fsync_after_write)
+        return int(frame.height)
+
+    def _unexpected_python_append(self, _rows):
+        raise AssertionError("python WAL append fallback should not run")
+
+    monkeypatch.setattr(
+        "lumina_quant.storage.parquet.ohlcv_repo.append_ohlcv_frame_native",
+        _fake_native,
+    )
+    monkeypatch.setattr(BinaryWAL, "append", _unexpected_python_append)
+
+    written = repo.upsert_1s(exchange="binance", symbol="BTC/USDT", rows=_sample_1s_frame())
+
+    assert written == 4
+    assert seen["height"] == 4
+    assert seen["path"] == tmp_path / "market_ohlcv_1s" / "binance" / "BTCUSDT" / "wal.bin"
+
+
+def test_native_wal_append_matches_python_reader_when_available(tmp_path: Path):
+    if not native_wal_append_available():
+        pytest.skip("Rust raw-first backend is not built")
+
+    repo = ParquetMarketDataRepository(tmp_path)
+    frame = repo._ensure_ohlcv_frame(_sample_1s_frame())
+    wal = BinaryWAL(tmp_path / "native-wal.bin", auto_repair=True)
+
+    written = append_ohlcv_frame_native(
+        wal.path,
+        frame,
+        fsync_after_write=True,
+    )
+
+    assert written == 4
+    records = list(wal.iter_all())
+    assert [item.ts_ms for item in records] == [
+        1767225600000,
+        1767225601000,
+        1767225659000,
+        1767225660000,
+    ]
+    assert [item.close for item in records] == [100.5, 101.5, 102.5, 103.5]
 
 
 def test_load_ohlcv_resamples_with_bucket_groupby(tmp_path: Path):

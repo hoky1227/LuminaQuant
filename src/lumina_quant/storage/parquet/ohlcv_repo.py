@@ -20,6 +20,7 @@ from lumina_quant.backtesting.cli_contract import (
 )
 from lumina_quant.data.raw_first_lineage import resample_1s_frame
 from lumina_quant.storage.wal.binary import BinaryWAL, WALRecord
+from lumina_quant.storage.wal.native_backend import append_ohlcv_frame_native
 from lumina_quant.symbols import canonical_symbol
 
 _DEFAULT_SCHEMA: dict[str, pl.DataType] = {
@@ -1349,18 +1350,26 @@ class ParquetMarketDataRepository:
         fsync_n = max(1, int(os.getenv("LQ_WAL_FSYNC_EVERY_N_BATCHES", "1") or "1"))
         wal = BinaryWAL(wal_path, fsync_every_n_batches=fsync_n, auto_repair=True)
 
-        records = [
-            WALRecord(
-                ts_ms=self._datetime_to_ms(item[0]) or 0,
-                open=float(item[1]),
-                high=float(item[2]),
-                low=float(item[3]),
-                close=float(item[4]),
-                volume=float(item[5]),
-            )
-            for item in frame.iter_rows(named=False)
-        ]
-        appended = int(wal.append(records))
+        native_appended = append_ohlcv_frame_native(
+            wal.path,
+            frame,
+            fsync_after_write=fsync_n <= 1,
+        )
+        if native_appended is not None:
+            appended = int(native_appended)
+        else:
+            records = [
+                WALRecord(
+                    ts_ms=self._datetime_to_ms(item[0]) or 0,
+                    open=float(item[1]),
+                    high=float(item[2]),
+                    low=float(item[3]),
+                    close=float(item[4]),
+                    volume=float(item[5]),
+                )
+                for item in frame.iter_rows(named=False)
+            ]
+            appended = int(wal.append(records))
         self._enforce_wal_growth_controls(exchange=exchange, symbol=symbol)
         return appended
 
