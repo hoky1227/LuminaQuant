@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import math
 from collections import defaultdict
@@ -19,6 +20,7 @@ from lumina_quant.portfolio_split_contract import (
     VAL_START,
     acquire_portfolio_memory_guard,
     portfolio_followup_default_budget_bytes,
+    resolve_current_optimization_path,
     resolve_incumbent_bundle_path,
 )
 from lumina_quant.storage.parquet import normalize_symbol, timeframe_to_milliseconds
@@ -32,6 +34,7 @@ DEFAULT_OUTPUT_JSON = FOLLOWUP_ROOT / "portfolio_continuity_validation_latest.js
 DEFAULT_OUTPUT_MD = FOLLOWUP_ROOT / "portfolio_continuity_validation_latest.md"
 DEFAULT_RSS_LOG = FOLLOWUP_ROOT / "portfolio_continuity_validation_rss_latest.jsonl"
 DEFAULT_SOFT_RSS_BYTES = int(7.2 * 1024 * 1024 * 1024)
+STRICT_VALIDATION_DATA_MODE = "legacy"
 
 
 def parse_utc(value: str | None) -> datetime | None:
@@ -623,6 +626,59 @@ def _build_comparison(saved_metrics: dict[str, Any], refreshed_metrics: dict[str
     return comparison
 
 
+def _candidate_symbols(candidate: dict[str, Any], fallback: list[str]) -> list[str]:
+    symbols = sorted(
+        {
+            _research_symbol(symbol)
+            for symbol in list(candidate.get("symbols") or [])
+            if str(symbol).strip()
+        }
+    )
+    return symbols or list(fallback)
+
+
+def _candidate_timeframes(candidate: dict[str, Any], fallback: list[str]) -> list[str]:
+    timeframe = str(candidate.get("strategy_timeframe") or candidate.get("timeframe") or "").strip().lower()
+    if timeframe:
+        return [timeframe]
+    return list(fallback)
+
+
+def _merge_data_sources(
+    aggregate: dict[str, list[Any]],
+    incoming: dict[str, Any],
+) -> None:
+    for key, values in dict(incoming or {}).items():
+        target = aggregate.setdefault(str(key), [])
+        if isinstance(values, list):
+            for value in values:
+                if value not in target:
+                    target.append(value)
+        elif values not in target:
+            target.append(values)
+
+
+def _matching_report_candidates(
+    report_candidates: list[dict[str, Any]],
+    candidate: dict[str, Any],
+) -> list[dict[str, Any]]:
+    candidate_id = str(candidate.get("candidate_id") or "").strip()
+    candidate_name = str(candidate.get("name") or "").strip()
+    matched = [
+        row
+        for row in list(report_candidates or [])
+        if (
+            candidate_id
+            and str(row.get("candidate_id") or "").strip() == candidate_id
+        )
+        or (
+            candidate_name
+            and str(row.get("name") or "").strip() == candidate_name
+        )
+    ]
+    return matched or list(report_candidates or [])
+
+
 def _run_strict_research(
     *,
     candidates: list[dict[str, Any]],
@@ -631,22 +687,45 @@ def _run_strict_research(
     split: dict[str, str],
     min_bundle_bars: int,
 ) -> dict[str, Any]:
-    report = run_candidate_research(
-        candidates=candidates,
-        strategy_timeframes=strategy_timeframes,
-        symbol_universe=symbol_universe,
-        split=split,
-        stage1_keep_ratio=1.0,
-        max_candidates=len(candidates),
-        data_mode="raw-first",
-        allow_csv_fallback=False,
-        allow_synthetic_fallback=False,
-        min_bundle_bars=max(1, int(min_bundle_bars)),
-    )
-    data_sources = dict(report.get("data_sources") or {})
-    if list(data_sources.get("synthetic") or []):
-        raise RuntimeError("Strict validation unexpectedly used synthetic fallback.")
-    return report
+    combined_candidates: list[dict[str, Any]] = []
+    combined_data_sources: dict[str, list[Any]] = {}
+    report_generated_at: str | None = None
+
+    for candidate in list(candidates or []):
+        report = run_candidate_research(
+            candidates=[candidate],
+            strategy_timeframes=_candidate_timeframes(candidate, strategy_timeframes),
+            symbol_universe=_candidate_symbols(candidate, symbol_universe),
+            split=split,
+            stage1_keep_ratio=1.0,
+            max_candidates=1,
+            data_mode=STRICT_VALIDATION_DATA_MODE,
+            allow_csv_fallback=False,
+            allow_synthetic_fallback=False,
+            min_bundle_bars=max(1, int(min_bundle_bars)),
+        )
+        data_sources = dict(report.get("data_sources") or {})
+        if list(data_sources.get("synthetic") or []):
+            raise RuntimeError("Strict validation unexpectedly used synthetic fallback.")
+        if list(data_sources.get("csv") or []):
+            raise RuntimeError("Strict validation unexpectedly used CSV fallback.")
+        matched_candidates = _matching_report_candidates(
+            list(report.get("candidates") or []),
+            candidate,
+        )
+        if not matched_candidates:
+            candidate_label = str(candidate.get("name") or candidate.get("candidate_id") or "unknown")
+            raise RuntimeError(f"Strict validation returned no candidate rows for {candidate_label}.")
+        combined_candidates.extend(matched_candidates)
+        _merge_data_sources(combined_data_sources, data_sources)
+        report_generated_at = str(report.get("generated_at") or report_generated_at or "")
+        gc.collect()
+
+    return {
+        "generated_at": report_generated_at,
+        "data_sources": combined_data_sources,
+        "candidates": combined_candidates,
+    }
 
 
 def build_markdown(payload: dict[str, Any]) -> str:
@@ -725,7 +804,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     bundle_path = resolve_incumbent_bundle_path(args.bundle_path or None)
-    portfolio_path = Path(args.portfolio_path)
+    portfolio_path = resolve_current_optimization_path(args.portfolio_path)
     refresh_report_path = Path(args.refresh_report)
     output_json = Path(args.output_json)
     output_md = Path(args.output_md)
@@ -816,6 +895,10 @@ def main(argv: list[str] | None = None) -> int:
 
         base_split = build_validation_split(saved_oos_end)
         exact_split = _shift_validation_split(base_split, latest_common_complete - saved_oos_end)
+        guard.checkpoint(
+            "exact_validation_start",
+            {"candidate_count": len(selected_team), "latest_common_complete_utc": iso_utc(latest_common_complete)},
+        )
         exact_report = _run_strict_research(
             candidates=selected_team,
             strategy_timeframes=timeframes,
@@ -823,8 +906,21 @@ def main(argv: list[str] | None = None) -> int:
             split=exact_split,
             min_bundle_bars=1,
         )
+        guard.checkpoint(
+            "exact_validation_report_loaded",
+            {"candidate_count": len(list(exact_report.get("candidates") or []))},
+        )
         exact_rows = _saved_weight_rows(list(exact_report.get("candidates") or []), saved_weights)
         exact_eval = evaluate_saved_weight_portfolio(exact_rows)
+        guard.checkpoint(
+            "exact_validation_evaluated",
+            {
+                "oos_total_return": safe_float(
+                    ((exact_eval.get("portfolio_metrics") or {}).get("oos") or {}).get("total_return"),
+                    0.0,
+                )
+            },
+        )
         exact_comparison = _build_comparison(
             dict(portfolio_payload.get("portfolio_metrics") or {}),
             dict(exact_eval.get("portfolio_metrics") or {}),
@@ -840,6 +936,13 @@ def main(argv: list[str] | None = None) -> int:
                 "oos_start": iso_utc(extension_start),
                 "oos_end": iso_utc(latest_common_complete),
             }
+            guard.checkpoint(
+                "continuity_extension_start",
+                {
+                    "extension_start_utc": iso_utc(extension_start),
+                    "extension_end_utc": iso_utc(latest_common_complete),
+                },
+            )
             continuity_report = _run_strict_research(
                 candidates=selected_team,
                 strategy_timeframes=timeframes,
@@ -847,12 +950,27 @@ def main(argv: list[str] | None = None) -> int:
                 split=continuity_split,
                 min_bundle_bars=1,
             )
+            guard.checkpoint(
+                "continuity_report_loaded",
+                {"candidate_count": len(list(continuity_report.get("candidates") or []))},
+            )
             continuity_rows = _extend_saved_rows(
                 selected_team,
                 list(continuity_report.get("candidates") or []),
                 saved_weights,
             )
             continuity_eval = evaluate_saved_weight_portfolio(continuity_rows)
+            guard.checkpoint(
+                "continuity_evaluated",
+                {
+                    "oos_total_return": safe_float(
+                        ((continuity_eval.get("portfolio_metrics") or {}).get("oos") or {}).get(
+                            "total_return"
+                        ),
+                        0.0,
+                    )
+                },
+            )
             continuity_payload = {
                 "status": "completed",
                 "extension_start_utc": iso_utc(extension_start),

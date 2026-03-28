@@ -216,7 +216,7 @@ def test_run_search_writes_summary_and_best_outputs(tmp_path: Path, monkeypatch:
     }
     assert Path(result["tuned_json_path"]).exists()
     assert Path(result["comparison_json_path"]).exists()
-    assert captured.get("budget_bytes") == 8 * 1024 * 1024 * 1024
+    assert captured.get("budget_bytes") == MODULE.PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES
     assert captured.get("released") is True
 
 
@@ -423,7 +423,7 @@ def test_search_wrapper_selects_best_objective_and_writes_summary(
 
     monkeypatch.setattr(MODULE, "acquire_portfolio_memory_guard", fake_acquire_portfolio_memory_guard)
 
-    fixed_budget_bytes = 8 * 1024 * 1024 * 1024
+    fixed_budget_bytes = MODULE.PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES
     comparison_json_path = tmp_path / "comparison.json"
     comparison_md_path = tmp_path / "comparison.md"
     result = MODULE.run_search(

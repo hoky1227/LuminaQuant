@@ -251,3 +251,14 @@ def test_selection_overrides_are_applied_before_live_config_validation(monkeypat
     assert validate_calls == [(["ETH/USDT", "SOL/USDT"], "5m")]
     assert observed["kwargs"]["symbol_list"] == ["ETH/USDT", "SOL/USDT"]
     assert observed["kwargs"]["strategy_params"] == {"fast": 3}
+
+
+def test_strategy_helper_resolver_accepts_default_name_keyword():
+    _, _, resolver = live_cli._strategy_helpers()
+
+    strategy_cls = resolver(
+        "MovingAverageCrossStrategy",
+        default_name="MovingAverageCrossStrategy",
+    )
+
+    assert strategy_cls.__name__ == "MovingAverageCrossStrategy"

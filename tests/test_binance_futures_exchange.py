@@ -169,3 +169,30 @@ def test_exchange_bootstrap_does_not_silently_swallow_setup_failures(monkeypatch
         assert "leverage mismatch" in str(exc)
     else:  # pragma: no cover - defensive assertion
         raise AssertionError("Expected BinanceFuturesAPIError to propagate during bootstrap")
+
+
+def test_exchange_bootstrap_surfaces_credential_guidance_for_invalid_testnet_keys(monkeypatch) -> None:
+    _stub_exchange_bootstrap(monkeypatch)
+
+    def _raise_invalid_key(self, **_kwargs):
+        raise BinanceFuturesAPIError("Invalid API-key, IP, or permissions for action", error_code=-2015)
+
+    monkeypatch.setattr(
+        BinanceFuturesRESTClient,
+        "change_position_mode",
+        _raise_invalid_key,
+        raising=True,
+    )
+
+    class _TestnetConfig(MockConfig):
+        IS_TESTNET = True
+
+    try:
+        BinanceFuturesExchange(_TestnetConfig())
+    except BinanceFuturesAPIError as exc:
+        message = str(exc)
+        assert exc.error_code == -2015
+        assert "paper/testnet credentials were rejected" in message
+        assert "BINANCE_API_KEY/BINANCE_SECRET_KEY" in message
+    else:  # pragma: no cover - defensive assertion
+        raise AssertionError("Expected BinanceFuturesAPIError to propagate during bootstrap")

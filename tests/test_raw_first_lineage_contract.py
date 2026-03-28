@@ -12,6 +12,7 @@ from lumina_quant.data.raw_first_lineage import (
     raw_aggtrades_to_1s_frame,
     resolve_raw_aggtrades_backend_name,
 )
+import lumina_quant.data.native_raw_first_backend as native_raw_first_backend
 from lumina_quant.storage.parquet import ParquetMarketDataRepository
 
 
@@ -194,6 +195,83 @@ def test_resolve_raw_aggtrades_backend_name_reports_python_without_native(monkey
         lambda: None,
     )
     assert resolve_raw_aggtrades_backend_name("auto") == "python"
+
+
+def test_raw_aggtrades_auto_backend_logs_once_when_native_unavailable(monkeypatch, caplog) -> None:
+    native_raw_first_backend._AUTO_FALLBACK_WARNED.clear()
+    monkeypatch.setattr(
+        "lumina_quant.data.native_raw_first_backend._load_native_function",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        native_raw_first_backend,
+        "_NATIVE_LOAD_ERROR",
+        "failed to load test library",
+    )
+    caplog.set_level("WARNING")
+
+    payload = [
+        {
+            "agg_trade_id": 1,
+            "timestamp_ms": 1_700_000_000_000,
+            "price": 100.0,
+            "quantity": 1.0,
+            "is_buyer_maker": False,
+        }
+    ]
+
+    first = raw_aggtrades_to_1s_frame(
+        payload,
+        source="pytest",
+        range_start_ms=1_700_000_000_000,
+        range_end_ms=1_700_000_000_999,
+        complete_through_ms=1_700_000_000_999,
+        backend="auto",
+    )
+    second = raw_aggtrades_to_1s_frame(
+        payload,
+        source="pytest",
+        range_start_ms=1_700_000_000_000,
+        range_end_ms=1_700_000_000_999,
+        complete_through_ms=1_700_000_000_999,
+        backend="auto",
+    )
+
+    assert first.height == 1
+    assert second.height == 1
+    records = [record.message for record in caplog.records if "falling back to Python" in record.message]
+    assert len(records) == 1
+    assert "failed to load test library" in records[0]
+
+
+def test_raw_aggtrades_auto_backend_logs_once_when_native_status_fails(monkeypatch, caplog) -> None:
+    native_raw_first_backend._AUTO_FALLBACK_WARNED.clear()
+    monkeypatch.setattr(
+        "lumina_quant.data.native_raw_first_backend._load_native_function",
+        lambda: lambda *args, **kwargs: 7,
+    )
+    caplog.set_level("WARNING")
+
+    frame = raw_aggtrades_to_1s_frame(
+        [
+            {
+                "agg_trade_id": 1,
+                "timestamp_ms": 1_700_000_000_000,
+                "price": 100.0,
+                "quantity": 1.0,
+                "is_buyer_maker": False,
+            }
+        ],
+        source="pytest",
+        range_start_ms=1_700_000_000_000,
+        range_end_ms=1_700_000_000_999,
+        complete_through_ms=1_700_000_000_999,
+        backend="auto",
+    )
+
+    assert frame.height == 1
+    records = [record.message for record in caplog.records if "status=7" in record.message]
+    assert len(records) == 1
 
 
 

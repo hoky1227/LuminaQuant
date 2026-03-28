@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ctypes
+import logging
 import os
 import platform
 from pathlib import Path
@@ -24,6 +25,9 @@ _VALID_BACKENDS = {
 _NATIVE_FN: Any = None
 _NATIVE_HANDLE: Any = None
 _NATIVE_DLL = ""
+_NATIVE_LOAD_ERROR = ""
+_AUTO_FALLBACK_WARNED: set[str] = set()
+_LOGGER = logging.getLogger(__name__)
 
 
 def _empty_ohlcv_frame() -> pl.DataFrame:
@@ -68,20 +72,33 @@ def _discover_dll_candidates() -> list[str]:
     return [str(root / "native" / "rust_rawfirst" / "target" / "release" / _native_lib_filename("lumina_rawfirst"))]
 
 
+def _warn_auto_fallback_once(reason: str) -> None:
+    message = str(reason or "").strip()
+    if not message or message in _AUTO_FALLBACK_WARNED:
+        return
+    _AUTO_FALLBACK_WARNED.add(message)
+    _LOGGER.warning("%s", message)
+
+
 def load_rawfirst_native_library() -> Any | None:
-    global _NATIVE_HANDLE, _NATIVE_DLL
+    global _NATIVE_HANDLE, _NATIVE_DLL, _NATIVE_LOAD_ERROR
     if _NATIVE_HANDLE is not None:
         return _NATIVE_HANDLE
+    last_error = ""
     for dll_path in _discover_dll_candidates():
         if not dll_path or not os.path.exists(dll_path):
+            last_error = f"native library missing at {dll_path}" if dll_path else "native library path missing"
             continue
         try:
             handle = ctypes.CDLL(dll_path)
-        except Exception:
+        except Exception as exc:
+            last_error = f"failed to load native library {dll_path}: {exc}"
             continue
         _NATIVE_HANDLE = handle
         _NATIVE_DLL = dll_path
+        _NATIVE_LOAD_ERROR = ""
         return handle
+    _NATIVE_LOAD_ERROR = last_error or "native library unavailable"
     return None
 
 
@@ -153,6 +170,10 @@ def aggregate_raw_aggtrades_to_1s_native(
     if fn is None:
         if mode == RAW_FIRST_BACKEND_RUST:
             raise RuntimeError("Rust raw-first backend requested but native library is unavailable")
+        _warn_auto_fallback_once(
+            "Rust raw-first backend unavailable in auto mode; falling back to Python"
+            + (f" ({_NATIVE_LOAD_ERROR})" if _NATIVE_LOAD_ERROR else "")
+        )
         return None
 
     if raw.is_empty():
@@ -211,6 +232,9 @@ def aggregate_raw_aggtrades_to_1s_native(
     )
     if status != 0:
         if mode == RAW_FIRST_BACKEND_AUTO:
+            _warn_auto_fallback_once(
+                f"Rust raw-first backend returned status={status} in auto mode; falling back to Python"
+            )
             return None
         raise RuntimeError(f"Rust raw-first backend failed with status={status}")
 

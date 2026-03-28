@@ -121,11 +121,48 @@ def resolve_incumbent_bundle_path(path: str | Path | None = None) -> Path:
     if PORTFOLIO_ONE_SHOT_CURRENT_BUNDLE not in candidates:
         candidates.append(PORTFOLIO_ONE_SHOT_CURRENT_BUNDLE)
     for candidate in candidates:
-        if candidate.exists():
-            return candidate.resolve()
+        resolved = resolve_followup_artifact_path(candidate)
+        if resolved.exists():
+            return resolved.resolve()
     if path is not None:
-        return Path(path).resolve()
-    return PORTFOLIO_ONE_SHOT_INCUMBENT_BUNDLE.resolve()
+        return resolve_followup_artifact_path(Path(path)).resolve()
+    return resolve_followup_artifact_path(PORTFOLIO_ONE_SHOT_INCUMBENT_BUNDLE).resolve()
+
+
+def resolve_followup_artifact_path(path: str | Path) -> Path:
+    """Resolve follow-up artifacts from the repo root, falling back to OMX worktrees."""
+    candidate = Path(path)
+    if candidate.is_absolute():
+        repo_candidate = candidate
+        try:
+            candidate = candidate.relative_to(ROOT)
+        except ValueError:
+            return repo_candidate
+    else:
+        repo_candidate = ROOT / candidate
+    if repo_candidate.exists():
+        return repo_candidate
+
+    omx_root = ROOT / ".omx"
+    if not omx_root.exists():
+        return repo_candidate
+
+    fallback_matches = sorted(
+        (
+            matched
+            for matched in omx_root.glob(f"team/*/worktrees/*/{candidate.as_posix()}")
+            if matched.exists()
+        ),
+        key=lambda matched: (matched.stat().st_mtime_ns, matched.as_posix()),
+        reverse=True,
+    )
+    return fallback_matches[0] if fallback_matches else repo_candidate
+
+
+def resolve_current_optimization_path(path: str | Path | None = None) -> Path:
+    """Resolve the current optimization artifact, including OMX worktree fallbacks."""
+    candidate = PORTFOLIO_CURRENT_OPTIMIZATION if path is None else Path(path)
+    return resolve_followup_artifact_path(candidate)
 
 
 def memory_policy_payload(*, budget_bytes: int | None = None) -> dict[str, Any]:
@@ -310,6 +347,8 @@ __all__ = [
     "acquire_portfolio_memory_guard",
     "memory_policy_payload",
     "portfolio_followup_default_budget_bytes",
+    "resolve_current_optimization_path",
+    "resolve_followup_artifact_path",
     "resolve_incumbent_bundle_path",
     "split_dates",
     "split_for_date",

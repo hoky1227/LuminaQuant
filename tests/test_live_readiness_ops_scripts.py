@@ -6,6 +6,7 @@ import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import lumina_quant.live.readiness_policy as readiness_policy
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -156,6 +157,60 @@ def test_live_readiness_preflight_honors_runtime_env_mode_override(monkeypatch, 
 
     assert payload["checks"]["mode"] == "real"
     assert payload["status"]["ready_for_real"] is True
+
+
+def test_live_readiness_preflight_falls_back_to_latest_worktree_decision_artifact(
+    monkeypatch, tmp_path: Path
+) -> None:
+    fresh_cutoff = (datetime.now(UTC) - timedelta(minutes=5)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "storage:",
+                '  postgres_dsn: "postgresql://demo"',
+                "live:",
+                '  mode: "paper"',
+                "  testnet: true",
+                "  require_real_enable_flag: true",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    refresh = tmp_path / "refresh.json"
+    refresh.write_text(
+        json.dumps(
+            {
+                "status": "completed",
+                "collection_cutoff_utc": fresh_cutoff,
+                "feature_results": [{"last_timestamp_utc": fresh_cutoff}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    decision_rel = Path("var/reports/exact_window_backtests/followup_status/decision.json")
+    worktree_decision = (
+        tmp_path
+        / ".omx"
+        / "team"
+        / "demo"
+        / "worktrees"
+        / "worker-1"
+        / decision_rel
+    )
+    worktree_decision.parent.mkdir(parents=True, exist_ok=True)
+    worktree_decision.write_text(json.dumps({"decision": "keep_incumbent"}), encoding="utf-8")
+    monkeypatch.setattr(readiness_policy, "REPO_ROOT", tmp_path)
+
+    payload = PREFLIGHT.build_preflight_payload(
+        config_path=config_path,
+        refresh_json=refresh,
+        decision_json=decision_rel,
+        stale_minutes=10_000,
+    )
+
+    assert payload["status"]["ready_for_paper"] is True
+    assert payload["decision_json"] == str(worktree_decision.resolve())
 
 
 def test_request_live_stop_touches_stop_file(tmp_path: Path) -> None:

@@ -377,3 +377,159 @@ pub extern "C" fn append_ohlcv_1s_wal(
     }
     0
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn latest_complete_bucket_rounds_to_completed_second() {
+        assert_eq!(latest_complete_bucket_start_ms(999), Some(0));
+        assert_eq!(latest_complete_bucket_start_ms(1_999), Some(1_000));
+        assert_eq!(latest_complete_bucket_start_ms(0), None);
+    }
+
+    #[test]
+    fn aggregate_present_buckets_merges_same_second_trades() {
+        let buckets = aggregate_present_buckets(
+            &[1_000, 1_200, 2_100],
+            &[100.0, 101.5, 99.0],
+            &[1.0, 2.0, 3.0],
+            None,
+            None,
+            2_999,
+        );
+
+        assert_eq!(buckets.len(), 2);
+        assert_eq!(buckets[0].bucket_ms, 1_000);
+        assert_eq!(buckets[0].open, 100.0);
+        assert_eq!(buckets[0].high, 101.5);
+        assert_eq!(buckets[0].low, 100.0);
+        assert_eq!(buckets[0].close, 101.5);
+        assert_eq!(buckets[0].volume, 3.0);
+        assert_eq!(buckets[1].bucket_ms, 2_000);
+        assert_eq!(buckets[1].close, 99.0);
+    }
+
+    #[test]
+    fn aggregate_raw_aggtrades_to_1s_fills_leading_gap_from_previous_close() {
+        let timestamps = [2_100_i64];
+        let prices = [102.0_f64];
+        let quantities = [1.5_f64];
+        let mut out_ts = [0_i64; 4];
+        let mut out_open = [0.0_f64; 4];
+        let mut out_high = [0.0_f64; 4];
+        let mut out_low = [0.0_f64; 4];
+        let mut out_close = [0.0_f64; 4];
+        let mut out_volume = [0.0_f64; 4];
+        let mut out_len = 0_i32;
+
+        let status = aggregate_raw_aggtrades_to_1s(
+            timestamps.as_ptr(),
+            prices.as_ptr(),
+            quantities.as_ptr(),
+            timestamps.len() as i32,
+            0,
+            1,
+            2_999,
+            1,
+            99.0,
+            1,
+            2_999,
+            out_ts.as_mut_ptr(),
+            out_open.as_mut_ptr(),
+            out_high.as_mut_ptr(),
+            out_low.as_mut_ptr(),
+            out_close.as_mut_ptr(),
+            out_volume.as_mut_ptr(),
+            out_ts.len() as i32,
+            &mut out_len as *mut i32,
+        );
+
+        assert_eq!(status, 0);
+        assert_eq!(out_len, 3);
+        assert_eq!(&out_ts[..3], &[0, 1_000, 2_000]);
+        assert_eq!(&out_close[..3], &[99.0, 99.0, 102.0]);
+        assert_eq!(&out_volume[..3], &[0.0, 0.0, 1.5]);
+    }
+
+    #[test]
+    fn aggregate_raw_aggtrades_to_1s_reports_capacity_overflow() {
+        let timestamps = [1_000_i64, 2_000_i64, 3_000_i64];
+        let prices = [100.0_f64, 101.0, 102.0];
+        let quantities = [1.0_f64, 1.0, 1.0];
+        let mut out_ts = [0_i64; 2];
+        let mut out_open = [0.0_f64; 2];
+        let mut out_high = [0.0_f64; 2];
+        let mut out_low = [0.0_f64; 2];
+        let mut out_close = [0.0_f64; 2];
+        let mut out_volume = [0.0_f64; 2];
+        let mut out_len = -1_i32;
+
+        let status = aggregate_raw_aggtrades_to_1s(
+            timestamps.as_ptr(),
+            prices.as_ptr(),
+            quantities.as_ptr(),
+            timestamps.len() as i32,
+            1_000,
+            1,
+            3_999,
+            1,
+            0.0,
+            0,
+            3_999,
+            out_ts.as_mut_ptr(),
+            out_open.as_mut_ptr(),
+            out_high.as_mut_ptr(),
+            out_low.as_mut_ptr(),
+            out_close.as_mut_ptr(),
+            out_volume.as_mut_ptr(),
+            out_ts.len() as i32,
+            &mut out_len as *mut i32,
+        );
+
+        assert_eq!(status, 3);
+        assert_eq!(out_len, -1);
+    }
+
+    #[test]
+    fn append_ohlcv_1s_wal_writes_aligned_records() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let wal_path = std::env::temp_dir().join(format!("lumina_rawfirst_test_{unique}.wal"));
+        let timestamps = [1_000_i64, 2_000_i64];
+        let opens = [100.0_f64, 101.0];
+        let highs = [101.0_f64, 102.0];
+        let lows = [99.0_f64, 100.0];
+        let closes = [100.5_f64, 101.5];
+        let volumes = [1.25_f64, 2.5];
+        let mut written = -1_i32;
+
+        let wal_c_string = std::ffi::CString::new(wal_path.to_string_lossy().as_bytes()).expect("cstring");
+        let status = append_ohlcv_1s_wal(
+            wal_c_string.as_ptr(),
+            timestamps.as_ptr(),
+            opens.as_ptr(),
+            highs.as_ptr(),
+            lows.as_ptr(),
+            closes.as_ptr(),
+            volumes.as_ptr(),
+            timestamps.len() as i32,
+            0,
+            &mut written as *mut i32,
+        );
+
+        assert_eq!(status, 0);
+        assert_eq!(written, 2);
+        let bytes = fs::read(&wal_path).expect("wal bytes");
+        assert_eq!(bytes.len(), 128);
+        assert_eq!(&bytes[0..4], b"LQWB");
+        assert_eq!(&bytes[64..68], b"LQWB");
+
+        let _ = fs::remove_file(&wal_path);
+    }
+}

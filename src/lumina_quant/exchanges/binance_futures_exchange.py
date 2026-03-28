@@ -67,6 +67,32 @@ class BinanceFuturesExchange(ExchangeInterface):
     def _normalize_symbol(symbol: str) -> str:
         return normalize_symbol(symbol)
 
+    def _annotate_signed_bootstrap_error(
+        self,
+        exc: BinanceFuturesAPIError,
+    ) -> BinanceFuturesAPIError:
+        message = str(exc)
+        invalid_credential = (
+            getattr(exc, "error_code", None) in {-2015, -2014}
+            or "Invalid API-key" in message
+            or "API-key format invalid" in message
+        )
+        if not invalid_credential:
+            return exc
+
+        mode_hint = "paper/testnet" if bool(getattr(self.config, "IS_TESTNET", False)) else "real"
+        return BinanceFuturesAPIError(
+            (
+                f"{message} "
+                f"(Binance Futures {mode_hint} credentials were rejected during signed exchange bootstrap; "
+                "check BINANCE_API_KEY/BINANCE_SECRET_KEY, futures permissions, testnet-vs-prod key pairing, "
+                "and any IP allowlist restrictions.)"
+            ),
+            status_code=getattr(exc, "status_code", None),
+            error_code=getattr(exc, "error_code", None),
+            payload=getattr(exc, "payload", None),
+        )
+
     def connect(self) -> None:
         exchange_config = getattr(self.config, "EXCHANGE", None)
         if not isinstance(exchange_config, dict):
@@ -91,15 +117,17 @@ class BinanceFuturesExchange(ExchangeInterface):
         self.rest_client = client
         self.exchange = client
         self.load_markets()
+        try:
+            position_mode = str(getattr(self.config, "POSITION_MODE", "HEDGE") or "HEDGE").upper()
+            self.set_position_mode(position_mode)
 
-        position_mode = str(getattr(self.config, "POSITION_MODE", "HEDGE") or "HEDGE").upper()
-        self.set_position_mode(position_mode)
-
-        margin_mode = str(getattr(self.config, "MARGIN_MODE", "isolated") or "isolated")
-        leverage = int(getattr(self.config, "LEVERAGE", 1) or 1)
-        for symbol in list(getattr(self.config, "SYMBOLS", []) or []):
-            self.set_margin_mode(str(symbol), margin_mode)
-            self.set_leverage(str(symbol), leverage)
+            margin_mode = str(getattr(self.config, "MARGIN_MODE", "isolated") or "isolated")
+            leverage = int(getattr(self.config, "LEVERAGE", 1) or 1)
+            for symbol in list(getattr(self.config, "SYMBOLS", []) or []):
+                self.set_margin_mode(str(symbol), margin_mode)
+                self.set_leverage(str(symbol), leverage)
+        except BinanceFuturesAPIError as exc:
+            raise self._annotate_signed_bootstrap_error(exc) from exc
 
     def close(self) -> None:
         self.rest_client = None

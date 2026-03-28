@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import getpass
+from pathlib import Path
+from types import SimpleNamespace
+
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from lumina_quant.postgres_state import PostgresStateRepository
+from lumina_quant.postgres_state import PostgresStateRepository, _connect_postgres
 
 
 @dataclass(slots=True)
@@ -131,3 +135,34 @@ def test_optimization_fingerprint_is_deterministic_for_key_order_variants():
     )
 
     assert first == second
+
+
+def test_connect_postgres_retries_local_socket_on_localhost_passwordless_auth_error(monkeypatch):
+    calls: list[str] = []
+    sentinel = object()
+
+    class FakeOperationalError(Exception):
+        pass
+
+    def _connect(dsn: str):
+        calls.append(str(dsn))
+        if len(calls) == 1:
+            raise FakeOperationalError(
+                "connection failed: connection to server at \"127.0.0.1\", port 5432 failed: "
+                "fe_sendauth: no password supplied"
+            )
+        return sentinel
+
+    monkeypatch.setitem(__import__("sys").modules, "psycopg", SimpleNamespace(connect=_connect))
+    monkeypatch.setattr(
+        "lumina_quant.postgres_state._local_postgres_socket_dir",
+        lambda: Path("/var/run/postgresql"),
+    )
+
+    result = _connect_postgres("postgresql://localhost:5432/luminaquant")
+
+    assert result is sentinel
+    assert calls == [
+        "postgresql://localhost:5432/luminaquant",
+        f"postgresql:///luminaquant?host=%2Fvar%2Frun%2Fpostgresql&user={getpass.getuser()}",
+    ]

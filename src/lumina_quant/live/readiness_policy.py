@@ -10,6 +10,7 @@ from typing import Any
 
 from lumina_quant.configuration.loader import load_runtime_config, load_yaml_config
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_CONFIG_PATH = Path("config.yaml")
 DEFAULT_FOLLOWUP_ROOT = Path("var/reports/exact_window_backtests/followup_status")
 DEFAULT_REFRESH_JSON = DEFAULT_FOLLOWUP_ROOT / "final_portfolio_validation_data_refresh_latest.json"
@@ -58,6 +59,32 @@ def _parse_utc(value: str | None) -> datetime | None:
 
 def _read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _resolve_repo_artifact_path(path: Path) -> Path:
+    candidate = path if path.is_absolute() else (REPO_ROOT / path)
+    if candidate.exists():
+        return candidate
+
+    try:
+        relative = candidate.relative_to(REPO_ROOT)
+    except ValueError:
+        return candidate
+
+    omx_root = REPO_ROOT / ".omx"
+    if not omx_root.exists():
+        return candidate
+
+    fallback_matches = sorted(
+        (
+            matched
+            for matched in omx_root.glob(f"team/*/worktrees/*/{relative.as_posix()}")
+            if matched.exists()
+        ),
+        key=lambda matched: matched.stat().st_mtime,
+        reverse=True,
+    )
+    return fallback_matches[0] if fallback_matches else candidate
 
 
 def _env_truthy(name: str, env: Mapping[str, str] | None = None) -> bool:
@@ -212,12 +239,14 @@ def build_live_readiness_payload(
     effective_env = env or os.environ
     runtime = load_runtime_config(config_path=str(config_path), env=effective_env)
     raw = load_yaml_config(config_path=str(config_path))
-    refresh = _read_json(refresh_json)
-    decision = _read_json(decision_json)
+    resolved_refresh_json = _resolve_repo_artifact_path(refresh_json)
+    resolved_decision_json = _resolve_repo_artifact_path(decision_json)
+    refresh = _read_json(resolved_refresh_json)
+    decision = _read_json(resolved_decision_json)
     verdict = _build_live_readiness_verdict(
         config_path=config_path,
-        refresh_json=refresh_json,
-        decision_json=decision_json,
+        refresh_json=resolved_refresh_json,
+        decision_json=resolved_decision_json,
         stale_minutes=max(1, int(stale_minutes)),
         runtime_live=asdict(runtime.live),
         runtime_storage=asdict(runtime.storage),

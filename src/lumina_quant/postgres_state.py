@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import hashlib
+import getpass
 import json
+import urllib.parse
 import uuid
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, Protocol
 
 SCHEMA_SQL: tuple[str, ...] = (
@@ -932,18 +935,61 @@ class PostgresStateRepository:
             conn.commit()
 
 
+def _local_postgres_socket_dir() -> Path | None:
+    candidate = Path("/var/run/postgresql")
+    return candidate if candidate.exists() else None
+
+
+def _local_tcp_auth_without_password(exc: Exception) -> bool:
+    message = str(exc or "")
+    return "fe_sendauth: no password supplied" in message
+
+
+def _build_local_socket_fallback_dsn(dsn: str) -> str | None:
+    parsed = urllib.parse.urlsplit(str(dsn or ""))
+    if parsed.scheme not in {"postgres", "postgresql"}:
+        return None
+    hostname = str(parsed.hostname or "").strip().lower()
+    if hostname not in {"localhost", "127.0.0.1", "::1"}:
+        return None
+    if parsed.password:
+        return None
+    database = parsed.path.lstrip("/")
+    if not database:
+        return None
+    socket_dir = _local_postgres_socket_dir()
+    if socket_dir is None:
+        return None
+
+    query = dict(urllib.parse.parse_qsl(parsed.query, keep_blank_values=True))
+    query["host"] = str(socket_dir)
+    query.setdefault("user", urllib.parse.unquote(parsed.username or getpass.getuser()))
+    encoded_query = urllib.parse.urlencode(query)
+    return f"{parsed.scheme}:///{database}?{encoded_query}"
+
+
+def _connect_postgres_with_driver(connect_fn: Callable[[str], ConnectionLike], dsn: str) -> ConnectionLike:
+    try:
+        return connect_fn(dsn)
+    except Exception as exc:
+        fallback_dsn = _build_local_socket_fallback_dsn(dsn)
+        if fallback_dsn and _local_tcp_auth_without_password(exc):
+            return connect_fn(fallback_dsn)
+        raise
+
+
 def _connect_postgres(dsn: str) -> ConnectionLike:
     try:
         import psycopg
 
-        return psycopg.connect(dsn)
+        return _connect_postgres_with_driver(psycopg.connect, dsn)
     except ModuleNotFoundError:
         pass
 
     try:
         import psycopg2
 
-        return psycopg2.connect(dsn)
+        return _connect_postgres_with_driver(psycopg2.connect, dsn)
     except ModuleNotFoundError as exc:
         raise ModuleNotFoundError(
             "No PostgreSQL driver found. Install psycopg>=3 or psycopg2."

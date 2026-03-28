@@ -36,8 +36,20 @@ def _strategy_helpers():
             return registry.get_live_strategy_map(include_opt_in=include_opt_in)
         return registry.get_strategy_map()
 
-    def _resolve_strategy_class(name: str, default_name_override: str | None = None):
-        return registry.resolve_strategy_class(name, default_name=default_name_override or default_name)
+    def _resolve_strategy_class(
+        name: str,
+        default_name: str | None = None,
+        default_name_override: str | None = None,
+    ):
+        fallback_name = (
+            default_name_override
+            if default_name_override is not None
+            else default_name
+        )
+        return registry.resolve_strategy_class(
+            name,
+            default_name=fallback_name or default_name,
+        )
 
     if STRATEGY_MAP is None:
         STRATEGY_MAP = _get_live_strategy_map(include_opt_in=True)

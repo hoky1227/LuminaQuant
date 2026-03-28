@@ -51,6 +51,7 @@ from lumina_quant.portfolio_split_contract import (
     FOLLOWUP_ROOT,
     PORTFOLIO_CURRENT_OPTIMIZATION,
     portfolio_followup_default_budget_bytes,
+    resolve_current_optimization_path,
     resolve_incumbent_bundle_path,
 )
 from lumina_quant.storage.parquet import ParquetMarketDataRepository, normalize_symbol
@@ -199,7 +200,7 @@ def feature_resume_start(symbol: str, *, db_path: str, exchange_id: str, floor_d
 
 
 def load_portfolio_symbols(portfolio_path: Path | str = PORTFOLIO_CURRENT_OPTIMIZATION) -> list[str]:
-    payload = json.loads(Path(portfolio_path).read_text(encoding="utf-8"))
+    payload = json.loads(resolve_current_optimization_path(portfolio_path).read_text(encoding="utf-8"))
     ordered: dict[str, None] = {}
     for row in list(payload.get("weights") or []):
         for symbol in list(row.get("symbols") or []):

@@ -141,6 +141,64 @@ def test_run_strict_research_rejects_synthetic_fallback(monkeypatch) -> None:
         )
 
 
+def test_run_strict_research_executes_candidates_sequentially_with_candidate_specific_scope(
+    monkeypatch,
+) -> None:
+    calls: list[dict[str, object]] = []
+
+    def _fake_run_candidate_research(**kwargs):
+        calls.append(kwargs)
+        candidate = kwargs["candidates"][0]
+        return {
+            "generated_at": "2026-03-28T00:00:00Z",
+            "data_sources": {"raw-first": [candidate["name"]]},
+            "candidates": [
+                {
+                    "candidate_id": candidate["candidate_id"],
+                    "name": candidate["name"],
+                }
+            ],
+        }
+
+    monkeypatch.setattr(MODULE, "run_candidate_research", _fake_run_candidate_research)
+
+    report = MODULE._run_strict_research(
+        candidates=[
+            {
+                "candidate_id": "pair",
+                "name": "pair",
+                "strategy_timeframe": "1h",
+                "symbols": ["BNB/USDT", "TRX/USDT"],
+            },
+            {
+                "candidate_id": "trend",
+                "name": "trend",
+                "strategy_timeframe": "30m",
+                "symbols": ["BTC/USDT", "ETH/USDT"],
+            },
+        ],
+        strategy_timeframes=["1h", "30m"],
+        symbol_universe=["BTC/USDT", "ETH/USDT", "BNB/USDT", "TRX/USDT"],
+        split={
+            "train_start": "2025-01-01T00:00:00Z",
+            "train_end": "2025-12-31T23:59:59Z",
+            "val_start": "2026-01-01T00:00:00Z",
+            "val_end": "2026-01-31T23:59:59Z",
+            "oos_start": "2026-02-01T00:00:00Z",
+            "oos_end": "2026-03-01T00:00:00Z",
+        },
+        min_bundle_bars=1,
+    )
+
+    assert [call["max_candidates"] for call in calls] == [1, 1]
+    assert [call["data_mode"] for call in calls] == [MODULE.STRICT_VALIDATION_DATA_MODE] * 2
+    assert calls[0]["strategy_timeframes"] == ["1h"]
+    assert calls[0]["symbol_universe"] == ["BNB/USDT", "TRX/USDT"]
+    assert calls[1]["strategy_timeframes"] == ["30m"]
+    assert calls[1]["symbol_universe"] == ["BTC/USDT", "ETH/USDT"]
+    assert [row["candidate_id"] for row in report["candidates"]] == ["pair", "trend"]
+
+
 
 def test_build_latest_anchored_split_trims_from_left_when_latest_anchor_moves_forward() -> None:
     saved_oos_end = MODULE.parse_utc("2026-03-17T23:59:59Z")
