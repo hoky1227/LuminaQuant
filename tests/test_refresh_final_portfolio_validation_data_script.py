@@ -173,6 +173,99 @@ def test_collect_live_raw_rows_reduces_limit_after_rate_limit(monkeypatch) -> No
     assert len(rows) == 1
 
 
+def test_collect_live_raw_rows_scans_across_sparse_hour_windows(monkeypatch) -> None:
+    class _Exchange:
+        def close(self):
+            return None
+
+    calls: list[int] = []
+    hour_ms = 3_600_000
+
+    monkeypatch.setattr(MODULE, "create_binance_futures_client", lambda **kwargs: _Exchange())
+    monkeypatch.setattr(MODULE.time, "sleep", lambda *_args, **_kwargs: None)
+
+    def _fetch(*, exchange, symbol, since_ms, limit, retries, base_wait_sec):
+        _ = exchange, symbol, limit, retries, base_wait_sec
+        calls.append(int(since_ms))
+        if int(since_ms) == 0:
+            return [
+                {
+                    "agg_trade_id": 10,
+                    "timestamp_ms": 1_000,
+                    "price": 100.0,
+                    "quantity": 0.1,
+                    "is_buyer_maker": False,
+                }
+            ]
+        if int(since_ms) == hour_ms:
+            return [
+                {
+                    "agg_trade_id": 20,
+                    "timestamp_ms": hour_ms + 2_000,
+                    "price": 101.0,
+                    "quantity": 0.2,
+                    "is_buyer_maker": True,
+                }
+            ]
+        return []
+
+    monkeypatch.setattr(MODULE, "fetch_aggtrades_batch", _fetch)
+
+    rows = MODULE._collect_live_raw_rows(
+        symbol="XAG/USDT",
+        start_ms=0,
+        end_ms=(2 * hour_ms) - 1,
+        limit=1000,
+        pause_sec=0.0,
+    )
+
+    assert calls[:2] == [0, hour_ms]
+    assert [row["agg_trade_id"] for row in rows] == [10, 20]
+
+
+
+def test_collect_live_raw_rows_skips_empty_windows_before_later_trades(monkeypatch) -> None:
+    class _Exchange:
+        def close(self):
+            return None
+
+    calls: list[int] = []
+    hour_ms = 3_600_000
+
+    monkeypatch.setattr(MODULE, "create_binance_futures_client", lambda **kwargs: _Exchange())
+    monkeypatch.setattr(MODULE.time, "sleep", lambda *_args, **_kwargs: None)
+
+    def _fetch(*, exchange, symbol, since_ms, limit, retries, base_wait_sec):
+        _ = exchange, symbol, limit, retries, base_wait_sec
+        calls.append(int(since_ms))
+        if int(since_ms) == 0:
+            return []
+        if int(since_ms) == hour_ms:
+            return [
+                {
+                    "agg_trade_id": 30,
+                    "timestamp_ms": hour_ms + 500,
+                    "price": 102.0,
+                    "quantity": 0.3,
+                    "is_buyer_maker": False,
+                }
+            ]
+        return []
+
+    monkeypatch.setattr(MODULE, "fetch_aggtrades_batch", _fetch)
+
+    rows = MODULE._collect_live_raw_rows(
+        symbol="XPT/USDT",
+        start_ms=0,
+        end_ms=(2 * hour_ms) - 1,
+        limit=1000,
+        pause_sec=0.0,
+    )
+
+    assert calls[:2] == [0, hour_ms]
+    assert [row["agg_trade_id"] for row in rows] == [30]
+
+
 def test_live_raw_batch_pause_seconds_defaults_to_zero(monkeypatch) -> None:
     monkeypatch.delenv("LQ_LIVE_RAW_BATCH_PAUSE_SEC", raising=False)
 

@@ -632,6 +632,7 @@ def _collect_live_raw_rows(
         batch_count = 0
         while cursor <= until and batch_count < max(1, int(max_batches)):
             batch_count += 1
+            window_end_ms = min(int(cursor) + 3_599_999, int(until))
             try:
                 batch = fetch_aggtrades_batch(
                     exchange=exchange,
@@ -653,7 +654,9 @@ def _collect_live_raw_rows(
                     continue
                 raise
             if not batch:
-                break
+                cursor = int(window_end_ms) + 1
+                last_trade_id = -1
+                continue
 
             filtered: list[dict[str, Any]] = []
             max_seen_ts = int(cursor)
@@ -684,7 +687,9 @@ def _collect_live_raw_rows(
             last_trade_id = int(filtered[-1]["agg_trade_id"])
             cursor = int(filtered[-1]["timestamp_ms"]) + 1
             if len(filtered) < int(current_limit):
-                break
+                cursor = int(window_end_ms) + 1
+                last_trade_id = -1
+                continue
             if float(resolved_pause_sec) > 0.0:
                 time.sleep(float(resolved_pause_sec))
     finally:
