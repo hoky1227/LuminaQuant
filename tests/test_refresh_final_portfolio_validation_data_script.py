@@ -220,3 +220,43 @@ def test_refresh_payload_reports_backend(monkeypatch, tmp_path: Path) -> None:
     assert exit_code == 0
     assert payload["aggregation_backend_requested"] in {"auto", "python", "rust"}
     assert payload["aggregation_backend_resolved"] == "python"
+
+
+def test_raw_checkpoint_utc_reads_incremental_raw_part_files(tmp_path: Path) -> None:
+    repo = ParquetMarketDataRepository(str(tmp_path))
+    repo.append_raw_aggtrades(
+        exchange="binance",
+        symbol="BTC/USDT",
+        rows=[
+            {
+                "agg_trade_id": 1,
+                "timestamp_ms": 1_735_689_600_000,
+                "price": 100.0,
+                "quantity": 0.1,
+                "is_buyer_maker": False,
+            }
+        ],
+    )
+    repo.append_raw_aggtrades(
+        exchange="binance",
+        symbol="BTC/USDT",
+        rows=[
+            {
+                "agg_trade_id": 2,
+                "timestamp_ms": 1_735_689_601_500,
+                "price": 101.0,
+                "quantity": 0.2,
+                "is_buyer_maker": True,
+            }
+        ],
+    )
+
+    latest = MODULE._raw_checkpoint_utc(
+        repo,
+        db_path=str(tmp_path),
+        exchange_id="binance",
+        symbol="BTC/USDT",
+    )
+
+    assert latest is not None
+    assert MODULE.iso_utc(latest) == "2025-01-01T00:00:01.500000Z"

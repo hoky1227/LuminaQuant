@@ -87,6 +87,7 @@ _MATERIALIZED_REQUIRED_MANIFEST_FIELDS = (
     "producer",
     "status",
 )
+_RAW_PART_PATTERN = re.compile(r"^part-(\d+)\.parquet$")
 
 
 def normalize_symbol(symbol: str) -> str:
@@ -460,6 +461,60 @@ class ParquetMarketDataRepository:
     def _raw_checkpoint_path(self, *, exchange: str, symbol: str) -> Path:
         return self._raw_symbol_root(exchange=exchange, symbol=symbol) / "checkpoint.json"
 
+    @staticmethod
+    def _raw_part_paths(partition_root: Path) -> list[Path]:
+        return sorted(partition_root.glob("part-*.parquet"))
+
+    @staticmethod
+    def _next_raw_part_path(partition_root: Path) -> Path:
+        highest = -1
+        for path in ParquetMarketDataRepository._raw_part_paths(partition_root):
+            match = _RAW_PART_PATTERN.fullmatch(path.name)
+            if match is None:
+                continue
+            highest = max(highest, int(match.group(1)))
+        next_index = highest + 1
+        return partition_root / f"part-{next_index:04d}.parquet"
+
+    @staticmethod
+    def _raw_tail_key(paths: list[Path]) -> tuple[int, int] | None:
+        latest: tuple[int, int] | None = None
+        for path in paths:
+            try:
+                tail = (
+                    pl.scan_parquet(str(path))
+                    .select(["timestamp_ms", "agg_trade_id"])
+                    .sort(["timestamp_ms", "agg_trade_id"], descending=[True, True])
+                    .limit(1)
+                    .collect()
+                )
+            except Exception:
+                return None
+            if tail.is_empty():
+                continue
+            key = (int(tail["timestamp_ms"][0]), int(tail["agg_trade_id"][0]))
+            latest = key if latest is None else max(latest, key)
+        return latest
+
+    @staticmethod
+    def _rename_corrupt_raw_part(path: Path) -> None:
+        corrupt_path = path.with_name(
+            f"{path.stem}.corrupt-{datetime.now(UTC).strftime('%Y%m%dT%H%M%S%fZ')}{path.suffix}"
+        )
+        path.replace(corrupt_path)
+        ParquetMarketDataRepository._fsync_dir(path.parent)
+
+    @staticmethod
+    def _raw_checkpoint_key(payload: dict[str, Any]) -> tuple[int, int] | None:
+        try:
+            ts_ms = int(payload.get("last_timestamp_ms", 0) or 0)
+            trade_id = int(payload.get("last_trade_id", -1) or -1)
+        except Exception:
+            return None
+        if ts_ms <= 0:
+            return None
+        return (ts_ms, trade_id)
+
     def _materialized_date_root(
         self,
         *,
@@ -679,79 +734,80 @@ class ParquetMarketDataRepository:
         frame = self._ensure_raw_aggtrades_frame(rows)
         if frame.is_empty():
             return 0
+        checkpoint_key = self._raw_checkpoint_key(
+            self.read_raw_checkpoint(exchange=exchange, symbol=symbol)
+        )
 
         stamped = frame.with_columns(
-            [
-                (
-                    pl.col("timestamp_ms").cast(pl.Utf8)
-                    + pl.lit(":")
-                    + pl.col("agg_trade_id").cast(pl.Utf8)
-                ).alias("_trade_key"),
-                (pl.col("timestamp_ms") // 1000).cast(pl.Int64).alias("_ts_sec"),
-            ]
+            (pl.col("timestamp_ms") // 1000).cast(pl.Int64).alias("_ts_sec")
         ).with_columns(
-            pl.from_epoch(pl.col("_ts_sec"), time_unit="s")
-            .dt.strftime("%Y-%m-%d")
-            .alias("_partition_date")
+            pl.from_epoch(pl.col("_ts_sec"), time_unit="s").dt.strftime("%Y-%m-%d").alias("_partition_date")
         )
 
         total_rows = 0
         for partition_date, partition in stamped.partition_by("_partition_date", as_dict=True).items():
             part_key = str(partition_date[0] if isinstance(partition_date, tuple) else partition_date)
-            ordered_columns = list(partition.columns)
-            partition = partition.select(ordered_columns)
+            payload = (
+                partition.select(list(_RAW_AGGTRADES_REQUIRED_COLUMNS))
+                .sort(["timestamp_ms", "agg_trade_id"])
+                .unique(subset=["timestamp_ms", "agg_trade_id"], keep="last")
+                .sort(["timestamp_ms", "agg_trade_id"])
+            )
+            if payload.is_empty():
+                continue
             part_path = self._raw_partition_path(
                 exchange=exchange,
                 symbol=symbol,
                 partition_date=part_key,
             )
             part_path.mkdir(parents=True, exist_ok=True)
-            output_path = part_path / "part-0000.parquet"
+            existing_paths = self._raw_part_paths(part_path)
+            incoming_first_key = (int(payload["timestamp_ms"][0]), int(payload["agg_trade_id"][0]))
+            existing_tail_key = (
+                checkpoint_key
+                if checkpoint_key is not None and existing_paths
+                else (self._raw_tail_key(existing_paths) if existing_paths else None)
+            )
+            append_only = not existing_paths or (
+                existing_tail_key is not None and incoming_first_key > existing_tail_key
+            )
 
-            if output_path.exists():
+            if append_only:
+                output_path = (
+                    part_path / "part-0000.parquet" if not existing_paths else self._next_raw_part_path(part_path)
+                )
+                payload.write_parquet(output_path, compression="zstd", statistics=True)
+                self._fsync_dir(output_path.parent)
+                total_rows += int(payload.height)
+                continue
+
+            existing_frames: list[pl.DataFrame] = []
+            for existing_path in existing_paths:
                 try:
-                    existing = (
-                        pl.read_parquet(output_path)
-                        .select(list(_RAW_AGGTRADES_REQUIRED_COLUMNS))
-                        .with_columns(
-                            [
-                                (
-                                    pl.col("timestamp_ms").cast(pl.Utf8)
-                                    + pl.lit(":")
-                                    + pl.col("agg_trade_id").cast(pl.Utf8)
-                                ).alias("_trade_key"),
-                                (pl.col("timestamp_ms") // 1000).cast(pl.Int64).alias("_ts_sec"),
-                                pl.lit(part_key).alias("_partition_date"),
-                            ]
-                        )
-                        .select(ordered_columns)
-                    )
+                    loaded = pl.read_parquet(existing_path).select(list(_RAW_AGGTRADES_REQUIRED_COLUMNS))
                 except BaseException:
-                    corrupt_path = output_path.with_name(
-                        f"{output_path.stem}.corrupt-{datetime.now(UTC).strftime('%Y%m%dT%H%M%S%fZ')}{output_path.suffix}"
-                    )
-                    output_path.replace(corrupt_path)
-                    self._fsync_dir(output_path.parent)
-                    existing = pl.DataFrame(
-                        {name: [] for name in ordered_columns},
-                        schema={name: partition.schema[name] for name in ordered_columns},
-                    ).select(ordered_columns)
-            else:
-                existing = pl.DataFrame(
-                    {name: [] for name in ordered_columns},
-                    schema={name: partition.schema[name] for name in ordered_columns},
-                ).select(ordered_columns)
+                    self._rename_corrupt_raw_part(existing_path)
+                    continue
+                if not loaded.is_empty():
+                    existing_frames.append(loaded)
 
             merged = (
-                pl.concat([existing, partition], how="vertical_relaxed")
+                pl.concat([*existing_frames, payload], how="vertical_relaxed")
                 .sort(["timestamp_ms", "agg_trade_id"])
-                .unique(subset=["_trade_key"], keep="last")
+                .unique(subset=["timestamp_ms", "agg_trade_id"], keep="last")
                 .sort(["timestamp_ms", "agg_trade_id"])
             )
             total_rows += int(merged.height)
 
-            payload = merged.select(list(_RAW_AGGTRADES_REQUIRED_COLUMNS))
-            payload.write_parquet(output_path, compression="zstd", statistics=True)
+            output_path = part_path / "part-0000.parquet"
+            tmp_output_path = output_path.with_suffix(".tmp.parquet")
+            merged.write_parquet(tmp_output_path, compression="zstd", statistics=True)
+            tmp_output_path.replace(output_path)
+            for existing_path in existing_paths:
+                if existing_path == output_path:
+                    continue
+                if existing_path.exists():
+                    existing_path.unlink()
             self._fsync_dir(output_path.parent)
 
         return int(frame.height)

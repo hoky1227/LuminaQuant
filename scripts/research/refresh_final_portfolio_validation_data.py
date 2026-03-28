@@ -279,7 +279,7 @@ def _raw_checkpoint_utc(
         / str(exchange_id).lower()
         / compact
     )
-    for path in sorted(root.glob("date=*/part-0000.parquet"), reverse=True):
+    for path in sorted(root.glob("date=*/part-*.parquet"), reverse=True):
         try:
             frame = pl.scan_parquet(str(path)).select(pl.col("timestamp_ms").max().alias("ts")).collect()
             file_ts = int(frame["ts"][0] or 0)

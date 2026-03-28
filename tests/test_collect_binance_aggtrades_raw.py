@@ -206,3 +206,111 @@ def test_append_raw_aggtrades_recovers_from_corrupt_partition(tmp_path):
     assert written == 1
     assert raw.height == 1
     assert corrupt_files
+
+
+def test_append_raw_aggtrades_uses_incremental_parts_for_append_only_batches(tmp_path):
+    repo = ParquetMarketDataRepository(str(tmp_path))
+
+    first_written = repo.append_raw_aggtrades(
+        exchange="binance",
+        symbol="BTC/USDT",
+        rows=[
+            {
+                "agg_trade_id": 1,
+                "timestamp_ms": 1_735_689_600_000,
+                "price": 100.0,
+                "quantity": 0.1,
+                "is_buyer_maker": False,
+            }
+        ],
+    )
+    second_written = repo.append_raw_aggtrades(
+        exchange="binance",
+        symbol="BTC/USDT",
+        rows=[
+            {
+                "agg_trade_id": 2,
+                "timestamp_ms": 1_735_689_601_000,
+                "price": 101.0,
+                "quantity": 0.2,
+                "is_buyer_maker": True,
+            }
+        ],
+    )
+
+    part_dir = repo.raw_partition_path(
+        exchange="binance",
+        symbol="BTC/USDT",
+        partition_date="2025-01-01",
+    ).parent
+    part_files = sorted(path.name for path in part_dir.glob("part-*.parquet"))
+    raw = repo.load_raw_aggtrades(exchange="binance", symbol="BTC/USDT")
+
+    assert first_written == 1
+    assert second_written == 1
+    assert part_files == ["part-0000.parquet", "part-0001.parquet"]
+    assert raw.height == 2
+
+
+def test_append_raw_aggtrades_compacts_back_to_single_part_when_batches_overlap(tmp_path):
+    repo = ParquetMarketDataRepository(str(tmp_path))
+
+    repo.append_raw_aggtrades(
+        exchange="binance",
+        symbol="BTC/USDT",
+        rows=[
+            {
+                "agg_trade_id": 1,
+                "timestamp_ms": 1_735_689_600_000,
+                "price": 100.0,
+                "quantity": 0.1,
+                "is_buyer_maker": False,
+            }
+        ],
+    )
+    repo.append_raw_aggtrades(
+        exchange="binance",
+        symbol="BTC/USDT",
+        rows=[
+            {
+                "agg_trade_id": 2,
+                "timestamp_ms": 1_735_689_601_000,
+                "price": 101.0,
+                "quantity": 0.2,
+                "is_buyer_maker": True,
+            }
+        ],
+    )
+
+    written = repo.append_raw_aggtrades(
+        exchange="binance",
+        symbol="BTC/USDT",
+        rows=[
+            {
+                "agg_trade_id": 2,
+                "timestamp_ms": 1_735_689_601_000,
+                "price": 101.0,
+                "quantity": 0.2,
+                "is_buyer_maker": True,
+            },
+            {
+                "agg_trade_id": 3,
+                "timestamp_ms": 1_735_689_602_000,
+                "price": 102.0,
+                "quantity": 0.3,
+                "is_buyer_maker": False,
+            },
+        ],
+    )
+
+    part_dir = repo.raw_partition_path(
+        exchange="binance",
+        symbol="BTC/USDT",
+        partition_date="2025-01-01",
+    ).parent
+    part_files = sorted(path.name for path in part_dir.glob("part-*.parquet"))
+    raw = repo.load_raw_aggtrades(exchange="binance", symbol="BTC/USDT")
+
+    assert written == 2
+    assert part_files == ["part-0000.parquet"]
+    assert raw.height == 3
