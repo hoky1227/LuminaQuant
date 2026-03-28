@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 import polars as pl
-from lumina_quant.data.native_raw_first_backend import RAW_FIRST_BACKEND_ENV
+from lumina_quant.data.native_raw_first_backend import RAW_FIRST_BACKEND_ENV, raw_first_backend_diagnostics
 from lumina_quant.data.support_inventory import (
     INVENTORY_NOTES,
     build_strategy_support_inventory,
@@ -1311,6 +1311,7 @@ def main(argv: list[str] | None = None) -> int:
         "ohlcv_derivation": "derived_from_raw_aggtrades",
         "aggregation_backend_requested": str(os.getenv(RAW_FIRST_BACKEND_ENV, "auto") or "auto"),
         "aggregation_backend_resolved": resolve_raw_aggtrades_backend_name(),
+        "aggregation_backend_diagnostics": raw_first_backend_diagnostics(),
         "final_signoff_source_of_truth": False,
         "collection_cutoff_utc": iso_utc(cutoff_dt),
         "portfolio_symbols": portfolio_symbols,

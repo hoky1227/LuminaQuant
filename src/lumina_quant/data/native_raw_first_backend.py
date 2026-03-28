@@ -143,6 +143,23 @@ def native_backend_available() -> bool:
     return _load_native_function() is not None
 
 
+def raw_first_backend_diagnostics(requested: str | None = None) -> dict[str, Any]:
+    mode = normalize_raw_first_backend(requested)
+    description = describe_raw_first_backend(mode)
+    resolved_backend = RAW_FIRST_BACKEND_PYTHON
+    if description.startswith(f"{RAW_FIRST_BACKEND_RUST}:"):
+        resolved_backend = RAW_FIRST_BACKEND_RUST
+    return {
+        "requested_backend": mode,
+        "resolved_backend": resolved_backend,
+        "description": description,
+        "native_library_path": _NATIVE_DLL or None,
+        "native_load_error": _NATIVE_LOAD_ERROR or None,
+        "auto_fallback_warning_count": len(_AUTO_FALLBACK_WARNED),
+        "auto_fallback_warning_reasons": sorted(_AUTO_FALLBACK_WARNED),
+    }
+
+
 def describe_raw_first_backend(requested: str | None = None) -> str:
     mode = normalize_raw_first_backend(requested)
     if mode == RAW_FIRST_BACKEND_PYTHON:
@@ -264,4 +281,5 @@ __all__ = [
     "load_rawfirst_native_library",
     "native_backend_available",
     "normalize_raw_first_backend",
+    "raw_first_backend_diagnostics",
 ]

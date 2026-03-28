@@ -454,6 +454,19 @@ def test_refresh_payload_reports_backend(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(MODULE, "load_portfolio_symbols", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(MODULE, "load_feature_symbols", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(MODULE, "resolve_raw_aggtrades_backend_name", lambda *_args, **_kwargs: "python")
+    monkeypatch.setattr(
+        MODULE,
+        "raw_first_backend_diagnostics",
+        lambda *_args, **_kwargs: {
+            "requested_backend": "auto",
+            "resolved_backend": "python",
+            "description": "python",
+            "native_library_path": None,
+            "native_load_error": "test missing library",
+            "auto_fallback_warning_count": 1,
+            "auto_fallback_warning_reasons": ["test missing library"],
+        },
+    )
 
     exit_code = MODULE.main(
         [
@@ -476,6 +489,7 @@ def test_refresh_payload_reports_backend(monkeypatch, tmp_path: Path) -> None:
     assert exit_code == 0
     assert payload["aggregation_backend_requested"] in {"auto", "python", "rust"}
     assert payload["aggregation_backend_resolved"] == "python"
+    assert payload["aggregation_backend_diagnostics"]["native_load_error"] == "test missing library"
 
 
 def test_refresh_payload_blocks_when_session_memory_lease_is_active(monkeypatch, tmp_path: Path) -> None:

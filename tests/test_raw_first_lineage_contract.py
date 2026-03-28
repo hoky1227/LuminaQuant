@@ -197,6 +197,32 @@ def test_resolve_raw_aggtrades_backend_name_reports_python_without_native(monkey
     assert resolve_raw_aggtrades_backend_name("auto") == "python"
 
 
+def test_raw_first_backend_diagnostics_reports_load_error(monkeypatch) -> None:
+    native_raw_first_backend._AUTO_FALLBACK_WARNED.clear()
+    native_raw_first_backend._NATIVE_HANDLE = None
+    native_raw_first_backend._NATIVE_FN = None
+    native_raw_first_backend._NATIVE_DLL = ""
+    monkeypatch.setattr(
+        "lumina_quant.data.native_raw_first_backend._load_native_function",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        native_raw_first_backend,
+        "_NATIVE_LOAD_ERROR",
+        "failed to load test library",
+    )
+    native_raw_first_backend._AUTO_FALLBACK_WARNED.add("failed to load test library")
+
+    diagnostics = native_raw_first_backend.raw_first_backend_diagnostics("auto")
+
+    assert diagnostics["requested_backend"] == "auto"
+    assert diagnostics["resolved_backend"] == "python"
+    assert diagnostics["description"] == "python"
+    assert diagnostics["native_load_error"] == "failed to load test library"
+    assert diagnostics["auto_fallback_warning_count"] == 1
+    assert diagnostics["auto_fallback_warning_reasons"] == ["failed to load test library"]
+
+
 def test_raw_aggtrades_auto_backend_logs_once_when_native_unavailable(monkeypatch, caplog) -> None:
     native_raw_first_backend._AUTO_FALLBACK_WARNED.clear()
     monkeypatch.setattr(

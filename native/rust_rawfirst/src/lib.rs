@@ -414,6 +414,25 @@ mod tests {
     }
 
     #[test]
+    fn aggregate_present_buckets_respects_filters_and_complete_through() {
+        let buckets = aggregate_present_buckets(
+            &[1_000, 1_200, 2_100, 3_100],
+            &[100.0, 101.5, 99.0, 105.0],
+            &[1.0, 2.0, 3.0, 4.0],
+            Some(1_100),
+            Some(3_050),
+            2_999,
+        );
+
+        assert_eq!(buckets.len(), 2);
+        assert_eq!(buckets[0].bucket_ms, 1_000);
+        assert_eq!(buckets[0].open, 101.5);
+        assert_eq!(buckets[0].close, 101.5);
+        assert_eq!(buckets[1].bucket_ms, 2_000);
+        assert_eq!(buckets[1].close, 99.0);
+    }
+
+    #[test]
     fn aggregate_raw_aggtrades_to_1s_fills_leading_gap_from_previous_close() {
         let timestamps = [2_100_i64];
         let prices = [102.0_f64];
@@ -453,6 +472,49 @@ mod tests {
         assert_eq!(&out_ts[..3], &[0, 1_000, 2_000]);
         assert_eq!(&out_close[..3], &[99.0, 99.0, 102.0]);
         assert_eq!(&out_volume[..3], &[0.0, 0.0, 1.5]);
+    }
+
+    #[test]
+    fn aggregate_raw_aggtrades_to_1s_truncates_incomplete_tail() {
+        let timestamps = [1_000_i64, 1_400, 2_100];
+        let prices = [100.0_f64, 101.0, 102.0];
+        let quantities = [1.0_f64, 2.0, 3.0];
+        let mut out_ts = [0_i64; 4];
+        let mut out_open = [0.0_f64; 4];
+        let mut out_high = [0.0_f64; 4];
+        let mut out_low = [0.0_f64; 4];
+        let mut out_close = [0.0_f64; 4];
+        let mut out_volume = [0.0_f64; 4];
+        let mut out_len = -1_i32;
+
+        let status = aggregate_raw_aggtrades_to_1s(
+            timestamps.as_ptr(),
+            prices.as_ptr(),
+            quantities.as_ptr(),
+            timestamps.len() as i32,
+            1_000,
+            1,
+            2_999,
+            1,
+            0.0,
+            0,
+            1_999,
+            out_ts.as_mut_ptr(),
+            out_open.as_mut_ptr(),
+            out_high.as_mut_ptr(),
+            out_low.as_mut_ptr(),
+            out_close.as_mut_ptr(),
+            out_volume.as_mut_ptr(),
+            out_ts.len() as i32,
+            &mut out_len as *mut i32,
+        );
+
+        assert_eq!(status, 0);
+        assert_eq!(out_len, 1);
+        assert_eq!(&out_ts[..1], &[1_000]);
+        assert_eq!(&out_open[..1], &[100.0]);
+        assert_eq!(&out_close[..1], &[101.0]);
+        assert_eq!(&out_volume[..1], &[3.0]);
     }
 
     #[test]
