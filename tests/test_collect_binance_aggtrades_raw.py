@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 from lumina_quant.data_collector import collect_binance_aggtrades_raw
@@ -356,3 +357,86 @@ def test_load_raw_aggtrades_skips_corrupt_incremental_parts(tmp_path):
 
     assert raw.height == 2
     assert raw["agg_trade_id"].to_list() == [1, 2]
+
+
+def test_append_raw_aggtrades_auto_compacts_when_part_threshold_exceeded(tmp_path, monkeypatch):
+    repo = ParquetMarketDataRepository(str(tmp_path))
+    monkeypatch.setenv("LQ_RAW_PARTITION_MAX_PARTS", "2")
+    monkeypatch.setenv("LQ_RAW_COMPACT_ON_THRESHOLD", "true")
+
+    for offset in range(3):
+        repo.append_raw_aggtrades(
+            exchange="binance",
+            symbol="BTC/USDT",
+            rows=[
+                {
+                    "agg_trade_id": offset + 1,
+                    "timestamp_ms": 1_735_689_600_000 + offset,
+                    "price": 100.0 + offset,
+                    "quantity": 0.1,
+                    "is_buyer_maker": bool(offset % 2),
+                }
+            ],
+        )
+
+    part_dir = repo.raw_partition_path(
+        exchange="binance",
+        symbol="BTC/USDT",
+        partition_date="2025-01-01",
+    ).parent
+    raw = repo.load_raw_aggtrades(exchange="binance", symbol="BTC/USDT")
+    meta = json.loads(repo._raw_meta_path(exchange="binance", symbol="BTC/USDT").read_text())
+
+    assert sorted(path.name for path in part_dir.glob("part-*.parquet")) == ["part-0000.parquet"]
+    assert raw.height == 3
+    assert meta["raw_compaction_required"] is False
+    assert meta["last_raw_compaction_partition"] == "date=2025-01-01"
+
+
+def test_append_raw_aggtrades_marks_meta_when_threshold_exceeded_but_auto_compact_disabled(
+    tmp_path, monkeypatch
+):
+    repo = ParquetMarketDataRepository(str(tmp_path))
+    monkeypatch.setenv("LQ_RAW_PARTITION_MAX_PARTS", "1")
+    monkeypatch.setenv("LQ_RAW_COMPACT_ON_THRESHOLD", "false")
+
+    repo.append_raw_aggtrades(
+        exchange="binance",
+        symbol="BTC/USDT",
+        rows=[
+            {
+                "agg_trade_id": 1,
+                "timestamp_ms": 1_735_689_600_000,
+                "price": 100.0,
+                "quantity": 0.1,
+                "is_buyer_maker": False,
+            }
+        ],
+    )
+    repo.append_raw_aggtrades(
+        exchange="binance",
+        symbol="BTC/USDT",
+        rows=[
+            {
+                "agg_trade_id": 2,
+                "timestamp_ms": 1_735_689_601_000,
+                "price": 101.0,
+                "quantity": 0.2,
+                "is_buyer_maker": True,
+            }
+        ],
+    )
+
+    part_dir = repo.raw_partition_path(
+        exchange="binance",
+        symbol="BTC/USDT",
+        partition_date="2025-01-01",
+    ).parent
+    meta = json.loads(repo._raw_meta_path(exchange="binance", symbol="BTC/USDT").read_text())
+
+    assert sorted(path.name for path in part_dir.glob("part-*.parquet")) == [
+        "part-0000.parquet",
+        "part-0001.parquet",
+    ]
+    assert meta["raw_compaction_required"] is True
+    assert meta["last_raw_part_count"] == 2

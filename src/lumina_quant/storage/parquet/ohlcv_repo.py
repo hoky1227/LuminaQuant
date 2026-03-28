@@ -461,6 +461,9 @@ class ParquetMarketDataRepository:
     def _raw_checkpoint_path(self, *, exchange: str, symbol: str) -> Path:
         return self._raw_symbol_root(exchange=exchange, symbol=symbol) / "checkpoint.json"
 
+    def _raw_meta_path(self, *, exchange: str, symbol: str) -> Path:
+        return self._raw_symbol_root(exchange=exchange, symbol=symbol) / "compaction.meta.json"
+
     @staticmethod
     def _raw_part_paths(partition_root: Path) -> list[Path]:
         return sorted(partition_root.glob("part-*.parquet"))
@@ -800,6 +803,11 @@ class ParquetMarketDataRepository:
                 payload.write_parquet(output_path, compression="zstd", statistics=True)
                 self._fsync_dir(output_path.parent)
                 total_rows += int(payload.height)
+                self._enforce_raw_partition_controls(
+                    exchange=exchange,
+                    symbol=symbol,
+                    partition_root=part_path,
+                )
                 continue
 
             existing_frames: list[pl.DataFrame] = []
@@ -830,6 +838,11 @@ class ParquetMarketDataRepository:
                 if existing_path.exists():
                     existing_path.unlink()
             self._fsync_dir(output_path.parent)
+            self._enforce_raw_partition_controls(
+                exchange=exchange,
+                symbol=symbol,
+                partition_root=part_path,
+            )
 
         return int(frame.height)
 
@@ -1294,6 +1307,113 @@ class ParquetMarketDataRepository:
         self._fsync_file(tmp)
         tmp.replace(path)
         self._fsync_dir(path.parent)
+
+    def _read_raw_meta(self, *, exchange: str, symbol: str) -> dict[str, Any]:
+        path = self._raw_meta_path(exchange=exchange, symbol=symbol)
+        if not path.exists():
+            return {}
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+
+    def _write_raw_meta(self, *, exchange: str, symbol: str, payload: dict[str, Any]) -> None:
+        path = self._raw_meta_path(exchange=exchange, symbol=symbol)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp.json")
+        tmp.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+        self._fsync_file(tmp)
+        tmp.replace(path)
+        self._fsync_dir(path.parent)
+
+    def _resolve_raw_part_controls(self) -> tuple[int, bool]:
+        raw_max_parts = self._env_int(
+            names=["LQ_RAW_PARTITION_MAX_PARTS", "LQ__STORAGE__RAW_PARTITION_MAX_PARTS"],
+            default=8,
+        )
+        compact_on_threshold = self._env_bool(
+            names=["LQ_RAW_COMPACT_ON_THRESHOLD", "LQ__STORAGE__RAW_COMPACT_ON_THRESHOLD"],
+            default=True,
+        )
+        return max(0, int(raw_max_parts)), bool(compact_on_threshold)
+
+    def _compact_raw_partition(
+        self,
+        *,
+        exchange: str,
+        symbol: str,
+        partition_root: Path,
+    ) -> int:
+        part_paths = self._raw_part_paths(partition_root)
+        if not part_paths:
+            return 0
+
+        frames: list[pl.DataFrame] = []
+        for path in part_paths:
+            try:
+                loaded = pl.read_parquet(path).select(list(_RAW_AGGTRADES_REQUIRED_COLUMNS))
+            except Exception:
+                self._rename_corrupt_raw_part(path)
+                continue
+            if not loaded.is_empty():
+                frames.append(loaded)
+
+        if not frames:
+            return 0
+
+        merged = self._normalize_loaded_raw_aggtrades_frame(pl.concat(frames, how="vertical_relaxed"))
+        output_path = partition_root / "part-0000.parquet"
+        tmp_output_path = output_path.with_suffix(".tmp.parquet")
+        merged.write_parquet(tmp_output_path, compression="zstd", statistics=True)
+        tmp_output_path.replace(output_path)
+        for path in part_paths:
+            if path == output_path:
+                continue
+            if path.exists():
+                path.unlink()
+        self._fsync_dir(output_path.parent)
+        return len([path for path in part_paths if path.exists()])
+
+    def _enforce_raw_partition_controls(
+        self,
+        *,
+        exchange: str,
+        symbol: str,
+        partition_root: Path,
+    ) -> None:
+        max_parts, compact_on_threshold = self._resolve_raw_part_controls()
+        if max_parts <= 0:
+            return
+
+        part_paths = self._raw_part_paths(partition_root)
+        if len(part_paths) <= max_parts:
+            return
+
+        now = datetime.now(tz=UTC)
+        meta = self._read_raw_meta(exchange=exchange, symbol=symbol)
+        meta["raw_compaction_required"] = True
+        meta["last_raw_over_limit_detected_at"] = now.isoformat()
+        meta["last_raw_over_limit_partition"] = partition_root.name
+        meta["last_raw_part_count"] = len(part_paths)
+
+        if not compact_on_threshold:
+            last_warning = self._parse_iso_utc(meta.get("last_raw_over_limit_warning_at"))
+            warn_elapsed = None if last_warning is None else (now - last_warning).total_seconds()
+            if warn_elapsed is None or warn_elapsed >= 60.0:
+                print(
+                    f"[WARN] Raw partition {partition_root} has {len(part_paths)} parts (limit {max_parts}); "
+                    "raw_compact_on_threshold=false, manual compaction required."
+                )
+                meta["last_raw_over_limit_warning_at"] = now.isoformat()
+            self._write_raw_meta(exchange=exchange, symbol=symbol, payload=meta)
+            return
+
+        self._compact_raw_partition(exchange=exchange, symbol=symbol, partition_root=partition_root)
+        meta = self._read_raw_meta(exchange=exchange, symbol=symbol)
+        meta["raw_compaction_required"] = False
+        meta["last_raw_compaction_resolved_at"] = now.isoformat()
+        meta["last_raw_compaction_partition"] = partition_root.name
+        self._write_raw_meta(exchange=exchange, symbol=symbol, payload=meta)
 
     def _monthly_files_for_range(
         self,
