@@ -9,6 +9,7 @@ import pytest
 from lumina_quant.data.raw_first_lineage import (
     normalize_exchange_timestamp_ms,
     raw_aggtrades_to_1s_frame,
+    resolve_raw_aggtrades_backend_name,
 )
 from lumina_quant.storage.parquet import ParquetMarketDataRepository
 
@@ -57,6 +58,87 @@ def test_raw_aggtrades_to_1s_frame_drops_incomplete_last_second() -> None:
     assert frame["open"][0] == pytest.approx(100.0)
     assert frame["close"][0] == pytest.approx(101.0)
     assert frame["volume"][0] == pytest.approx(3.0)
+
+
+def test_raw_aggtrades_to_1s_frame_skips_leading_gaps_without_previous_close() -> None:
+    frame = raw_aggtrades_to_1s_frame(
+        [
+            {
+                "agg_trade_id": 1,
+                "timestamp_ms": 1_700_000_002_100,
+                "price": 102.0,
+                "quantity": 1.5,
+                "is_buyer_maker": False,
+            }
+        ],
+        source="pytest",
+        range_start_ms=1_700_000_000_000,
+        range_end_ms=1_700_000_002_999,
+        complete_through_ms=1_700_000_002_999,
+    )
+
+    assert frame.height == 1
+    assert frame["datetime"][0] == datetime(2023, 11, 14, 22, 13, 22)
+    assert frame["close"][0] == pytest.approx(102.0)
+    assert frame["volume"][0] == pytest.approx(1.5)
+
+
+def test_raw_aggtrades_to_1s_frame_fills_leading_gaps_with_previous_close() -> None:
+    frame = raw_aggtrades_to_1s_frame(
+        [
+            {
+                "agg_trade_id": 1,
+                "timestamp_ms": 1_700_000_002_100,
+                "price": 102.0,
+                "quantity": 1.5,
+                "is_buyer_maker": False,
+            }
+        ],
+        source="pytest",
+        range_start_ms=1_700_000_000_000,
+        range_end_ms=1_700_000_002_999,
+        previous_close=99.0,
+        complete_through_ms=1_700_000_002_999,
+    )
+
+    assert frame.height == 3
+    assert frame["close"].to_list() == pytest.approx([99.0, 99.0, 102.0])
+    assert frame["volume"].to_list() == pytest.approx([0.0, 0.0, 1.5])
+
+
+def test_raw_aggtrades_to_1s_frame_explicit_rust_mode_errors_when_backend_missing(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "lumina_quant.data.native_raw_first_backend._load_native_function",
+        lambda: None,
+    )
+
+    with pytest.raises(RuntimeError, match="native library is unavailable"):
+        raw_aggtrades_to_1s_frame(
+            [
+                {
+                    "agg_trade_id": 1,
+                    "timestamp_ms": 1_700_000_000_000,
+                    "price": 100.0,
+                    "quantity": 1.0,
+                    "is_buyer_maker": False,
+                }
+            ],
+            source="pytest",
+            range_start_ms=1_700_000_000_000,
+            range_end_ms=1_700_000_000_999,
+            complete_through_ms=1_700_000_000_999,
+            backend="rust",
+        )
+
+
+def test_resolve_raw_aggtrades_backend_name_reports_python_without_native(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "lumina_quant.data.native_raw_first_backend._load_native_function",
+        lambda: None,
+    )
+    assert resolve_raw_aggtrades_backend_name("auto") == "python"
 
 
 
@@ -132,3 +214,58 @@ def test_committed_loader_rebuilds_higher_timeframe_from_1s_and_truncates_incomp
     assert rebuilt["open"][0] == pytest.approx(100.0)
     assert rebuilt["close"][0] == pytest.approx(106.1)
     assert rebuilt["volume"][0] == pytest.approx(60.0)
+
+
+def test_raw_aggtrades_to_1s_frame_rust_matches_python_when_native_available() -> None:
+    if resolve_raw_aggtrades_backend_name("auto") == "python":
+        pytest.skip("Rust raw-first backend is not built")
+
+    rows = [
+        {
+            "agg_trade_id": 1,
+            "timestamp_ms": 1_700_000_000_100,
+            "price": 100.0,
+            "quantity": 0.1,
+            "is_buyer_maker": False,
+        },
+        {
+            "agg_trade_id": 2,
+            "timestamp_ms": 1_700_000_000_800,
+            "price": 101.0,
+            "quantity": 0.2,
+            "is_buyer_maker": True,
+        },
+        {
+            "agg_trade_id": 3,
+            "timestamp_ms": 1_700_000_002_100,
+            "price": 102.0,
+            "quantity": 0.3,
+            "is_buyer_maker": False,
+        },
+    ]
+    python_frame = raw_aggtrades_to_1s_frame(
+        rows,
+        source="pytest",
+        range_start_ms=1_700_000_000_000,
+        range_end_ms=1_700_000_002_999,
+        previous_close=99.0,
+        complete_through_ms=1_700_000_002_999,
+        backend="python",
+    )
+    rust_frame = raw_aggtrades_to_1s_frame(
+        rows,
+        source="pytest",
+        range_start_ms=1_700_000_000_000,
+        range_end_ms=1_700_000_002_999,
+        previous_close=99.0,
+        complete_through_ms=1_700_000_002_999,
+        backend="rust",
+    )
+
+    assert rust_frame.shape == python_frame.shape
+    assert rust_frame["datetime"].to_list() == python_frame["datetime"].to_list()
+    assert rust_frame["open"].to_list() == pytest.approx(python_frame["open"].to_list())
+    assert rust_frame["high"].to_list() == pytest.approx(python_frame["high"].to_list())
+    assert rust_frame["low"].to_list() == pytest.approx(python_frame["low"].to_list())
+    assert rust_frame["close"].to_list() == pytest.approx(python_frame["close"].to_list())
+    assert rust_frame["volume"].to_list() == pytest.approx(python_frame["volume"].to_list())

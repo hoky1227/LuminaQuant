@@ -3,11 +3,18 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from datetime import UTC, datetime
 import re
 from typing import Any
 
 import polars as pl
+from lumina_quant.data.native_raw_first_backend import (
+    RAW_FIRST_BACKEND_AUTO,
+    RAW_FIRST_BACKEND_PYTHON,
+    RAW_FIRST_BACKEND_RUST,
+    aggregate_raw_aggtrades_to_1s_native,
+    describe_raw_first_backend,
+    normalize_raw_first_backend,
+)
 
 _TIMEFRAME_UNIT_MS = {
     "s": 1_000,
@@ -27,6 +34,20 @@ _RAW_COLUMNS = (
     "is_buyer_maker",
 )
 _OHLCV_COLUMNS = ("datetime", "open", "high", "low", "close", "volume")
+
+
+def _empty_ohlcv_frame() -> pl.DataFrame:
+    return pl.DataFrame(
+        {column: [] for column in _OHLCV_COLUMNS},
+        schema={
+            "datetime": pl.Datetime(time_unit="ms"),
+            "open": pl.Float64,
+            "high": pl.Float64,
+            "low": pl.Float64,
+            "close": pl.Float64,
+            "volume": pl.Float64,
+        },
+    )
 
 
 def normalize_timeframe_token(timeframe: str) -> str:
@@ -156,50 +177,28 @@ def raw_aggtrades_to_1s_frame(
     range_end_ms: int | None = None,
     previous_close: float | None = None,
     complete_through_ms: int | None = None,
+    backend: str | None = None,
 ) -> pl.DataFrame:
     """Derive continuous canonical 1s OHLCV bars from raw aggTrades."""
     raw = coerce_raw_aggtrades_frame(rows, source=source)
     if raw.is_empty():
-        return pl.DataFrame(
-            {column: [] for column in _OHLCV_COLUMNS},
-            schema={
-                "datetime": pl.Datetime(time_unit="ms"),
-                "open": pl.Float64,
-                "high": pl.Float64,
-                "low": pl.Float64,
-                "close": pl.Float64,
-                "volume": pl.Float64,
-            },
-        )
-
-    trade_rows = raw.to_dicts()
-    trade_rows.sort(key=lambda item: (int(item["timestamp_ms"]), int(item["agg_trade_id"])))
+        return _empty_ohlcv_frame()
 
     effective_complete_through_ms = (
         int(complete_through_ms)
         if complete_through_ms is not None
         else int(range_end_ms)
         if range_end_ms is not None
-        else int(trade_rows[-1]["timestamp_ms"])
+        else int(raw.get_column("timestamp_ms")[-1])
     )
     last_complete_second = latest_complete_bucket_start_ms(
         timeframe="1s",
         complete_through_ms=effective_complete_through_ms,
     )
     if last_complete_second is None:
-        return pl.DataFrame(
-            {column: [] for column in _OHLCV_COLUMNS},
-            schema={
-                "datetime": pl.Datetime(time_unit="ms"),
-                "open": pl.Float64,
-                "high": pl.Float64,
-                "low": pl.Float64,
-                "close": pl.Float64,
-                "volume": pl.Float64,
-            },
-        )
+        return _empty_ohlcv_frame()
 
-    first_trade_second = (int(trade_rows[0]["timestamp_ms"]) // 1000) * 1000
+    first_trade_second = (int(raw.get_column("timestamp_ms")[0]) // 1000) * 1000
     start_second = (
         max(int(range_start_ms) // 1000 * 1000, first_trade_second)
         if previous_close is None and range_start_ms is not None
@@ -211,87 +210,87 @@ def raw_aggtrades_to_1s_frame(
     if range_end_ms is not None:
         end_second = min(int(range_end_ms) // 1000 * 1000, end_second)
     if end_second < start_second:
-        return pl.DataFrame(
-            {column: [] for column in _OHLCV_COLUMNS},
-            schema={
-                "datetime": pl.Datetime(time_unit="ms"),
-                "open": pl.Float64,
-                "high": pl.Float64,
-                "low": pl.Float64,
-                "close": pl.Float64,
-                "volume": pl.Float64,
-            },
-        )
+        return _empty_ohlcv_frame()
 
-    buckets: dict[int, list[float]] = {}
-    for row in trade_rows:
-        timestamp_ms = int(row["timestamp_ms"])
-        if range_start_ms is not None and timestamp_ms < int(range_start_ms):
-            continue
-        if range_end_ms is not None and timestamp_ms > int(range_end_ms):
-            continue
-        if timestamp_ms > int(effective_complete_through_ms):
-            continue
-        bucket_ms = (timestamp_ms // 1000) * 1000
-        current = buckets.get(bucket_ms)
-        price = float(row["price"])
-        quantity = float(row["quantity"])
-        if current is None:
-            buckets[bucket_ms] = [price, price, price, price, quantity]
-        else:
-            current[1] = max(current[1], price)
-            current[2] = min(current[2], price)
-            current[3] = price
-            current[4] += quantity
+    filtered = raw.filter(
+        (pl.col("timestamp_ms") >= int(range_start_ms))
+        if range_start_ms is not None
+        else pl.lit(True)
+    ).filter(
+        (pl.col("timestamp_ms") <= int(range_end_ms))
+        if range_end_ms is not None
+        else pl.lit(True)
+    ).filter(pl.col("timestamp_ms") <= int(effective_complete_through_ms))
 
-    rows_1s: list[dict[str, Any]] = []
-    close_cursor = previous_close
-    cursor_ms = int(start_second)
-    while cursor_ms <= int(end_second):
-        bucket = buckets.get(cursor_ms)
-        if bucket is None:
-            if close_cursor is None:
-                cursor_ms += 1000
-                continue
-            open_price = close_cursor
-            high_price = close_cursor
-            low_price = close_cursor
-            close_price = close_cursor
-            volume = 0.0
-        else:
-            open_price = float(bucket[0])
-            high_price = float(bucket[1])
-            low_price = float(bucket[2])
-            close_price = float(bucket[3])
-            volume = float(bucket[4])
-            close_cursor = close_price
-        rows_1s.append(
-            {
-                "datetime": datetime.fromtimestamp(cursor_ms / 1000.0, tz=UTC).replace(tzinfo=None),
-                "open": float(open_price),
-                "high": float(high_price),
-                "low": float(low_price),
-                "close": float(close_price),
-                "volume": float(volume),
-            }
-        )
-        cursor_ms += 1000
+    if filtered.is_empty():
+        return _empty_ohlcv_frame()
 
-    if not rows_1s:
-        return pl.DataFrame(
-            {column: [] for column in _OHLCV_COLUMNS},
-            schema={
-                "datetime": pl.Datetime(time_unit="ms"),
-                "open": pl.Float64,
-                "high": pl.Float64,
-                "low": pl.Float64,
-                "close": pl.Float64,
-                "volume": pl.Float64,
-            },
+    backend_token = normalize_raw_first_backend(backend)
+    native_frame = aggregate_raw_aggtrades_to_1s_native(
+        filtered,
+        range_start_ms=int(range_start_ms) if range_start_ms is not None else None,
+        range_end_ms=int(range_end_ms) if range_end_ms is not None else None,
+        previous_close=float(previous_close) if previous_close is not None else None,
+        complete_through_ms=int(effective_complete_through_ms),
+        backend=backend_token,
+    )
+    if native_frame is not None:
+        return native_frame
+
+    bucketed = (
+        filtered.with_columns(((pl.col("timestamp_ms") // 1000) * 1000).alias("bucket_ms"))
+        .group_by("bucket_ms", maintain_order=True)
+        .agg(
+            [
+                pl.col("price").first().alias("open"),
+                pl.col("price").max().alias("high"),
+                pl.col("price").min().alias("low"),
+                pl.col("price").last().alias("close"),
+                pl.col("quantity").sum().alias("volume"),
+            ]
         )
-    return pl.DataFrame(rows_1s).with_columns(
+        .sort("bucket_ms")
+    )
+
+    bucket_range = pl.DataFrame(
+        {
+            "bucket_ms": pl.int_range(
+                int(start_second),
+                int(end_second) + 1000,
+                step=1000,
+                eager=True,
+            )
+        }
+    )
+
+    carry_close = pl.col("close").forward_fill()
+    if previous_close is not None:
+        carry_close = carry_close.fill_null(float(previous_close))
+
+    rebuilt = (
+        bucket_range.join(bucketed, on="bucket_ms", how="left")
+        .sort("bucket_ms")
+        .with_columns(carry_close.alias("_carry_close"))
+        .filter(pl.col("_carry_close").is_not_null())
+        .with_columns(
+            [
+                pl.coalesce(["open", "_carry_close"]).cast(pl.Float64).alias("open"),
+                pl.coalesce(["high", "_carry_close"]).cast(pl.Float64).alias("high"),
+                pl.coalesce(["low", "_carry_close"]).cast(pl.Float64).alias("low"),
+                pl.coalesce(["close", "_carry_close"]).cast(pl.Float64).alias("close"),
+                pl.col("volume").fill_null(0.0).cast(pl.Float64).alias("volume"),
+                pl.from_epoch("bucket_ms", time_unit="ms").alias("datetime"),
+            ]
+        )
+        .select(list(_OHLCV_COLUMNS))
+        .sort("datetime")
+    )
+
+    if rebuilt.is_empty():
+        return _empty_ohlcv_frame()
+    return rebuilt.with_columns(
         [
-            pl.col("datetime").cast(pl.Datetime(time_unit="ms")),
+            pl.col("datetime").dt.replace_time_zone(None).cast(pl.Datetime(time_unit="ms")),
             pl.col("open").cast(pl.Float64),
             pl.col("high").cast(pl.Float64),
             pl.col("low").cast(pl.Float64),
@@ -299,6 +298,18 @@ def raw_aggtrades_to_1s_frame(
             pl.col("volume").cast(pl.Float64),
         ]
     )
+
+
+def resolve_raw_aggtrades_backend_name(backend: str | None = None) -> str:
+    token = normalize_raw_first_backend(backend)
+    if token == RAW_FIRST_BACKEND_PYTHON:
+        return RAW_FIRST_BACKEND_PYTHON
+    description = describe_raw_first_backend(token)
+    if token == RAW_FIRST_BACKEND_AUTO and description == RAW_FIRST_BACKEND_PYTHON:
+        return RAW_FIRST_BACKEND_PYTHON
+    if token == RAW_FIRST_BACKEND_RUST and description.startswith(f"{RAW_FIRST_BACKEND_RUST}:"):
+        return description
+    return description if description else RAW_FIRST_BACKEND_AUTO
 
 
 def resample_1s_frame(
@@ -350,4 +361,5 @@ __all__ = [
     "normalize_exchange_timestamp_ms",
     "raw_aggtrades_to_1s_frame",
     "resample_1s_frame",
+    "resolve_raw_aggtrades_backend_name",
 ]

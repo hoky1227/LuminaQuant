@@ -231,33 +231,6 @@ def _archive_rows_to_raw_aggtrades(
     rows.sort(key=lambda item: (int(item["timestamp_ms"]), int(item["agg_trade_id"])))
     return rows
 
-
-def _frame_to_ohlcv_rows(frame: pl.DataFrame) -> list[tuple[float, float, float, float, float, float]]:
-    rows: list[tuple[float, float, float, float, float, float]] = []
-    for row in frame.to_dicts():
-        dt = row.get("datetime")
-        if dt is None:
-            continue
-        if isinstance(dt, datetime):
-            if dt.tzinfo is None:
-                timestamp_ms = int(dt.replace(tzinfo=UTC).timestamp() * 1000)
-            else:
-                timestamp_ms = int(dt.astimezone(UTC).timestamp() * 1000)
-        else:
-            timestamp_ms = int(dt)
-        rows.append(
-            (
-                float(timestamp_ms),
-                float(row.get("open") or 0.0),
-                float(row.get("high") or 0.0),
-                float(row.get("low") or 0.0),
-                float(row.get("close") or 0.0),
-                float(row.get("volume") or 0.0),
-            )
-        )
-    return rows
-
-
 def _last_1s_close(
     *,
     db_path: str,
@@ -1432,7 +1405,7 @@ def sync_symbol_ohlcv(
             db_path,
             exchange=str(exchange_id).lower(),
             symbol=stream_symbol,
-            rows=_frame_to_ohlcv_rows(frame_1s),
+            rows=frame_1s,
             backend=backend,
         )
     )
@@ -1460,7 +1433,7 @@ def sync_symbol_ohlcv(
                     exchange=str(exchange_id).lower(),
                     symbol=stream_symbol,
                     timeframe=timeframe_token,
-                    rows=_frame_to_ohlcv_rows(output_frame),
+                    rows=output_frame,
                     source="binance_futures_raw_first",
                     db_path=db_path,
                     backend=backend,

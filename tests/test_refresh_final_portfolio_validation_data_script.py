@@ -163,3 +163,60 @@ def test_collect_live_raw_rows_reduces_limit_after_rate_limit(monkeypatch) -> No
 
     assert calls[:2] == [1000, 500]
     assert len(rows) == 1
+
+
+def test_prioritize_symbols_keeps_requested_cores_first() -> None:
+    ordered = MODULE.prioritize_symbols(
+        ["DOGE/USDT", "BNB/USDT", "BTC/USDT", "SOL/USDT"],
+        priority_symbols=["BTC/USDT", "SOL/USDT", "ETH/USDT"],
+    )
+
+    assert ordered == ["BTC/USDT", "SOL/USDT", "DOGE/USDT", "BNB/USDT"]
+
+
+def test_estimate_parallel_workers_respects_memory_budget() -> None:
+    workers = MODULE.estimate_parallel_workers(
+        symbol_count=14,
+        memory_budget_bytes=8 * 1024 * 1024 * 1024,
+        reserve_memory_bytes=2 * 1024 * 1024 * 1024,
+        per_worker_memory_bytes=int(1.5 * 1024 * 1024 * 1024),
+        max_workers=8,
+    )
+
+    assert workers == 4
+
+
+def test_refresh_payload_reports_backend(monkeypatch, tmp_path: Path) -> None:
+    output_json = tmp_path / "out.json"
+    output_md = tmp_path / "out.md"
+    rss_log = tmp_path / "rss.jsonl"
+    inventory_json = tmp_path / "inventory.json"
+    inventory_csv = tmp_path / "inventory.csv"
+    bundle = tmp_path / "bundle.json"
+    bundle.write_text(json.dumps({"selected_team": []}), encoding="utf-8")
+
+    monkeypatch.setattr(MODULE, "load_portfolio_symbols", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(MODULE, "load_feature_symbols", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(MODULE, "resolve_raw_aggtrades_backend_name", lambda *_args, **_kwargs: "python")
+
+    exit_code = MODULE.main(
+        [
+            "--bundle-path",
+            str(bundle),
+            "--output-json",
+            str(output_json),
+            "--output-md",
+            str(output_md),
+            "--rss-log",
+            str(rss_log),
+            "--support-inventory-json",
+            str(inventory_json),
+            "--support-inventory-csv",
+            str(inventory_csv),
+        ]
+    )
+
+    payload = json.loads(output_json.read_text(encoding="utf-8"))
+    assert exit_code == 0
+    assert payload["aggregation_backend_requested"] in {"auto", "python", "rust"}
+    assert payload["aggregation_backend_resolved"] == "python"

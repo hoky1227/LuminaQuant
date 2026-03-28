@@ -140,6 +140,10 @@ def _build_c(root: Path) -> tuple[bool, Path | None]:
 
 def _build_rust(root: Path) -> tuple[bool, Path | None]:
     rust_dir = root / "native" / "rust_metrics"
+    return _build_rust_dir(rust_dir, "lumina_metrics")
+
+
+def _build_rust_dir(rust_dir: Path, stem: str) -> tuple[bool, Path | None]:
     if not rust_dir.exists():
         return False, None
 
@@ -159,15 +163,20 @@ def _build_rust(root: Path) -> tuple[bool, Path | None]:
     if err.strip():
         print(err.strip())
 
-    lib_path = rust_dir / "target" / "release" / _native_lib_filename("lumina_metrics")
+    lib_path = rust_dir / "target" / "release" / _native_lib_filename(stem)
     return rc == 0 and lib_path.exists(), (lib_path if lib_path.exists() else None)
+
+
+def _build_rust_rawfirst(root: Path) -> tuple[bool, Path | None]:
+    rust_dir = root / "native" / "rust_rawfirst"
+    return _build_rust_dir(rust_dir, "lumina_rawfirst")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build LuminaQuant native backends")
     parser.add_argument(
         "--backend",
-        choices=["all", "c", "rust"],
+        choices=["all", "c", "rust", "rust-rawfirst"],
         default="all",
         help="Which backend(s) to build",
     )
@@ -176,24 +185,31 @@ def main() -> None:
     root = Path(__file__).resolve().parents[1]
     build_c = args.backend in {"all", "c"}
     build_rust = args.backend in {"all", "rust"}
+    build_rust_rawfirst = args.backend in {"all", "rust-rawfirst"}
 
     c_ok = False
     rust_ok = False
+    rust_rawfirst_ok = False
     c_lib: Path | None = None
     rust_lib: Path | None = None
+    rust_rawfirst_lib: Path | None = None
 
     if build_c:
         c_ok, c_lib = _build_c(root)
     if build_rust:
         rust_ok, rust_lib = _build_rust(root)
+    if build_rust_rawfirst:
+        rust_rawfirst_ok, rust_rawfirst_lib = _build_rust_rawfirst(root)
 
     print("build_native_backends summary")
     if build_c:
         print(f"c_ok={c_ok} c_lib={c_lib}")
     if build_rust:
         print(f"rust_ok={rust_ok} rust_lib={rust_lib}")
+    if build_rust_rawfirst:
+        print(f"rust_rawfirst_ok={rust_rawfirst_ok} rust_rawfirst_lib={rust_rawfirst_lib}")
 
-    if (build_c and not c_ok) or (build_rust and not rust_ok):
+    if (build_c and not c_ok) or (build_rust and not rust_ok) or (build_rust_rawfirst and not rust_rawfirst_ok):
         sys.exit(1)
 
 

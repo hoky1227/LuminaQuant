@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import csv
 import io
 import json
+import os
+import resource
+import sys
 import time
 import zipfile
 from dataclasses import asdict, dataclass
@@ -12,12 +16,16 @@ from pathlib import Path
 from typing import Any
 
 import polars as pl
+from lumina_quant.data.native_raw_first_backend import RAW_FIRST_BACKEND_ENV
 from lumina_quant.data.support_inventory import (
     INVENTORY_NOTES,
     build_strategy_support_inventory,
     write_strategy_support_inventory,
 )
-from lumina_quant.data.raw_first_lineage import raw_aggtrades_to_1s_frame
+from lumina_quant.data.raw_first_lineage import (
+    raw_aggtrades_to_1s_frame,
+    resolve_raw_aggtrades_backend_name,
+)
 from lumina_quant.data_sync import (
     _binance_archive_url,
     _day_bounds_ms,
@@ -32,7 +40,7 @@ from lumina_quant.market_data import upsert_ohlcv_rows_1s
 from lumina_quant.portfolio_split_contract import (
     FOLLOWUP_ROOT,
     PORTFOLIO_CURRENT_OPTIMIZATION,
-    PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES,
+    portfolio_followup_default_budget_bytes,
     resolve_incumbent_bundle_path,
 )
 from lumina_quant.storage.parquet import ParquetMarketDataRepository, normalize_symbol
@@ -47,6 +55,8 @@ DEFAULT_SUPPORT_INVENTORY_JSON = FOLLOWUP_ROOT / "final_portfolio_validation_sup
 DEFAULT_SUPPORT_INVENTORY_CSV = FOLLOWUP_ROOT / "final_portfolio_validation_support_inventory_latest.csv"
 DEFAULT_MIN_START_UTC = "2025-01-01T00:00:00Z"
 DEFAULT_SOFT_RSS_BYTES = int(7.2 * 1024 * 1024 * 1024)
+DEFAULT_PARALLEL_WORKER_MEMORY_BYTES = int(1.5 * 1024 * 1024 * 1024)
+DEFAULT_PARALLEL_MEMORY_RESERVE_BYTES = int(2.0 * 1024 * 1024 * 1024)
 
 
 @dataclass(slots=True)
@@ -79,6 +89,12 @@ class FeatureRefreshResult:
     last_timestamp_utc: str | None
 
 
+@dataclass(slots=True)
+class OhlcvRefreshWorkerPayload:
+    result: OhlcvRefreshResult
+    peak_rss_bytes: int
+
+
 def parse_utc(value: str | None) -> datetime | None:
     token = str(value or "").strip()
     if not token:
@@ -98,6 +114,14 @@ def iso_utc(value: datetime | None) -> str | None:
     else:
         value = value.astimezone(UTC)
     return value.isoformat().replace("+00:00", "Z")
+
+
+def _as_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def latest_runtime_tail_utc(now: datetime | None = None) -> datetime:
@@ -155,6 +179,63 @@ def load_feature_symbols(bundle_path: Path | str | None = None) -> list[str]:
             if token:
                 ordered[token] = None
     return list(ordered)
+
+
+def parse_symbol_tokens(value: str | None, *, default: list[str] | None = None) -> list[str]:
+    ordered: dict[str, None] = {}
+    for symbol in list(default or []):
+        token = normalize_symbol(str(symbol))
+        if token:
+            ordered[token] = None
+    raw = str(value or "").strip()
+    if not raw:
+        return list(ordered)
+    for item in raw.split(","):
+        token = normalize_symbol(str(item))
+        if token:
+            ordered[token] = None
+    return list(ordered)
+
+
+def prioritize_symbols(symbols: list[str], *, priority_symbols: list[str] | None = None) -> list[str]:
+    ordered: dict[str, None] = {}
+    priorities = [normalize_symbol(symbol) for symbol in list(priority_symbols or []) if str(symbol).strip()]
+    symbol_set = {normalize_symbol(symbol) for symbol in list(symbols or [])}
+    for symbol in priorities:
+        if symbol in symbol_set:
+            ordered[symbol] = None
+    for symbol in list(symbols or []):
+        token = normalize_symbol(symbol)
+        if token:
+            ordered[token] = None
+    return list(ordered)
+
+
+def estimate_parallel_workers(
+    *,
+    symbol_count: int,
+    memory_budget_bytes: int,
+    reserve_memory_bytes: int,
+    per_worker_memory_bytes: int,
+    max_workers: int,
+) -> int:
+    if symbol_count <= 0:
+        return 1
+    budget = max(1, int(memory_budget_bytes))
+    reserve = max(0, int(reserve_memory_bytes))
+    per_worker = max(1, int(per_worker_memory_bytes))
+    available = max(per_worker, budget - reserve)
+    budget_limited = max(1, available // per_worker)
+    cpu_limited = max(1, int(max_workers))
+    return max(1, min(int(symbol_count), int(budget_limited), int(cpu_limited)))
+
+
+def _process_peak_rss_bytes() -> int:
+    usage = resource.getrusage(resource.RUSAGE_SELF)
+    peak = int(getattr(usage, "ru_maxrss", 0) or 0)
+    if sys.platform == "darwin":  # pragma: no cover - macOS compatibility
+        return peak
+    return peak * 1024
 
 
 def _last_close(repo: ParquetMarketDataRepository, *, symbol: str, max_dt: datetime | None) -> float | None:
@@ -458,25 +539,14 @@ def refresh_symbol_raw_first_ohlcv(
                 complete_through_ms=int(range_end),
             )
             if not derived_frame.is_empty():
-                derived_rows = [
-                    (
-                        float(row["datetime"].replace(tzinfo=UTC).timestamp() * 1000),
-                        float(row["open"]),
-                        float(row["high"]),
-                        float(row["low"]),
-                        float(row["close"]),
-                        float(row["volume"]),
-                    )
-                    for row in derived_frame.to_dicts()
-                ]
                 derived_ohlcv_rows_upserted += upsert_ohlcv_rows_1s(
                     db_path,
                     exchange=str(exchange_id).lower(),
                     symbol=symbol,
-                    rows=derived_rows,
+                    rows=derived_frame,
                 )
-                after_max_utc = datetime.fromtimestamp(float(derived_rows[-1][0]) / 1000.0, tz=UTC)
-                previous_close = float(derived_rows[-1][4])
+                after_max_utc = _as_utc(derived_frame.get_column("datetime")[-1])
+                previous_close = float(derived_frame.get_column("close")[-1])
             live_start_ms = max(live_start_ms, int(raw_rows[-1]["timestamp_ms"]) + 1)
             if guard is not None:
                 guard.checkpoint(
@@ -523,25 +593,14 @@ def refresh_symbol_raw_first_ohlcv(
                 complete_through_ms=int(cutoff_ms),
             )
             if not derived_frame.is_empty():
-                derived_rows = [
-                    (
-                        float(row["datetime"].replace(tzinfo=UTC).timestamp() * 1000),
-                        float(row["open"]),
-                        float(row["high"]),
-                        float(row["low"]),
-                        float(row["close"]),
-                        float(row["volume"]),
-                    )
-                    for row in derived_frame.to_dicts()
-                ]
                 derived_ohlcv_rows_upserted += upsert_ohlcv_rows_1s(
                     db_path,
                     exchange=str(exchange_id).lower(),
                     symbol=symbol,
-                    rows=derived_rows,
+                    rows=derived_frame,
                 )
-                after_max_utc = datetime.fromtimestamp(float(derived_rows[-1][0]) / 1000.0, tz=UTC)
-                previous_close = float(derived_rows[-1][4])
+                after_max_utc = _as_utc(derived_frame.get_column("datetime")[-1])
+                previous_close = float(derived_frame.get_column("close")[-1])
             if guard is not None:
                 guard.checkpoint(
                     "after_live_tail",
@@ -575,6 +634,122 @@ def refresh_symbol_raw_first_ohlcv(
         live_raw_rows_upserted=live_raw_rows_upserted,
         derived_ohlcv_rows_upserted=derived_ohlcv_rows_upserted,
     )
+
+
+def refresh_symbol_raw_first_ohlcv_worker(
+    *,
+    symbol: str,
+    db_path: str,
+    exchange_id: str,
+    cutoff_utc: str,
+    floor_utc: str,
+) -> OhlcvRefreshWorkerPayload:
+    repo = ParquetMarketDataRepository(str(db_path))
+    cutoff_dt = parse_utc(cutoff_utc)
+    floor_dt = parse_utc(floor_utc)
+    if cutoff_dt is None or floor_dt is None:
+        raise ValueError("Worker refresh requires concrete UTC cutoff/floor inputs")
+    result = refresh_symbol_raw_first_ohlcv(
+        repo=repo,
+        symbol=symbol,
+        db_path=db_path,
+        exchange_id=exchange_id,
+        cutoff_dt=cutoff_dt,
+        floor_dt=floor_dt,
+        guard=None,
+    )
+    return OhlcvRefreshWorkerPayload(
+        result=result,
+        peak_rss_bytes=_process_peak_rss_bytes(),
+    )
+
+
+def refresh_ohlcv_symbols(
+    *,
+    symbols: list[str],
+    db_path: str,
+    exchange_id: str,
+    cutoff_dt: datetime,
+    floor_dt: datetime,
+    guard: RSSGuard,
+    max_workers: int = 1,
+    memory_budget_bytes: int,
+    reserve_memory_bytes: int,
+    per_worker_memory_bytes: int,
+) -> tuple[list[OhlcvRefreshResult], dict[str, Any]]:
+    ordered_symbols = [normalize_symbol(symbol) for symbol in list(symbols or []) if str(symbol).strip()]
+    if not ordered_symbols:
+        return [], {"requested_workers": 0, "selected_workers": 0, "mode": "empty"}
+
+    requested_workers = max(1, int(max_workers))
+    selected_workers = estimate_parallel_workers(
+        symbol_count=len(ordered_symbols),
+        memory_budget_bytes=int(memory_budget_bytes),
+        reserve_memory_bytes=int(reserve_memory_bytes),
+        per_worker_memory_bytes=int(per_worker_memory_bytes),
+        max_workers=requested_workers,
+    )
+
+    worker_meta: dict[str, Any] = {
+        "requested_workers": requested_workers,
+        "selected_workers": int(selected_workers),
+        "mode": "parallel" if int(selected_workers) > 1 else "sequential",
+        "memory_budget_bytes": int(memory_budget_bytes),
+        "reserve_memory_bytes": int(reserve_memory_bytes),
+        "per_worker_memory_bytes": int(per_worker_memory_bytes),
+    }
+
+    ordered_results: dict[str, OhlcvRefreshResult] = {}
+    peak_worker_rss_bytes = 0
+
+    if int(selected_workers) <= 1:
+        repo = ParquetMarketDataRepository(str(db_path))
+        for symbol in ordered_symbols:
+            result = refresh_symbol_raw_first_ohlcv(
+                repo=repo,
+                symbol=symbol,
+                db_path=db_path,
+                exchange_id=exchange_id,
+                cutoff_dt=cutoff_dt,
+                floor_dt=floor_dt,
+                guard=guard,
+            )
+            ordered_results[symbol] = result
+        worker_meta["peak_worker_rss_bytes"] = 0
+        return [ordered_results[symbol] for symbol in ordered_symbols], worker_meta
+
+    cutoff_utc = iso_utc(cutoff_dt) or ""
+    floor_utc = iso_utc(floor_dt) or ""
+    with ProcessPoolExecutor(max_workers=int(selected_workers)) as executor:
+        future_to_symbol = {
+            executor.submit(
+                refresh_symbol_raw_first_ohlcv_worker,
+                symbol=symbol,
+                db_path=db_path,
+                exchange_id=exchange_id,
+                cutoff_utc=cutoff_utc,
+                floor_utc=floor_utc,
+            ): symbol
+            for symbol in ordered_symbols
+        }
+        for future in as_completed(future_to_symbol):
+            symbol = future_to_symbol[future]
+            payload = future.result()
+            ordered_results[symbol] = payload.result
+            peak_worker_rss_bytes = max(int(peak_worker_rss_bytes), int(payload.peak_rss_bytes))
+            guard.checkpoint(
+                "after_parallel_symbol",
+                {
+                    "symbol": symbol,
+                    "archive_raw_rows_upserted": payload.result.archive_raw_rows_upserted,
+                    "live_raw_rows_upserted": payload.result.live_raw_rows_upserted,
+                    "derived_ohlcv_rows_upserted": payload.result.derived_ohlcv_rows_upserted,
+                    "worker_peak_rss_bytes": int(payload.peak_rss_bytes),
+                },
+            )
+
+    worker_meta["peak_worker_rss_bytes"] = int(peak_worker_rss_bytes)
+    return [ordered_results[symbol] for symbol in ordered_symbols], worker_meta
 
 
 def refresh_feature_tail(
@@ -693,6 +868,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--db-path", default=DEFAULT_DB_PATH)
     parser.add_argument("--exchange-id", default=DEFAULT_EXCHANGE_ID)
     parser.add_argument("--portfolio-path", default=str(PORTFOLIO_CURRENT_OPTIMIZATION))
+    parser.add_argument("--symbols", default="")
+    parser.add_argument("--priority-symbols", default="")
     parser.add_argument("--bundle-path", default="")
     parser.add_argument("--cutoff-utc", default="")
     parser.add_argument("--min-start-utc", default=DEFAULT_MIN_START_UTC)
@@ -704,9 +881,20 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--memory-budget-bytes",
         type=int,
-        default=PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES,
+        default=portfolio_followup_default_budget_bytes(),
     )
     parser.add_argument("--soft-rss-bytes", type=int, default=DEFAULT_SOFT_RSS_BYTES)
+    parser.add_argument("--max-workers", type=int, default=1)
+    parser.add_argument(
+        "--parallel-reserve-bytes",
+        type=int,
+        default=DEFAULT_PARALLEL_MEMORY_RESERVE_BYTES,
+    )
+    parser.add_argument(
+        "--parallel-per-worker-bytes",
+        type=int,
+        default=DEFAULT_PARALLEL_WORKER_MEMORY_BYTES,
+    )
     return parser
 
 
@@ -723,10 +911,17 @@ def main(argv: list[str] | None = None) -> int:
     output_md.parent.mkdir(parents=True, exist_ok=True)
 
     bundle_override = Path(args.bundle_path) if str(args.bundle_path).strip() else None
-    portfolio_symbols = load_portfolio_symbols(args.portfolio_path)
+    portfolio_symbols = (
+        parse_symbol_tokens(args.symbols)
+        if str(args.symbols or "").strip()
+        else load_portfolio_symbols(args.portfolio_path)
+    )
+    portfolio_symbols = prioritize_symbols(
+        portfolio_symbols,
+        priority_symbols=parse_symbol_tokens(args.priority_symbols),
+    )
     feature_symbols = load_feature_symbols(bundle_override)
 
-    repo = ParquetMarketDataRepository(str(args.db_path))
     guard = RSSGuard(
         log_path=Path(args.rss_log),
         label="continuity_validation_data_refresh",
@@ -743,6 +938,8 @@ def main(argv: list[str] | None = None) -> int:
         "validation_mode": "continuity_only_extension_refresh",
         "canonical_source": "binance_raw_aggtrades",
         "ohlcv_derivation": "derived_from_raw_aggtrades",
+        "aggregation_backend_requested": str(os.getenv(RAW_FIRST_BACKEND_ENV, "auto") or "auto"),
+        "aggregation_backend_resolved": resolve_raw_aggtrades_backend_name(),
         "final_signoff_source_of_truth": False,
         "collection_cutoff_utc": iso_utc(cutoff_dt),
         "portfolio_symbols": portfolio_symbols,
@@ -750,6 +947,7 @@ def main(argv: list[str] | None = None) -> int:
         "ohlcv_results": [],
         "feature_results": [],
         "support_inventory": {},
+        "parallel": {},
     }
 
     try:
@@ -761,17 +959,25 @@ def main(argv: list[str] | None = None) -> int:
                 "collection_cutoff_utc": iso_utc(cutoff_dt),
             },
         )
-        for symbol in portfolio_symbols:
-            result = refresh_symbol_raw_first_ohlcv(
-                repo=repo,
-                symbol=symbol,
-                db_path=str(args.db_path),
-                exchange_id=str(args.exchange_id),
-                cutoff_dt=cutoff_dt,
-                floor_dt=floor_dt,
-                guard=guard,
-            )
-            payload["ohlcv_results"].append(asdict(result))
+        requested_workers = (
+            max(1, min(len(portfolio_symbols), int(os.cpu_count() or 1)))
+            if int(args.max_workers) <= 0
+            else int(args.max_workers)
+        )
+        ohlcv_results, parallel_meta = refresh_ohlcv_symbols(
+            symbols=portfolio_symbols,
+            db_path=str(args.db_path),
+            exchange_id=str(args.exchange_id),
+            cutoff_dt=cutoff_dt,
+            floor_dt=floor_dt,
+            guard=guard,
+            max_workers=requested_workers,
+            memory_budget_bytes=max(1, int(args.memory_budget_bytes)),
+            reserve_memory_bytes=max(0, int(args.parallel_reserve_bytes)),
+            per_worker_memory_bytes=max(1, int(args.parallel_per_worker_bytes)),
+        )
+        payload["ohlcv_results"] = [asdict(result) for result in ohlcv_results]
+        payload["parallel"] = dict(parallel_meta)
         for symbol in feature_symbols:
             guard.checkpoint("before_feature_symbol", {"symbol": symbol})
             result = refresh_feature_tail(
