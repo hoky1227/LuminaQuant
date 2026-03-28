@@ -287,6 +287,22 @@ if not bool(status.get("ready_for_paper")):
         f"recommended_action={recommended!r}"
     )
 PY
+  elif [[ "$MODE" == "real" && "$DRY_RUN" != "1" ]]; then
+    uv run python - "$PREFLIGHT_TMP" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "r", encoding="utf-8") as handle:
+    payload = json.load(handle)
+
+status = dict(payload.get("status") or {})
+if not bool(status.get("ready_for_real")):
+    recommended = payload.get("recommended_action")
+    raise SystemExit(
+        "Real-mode preflight blocked. "
+        f"recommended_action={recommended!r}"
+    )
+PY
   fi
 fi
 

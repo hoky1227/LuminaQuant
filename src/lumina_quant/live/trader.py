@@ -134,6 +134,15 @@ class LiveTrader(TradingEngine):
         self._user_stream_last_event_monotonic = time.monotonic()
         self._fallback_poll_until_monotonic = 0.0
         self._last_fallback_reason = ""
+        self.main_loop_error_retry_limit = max(
+            1,
+            int(getattr(self.config, "MAIN_LOOP_ERROR_RETRY_LIMIT", 3) or 3),
+        )
+        self.main_loop_error_window_seconds = max(
+            1.0,
+            float(getattr(self.config, "MAIN_LOOP_ERROR_WINDOW_SECONDS", 60.0) or 60.0),
+        )
+        self._main_loop_error_timestamps: list[float] = []
         self.outbox_events: list[dict] = []
 
         # Initialize Notification Manager
@@ -1101,7 +1110,9 @@ class LiveTrader(TradingEngine):
             "error_type": error.__class__.__name__,
             "error": str(error),
         }
-        self.logger.critical("LIVE_DATA_FAIL_FAST %s", details)
+        log_critical = getattr(self.logger, "critical", None) or getattr(self.logger, "error", None)
+        if callable(log_critical):
+            log_critical("LIVE_DATA_FAIL_FAST %s", details)
         self.audit_store.log_risk_event(
             self.run_id,
             reason="LIVE_DATA_FAIL_FAST",
@@ -1111,6 +1122,30 @@ class LiveTrader(TradingEngine):
             "🛑 **Live data fail-fast triggered**. "
             f"reason={reason}. Strategy/order paths are halted until restart."
         )
+
+    def _register_main_loop_error(self, error: Exception) -> bool:
+        now = time.monotonic()
+        window = float(self.main_loop_error_window_seconds)
+        self._main_loop_error_timestamps = [
+            stamp for stamp in list(self._main_loop_error_timestamps) if (now - float(stamp)) <= window
+        ]
+        self._main_loop_error_timestamps.append(now)
+        error_count = len(self._main_loop_error_timestamps)
+        self.audit_store.log_risk_event(
+            self.run_id,
+            reason="MAIN_LOOP_ERROR",
+            details={
+                "error": str(error),
+                "error_type": error.__class__.__name__,
+                "error_count_within_window": int(error_count),
+                "error_window_seconds": float(window),
+                "retry_limit": int(self.main_loop_error_retry_limit),
+            },
+        )
+        if error_count < int(self.main_loop_error_retry_limit):
+            return False
+        self._trigger_hard_halt(reason="main_loop_error_threshold", error=error)
+        return True
 
     def _ordered_shutdown(self) -> None:
         self.data_handler.continue_backtest = False
@@ -1331,10 +1366,12 @@ class LiveTrader(TradingEngine):
             except Exception as e:
                 self.logger.error(f"Error in main loop: {e}")
                 self._save_state()  # Save on crash attempt
-                self._run_exit_status = "FAILED"
-                self.audit_store.log_risk_event(
-                    self.run_id, reason="MAIN_LOOP_ERROR", details={"error": str(e)}
-                )
+                if self._register_main_loop_error(e):
+                    self._run_exit_status = "FAILED"
+                    self._ordered_shutdown()
+                    self._close_audit_store(status="FAILED")
+                    raise LiveDataFatalError(str(e)) from e
+                time.sleep(1.0)
 
     def __del__(self):
         self._close_audit_store(status="STOPPED")

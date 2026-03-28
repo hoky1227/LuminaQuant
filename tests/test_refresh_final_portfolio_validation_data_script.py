@@ -120,6 +120,11 @@ def test_refresh_symbol_raw_first_ohlcv_derives_from_stored_raw_aggtrades(
     assert ohlcv.height == 2
     assert result.after_raw_agg_trade_utc == "2025-01-01T00:00:01.500000Z"
     assert result.after_ohlcv_max_utc == "2025-01-01T00:00:01Z"
+    assert result.archive_days_missing == 0
+    assert result.source_mix == "archive_only"
+    assert result.stage_timings_seconds["archive_download"] >= 0.0
+    assert result.stage_timings_seconds["archive_parse"] >= 0.0
+    assert result.stage_timings_seconds["total_refresh"] >= 0.0
     assert result.live_raw_rows_upserted == 0
     assert result.derived_ohlcv_rows_upserted >= 2
 
@@ -183,7 +188,62 @@ def test_estimate_parallel_workers_respects_memory_budget() -> None:
         max_workers=8,
     )
 
-    assert workers == 4
+    assert workers == 2
+
+
+def test_resolve_effective_memory_budget_bytes_clamps_to_safe_session_cap(monkeypatch) -> None:
+    monkeypatch.setattr(MODULE, "resolve_memory_budget_bytes", lambda: 32 * 1024 * 1024 * 1024)
+
+    effective, system_budget = MODULE.resolve_effective_memory_budget_bytes(
+        12 * 1024 * 1024 * 1024
+    )
+
+    assert effective == MODULE.DEFAULT_HEAVY_RUN_MEMORY_BUDGET_BYTES
+    assert system_budget == 32 * 1024 * 1024 * 1024
+
+
+def test_recent_archive_404_cuts_over_to_live_tail(monkeypatch, tmp_path: Path) -> None:
+    repo = ParquetMarketDataRepository(str(tmp_path))
+    cutoff_dt = MODULE.parse_utc("2025-01-03T00:00:02Z")
+    floor_dt = MODULE.parse_utc("2025-01-03T00:00:00Z")
+    assert cutoff_dt is not None
+    assert floor_dt is not None
+
+    monkeypatch.setenv("LQ_RECENT_ARCHIVE_LIVE_CUTOVER_DAYS", "3")
+    monkeypatch.setenv("LQ_ARCHIVE_MISS_STREAK_FOR_LIVE_CUTOVER", "1")
+    monkeypatch.setattr(MODULE, "_download_zip_bytes", lambda *args, **kwargs: None)
+    monkeypatch.setattr(MODULE, "_binance_archive_url", lambda *args, **kwargs: "https://example.test")
+
+    live_calls: list[dict[str, int]] = []
+
+    def _collect_live_raw_rows(**kwargs):
+        live_calls.append({"start_ms": int(kwargs["start_ms"]), "end_ms": int(kwargs["end_ms"])})
+        return [
+            {
+                "agg_trade_id": 7,
+                "timestamp_ms": int(kwargs["start_ms"]),
+                "price": 100.0,
+                "quantity": 0.1,
+                "is_buyer_maker": False,
+            }
+        ]
+
+    monkeypatch.setattr(MODULE, "_collect_live_raw_rows", _collect_live_raw_rows)
+
+    result = MODULE.refresh_symbol_raw_first_ohlcv(
+        repo=repo,
+        symbol="BTC/USDT",
+        db_path=str(tmp_path),
+        exchange_id="binance",
+        cutoff_dt=cutoff_dt,
+        floor_dt=floor_dt,
+        guard=None,
+    )
+
+    assert result.archive_days_missing == 1
+    assert result.source_mix == "live_only_recent_archive_cutover"
+    assert live_calls
+    assert live_calls[0]["start_ms"] == int(floor_dt.timestamp() * 1000)
 
 
 def test_refresh_payload_reports_backend(monkeypatch, tmp_path: Path) -> None:

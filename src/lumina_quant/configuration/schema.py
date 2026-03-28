@@ -200,6 +200,8 @@ class LiveRuntimeConfig:
     reconciliation_poll_fallback_enabled: bool = True
     book_ticker_enabled: bool = False
     startup_reconciliation_hard_fail: bool = False
+    main_loop_error_retry_limit: int = 3
+    main_loop_error_window_seconds: int = 60
     poll_interval: int = 20
     poll_seconds: int = 20
     window_seconds: int = 20

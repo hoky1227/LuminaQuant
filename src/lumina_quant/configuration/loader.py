@@ -487,6 +487,14 @@ def _normalize_live_runtime_section(runtime: RuntimeConfig, live_raw: dict[str, 
         getattr(runtime.live, "startup_reconciliation_hard_fail", False),
         False,
     )
+    runtime.live.main_loop_error_retry_limit = max(
+        1,
+        _as_int(getattr(runtime.live, "main_loop_error_retry_limit", 3), 3),
+    )
+    runtime.live.main_loop_error_window_seconds = max(
+        1,
+        _as_int(getattr(runtime.live, "main_loop_error_window_seconds", 60), 60),
+    )
     runtime.live.poll_interval = max(1, _as_int(runtime.live.poll_interval, 20))
     live_poll_raw = (
         live_raw.get("live_poll_seconds")

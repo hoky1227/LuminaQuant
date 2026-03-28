@@ -35,7 +35,8 @@ from lumina_quant.data_sync import (
     fetch_aggtrades_batch,
     sync_futures_feature_points,
 )
-from lumina_quant.eval.exact_window_runtime import RSSGuard
+from lumina_quant.core.memory_budget import DEFAULT_EXECUTION_MEMORY_POLICY, gib_to_bytes
+from lumina_quant.eval.exact_window_runtime import RSSGuard, resolve_memory_budget_bytes
 from lumina_quant.market_data import upsert_ohlcv_rows_1s
 from lumina_quant.portfolio_split_contract import (
     FOLLOWUP_ROOT,
@@ -54,9 +55,16 @@ DEFAULT_RSS_LOG = FOLLOWUP_ROOT / "final_portfolio_validation_data_refresh_rss_l
 DEFAULT_SUPPORT_INVENTORY_JSON = FOLLOWUP_ROOT / "final_portfolio_validation_support_inventory_latest.json"
 DEFAULT_SUPPORT_INVENTORY_CSV = FOLLOWUP_ROOT / "final_portfolio_validation_support_inventory_latest.csv"
 DEFAULT_MIN_START_UTC = "2025-01-01T00:00:00Z"
-DEFAULT_SOFT_RSS_BYTES = int(7.2 * 1024 * 1024 * 1024)
-DEFAULT_PARALLEL_WORKER_MEMORY_BYTES = int(1.5 * 1024 * 1024 * 1024)
-DEFAULT_PARALLEL_MEMORY_RESERVE_BYTES = int(2.0 * 1024 * 1024 * 1024)
+DEFAULT_SAFE_SESSION_MEMORY_CAP_BYTES = DEFAULT_EXECUTION_MEMORY_POLICY.total_memory_cap_bytes
+DEFAULT_HEAVY_RUN_MEMORY_BUDGET_BYTES = gib_to_bytes(DEFAULT_EXECUTION_MEMORY_POLICY.heavy_run_cap_gib)
+DEFAULT_SOFT_RSS_BYTES = int(DEFAULT_HEAVY_RUN_MEMORY_BUDGET_BYTES * 0.9)
+DEFAULT_PARALLEL_WORKER_MEMORY_BYTES = int(2.0 * 1024 * 1024 * 1024)
+DEFAULT_PARALLEL_MEMORY_RESERVE_BYTES = max(
+    gib_to_bytes(DEFAULT_EXECUTION_MEMORY_POLICY.total_memory_cap_gib - DEFAULT_EXECUTION_MEMORY_POLICY.heavy_run_cap_gib),
+    int(1.5 * 1024 * 1024 * 1024),
+)
+DEFAULT_RECENT_ARCHIVE_LIVE_CUTOVER_DAYS = 3
+DEFAULT_ARCHIVE_MISS_STREAK_FOR_LIVE_CUTOVER = 1
 
 
 @dataclass(slots=True)
@@ -70,11 +78,14 @@ class OhlcvRefreshResult:
     cutoff_utc: str
     archive_days_considered: int
     archive_days_downloaded: int
+    archive_days_missing: int
     archive_raw_rows_fetched: int
     archive_raw_rows_upserted: int
     live_raw_rows_fetched: int
     live_raw_rows_upserted: int
     derived_ohlcv_rows_upserted: int
+    source_mix: str
+    stage_timings_seconds: dict[str, float]
 
 
 @dataclass(slots=True)
@@ -211,6 +222,52 @@ def prioritize_symbols(symbols: list[str], *, priority_symbols: list[str] | None
     return list(ordered)
 
 
+def resolve_effective_memory_budget_bytes(requested_budget_bytes: int) -> tuple[int, int | None]:
+    requested = max(1, int(requested_budget_bytes))
+    system_budget = resolve_memory_budget_bytes()
+    effective = min(int(DEFAULT_HEAVY_RUN_MEMORY_BUDGET_BYTES), requested)
+    if system_budget is not None and system_budget > 0:
+        effective = min(int(effective), int(system_budget), int(DEFAULT_SAFE_SESSION_MEMORY_CAP_BYTES))
+    else:
+        effective = min(int(effective), int(DEFAULT_SAFE_SESSION_MEMORY_CAP_BYTES))
+    return max(1, int(effective)), (None if system_budget is None else int(system_budget))
+
+
+def _recent_archive_live_cutover_days() -> int:
+    raw = str(os.getenv("LQ_RECENT_ARCHIVE_LIVE_CUTOVER_DAYS", "")).strip()
+    if not raw:
+        return int(DEFAULT_RECENT_ARCHIVE_LIVE_CUTOVER_DAYS)
+    try:
+        return max(0, int(float(raw)))
+    except ValueError:
+        return int(DEFAULT_RECENT_ARCHIVE_LIVE_CUTOVER_DAYS)
+
+
+def _archive_miss_streak_for_live_cutover() -> int:
+    raw = str(os.getenv("LQ_ARCHIVE_MISS_STREAK_FOR_LIVE_CUTOVER", "")).strip()
+    if not raw:
+        return int(DEFAULT_ARCHIVE_MISS_STREAK_FOR_LIVE_CUTOVER)
+    try:
+        return max(1, int(float(raw)))
+    except ValueError:
+        return int(DEFAULT_ARCHIVE_MISS_STREAK_FOR_LIVE_CUTOVER)
+
+
+def _should_cutover_recent_archive_miss(
+    *,
+    day_value: date,
+    cutoff_dt: datetime,
+    archive_miss_streak: int,
+) -> bool:
+    lookback_days = _recent_archive_live_cutover_days()
+    if lookback_days <= 0:
+        return False
+    if archive_miss_streak < int(_archive_miss_streak_for_live_cutover()):
+        return False
+    remaining_days = max(0, (cutoff_dt.date() - day_value).days)
+    return remaining_days <= int(lookback_days)
+
+
 def estimate_parallel_workers(
     *,
     symbol_count: int,
@@ -227,7 +284,8 @@ def estimate_parallel_workers(
     available = max(per_worker, budget - reserve)
     budget_limited = max(1, available // per_worker)
     cpu_limited = max(1, int(max_workers))
-    return max(1, min(int(symbol_count), int(budget_limited), int(cpu_limited)))
+    policy_limited = max(1, int(getattr(DEFAULT_EXECUTION_MEMORY_POLICY, 'light_worker_parallelism', 2) or 2))
+    return max(1, min(int(symbol_count), int(budget_limited), int(cpu_limited), int(policy_limited)))
 
 
 def _process_peak_rss_bytes() -> int:
@@ -457,6 +515,10 @@ def _collect_live_raw_rows(
     return out
 
 
+def _record_stage_duration(metrics: dict[str, float], key: str, started_at: float) -> None:
+    metrics[str(key)] = float(metrics.get(str(key), 0.0)) + max(0.0, time.perf_counter() - started_at)
+
+
 def refresh_symbol_raw_first_ohlcv(
     *,
     repo: ParquetMarketDataRepository,
@@ -467,6 +529,7 @@ def refresh_symbol_raw_first_ohlcv(
     floor_dt: datetime,
     guard: RSSGuard | None = None,
 ) -> OhlcvRefreshResult:
+    refresh_started_at = time.perf_counter()
     _, before_max = repo.get_symbol_time_range(exchange=exchange_id, symbol=symbol)
     before_max_utc = None
     if before_max is not None:
@@ -482,11 +545,15 @@ def refresh_symbol_raw_first_ohlcv(
     cutoff_ms = int(cutoff_dt.timestamp() * 1000)
     archive_days_considered = 0
     archive_days_downloaded = 0
+    archive_days_missing = 0
+    archive_miss_streak = 0
     archive_raw_rows_fetched = 0
     archive_raw_rows_upserted = 0
     live_raw_rows_fetched = 0
     live_raw_rows_upserted = 0
     derived_ohlcv_rows_upserted = 0
+    archive_cutover_to_live = False
+    stage_timings_seconds: dict[str, float] = {}
     after_max_utc = before_max_utc
     previous_close = _last_close(repo, symbol=symbol, max_dt=before_max_utc)
     live_start_ms = cursor_ms
@@ -501,27 +568,45 @@ def refresh_symbol_raw_first_ohlcv(
             range_end = min(cutoff_ms, day_end_ms)
             if range_start > range_end:
                 continue
+            started_at = time.perf_counter()
             blob = _download_zip_bytes(
                 _binance_archive_url(symbol, day_value, "future"),
                 retries=3,
                 base_wait_sec=1.0,
             )
+            _record_stage_duration(stage_timings_seconds, "archive_download", started_at)
             if blob is None:
+                archive_days_missing += 1
+                archive_miss_streak += 1
+                if _should_cutover_recent_archive_miss(
+                    day_value=day_value,
+                    cutoff_dt=cutoff_dt,
+                    archive_miss_streak=archive_miss_streak,
+                ):
+                    archive_cutover_to_live = True
+                    live_start_ms = min(int(live_start_ms), int(range_start))
+                    break
                 continue
+            archive_miss_streak = 0
+            started_at = time.perf_counter()
             raw_rows = _archive_rows_to_raw_aggtrades(
                 blob,
                 cursor_ms=range_start,
                 until_ms=range_end,
             )
+            _record_stage_duration(stage_timings_seconds, "archive_parse", started_at)
             if not raw_rows:
                 continue
             archive_days_downloaded += 1
             archive_raw_rows_fetched += len(raw_rows)
+            started_at = time.perf_counter()
             archive_raw_rows_upserted += repo.append_raw_aggtrades(
                 exchange=str(exchange_id).lower(),
                 symbol=symbol,
                 rows=raw_rows,
             )
+            _record_stage_duration(stage_timings_seconds, "raw_upsert", started_at)
+            started_at = time.perf_counter()
             _write_raw_checkpoint_for_rows(
                 repo,
                 exchange_id=str(exchange_id).lower(),
@@ -530,6 +615,8 @@ def refresh_symbol_raw_first_ohlcv(
                 source="binance_archive_backfill",
                 observed_until_ms=int(range_end),
             )
+            _record_stage_duration(stage_timings_seconds, "checkpoint_write", started_at)
+            started_at = time.perf_counter()
             derived_frame = raw_aggtrades_to_1s_frame(
                 raw_rows,
                 source=f"{exchange_id}:{symbol}:archive",
@@ -538,13 +625,16 @@ def refresh_symbol_raw_first_ohlcv(
                 previous_close=previous_close,
                 complete_through_ms=int(range_end),
             )
+            _record_stage_duration(stage_timings_seconds, "derive_1s", started_at)
             if not derived_frame.is_empty():
+                started_at = time.perf_counter()
                 derived_ohlcv_rows_upserted += upsert_ohlcv_rows_1s(
                     db_path,
                     exchange=str(exchange_id).lower(),
                     symbol=symbol,
                     rows=derived_frame,
                 )
+                _record_stage_duration(stage_timings_seconds, "ohlcv_upsert", started_at)
                 after_max_utc = _as_utc(derived_frame.get_column("datetime")[-1])
                 previous_close = float(derived_frame.get_column("close")[-1])
             live_start_ms = max(live_start_ms, int(raw_rows[-1]["timestamp_ms"]) + 1)
@@ -560,6 +650,7 @@ def refresh_symbol_raw_first_ohlcv(
                 )
 
     if live_start_ms <= cutoff_ms:
+        started_at = time.perf_counter()
         live_rows = _collect_live_raw_rows(
             symbol=symbol,
             start_ms=live_start_ms,
@@ -569,13 +660,17 @@ def refresh_symbol_raw_first_ohlcv(
             retries=10,
             base_wait_sec=2.0,
         )
+        _record_stage_duration(stage_timings_seconds, "live_fetch", started_at)
         live_raw_rows_fetched = len(live_rows)
         if live_rows:
+            started_at = time.perf_counter()
             live_raw_rows_upserted = repo.append_raw_aggtrades(
                 exchange=str(exchange_id).lower(),
                 symbol=symbol,
                 rows=live_rows,
             )
+            _record_stage_duration(stage_timings_seconds, "raw_upsert", started_at)
+            started_at = time.perf_counter()
             _write_raw_checkpoint_for_rows(
                 repo,
                 exchange_id=str(exchange_id).lower(),
@@ -584,6 +679,8 @@ def refresh_symbol_raw_first_ohlcv(
                 source="binance_futures_live_tail",
                 observed_until_ms=int(cutoff_ms),
             )
+            _record_stage_duration(stage_timings_seconds, "checkpoint_write", started_at)
+            started_at = time.perf_counter()
             derived_frame = raw_aggtrades_to_1s_frame(
                 live_rows,
                 source=f"{exchange_id}:{symbol}:rest_tail",
@@ -592,13 +689,16 @@ def refresh_symbol_raw_first_ohlcv(
                 previous_close=previous_close,
                 complete_through_ms=int(cutoff_ms),
             )
+            _record_stage_duration(stage_timings_seconds, "derive_1s", started_at)
             if not derived_frame.is_empty():
+                started_at = time.perf_counter()
                 derived_ohlcv_rows_upserted += upsert_ohlcv_rows_1s(
                     db_path,
                     exchange=str(exchange_id).lower(),
                     symbol=symbol,
                     rows=derived_frame,
                 )
+                _record_stage_duration(stage_timings_seconds, "ohlcv_upsert", started_at)
                 after_max_utc = _as_utc(derived_frame.get_column("datetime")[-1])
                 previous_close = float(derived_frame.get_column("close")[-1])
             if guard is not None:
@@ -618,6 +718,17 @@ def refresh_symbol_raw_first_ohlcv(
         exchange_id=str(exchange_id).lower(),
         symbol=symbol,
     )
+    source_mix = "archive_and_live"
+    if archive_raw_rows_upserted > 0 and live_raw_rows_upserted <= 0:
+        source_mix = "archive_only"
+    elif live_raw_rows_upserted > 0 and archive_raw_rows_upserted <= 0:
+        source_mix = "live_only"
+    elif archive_raw_rows_upserted <= 0 and live_raw_rows_upserted <= 0:
+        source_mix = "noop"
+    stage_timings_seconds["total_refresh"] = max(
+        0.0,
+        time.perf_counter() - refresh_started_at,
+    )
     return OhlcvRefreshResult(
         symbol=symbol,
         before_ohlcv_max_utc=iso_utc(before_max_utc),
@@ -628,11 +739,14 @@ def refresh_symbol_raw_first_ohlcv(
         cutoff_utc=iso_utc(cutoff_dt) or "",
         archive_days_considered=archive_days_considered,
         archive_days_downloaded=archive_days_downloaded,
+        archive_days_missing=archive_days_missing,
         archive_raw_rows_fetched=archive_raw_rows_fetched,
         archive_raw_rows_upserted=archive_raw_rows_upserted,
         live_raw_rows_fetched=live_raw_rows_fetched,
         live_raw_rows_upserted=live_raw_rows_upserted,
         derived_ohlcv_rows_upserted=derived_ohlcv_rows_upserted,
+        source_mix=source_mix if not archive_cutover_to_live else f"{source_mix}_recent_archive_cutover",
+        stage_timings_seconds={key: round(float(value), 6) for key, value in sorted(stage_timings_seconds.items())},
     )
 
 
@@ -682,9 +796,12 @@ def refresh_ohlcv_symbols(
         return [], {"requested_workers": 0, "selected_workers": 0, "mode": "empty"}
 
     requested_workers = max(1, int(max_workers))
+    effective_memory_budget_bytes, system_memory_budget_bytes = resolve_effective_memory_budget_bytes(
+        int(memory_budget_bytes)
+    )
     selected_workers = estimate_parallel_workers(
         symbol_count=len(ordered_symbols),
-        memory_budget_bytes=int(memory_budget_bytes),
+        memory_budget_bytes=int(effective_memory_budget_bytes),
         reserve_memory_bytes=int(reserve_memory_bytes),
         per_worker_memory_bytes=int(per_worker_memory_bytes),
         max_workers=requested_workers,
@@ -695,8 +812,14 @@ def refresh_ohlcv_symbols(
         "selected_workers": int(selected_workers),
         "mode": "parallel" if int(selected_workers) > 1 else "sequential",
         "memory_budget_bytes": int(memory_budget_bytes),
+        "effective_memory_budget_bytes": int(effective_memory_budget_bytes),
+        "safe_session_memory_cap_bytes": int(DEFAULT_SAFE_SESSION_MEMORY_CAP_BYTES),
+        "system_memory_budget_bytes": (
+            None if system_memory_budget_bytes is None else int(system_memory_budget_bytes)
+        ),
         "reserve_memory_bytes": int(reserve_memory_bytes),
         "per_worker_memory_bytes": int(per_worker_memory_bytes),
+        "projected_worker_budget_bytes": int(selected_workers) * int(per_worker_memory_bytes),
     }
 
     ordered_results: dict[str, OhlcvRefreshResult] = {}
@@ -812,12 +935,12 @@ def build_markdown(payload: dict[str, Any]) -> str:
         "",
         "## OHLCV refresh",
         "",
-        "| Symbol | Before max | After max | Before raw | After raw | Archive days | Raw rows | Live rows | Derived 1s upserted |",
-        "|---|---|---|---|---|---:|---:|---:|---:|",
+        "| Symbol | Before max | After max | Before raw | After raw | Archive days | Missing archive days | Source mix | Raw rows | Live rows | Derived 1s upserted |",
+        "|---|---|---|---|---|---:|---:|---|---:|---:|---:|",
     ]
     for row in list(payload.get("ohlcv_results") or []):
         lines.append(
-            f"| `{row['symbol']}` | `{row.get('before_ohlcv_max_utc')}` | `{row.get('after_ohlcv_max_utc')}` | `{row.get('before_raw_agg_trade_utc')}` | `{row.get('after_raw_agg_trade_utc')}` | {row.get('archive_days_downloaded', 0)} | {int(row.get('archive_raw_rows_upserted', 0) or 0)} | {int(row.get('live_raw_rows_upserted', 0) or 0)} | {int(row.get('derived_ohlcv_rows_upserted', 0) or 0)} |"
+            f"| `{row['symbol']}` | `{row.get('before_ohlcv_max_utc')}` | `{row.get('after_ohlcv_max_utc')}` | `{row.get('before_raw_agg_trade_utc')}` | `{row.get('after_raw_agg_trade_utc')}` | {row.get('archive_days_downloaded', 0)} | {row.get('archive_days_missing', 0)} | `{row.get('source_mix')}` | {int(row.get('archive_raw_rows_upserted', 0) or 0)} | {int(row.get('live_raw_rows_upserted', 0) or 0)} | {int(row.get('derived_ohlcv_rows_upserted', 0) or 0)} |"
         )
     lines.extend(
         [
@@ -833,6 +956,7 @@ def build_markdown(payload: dict[str, Any]) -> str:
             f"| `{row['symbol']}` | `{row.get('before_feature_day_utc')}` | `{row.get('after_feature_day_utc')}` | {row.get('upserted_rows', 0)} | `{row.get('last_timestamp_utc')}` |"
         )
     memory = dict(payload.get("memory") or {})
+    parallel = dict(payload.get("parallel") or {})
     lines.extend(
         [
             "",
@@ -845,6 +969,20 @@ def build_markdown(payload: dict[str, Any]) -> str:
             f"- hard_trigger_count: `{memory.get('hard_trigger_count')}`",
         ]
     )
+    if parallel:
+        lines.extend(
+            [
+                "",
+                "## Parallel plan",
+                "",
+                f"- requested_workers: `{parallel.get('requested_workers')}`",
+                f"- selected_workers: `{parallel.get('selected_workers')}`",
+                f"- effective_memory_budget_bytes: `{parallel.get('effective_memory_budget_bytes')}`",
+                f"- reserve_memory_bytes: `{parallel.get('reserve_memory_bytes')}`",
+                f"- per_worker_memory_bytes: `{parallel.get('per_worker_memory_bytes')}`",
+                f"- projected_worker_budget_bytes: `{parallel.get('projected_worker_budget_bytes')}`",
+            ]
+        )
     if payload.get("support_inventory"):
         lines.extend(
             [
@@ -921,13 +1059,19 @@ def main(argv: list[str] | None = None) -> int:
         priority_symbols=parse_symbol_tokens(args.priority_symbols),
     )
     feature_symbols = load_feature_symbols(bundle_override)
+    effective_memory_budget_bytes, system_memory_budget_bytes = resolve_effective_memory_budget_bytes(
+        int(args.memory_budget_bytes)
+    )
 
     guard = RSSGuard(
         log_path=Path(args.rss_log),
         label="continuity_validation_data_refresh",
-        budget_bytes=max(1, int(args.memory_budget_bytes)),
-        soft_limit_bytes=max(1, int(args.soft_rss_bytes)),
-        hard_limit_bytes=max(1, int(args.memory_budget_bytes)),
+        budget_bytes=max(1, int(effective_memory_budget_bytes)),
+        soft_limit_bytes=min(
+            max(1, int(args.soft_rss_bytes)),
+            max(1, int(effective_memory_budget_bytes)),
+        ),
+        hard_limit_bytes=max(1, int(effective_memory_budget_bytes)),
     )
 
     payload: dict[str, Any] = {
@@ -944,6 +1088,12 @@ def main(argv: list[str] | None = None) -> int:
         "collection_cutoff_utc": iso_utc(cutoff_dt),
         "portfolio_symbols": portfolio_symbols,
         "feature_symbols": feature_symbols,
+        "memory_budget_bytes": int(args.memory_budget_bytes),
+        "effective_memory_budget_bytes": int(effective_memory_budget_bytes),
+        "safe_session_memory_cap_bytes": int(DEFAULT_SAFE_SESSION_MEMORY_CAP_BYTES),
+        "system_memory_budget_bytes": (
+            None if system_memory_budget_bytes is None else int(system_memory_budget_bytes)
+        ),
         "ohlcv_results": [],
         "feature_results": [],
         "support_inventory": {},
@@ -972,7 +1122,7 @@ def main(argv: list[str] | None = None) -> int:
             floor_dt=floor_dt,
             guard=guard,
             max_workers=requested_workers,
-            memory_budget_bytes=max(1, int(args.memory_budget_bytes)),
+            memory_budget_bytes=max(1, int(effective_memory_budget_bytes)),
             reserve_memory_bytes=max(0, int(args.parallel_reserve_bytes)),
             per_worker_memory_bytes=max(1, int(args.parallel_per_worker_bytes)),
         )

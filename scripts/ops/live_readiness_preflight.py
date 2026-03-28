@@ -46,8 +46,15 @@ def build_preflight_payload(
     refresh_is_stale = bool(stale_for_minutes is None or stale_for_minutes > float(stale_minutes))
 
     paper_mode = str(live.get("mode", "")).strip().lower() == "paper"
+    real_mode = str(live.get("mode", "")).strip().lower() == "real"
     testnet = bool(live.get("testnet", False))
     require_real_flag = bool(live.get("require_real_enable_flag", False))
+    real_enable_env = str(os.getenv("LUMINA_ENABLE_LIVE_REAL", "")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
     decision_keep = str(decision.get("decision", "")).strip().lower() == "keep_incumbent"
     postgres_dsn = (
         str(storage.get("postgres_dsn", "") or "").strip()
@@ -64,7 +71,15 @@ def build_preflight_payload(
         and decision_keep
         and postgres_dsn_present
     )
-    ready_for_real = False
+    ready_for_real = bool(
+        real_mode
+        and not testnet
+        and require_real_flag
+        and real_enable_env
+        and not refresh_is_stale
+        and decision_keep
+        and postgres_dsn_present
+    )
 
     return {
         "generated_at": now.isoformat(),
@@ -76,6 +91,7 @@ def build_preflight_payload(
             "paper_mode": paper_mode,
             "testnet": testnet,
             "require_real_enable_flag": require_real_flag,
+            "real_enable_env": real_enable_env,
             "postgres_dsn_present": postgres_dsn_present,
             "decision_keep_incumbent": decision_keep,
             "refresh_completed": str(refresh.get("status", "")).strip().lower() == "completed",
@@ -98,6 +114,8 @@ def build_preflight_payload(
         "recommended_action": (
             "paper_run_allowed"
             if ready_for_paper
+            else "real_run_allowed"
+            if ready_for_real
             else "block_until_preflight_gaps_closed"
         ),
     }

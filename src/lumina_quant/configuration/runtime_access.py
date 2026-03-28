@@ -609,6 +609,12 @@ def _live_config_values(runtime) -> dict[str, object]:
         "STARTUP_RECONCILIATION_HARD_FAIL": bool(
             getattr(live, "startup_reconciliation_hard_fail", False)
         ),
+        "MAIN_LOOP_ERROR_RETRY_LIMIT": int(
+            getattr(live, "main_loop_error_retry_limit", 3) or 3
+        ),
+        "MAIN_LOOP_ERROR_WINDOW_SECONDS": int(
+            getattr(live, "main_loop_error_window_seconds", 60) or 60
+        ),
         "IS_TESTNET": str(live.mode).strip().lower() != "real",
         "REQUIRE_REAL_ENABLE_FLAG": bool(live.require_real_enable_flag),
         "POLL_SECONDS": poll_seconds,
@@ -693,6 +699,8 @@ class LiveConfig(BaseConfig):
         )
         runtime.live.book_ticker_enabled = bool(cls.BOOK_TICKER_ENABLED)
         runtime.live.startup_reconciliation_hard_fail = bool(cls.STARTUP_RECONCILIATION_HARD_FAIL)
+        runtime.live.main_loop_error_retry_limit = int(cls.MAIN_LOOP_ERROR_RETRY_LIMIT)
+        runtime.live.main_loop_error_window_seconds = int(cls.MAIN_LOOP_ERROR_WINDOW_SECONDS)
         runtime.live.require_real_enable_flag = cls.REQUIRE_REAL_ENABLE_FLAG
         runtime.live.materialized_staleness_threshold_seconds = int(
             cls.MATERIALIZED_STALENESS_THRESHOLD_SECONDS

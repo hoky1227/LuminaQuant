@@ -160,6 +160,36 @@ class _KeyboardInterruptEvents:
         raise KeyboardInterrupt
 
 
+class _RepeatingEvents:
+    def __init__(self, count: int) -> None:
+        self._remaining = int(count)
+
+    def get(self, *_args, **_kwargs):
+        if self._remaining <= 0:
+            raise KeyboardInterrupt
+        self._remaining -= 1
+        return SimpleNamespace(type="MARKET", symbol="BTC/USDT")
+
+    @staticmethod
+    def qsize() -> int:
+        return 0
+
+
+class _SingleEventThenInterrupt:
+    def __init__(self) -> None:
+        self._served = False
+
+    def get(self, *_args, **_kwargs):
+        if self._served:
+            raise KeyboardInterrupt
+        self._served = True
+        return SimpleNamespace(type="MARKET", symbol="BTC/USDT")
+
+    @staticmethod
+    def qsize() -> int:
+        return 0
+
+
 def _build_trader(monkeypatch) -> LiveTrader:
     _AuditStore.instances.clear()
     _Notifier.instances.clear()
@@ -305,3 +335,34 @@ def test_constructor_failure_after_audit_start_sends_failed_init_and_closes_run(
     assert _Notifier.instances[-1].messages == [
         "🛑 **LuminaQuant Failed During Startup**\nReason: recovery init exploded"
     ]
+
+
+def test_repeated_main_loop_errors_trigger_fail_fast_shutdown(monkeypatch):
+    trader = _build_trader(monkeypatch)
+    trader.events = _RepeatingEvents(2)
+    trader.main_loop_error_retry_limit = 2
+    trader.main_loop_error_window_seconds = 60.0
+    trader._ordered_shutdown = lambda: None
+    monkeypatch.setattr("lumina_quant.live.trader.time.sleep", lambda *_args, **_kwargs: None)
+    trader.process_event = lambda _event: (_ for _ in ()).throw(RuntimeError("loop exploded"))
+
+    with pytest.raises(Exception, match="loop exploded"):
+        trader.run()
+
+    assert trader._hard_halt_active is True
+    assert trader._hard_halt_reason == "main_loop_error_threshold"
+    assert trader.audit_store.ended[-1]["status"] == "FAILED"
+
+
+def test_single_main_loop_error_below_threshold_does_not_fail_stop(monkeypatch):
+    trader = _build_trader(monkeypatch)
+    trader.events = _SingleEventThenInterrupt()
+    trader.main_loop_error_retry_limit = 2
+    trader.main_loop_error_window_seconds = 60.0
+    monkeypatch.setattr("lumina_quant.live.trader.time.sleep", lambda *_args, **_kwargs: None)
+    trader.process_event = lambda _event: (_ for _ in ()).throw(RuntimeError("one-off loop error"))
+
+    trader.run()
+
+    assert trader._hard_halt_active is False
+    assert trader.audit_store.ended[-1]["status"] == "STOPPED"
