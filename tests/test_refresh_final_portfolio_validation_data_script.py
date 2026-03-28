@@ -5,8 +5,10 @@ import io
 import json
 import sys
 import zipfile
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
+
+import pytest
 
 from lumina_quant.storage.parquet import ParquetMarketDataRepository
 
@@ -122,6 +124,7 @@ def test_refresh_symbol_raw_first_ohlcv_derives_from_stored_raw_aggtrades(
     assert result.after_ohlcv_max_utc == "2025-01-01T00:00:01Z"
     assert result.archive_days_missing == 0
     assert result.source_mix == "archive_only"
+    assert result.live_tail_status == "empty"
     assert result.stage_timings_seconds["archive_download"] >= 0.0
     assert result.stage_timings_seconds["archive_parse"] >= 0.0
     assert result.stage_timings_seconds["total_refresh"] >= 0.0
@@ -168,6 +171,113 @@ def test_collect_live_raw_rows_reduces_limit_after_rate_limit(monkeypatch) -> No
 
     assert calls[:2] == [1000, 500]
     assert len(rows) == 1
+
+
+def test_live_raw_batch_pause_seconds_defaults_to_zero(monkeypatch) -> None:
+    monkeypatch.delenv("LQ_LIVE_RAW_BATCH_PAUSE_SEC", raising=False)
+
+    assert MODULE._live_raw_batch_pause_seconds() == 0.0
+
+
+def test_current_utc_day_skips_archive_probe(monkeypatch, tmp_path: Path) -> None:
+    repo = ParquetMarketDataRepository(str(tmp_path))
+    cutoff_dt = MODULE.parse_utc("2026-03-28T00:10:00Z")
+    floor_dt = MODULE.parse_utc("2026-03-28T00:00:00Z")
+    assert cutoff_dt is not None
+    assert floor_dt is not None
+
+    monkeypatch.setattr(MODULE, "_utc_today", lambda: date(2026, 3, 28))
+    monkeypatch.setattr(MODULE, "_download_zip_bytes", lambda *args, **kwargs: pytest.fail("archive probe should be skipped"))
+
+    live_calls: list[dict[str, int]] = []
+
+    def _collect_live_raw_rows(**kwargs):
+        live_calls.append({"start_ms": int(kwargs["start_ms"]), "end_ms": int(kwargs["end_ms"])})
+        return [
+            {
+                "agg_trade_id": 1,
+                "timestamp_ms": int(kwargs["start_ms"]),
+                "price": 100.0,
+                "quantity": 0.1,
+                "is_buyer_maker": False,
+            }
+        ]
+
+    monkeypatch.setattr(MODULE, "_collect_live_raw_rows", _collect_live_raw_rows)
+
+    result = MODULE.refresh_symbol_raw_first_ohlcv(
+        repo=repo,
+        symbol="BTC/USDT",
+        db_path=str(tmp_path),
+        exchange_id="binance",
+        cutoff_dt=cutoff_dt,
+        floor_dt=floor_dt,
+        guard=None,
+    )
+
+    assert result.source_mix == "live_only_recent_archive_cutover"
+    assert result.archive_days_missing == 0
+    assert result.live_tail_status == "fetched"
+    assert live_calls and live_calls[0]["start_ms"] == int(floor_dt.timestamp() * 1000)
+
+
+def test_unsupported_live_symbol_skips_live_tail_without_failing(monkeypatch, tmp_path: Path) -> None:
+    repo = ParquetMarketDataRepository(str(tmp_path))
+    cutoff_dt = MODULE.parse_utc("2026-03-28T00:10:00Z")
+    floor_dt = MODULE.parse_utc("2026-03-28T00:00:00Z")
+    assert cutoff_dt is not None
+    assert floor_dt is not None
+
+    monkeypatch.setattr(MODULE, "_utc_today", lambda: date(2026, 3, 28))
+    monkeypatch.setattr(MODULE, "_download_zip_bytes", lambda *args, **kwargs: pytest.fail("archive probe should be skipped"))
+    monkeypatch.setattr(MODULE, "_supports_live_raw_symbol", lambda _symbol: False)
+    monkeypatch.setattr(MODULE, "_collect_live_raw_rows", lambda **_kwargs: pytest.fail("live fetch should be skipped"))
+
+    result = MODULE.refresh_symbol_raw_first_ohlcv(
+        repo=repo,
+        symbol="XAU/USD",
+        db_path=str(tmp_path),
+        exchange_id="binance",
+        cutoff_dt=cutoff_dt,
+        floor_dt=floor_dt,
+        guard=None,
+    )
+
+    assert result.source_mix == "noop_recent_archive_cutover"
+    assert result.live_tail_status == "skipped_unsupported_symbol"
+    assert result.live_raw_rows_fetched == 0
+    assert result.live_raw_rows_upserted == 0
+
+
+def test_invalid_symbol_error_from_live_fetch_falls_back_to_skip(monkeypatch, tmp_path: Path) -> None:
+    repo = ParquetMarketDataRepository(str(tmp_path))
+    cutoff_dt = MODULE.parse_utc("2026-03-28T00:10:00Z")
+    floor_dt = MODULE.parse_utc("2026-03-28T00:00:00Z")
+    assert cutoff_dt is not None
+    assert floor_dt is not None
+
+    monkeypatch.setattr(MODULE, "_utc_today", lambda: date(2026, 3, 28))
+    monkeypatch.setattr(MODULE, "_supports_live_raw_symbol", lambda _symbol: True)
+    monkeypatch.setattr(MODULE, "_download_zip_bytes", lambda *args, **kwargs: pytest.fail("archive probe should be skipped"))
+
+    def _raise_invalid(**_kwargs):
+        raise MODULE.LiveRawSymbolUnsupportedError("invalid symbol")
+
+    monkeypatch.setattr(MODULE, "_collect_live_raw_rows", _raise_invalid)
+
+    result = MODULE.refresh_symbol_raw_first_ohlcv(
+        repo=repo,
+        symbol="XPD/USD",
+        db_path=str(tmp_path),
+        exchange_id="binance",
+        cutoff_dt=cutoff_dt,
+        floor_dt=floor_dt,
+        guard=None,
+    )
+
+    assert result.source_mix == "noop_recent_archive_cutover"
+    assert result.live_tail_status == "skipped_unsupported_symbol"
+    assert result.live_raw_rows_fetched == 0
 
 
 def test_prioritize_symbols_keeps_requested_cores_first() -> None:
@@ -242,6 +352,7 @@ def test_recent_archive_404_cuts_over_to_live_tail(monkeypatch, tmp_path: Path) 
 
     assert result.archive_days_missing == 1
     assert result.source_mix == "live_only_recent_archive_cutover"
+    assert result.live_tail_status == "fetched"
     assert live_calls
     assert live_calls[0]["start_ms"] == int(floor_dt.timestamp() * 1000)
 

@@ -7,6 +7,7 @@ import io
 import json
 import os
 import resource
+from functools import lru_cache
 import sys
 import time
 import zipfile
@@ -73,6 +74,11 @@ DEFAULT_PARALLEL_MEMORY_RESERVE_BYTES = max(
 )
 DEFAULT_RECENT_ARCHIVE_LIVE_CUTOVER_DAYS = 3
 DEFAULT_ARCHIVE_MISS_STREAK_FOR_LIVE_CUTOVER = 1
+DEFAULT_LIVE_RAW_BATCH_PAUSE_SECONDS = 0.0
+
+
+class LiveRawSymbolUnsupportedError(RuntimeError):
+    """Raised when Binance Futures live aggTrades does not support a requested symbol."""
 
 
 @dataclass(slots=True)
@@ -91,6 +97,7 @@ class OhlcvRefreshResult:
     archive_raw_rows_upserted: int
     live_raw_rows_fetched: int
     live_raw_rows_upserted: int
+    live_tail_status: str
     derived_ohlcv_rows_upserted: int
     source_mix: str
     stage_timings_seconds: dict[str, float]
@@ -261,6 +268,56 @@ def _archive_miss_streak_for_live_cutover() -> int:
         return int(DEFAULT_ARCHIVE_MISS_STREAK_FOR_LIVE_CUTOVER)
 
 
+def _live_raw_batch_pause_seconds() -> float:
+    raw = str(os.getenv("LQ_LIVE_RAW_BATCH_PAUSE_SEC", "")).strip()
+    if not raw:
+        return float(DEFAULT_LIVE_RAW_BATCH_PAUSE_SECONDS)
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return float(DEFAULT_LIVE_RAW_BATCH_PAUSE_SECONDS)
+
+
+def _utc_today() -> date:
+    return datetime.now(UTC).date()
+
+
+def _is_invalid_live_symbol_error(exc: BaseException) -> bool:
+    return "invalid symbol" in str(exc).strip().lower()
+
+
+@lru_cache(maxsize=1)
+def _live_raw_supported_symbols() -> frozenset[str] | None:
+    exchange = None
+    try:
+        exchange = create_binance_futures_client(market_type="future")
+        exchange_info = getattr(exchange, "exchange_info", None)
+        if not callable(exchange_info):
+            return None
+        payload = exchange_info() or {}
+        supported: set[str] = set()
+        for row in list(payload.get("symbols") or []):
+            if not isinstance(row, dict):
+                continue
+            compact = str(row.get("symbol") or "").strip()
+            if compact:
+                supported.add(normalize_symbol(compact))
+        return frozenset(supported)
+    except Exception:
+        return None
+    finally:
+        close_fn = getattr(exchange, "close", None)
+        if callable(close_fn):
+            close_fn()
+
+
+def _supports_live_raw_symbol(symbol: str) -> bool:
+    supported = _live_raw_supported_symbols()
+    if supported is None:
+        return True
+    return normalize_symbol(symbol) in supported
+
+
 def _should_cutover_recent_archive_miss(
     *,
     day_value: date,
@@ -274,6 +331,10 @@ def _should_cutover_recent_archive_miss(
         return False
     remaining_days = max(0, (cutoff_dt.date() - day_value).days)
     return remaining_days <= int(lookback_days)
+
+
+def _should_skip_archive_probe_for_current_utc_day(*, day_value: date) -> bool:
+    return day_value >= _utc_today()
 
 
 def estimate_parallel_workers(
@@ -450,12 +511,13 @@ def _collect_live_raw_rows(
     max_batches: int = 100_000,
     retries: int = 10,
     base_wait_sec: float = 2.0,
-    pause_sec: float = 0.1,
+    pause_sec: float | None = None,
 ) -> list[dict[str, Any]]:
     exchange = create_binance_futures_client(market_type="future")
     cursor = max(0, int(start_ms))
     until = max(cursor, int(end_ms))
     current_limit = max(1, int(limit))
+    resolved_pause_sec = _live_raw_batch_pause_seconds() if pause_sec is None else max(0.0, float(pause_sec))
     last_trade_id = -1
     seen: set[tuple[int, int]] = set()
     out: list[dict[str, Any]] = []
@@ -475,6 +537,10 @@ def _collect_live_raw_rows(
                 )
             except Exception as exc:
                 message = str(exc)
+                if _is_invalid_live_symbol_error(exc):
+                    raise LiveRawSymbolUnsupportedError(
+                        f"Binance Futures live aggTrades do not support {normalize_symbol(symbol)}."
+                    ) from exc
                 if "429" in message or "Too Many Requests" in message or "DDoSProtection" in message:
                     current_limit = max(100, current_limit // 2)
                     time.sleep(max(float(base_wait_sec), 5.0))
@@ -513,8 +579,8 @@ def _collect_live_raw_rows(
             cursor = int(filtered[-1]["timestamp_ms"]) + 1
             if len(filtered) < int(current_limit):
                 break
-            if float(pause_sec) > 0.0:
-                time.sleep(float(pause_sec))
+            if float(resolved_pause_sec) > 0.0:
+                time.sleep(float(resolved_pause_sec))
     finally:
         close_fn = getattr(exchange, "close", None)
         if callable(close_fn):
@@ -561,6 +627,7 @@ def refresh_symbol_raw_first_ohlcv(
     live_raw_rows_upserted = 0
     derived_ohlcv_rows_upserted = 0
     archive_cutover_to_live = False
+    live_tail_status = "not_needed"
     stage_timings_seconds: dict[str, float] = {}
     after_max_utc = before_max_utc
     previous_close = _last_close(repo, symbol=symbol, max_dt=before_max_utc)
@@ -576,6 +643,10 @@ def refresh_symbol_raw_first_ohlcv(
             range_end = min(cutoff_ms, day_end_ms)
             if range_start > range_end:
                 continue
+            if _should_skip_archive_probe_for_current_utc_day(day_value=day_value):
+                archive_cutover_to_live = True
+                live_start_ms = min(int(live_start_ms), int(range_start))
+                break
             started_at = time.perf_counter()
             blob = _download_zip_bytes(
                 _binance_archive_url(symbol, day_value, "future"),
@@ -658,66 +729,75 @@ def refresh_symbol_raw_first_ohlcv(
                 )
 
     if live_start_ms <= cutoff_ms:
-        started_at = time.perf_counter()
-        live_rows = _collect_live_raw_rows(
-            symbol=symbol,
-            start_ms=live_start_ms,
-            end_ms=cutoff_ms,
-            limit=1000,
-            max_batches=100_000,
-            retries=10,
-            base_wait_sec=2.0,
-        )
-        _record_stage_duration(stage_timings_seconds, "live_fetch", started_at)
-        live_raw_rows_fetched = len(live_rows)
-        if live_rows:
+        if not _supports_live_raw_symbol(symbol):
+            live_tail_status = "skipped_unsupported_symbol"
+        else:
             started_at = time.perf_counter()
-            live_raw_rows_upserted = repo.append_raw_aggtrades(
-                exchange=str(exchange_id).lower(),
-                symbol=symbol,
-                rows=live_rows,
-            )
-            _record_stage_duration(stage_timings_seconds, "raw_upsert", started_at)
-            started_at = time.perf_counter()
-            _write_raw_checkpoint_for_rows(
-                repo,
-                exchange_id=str(exchange_id).lower(),
-                symbol=symbol,
-                rows=live_rows,
-                source="binance_futures_live_tail",
-                observed_until_ms=int(cutoff_ms),
-            )
-            _record_stage_duration(stage_timings_seconds, "checkpoint_write", started_at)
-            started_at = time.perf_counter()
-            derived_frame = raw_aggtrades_to_1s_frame(
-                live_rows,
-                source=f"{exchange_id}:{symbol}:rest_tail",
-                range_start_ms=int(live_start_ms),
-                range_end_ms=int(cutoff_ms),
-                previous_close=previous_close,
-                complete_through_ms=int(cutoff_ms),
-            )
-            _record_stage_duration(stage_timings_seconds, "derive_1s", started_at)
-            if not derived_frame.is_empty():
+            try:
+                live_rows = _collect_live_raw_rows(
+                    symbol=symbol,
+                    start_ms=live_start_ms,
+                    end_ms=cutoff_ms,
+                    limit=1000,
+                    max_batches=100_000,
+                    retries=10,
+                    base_wait_sec=2.0,
+                )
+                live_tail_status = "fetched" if live_rows else "empty"
+            except LiveRawSymbolUnsupportedError:
+                live_rows = []
+                live_tail_status = "skipped_unsupported_symbol"
+            _record_stage_duration(stage_timings_seconds, "live_fetch", started_at)
+            live_raw_rows_fetched = len(live_rows)
+            if live_rows:
                 started_at = time.perf_counter()
-                derived_ohlcv_rows_upserted += upsert_ohlcv_rows_1s(
-                    db_path,
+                live_raw_rows_upserted = repo.append_raw_aggtrades(
                     exchange=str(exchange_id).lower(),
                     symbol=symbol,
-                    rows=derived_frame,
+                    rows=live_rows,
                 )
-                _record_stage_duration(stage_timings_seconds, "ohlcv_upsert", started_at)
-                after_max_utc = _as_utc(derived_frame.get_column("datetime")[-1])
-                previous_close = float(derived_frame.get_column("close")[-1])
-            if guard is not None:
-                guard.checkpoint(
-                    "after_live_tail",
-                    {
-                        "symbol": symbol,
-                        "live_raw_rows_upserted": live_raw_rows_upserted,
-                        "derived_ohlcv_rows_upserted": derived_ohlcv_rows_upserted,
-                    },
+                _record_stage_duration(stage_timings_seconds, "raw_upsert", started_at)
+                started_at = time.perf_counter()
+                _write_raw_checkpoint_for_rows(
+                    repo,
+                    exchange_id=str(exchange_id).lower(),
+                    symbol=symbol,
+                    rows=live_rows,
+                    source="binance_futures_live_tail",
+                    observed_until_ms=int(cutoff_ms),
                 )
+                _record_stage_duration(stage_timings_seconds, "checkpoint_write", started_at)
+                started_at = time.perf_counter()
+                derived_frame = raw_aggtrades_to_1s_frame(
+                    live_rows,
+                    source=f"{exchange_id}:{symbol}:rest_tail",
+                    range_start_ms=int(live_start_ms),
+                    range_end_ms=int(cutoff_ms),
+                    previous_close=previous_close,
+                    complete_through_ms=int(cutoff_ms),
+                )
+                _record_stage_duration(stage_timings_seconds, "derive_1s", started_at)
+                if not derived_frame.is_empty():
+                    started_at = time.perf_counter()
+                    derived_ohlcv_rows_upserted += upsert_ohlcv_rows_1s(
+                        db_path,
+                        exchange=str(exchange_id).lower(),
+                        symbol=symbol,
+                        rows=derived_frame,
+                    )
+                    _record_stage_duration(stage_timings_seconds, "ohlcv_upsert", started_at)
+                    after_max_utc = _as_utc(derived_frame.get_column("datetime")[-1])
+                    previous_close = float(derived_frame.get_column("close")[-1])
+                if guard is not None:
+                    guard.checkpoint(
+                        "after_live_tail",
+                        {
+                            "symbol": symbol,
+                            "live_raw_rows_upserted": live_raw_rows_upserted,
+                            "derived_ohlcv_rows_upserted": derived_ohlcv_rows_upserted,
+                            "live_tail_status": live_tail_status,
+                        },
+                    )
 
     refreshed_repo = ParquetMarketDataRepository(str(db_path))
     after_raw_dt = _raw_checkpoint_utc(
@@ -752,6 +832,7 @@ def refresh_symbol_raw_first_ohlcv(
         archive_raw_rows_upserted=archive_raw_rows_upserted,
         live_raw_rows_fetched=live_raw_rows_fetched,
         live_raw_rows_upserted=live_raw_rows_upserted,
+        live_tail_status=live_tail_status,
         derived_ohlcv_rows_upserted=derived_ohlcv_rows_upserted,
         source_mix=source_mix if not archive_cutover_to_live else f"{source_mix}_recent_archive_cutover",
         stage_timings_seconds={key: round(float(value), 6) for key, value in sorted(stage_timings_seconds.items())},
@@ -943,12 +1024,12 @@ def build_markdown(payload: dict[str, Any]) -> str:
         "",
         "## OHLCV refresh",
         "",
-        "| Symbol | Before max | After max | Before raw | After raw | Archive days | Missing archive days | Source mix | Raw rows | Live rows | Derived 1s upserted |",
-        "|---|---|---|---|---|---:|---:|---|---:|---:|---:|",
+        "| Symbol | Before max | After max | Before raw | After raw | Archive days | Missing archive days | Source mix | Live tail | Raw rows | Live rows | Derived 1s upserted |",
+        "|---|---|---|---|---|---:|---:|---|---|---:|---:|---:|",
     ]
     for row in list(payload.get("ohlcv_results") or []):
         lines.append(
-            f"| `{row['symbol']}` | `{row.get('before_ohlcv_max_utc')}` | `{row.get('after_ohlcv_max_utc')}` | `{row.get('before_raw_agg_trade_utc')}` | `{row.get('after_raw_agg_trade_utc')}` | {row.get('archive_days_downloaded', 0)} | {row.get('archive_days_missing', 0)} | `{row.get('source_mix')}` | {int(row.get('archive_raw_rows_upserted', 0) or 0)} | {int(row.get('live_raw_rows_upserted', 0) or 0)} | {int(row.get('derived_ohlcv_rows_upserted', 0) or 0)} |"
+            f"| `{row['symbol']}` | `{row.get('before_ohlcv_max_utc')}` | `{row.get('after_ohlcv_max_utc')}` | `{row.get('before_raw_agg_trade_utc')}` | `{row.get('after_raw_agg_trade_utc')}` | {row.get('archive_days_downloaded', 0)} | {row.get('archive_days_missing', 0)} | `{row.get('source_mix')}` | `{row.get('live_tail_status')}` | {int(row.get('archive_raw_rows_upserted', 0) or 0)} | {int(row.get('live_raw_rows_upserted', 0) or 0)} | {int(row.get('derived_ohlcv_rows_upserted', 0) or 0)} |"
         )
     lines.extend(
         [
