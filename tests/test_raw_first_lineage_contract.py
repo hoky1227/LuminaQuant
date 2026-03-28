@@ -7,6 +7,7 @@ import polars as pl
 import pytest
 
 from lumina_quant.data.raw_first_lineage import (
+    coerce_raw_aggtrades_frame,
     normalize_exchange_timestamp_ms,
     raw_aggtrades_to_1s_frame,
     resolve_raw_aggtrades_backend_name,
@@ -21,6 +22,60 @@ def test_normalize_exchange_timestamp_ms_rejects_non_ms_units() -> None:
     with pytest.raises(ValueError, match="microseconds-like"):
         normalize_exchange_timestamp_ms(1_700_000_000_000_000, source="rest")
 
+
+
+def test_coerce_raw_aggtrades_frame_polars_matches_iterable_path() -> None:
+    rows = [
+        {
+            "agg_trade_id": 10,
+            "timestamp_ms": 1_700_000_000_100,
+            "price": 100.0,
+            "quantity": 1.0,
+            "is_buyer_maker": False,
+        },
+        {
+            "agg_trade_id": 10,
+            "timestamp_ms": 1_700_000_000_100,
+            "price": 101.0,
+            "quantity": 2.0,
+            "is_buyer_maker": True,
+        },
+        {
+            "agg_trade_id": 11,
+            "timestamp_ms": 1_700_000_000_900,
+            "price": 0.0,
+            "quantity": 1.0,
+            "is_buyer_maker": False,
+        },
+        {
+            "agg_trade_id": 12,
+            "timestamp_ms": 1_700_000_001_100,
+            "price": 102.0,
+            "quantity": 3.0,
+            "is_buyer_maker": False,
+        },
+    ]
+    iterable = coerce_raw_aggtrades_frame(rows, source="iterable")
+    polars = coerce_raw_aggtrades_frame(pl.DataFrame(rows), source="polars")
+
+    assert polars.to_dicts() == iterable.to_dicts()
+    assert polars["price"].to_list() == pytest.approx([101.0, 102.0])
+    assert polars["quantity"].to_list() == pytest.approx([2.0, 3.0])
+
+
+def test_coerce_raw_aggtrades_frame_polars_rejects_non_ms_units() -> None:
+    frame = pl.DataFrame(
+        {
+            "agg_trade_id": [1],
+            "timestamp_ms": [1_700_000_000],
+            "price": [100.0],
+            "quantity": [1.0],
+            "is_buyer_maker": [False],
+        }
+    )
+
+    with pytest.raises(ValueError, match="seconds-like"):
+        coerce_raw_aggtrades_frame(frame, source="polars")
 
 
 def test_raw_aggtrades_to_1s_frame_drops_incomplete_last_second() -> None:

@@ -109,24 +109,73 @@ def latest_complete_bucket_start_ms(
     return (((boundary + 1) // bucket_ms) * bucket_ms) - bucket_ms
 
 
+def _empty_raw_aggtrades_frame() -> pl.DataFrame:
+    return pl.DataFrame(
+        {column: [] for column in _RAW_COLUMNS},
+        schema={
+            "agg_trade_id": pl.Int64,
+            "timestamp_ms": pl.Int64,
+            "price": pl.Float64,
+            "quantity": pl.Float64,
+            "is_buyer_maker": pl.Boolean,
+        },
+    )
+
+
+def _coerce_raw_aggtrades_frame_polars(frame: pl.DataFrame, *, source: str) -> pl.DataFrame:
+    missing = [column for column in _RAW_COLUMNS if column not in frame.columns]
+    if missing:
+        raise ValueError(f"{source} rows missing raw aggTrades columns: {missing}")
+
+    normalized = (
+        frame.select(list(_RAW_COLUMNS))
+        .with_columns(
+            [
+                pl.col("agg_trade_id").cast(pl.Int64),
+                pl.col("timestamp_ms").cast(pl.Int64),
+                pl.col("price").cast(pl.Float64),
+                pl.col("quantity").cast(pl.Float64),
+                pl.col("is_buyer_maker").cast(pl.Boolean, strict=False).fill_null(False),
+            ]
+        )
+        .drop_nulls(subset=["timestamp_ms"])
+    )
+    if normalized.is_empty():
+        return _empty_raw_aggtrades_frame()
+
+    timestamp_abs = pl.col("timestamp_ms").abs()
+    if normalized.select(timestamp_abs.lt(100_000_000_000).any()).item():
+        example = int(normalized.filter(timestamp_abs.lt(100_000_000_000))["timestamp_ms"][0])
+        raise ValueError(f"{source} timestamp must be milliseconds, got seconds-like value {example}.")
+    if normalized.select(timestamp_abs.ge(100_000_000_000_000).any()).item():
+        example = int(normalized.filter(timestamp_abs.ge(100_000_000_000_000))["timestamp_ms"][0])
+        raise ValueError(f"{source} timestamp must be milliseconds, got microseconds-like value {example}.")
+
+    normalized = normalized.filter((pl.col("price") > 0.0) & (pl.col("quantity") >= 0.0))
+    if normalized.is_empty():
+        return _empty_raw_aggtrades_frame()
+
+    return (
+        normalized.sort(["timestamp_ms", "agg_trade_id"])
+        .unique(subset=["timestamp_ms", "agg_trade_id"], keep="last")
+        .sort(["timestamp_ms", "agg_trade_id"])
+    )
+
+
 def coerce_raw_aggtrades_frame(
     rows: pl.DataFrame | Iterable[dict[str, Any]],
     *,
     source: str,
 ) -> pl.DataFrame:
     """Coerce raw aggTrades rows into canonical parquet schema."""
-    frame = rows if isinstance(rows, pl.DataFrame) else pl.DataFrame(list(rows or []))
+    if isinstance(rows, pl.DataFrame):
+        if rows.is_empty():
+            return _empty_raw_aggtrades_frame()
+        return _coerce_raw_aggtrades_frame_polars(rows, source=source)
+
+    frame = pl.DataFrame(list(rows or []))
     if frame.is_empty():
-        return pl.DataFrame(
-            {column: [] for column in _RAW_COLUMNS},
-            schema={
-                "agg_trade_id": pl.Int64,
-                "timestamp_ms": pl.Int64,
-                "price": pl.Float64,
-                "quantity": pl.Float64,
-                "is_buyer_maker": pl.Boolean,
-            },
-        )
+        return _empty_raw_aggtrades_frame()
 
     missing = [column for column in _RAW_COLUMNS if column not in frame.columns]
     if missing:
@@ -150,16 +199,7 @@ def coerce_raw_aggtrades_frame(
         )
 
     if not normalized_rows:
-        return pl.DataFrame(
-            {column: [] for column in _RAW_COLUMNS},
-            schema={
-                "agg_trade_id": pl.Int64,
-                "timestamp_ms": pl.Int64,
-                "price": pl.Float64,
-                "quantity": pl.Float64,
-                "is_buyer_maker": pl.Boolean,
-            },
-        )
+        return _empty_raw_aggtrades_frame()
     return (
         pl.DataFrame(normalized_rows)
         .select(list(_RAW_COLUMNS))
