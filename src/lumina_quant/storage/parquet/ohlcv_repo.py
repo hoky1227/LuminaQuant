@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from hashlib import sha256
@@ -19,6 +20,7 @@ from lumina_quant.backtesting.cli_contract import (
     normalize_data_mode,
 )
 from lumina_quant.data.raw_first_lineage import resample_1s_frame
+from lumina_quant.eval.exact_window_runtime import HeavyRunActiveError, HeavyRunLock
 from lumina_quant.storage.wal.binary import BinaryWAL, WALRecord
 from lumina_quant.storage.wal.native_backend import append_ohlcv_frame_native
 from lumina_quant.symbols import canonical_symbol
@@ -88,6 +90,10 @@ _MATERIALIZED_REQUIRED_MANIFEST_FIELDS = (
     "status",
 )
 _RAW_PART_PATTERN = re.compile(r"^part-(\d+)\.parquet$")
+
+
+class RawPartitionBusyError(RuntimeError):
+    """Raised when a raw partition cannot acquire its writer lock in time."""
 
 
 def normalize_symbol(symbol: str) -> str:
@@ -785,64 +791,72 @@ class ParquetMarketDataRepository:
                 partition_date=part_key,
             )
             part_path.mkdir(parents=True, exist_ok=True)
-            existing_paths = self._raw_part_paths(part_path)
-            incoming_first_key = (int(payload["timestamp_ms"][0]), int(payload["agg_trade_id"][0]))
-            existing_tail_key = (
-                checkpoint_key
-                if checkpoint_key is not None and existing_paths
-                else (self._raw_tail_key(existing_paths) if existing_paths else None)
+            partition_lock = self._acquire_raw_partition_lock(
+                exchange=exchange,
+                symbol=symbol,
+                partition_root=part_path,
             )
-            append_only = not existing_paths or (
-                existing_tail_key is not None and incoming_first_key > existing_tail_key
-            )
-
-            if append_only:
-                output_path = (
-                    part_path / "part-0000.parquet" if not existing_paths else self._next_raw_part_path(part_path)
+            try:
+                existing_paths = self._raw_part_paths(part_path)
+                incoming_first_key = (int(payload["timestamp_ms"][0]), int(payload["agg_trade_id"][0]))
+                existing_tail_key = (
+                    checkpoint_key
+                    if checkpoint_key is not None and existing_paths
+                    else (self._raw_tail_key(existing_paths) if existing_paths else None)
                 )
-                payload.write_parquet(output_path, compression="zstd", statistics=True)
+                append_only = not existing_paths or (
+                    existing_tail_key is not None and incoming_first_key > existing_tail_key
+                )
+
+                if append_only:
+                    output_path = (
+                        part_path / "part-0000.parquet" if not existing_paths else self._next_raw_part_path(part_path)
+                    )
+                    payload.write_parquet(output_path, compression="zstd", statistics=True)
+                    self._fsync_dir(output_path.parent)
+                    total_rows += int(payload.height)
+                    self._enforce_raw_partition_controls(
+                        exchange=exchange,
+                        symbol=symbol,
+                        partition_root=part_path,
+                    )
+                    continue
+
+                existing_frames: list[pl.DataFrame] = []
+                for existing_path in existing_paths:
+                    try:
+                        loaded = pl.read_parquet(existing_path).select(list(_RAW_AGGTRADES_REQUIRED_COLUMNS))
+                    except BaseException:
+                        self._rename_corrupt_raw_part(existing_path)
+                        continue
+                    if not loaded.is_empty():
+                        existing_frames.append(loaded)
+
+                merged = (
+                    pl.concat([*existing_frames, payload], how="vertical_relaxed")
+                    .sort(["timestamp_ms", "agg_trade_id"])
+                    .unique(subset=["timestamp_ms", "agg_trade_id"], keep="last")
+                    .sort(["timestamp_ms", "agg_trade_id"])
+                )
+                total_rows += int(merged.height)
+
+                output_path = part_path / "part-0000.parquet"
+                tmp_output_path = output_path.with_suffix(".tmp.parquet")
+                merged.write_parquet(tmp_output_path, compression="zstd", statistics=True)
+                tmp_output_path.replace(output_path)
+                for existing_path in existing_paths:
+                    if existing_path == output_path:
+                        continue
+                    if existing_path.exists():
+                        existing_path.unlink()
                 self._fsync_dir(output_path.parent)
-                total_rows += int(payload.height)
                 self._enforce_raw_partition_controls(
                     exchange=exchange,
                     symbol=symbol,
                     partition_root=part_path,
                 )
-                continue
-
-            existing_frames: list[pl.DataFrame] = []
-            for existing_path in existing_paths:
-                try:
-                    loaded = pl.read_parquet(existing_path).select(list(_RAW_AGGTRADES_REQUIRED_COLUMNS))
-                except BaseException:
-                    self._rename_corrupt_raw_part(existing_path)
-                    continue
-                if not loaded.is_empty():
-                    existing_frames.append(loaded)
-
-            merged = (
-                pl.concat([*existing_frames, payload], how="vertical_relaxed")
-                .sort(["timestamp_ms", "agg_trade_id"])
-                .unique(subset=["timestamp_ms", "agg_trade_id"], keep="last")
-                .sort(["timestamp_ms", "agg_trade_id"])
-            )
-            total_rows += int(merged.height)
-
-            output_path = part_path / "part-0000.parquet"
-            tmp_output_path = output_path.with_suffix(".tmp.parquet")
-            merged.write_parquet(tmp_output_path, compression="zstd", statistics=True)
-            tmp_output_path.replace(output_path)
-            for existing_path in existing_paths:
-                if existing_path == output_path:
-                    continue
-                if existing_path.exists():
-                    existing_path.unlink()
-            self._fsync_dir(output_path.parent)
-            self._enforce_raw_partition_controls(
-                exchange=exchange,
-                symbol=symbol,
-                partition_root=part_path,
-            )
+            finally:
+                partition_lock.release()
 
         return int(frame.height)
 
@@ -1325,6 +1339,56 @@ class ParquetMarketDataRepository:
         self._fsync_file(tmp)
         tmp.replace(path)
         self._fsync_dir(path.parent)
+
+    def _resolve_raw_partition_lock_controls(self) -> tuple[float, float]:
+        timeout_raw = str(
+            os.getenv("LQ_RAW_PARTITION_LOCK_TIMEOUT_SECONDS", "")
+            or os.getenv("LQ__STORAGE__RAW_PARTITION_LOCK_TIMEOUT_SECONDS", "")
+        ).strip()
+        poll_raw = str(
+            os.getenv("LQ_RAW_PARTITION_LOCK_POLL_SECONDS", "")
+            or os.getenv("LQ__STORAGE__RAW_PARTITION_LOCK_POLL_SECONDS", "")
+        ).strip()
+        try:
+            timeout_seconds = max(0.1, float(timeout_raw)) if timeout_raw else 10.0
+        except ValueError:
+            timeout_seconds = 10.0
+        try:
+            poll_seconds = max(0.01, float(poll_raw)) if poll_raw else 0.05
+        except ValueError:
+            poll_seconds = 0.05
+        return float(timeout_seconds), float(poll_seconds)
+
+    def _acquire_raw_partition_lock(
+        self,
+        *,
+        exchange: str,
+        symbol: str,
+        partition_root: Path,
+    ) -> HeavyRunLock:
+        timeout_seconds, poll_seconds = self._resolve_raw_partition_lock_controls()
+        deadline = time.monotonic() + float(timeout_seconds)
+        active_payload: dict[str, Any] = {}
+        lock_path = partition_root / ".raw-partition.lock"
+        while True:
+            try:
+                return HeavyRunLock.acquire(
+                    lock_path=lock_path,
+                    label="raw_partition",
+                    metadata={
+                        "exchange": self._normalize_exchange(exchange),
+                        "symbol": self._normalize_symbol_token(symbol),
+                        "partition": partition_root.name,
+                    },
+                )
+            except HeavyRunActiveError as exc:
+                active_payload = dict(exc.active_payload)
+                if time.monotonic() >= deadline:
+                    raise RawPartitionBusyError(
+                        "Raw partition is busy; timed out waiting for writer/compaction lease "
+                        f"partition={partition_root} active={active_payload}"
+                    ) from exc
+                time.sleep(float(poll_seconds))
 
     def _resolve_raw_part_controls(self) -> tuple[int, bool]:
         raw_max_parts = self._env_int(

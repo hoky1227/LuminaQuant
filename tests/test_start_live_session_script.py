@@ -66,12 +66,19 @@ def test_start_live_session_real_mode_requires_allow_real() -> None:
     assert "--real requires --allow-real" in result.stderr
 
 
-def test_start_live_session_real_mode_dry_run_adds_real_flag_and_skips_paper_preflight() -> None:
+def test_start_live_session_real_mode_rejects_skip_preflight() -> None:
+    result = _run("--real", "--allow-real", "--skip-preflight", "--dry-run", "--no-env-file")
+
+    assert result.returncode == 2
+    assert "cannot use --skip-preflight" in result.stderr
+
+
+def test_start_live_session_real_mode_dry_run_adds_real_flag_and_keeps_preflight() -> None:
     result = _run("--real", "--allow-real", "--dry-run", "--no-env-file", "--dsn", "postgresql:///luminaquant")
 
     assert result.returncode == 0
-    assert "Skipping live_readiness_preflight.py in real mode" in result.stderr
-    assert "Preflight: 0" in result.stdout
+    assert "Preflight: 1" in result.stdout
+    assert "uv run python scripts/ops/live_readiness_preflight.py" in result.stdout
     assert "--enable-live-real" in result.stdout
 
 

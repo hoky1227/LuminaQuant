@@ -190,11 +190,11 @@ class _SingleEventThenInterrupt:
         return 0
 
 
-def _build_trader(monkeypatch) -> LiveTrader:
+def _build_trader(monkeypatch, config_cls=_Config) -> LiveTrader:
     _AuditStore.instances.clear()
     _Notifier.instances.clear()
     monkeypatch.setattr("lumina_quant.live.trader.setup_logging", lambda _name: _Logger())
-    monkeypatch.setattr("lumina_quant.live.trader.LiveConfig", _Config)
+    monkeypatch.setattr("lumina_quant.live.trader.LiveConfig", config_cls)
     monkeypatch.setattr("lumina_quant.live.trader.StateManager", _StateManager)
     monkeypatch.setattr("lumina_quant.live.trader.RiskManager", lambda cfg: SimpleNamespace(config=cfg))
     monkeypatch.setattr("lumina_quant.live.trader.RuntimeCache", lambda: SimpleNamespace())
@@ -366,3 +366,32 @@ def test_single_main_loop_error_below_threshold_does_not_fail_stop(monkeypatch):
 
     assert trader._hard_halt_active is False
     assert trader.audit_store.ended[-1]["status"] == "STOPPED"
+
+
+def test_real_mode_forces_startup_reconciliation_hard_fail(monkeypatch):
+    class _RealConfig(_Config):
+        MODE = "real"
+        STARTUP_RECONCILIATION_HARD_FAIL = False
+
+    trader = _build_trader(monkeypatch, config_cls=_RealConfig)
+
+    assert trader.live_mode == "real"
+    assert trader.startup_reconciliation_hard_fail is True
+
+
+def test_real_mode_run_blocks_when_readiness_gate_fails(monkeypatch):
+    class _RealConfig(_Config):
+        MODE = "real"
+        STARTUP_RECONCILIATION_HARD_FAIL = False
+
+    trader = _build_trader(monkeypatch, config_cls=_RealConfig)
+    monkeypatch.setattr(
+        "lumina_quant.live.trader.enforce_live_readiness_from_files",
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("real gate blocked")),
+    )
+
+    with pytest.raises(RuntimeError, match="real gate blocked"):
+        trader.run()
+
+    assert trader._startup_state == "failed_init"
+    assert trader.audit_store.ended[-1]["status"] == "FAILED"

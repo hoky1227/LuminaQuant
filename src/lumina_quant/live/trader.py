@@ -13,6 +13,12 @@ from lumina_quant.core.market_window_contract import MarketWindowContractError
 from lumina_quant.core.protocols import ExchangeInterface
 from lumina_quant.exchanges import get_exchange
 from lumina_quant.live.binance_market_stream import normalize_stream_symbol
+from lumina_quant.live.readiness_policy import (
+    DEFAULT_PREFLIGHT_STALE_MINUTES,
+    LiveReadinessBlockedError,
+    effective_startup_reconciliation_hard_fail,
+    enforce_live_readiness_from_files,
+)
 from lumina_quant.live.binance_user_stream import BinanceUserStreamClient
 from lumina_quant.live.recovery_reconciliation import RecoveryReconciliationService
 from lumina_quant.risk_manager import RiskManager
@@ -103,6 +109,7 @@ class LiveTrader(TradingEngine):
         self.order_state_source = (
             str(getattr(self.config, "ORDER_STATE_SOURCE", "polling") or "polling").strip().lower()
         )
+        self.live_mode = str(getattr(self.config, "MODE", "paper") or "paper").strip().lower()
         self.market_data_source = (
             str(getattr(self.config, "MARKET_DATA_SOURCE", "committed") or "committed")
             .strip()
@@ -111,8 +118,9 @@ class LiveTrader(TradingEngine):
         self.reconciliation_poll_fallback_enabled = bool(
             getattr(self.config, "RECONCILIATION_POLL_FALLBACK_ENABLED", True)
         )
-        self.startup_reconciliation_hard_fail = bool(
-            getattr(self.config, "STARTUP_RECONCILIATION_HARD_FAIL", False)
+        self.startup_reconciliation_hard_fail = effective_startup_reconciliation_hard_fail(
+            mode=self.live_mode,
+            configured=bool(getattr(self.config, "STARTUP_RECONCILIATION_HARD_FAIL", False)),
         )
         self.startup_reconciliation_timeout_seconds = max(
             10.0,
@@ -144,6 +152,7 @@ class LiveTrader(TradingEngine):
         )
         self._main_loop_error_timestamps: list[float] = []
         self.outbox_events: list[dict] = []
+        self._readiness_preflight_stale_minutes = int(DEFAULT_PREFLIGHT_STALE_MINUTES)
 
         # Initialize Notification Manager
         self.notifier = NotificationManager(
@@ -1217,14 +1226,46 @@ class LiveTrader(TradingEngine):
             },
         )
 
+    def _run_live_readiness_gate(self) -> None:
+        if self.live_mode != "real":
+            return
+        payload = enforce_live_readiness_from_files(
+            mode=self.live_mode,
+            stale_minutes=int(self._readiness_preflight_stale_minutes),
+            env=os.environ,
+        )
+        self.audit_store.log_risk_event(
+            self.run_id,
+            reason="LIVE_READINESS_VERIFIED",
+            details={
+                "recommended_action": payload.get("recommended_action"),
+                "status": dict(payload.get("status") or {}),
+            },
+        )
+
     def run(self):
         """Main Live Trading Loop."""
         self.logger.info(f"Starting Live Trading on {self.symbol_list}...")
         try:
+            self._run_live_readiness_gate()
             self._sync_portfolio()
             self._run_startup_reconciliation_gate()
             self._run_exit_status = "STOPPED"
             self._notify_startup_state()
+        except LiveReadinessBlockedError as exc:
+            self._set_startup_state("failed_init", error=exc)
+            self._notify_startup_state()
+            self._run_exit_status = "FAILED"
+            self.audit_store.log_risk_event(
+                self.run_id,
+                reason="LIVE_READINESS_BLOCKED",
+                details={
+                    "mode": self.live_mode,
+                    "recommended_action": exc.recommended_action,
+                },
+            )
+            self._close_audit_store(status="FAILED")
+            raise
         except Exception as exc:
             self._set_startup_state("failed_init", error=exc)
             self._notify_startup_state()

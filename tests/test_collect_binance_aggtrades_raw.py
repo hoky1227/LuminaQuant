@@ -3,8 +3,12 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
+import pytest
+
 from lumina_quant.data_collector import collect_binance_aggtrades_raw
+from lumina_quant.eval.exact_window_runtime import HeavyRunLock
 from lumina_quant.storage.parquet import ParquetMarketDataRepository
+from lumina_quant.storage.parquet.ohlcv_repo import RawPartitionBusyError
 
 
 class _ExchangeStub:
@@ -440,3 +444,38 @@ def test_append_raw_aggtrades_marks_meta_when_threshold_exceeded_but_auto_compac
     ]
     assert meta["raw_compaction_required"] is True
     assert meta["last_raw_part_count"] == 2
+
+
+def test_append_raw_aggtrades_raises_when_partition_lock_is_held(tmp_path, monkeypatch):
+    repo = ParquetMarketDataRepository(str(tmp_path))
+    part_dir = repo.raw_partition_path(
+        exchange="binance",
+        symbol="BTC/USDT",
+        partition_date="2025-01-01",
+    ).parent
+    part_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("LQ_RAW_PARTITION_LOCK_TIMEOUT_SECONDS", "0.05")
+    monkeypatch.setenv("LQ_RAW_PARTITION_LOCK_POLL_SECONDS", "0.01")
+    lock = HeavyRunLock.acquire(
+        lock_path=part_dir / ".raw-partition.lock",
+        label="raw_partition",
+        metadata={"run_id": "test-lock-holder"},
+    )
+
+    try:
+        with pytest.raises(RawPartitionBusyError):
+            repo.append_raw_aggtrades(
+                exchange="binance",
+                symbol="BTC/USDT",
+                rows=[
+                    {
+                        "agg_trade_id": 1,
+                        "timestamp_ms": 1_735_689_600_000,
+                        "price": 100.0,
+                        "quantity": 0.1,
+                        "is_buyer_maker": False,
+                    }
+                ],
+            )
+    finally:
+        lock.release()

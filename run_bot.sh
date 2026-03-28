@@ -36,6 +36,18 @@ EOF
 fi
 
 FIRST_ATTEMPT=1
+TARGET_MODE="paper"
+
+for arg in "$@"; do
+    case "$arg" in
+        --real)
+            TARGET_MODE="real"
+            ;;
+        --paper)
+            TARGET_MODE="paper"
+            ;;
+    esac
+done
 
 while true; do
     LAUNCH_MARKER=".omx/tmp/run_bot_live_started.marker"
@@ -43,7 +55,10 @@ while true; do
 
     CMD=(bash scripts/ops/start_live_session.sh --launch-marker "$LAUNCH_MARKER")
     if [[ "$FIRST_ATTEMPT" != "1" ]]; then
-        CMD+=(--skip-init-schema --skip-refresh --skip-validate --skip-preflight)
+        CMD+=(--skip-init-schema --skip-refresh --skip-validate)
+        if [[ "$TARGET_MODE" != "real" ]]; then
+            CMD+=(--skip-preflight)
+        fi
     fi
     if [[ "$#" -gt 0 ]]; then
         CMD+=("$@")

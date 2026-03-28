@@ -282,6 +282,53 @@ def test_refresh_payload_reports_backend(monkeypatch, tmp_path: Path) -> None:
     assert payload["aggregation_backend_resolved"] == "python"
 
 
+def test_refresh_payload_blocks_when_session_memory_lease_is_active(monkeypatch, tmp_path: Path) -> None:
+    output_json = tmp_path / "out.json"
+    output_md = tmp_path / "out.md"
+    rss_log = tmp_path / "rss.jsonl"
+    inventory_json = tmp_path / "inventory.json"
+    inventory_csv = tmp_path / "inventory.csv"
+    bundle = tmp_path / "bundle.json"
+    bundle.write_text(json.dumps({"selected_team": []}), encoding="utf-8")
+
+    class _BusyLeaseError(MODULE.HeavyRunActiveError):
+        def __init__(self) -> None:
+            super().__init__(
+                lock_path=tmp_path / "session_memory_budget.lock",
+                active_payload={"pid": 4321, "run_id": "active-refresh"},
+            )
+
+    monkeypatch.setattr(MODULE, "load_portfolio_symbols", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(MODULE, "load_feature_symbols", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(
+        MODULE,
+        "acquire_session_memory_lease",
+        lambda **_kwargs: (_ for _ in ()).throw(_BusyLeaseError()),
+    )
+
+    exit_code = MODULE.main(
+        [
+            "--bundle-path",
+            str(bundle),
+            "--output-json",
+            str(output_json),
+            "--output-md",
+            str(output_md),
+            "--rss-log",
+            str(rss_log),
+            "--support-inventory-json",
+            str(inventory_json),
+            "--support-inventory-csv",
+            str(inventory_csv),
+        ]
+    )
+
+    payload = json.loads(output_json.read_text(encoding="utf-8"))
+    assert exit_code == 2
+    assert payload["status"] == "blocked_active_run"
+    assert payload["session_memory_lease"]["status"] == "blocked"
+
+
 def test_raw_checkpoint_utc_reads_incremental_raw_part_files(tmp_path: Path) -> None:
     repo = ParquetMarketDataRepository(str(tmp_path))
     repo.append_raw_aggtrades(

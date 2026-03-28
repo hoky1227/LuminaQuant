@@ -11,7 +11,7 @@ Start one controlled LuminaQuant live session with optional preparation steps.
 This is intentionally different from ./run_bot.sh:
   - run_bot.sh: simple infinite restart loop around `uv run lq live`
   - this script: one safe launch with env loading, optional schema init,
-    optional refresh/validation, and paper preflight gating
+    optional refresh/validation, and fail-closed live readiness gating
 
 Options:
   --paper                    Launch in paper mode (default)
@@ -37,7 +37,7 @@ Options:
 Examples:
   scripts/ops/start_live_session.sh
   scripts/ops/start_live_session.sh --transport ws --skip-refresh
-  scripts/ops/start_live_session.sh --real --allow-real --skip-preflight
+  scripts/ops/start_live_session.sh --real --allow-real
   scripts/ops/start_live_session.sh --selection-file best_optimized_parameters/live/live_selection_20260217T150255Z.json
 EOF
 }
@@ -188,9 +188,9 @@ if [[ "$MODE" == "real" && "$ALLOW_REAL" != "1" ]]; then
   exit 2
 fi
 
-if [[ "$MODE" == "real" && "$RUN_PREFLIGHT" == "1" ]]; then
-  echo "Skipping live_readiness_preflight.py in real mode (paper-only gate)." >&2
-  RUN_PREFLIGHT=0
+if [[ "$MODE" == "real" && "$RUN_PREFLIGHT" != "1" ]]; then
+  echo "Real mode requires live_readiness_preflight.py and cannot use --skip-preflight." >&2
+  exit 2
 fi
 
 if ! command -v uv >/dev/null 2>&1; then

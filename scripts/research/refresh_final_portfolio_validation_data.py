@@ -36,7 +36,15 @@ from lumina_quant.data_sync import (
     sync_futures_feature_points,
 )
 from lumina_quant.core.memory_budget import DEFAULT_EXECUTION_MEMORY_POLICY, gib_to_bytes
-from lumina_quant.eval.exact_window_runtime import RSSGuard, resolve_memory_budget_bytes
+from lumina_quant.core.session_memory import (
+    DEFAULT_SESSION_MEMORY_LEASE_PATH,
+    acquire_session_memory_lease,
+)
+from lumina_quant.eval.exact_window_runtime import (
+    HeavyRunActiveError,
+    RSSGuard,
+    resolve_memory_budget_bytes,
+)
 from lumina_quant.market_data import upsert_ohlcv_rows_1s
 from lumina_quant.portfolio_split_contract import (
     FOLLOWUP_ROOT,
@@ -1094,13 +1102,29 @@ def main(argv: list[str] | None = None) -> int:
         "system_memory_budget_bytes": (
             None if system_memory_budget_bytes is None else int(system_memory_budget_bytes)
         ),
+        "session_memory_lease_path": str(DEFAULT_SESSION_MEMORY_LEASE_PATH.resolve()),
         "ohlcv_results": [],
         "feature_results": [],
         "support_inventory": {},
         "parallel": {},
     }
+    memory_lease = None
 
     try:
+        memory_lease = acquire_session_memory_lease(
+            label="continuity_validation_refresh",
+            requested_budget_bytes=int(args.memory_budget_bytes),
+            effective_budget_bytes=int(effective_memory_budget_bytes),
+            metadata={
+                "run_kind": "refresh_final_portfolio_validation_data",
+                "requested_workers": int(args.max_workers),
+                "portfolio_symbols": list(portfolio_symbols),
+            },
+        )
+        payload["session_memory_lease"] = {
+            "status": "acquired",
+            "lock_path": str(memory_lease.lock_path),
+        }
         guard.checkpoint(
             "start",
             {
@@ -1161,11 +1185,25 @@ def main(argv: list[str] | None = None) -> int:
             "csv_path": inventory_outputs.get("csv_path"),
             "symbol_count": inventory_payload.get("symbol_count"),
         }
+    except HeavyRunActiveError as exc:
+        payload["status"] = "blocked_active_run"
+        payload["error"] = f"{type(exc).__name__}: {exc}"
+        payload["session_memory_lease"] = {
+            "status": "blocked",
+            "lock_path": str(exc.lock_path),
+            "active_run": dict(exc.active_payload),
+        }
+        output_json.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+        output_md.write_text(build_markdown(payload), encoding="utf-8")
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 2
     except Exception as exc:
         payload["status"] = "failed"
         payload["error"] = f"{type(exc).__name__}: {exc}"
         raise
     finally:
+        if memory_lease is not None:
+            memory_lease.release()
         payload["memory"] = guard.finalize(
             status=str(payload.get("status") or "completed"),
             error=str(payload.get("error") or "") or None,

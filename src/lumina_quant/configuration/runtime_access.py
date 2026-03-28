@@ -11,6 +11,10 @@ from typing import ClassVar
 
 from lumina_quant.configuration.loader import load_runtime_config, load_yaml_config
 from lumina_quant.configuration.validate import validate_runtime_config
+from lumina_quant.live.readiness_policy import (
+    effective_startup_reconciliation_hard_fail,
+    real_mode_explicitly_enabled,
+)
 
 _AUTOSEEDED_DEFAULTS_ENV = "LQ__RUNTIME_AUTOSEEDED_DEFAULTS_JSON"
 _AUTOSEEDED_PREEXISTING_KEYS_ENV = "LQ__RUNTIME_AUTOSEEDED_PREEXISTING_KEYS_JSON"
@@ -606,8 +610,9 @@ def _live_config_values(runtime) -> dict[str, object]:
             getattr(live, "reconciliation_poll_fallback_enabled", True)
         ),
         "BOOK_TICKER_ENABLED": bool(getattr(live, "book_ticker_enabled", False)),
-        "STARTUP_RECONCILIATION_HARD_FAIL": bool(
-            getattr(live, "startup_reconciliation_hard_fail", False)
+        "STARTUP_RECONCILIATION_HARD_FAIL": effective_startup_reconciliation_hard_fail(
+            mode=str(live.mode),
+            configured=bool(getattr(live, "startup_reconciliation_hard_fail", False)),
         ),
         "MAIN_LOOP_ERROR_RETRY_LIMIT": int(
             getattr(live, "main_loop_error_retry_limit", 3) or 3
@@ -765,13 +770,15 @@ class LiveConfig(BaseConfig):
                     f"Invalid symbol format '{symbol}'. Expected format like BTC/USDT."
                 )
 
-        if cls.MODE == "real" and cls.REQUIRE_REAL_ENABLE_FLAG:
-            real_flag = os.getenv("LUMINA_ENABLE_LIVE_REAL", "")
-            if not _as_bool(real_flag, False):
-                raise ValueError(
-                    "Real trading is blocked by default. "
-                    "Set LUMINA_ENABLE_LIVE_REAL=true to allow live real mode."
-                )
+        if not real_mode_explicitly_enabled(
+            mode=str(cls.MODE),
+            require_real_enable_flag=bool(cls.REQUIRE_REAL_ENABLE_FLAG),
+            env=os.environ,
+        ):
+            raise ValueError(
+                "Real trading is blocked by default. "
+                "Set LUMINA_ENABLE_LIVE_REAL=true to allow live real mode."
+            )
 
 
 class OptimizationConfig(metaclass=_RuntimeConfigMeta):
