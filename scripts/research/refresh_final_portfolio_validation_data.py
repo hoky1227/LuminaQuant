@@ -237,6 +237,53 @@ def prioritize_symbols(symbols: list[str], *, priority_symbols: list[str] | None
     return list(ordered)
 
 
+def _load_previous_refresh_costs(report_path: Path | str | None = None) -> dict[str, float]:
+    target = Path(report_path or DEFAULT_OUTPUT_JSON)
+    try:
+        payload = json.loads(target.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    costs: dict[str, float] = {}
+    for row in list(payload.get("ohlcv_results") or []):
+        symbol = normalize_symbol(str(row.get("symbol") or ""))
+        if not symbol:
+            continue
+        timings = dict(row.get("stage_timings_seconds") or {})
+        raw_cost = timings.get("total_refresh", timings.get("live_fetch"))
+        try:
+            cost = float(raw_cost)
+        except Exception:
+            continue
+        if cost > 0.0:
+            costs[symbol] = cost
+    return costs
+
+
+def _order_symbols_for_parallel_refresh(
+    symbols: list[str],
+    *,
+    previous_costs: dict[str, float] | None = None,
+) -> list[str]:
+    ordered_symbols = [normalize_symbol(symbol) for symbol in list(symbols or []) if str(symbol).strip()]
+    if len(ordered_symbols) <= 1:
+        return ordered_symbols
+
+    costs = dict(previous_costs or {})
+    positions = {symbol: index for index, symbol in enumerate(ordered_symbols)}
+
+    def _score(symbol: str) -> tuple[int, float, int]:
+        normalized = normalize_symbol(symbol)
+        historical_cost = float(costs.get(normalized, 0.0) or 0.0)
+        supported_live_tail = 1 if _supports_live_raw_symbol(normalized) else 0
+        return (
+            supported_live_tail,
+            historical_cost,
+            -positions[normalized],
+        )
+
+    return sorted(ordered_symbols, key=_score, reverse=True)
+
+
 def resolve_effective_memory_budget_bytes(requested_budget_bytes: int) -> tuple[int, int | None]:
     requested = max(1, int(requested_budget_bytes))
     system_budget = resolve_memory_budget_bytes()
@@ -879,6 +926,7 @@ def refresh_ohlcv_symbols(
     memory_budget_bytes: int,
     reserve_memory_bytes: int,
     per_worker_memory_bytes: int,
+    historical_cost_report_path: Path | str | None = None,
 ) -> tuple[list[OhlcvRefreshResult], dict[str, Any]]:
     ordered_symbols = [normalize_symbol(symbol) for symbol in list(symbols or []) if str(symbol).strip()]
     if not ordered_symbols:
@@ -910,6 +958,14 @@ def refresh_ohlcv_symbols(
         "per_worker_memory_bytes": int(per_worker_memory_bytes),
         "projected_worker_budget_bytes": int(selected_workers) * int(per_worker_memory_bytes),
     }
+    if int(selected_workers) > 1:
+        previous_costs = _load_previous_refresh_costs(historical_cost_report_path)
+        ordered_symbols = _order_symbols_for_parallel_refresh(
+            ordered_symbols,
+            previous_costs=previous_costs,
+        )
+        worker_meta["dispatch_symbol_order"] = list(ordered_symbols)
+        worker_meta["historical_cost_symbols"] = sorted(previous_costs)
 
     ordered_results: dict[str, OhlcvRefreshResult] = {}
     peak_worker_rss_bytes = 0
@@ -1230,6 +1286,7 @@ def main(argv: list[str] | None = None) -> int:
             memory_budget_bytes=max(1, int(effective_memory_budget_bytes)),
             reserve_memory_bytes=max(0, int(args.parallel_reserve_bytes)),
             per_worker_memory_bytes=max(1, int(args.parallel_per_worker_bytes)),
+            historical_cost_report_path=output_json,
         )
         payload["ohlcv_results"] = [asdict(result) for result in ohlcv_results]
         payload["parallel"] = dict(parallel_meta)

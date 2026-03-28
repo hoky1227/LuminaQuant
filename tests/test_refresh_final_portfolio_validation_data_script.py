@@ -289,6 +289,21 @@ def test_prioritize_symbols_keeps_requested_cores_first() -> None:
     assert ordered == ["BTC/USDT", "SOL/USDT", "DOGE/USDT", "BNB/USDT"]
 
 
+def test_order_symbols_for_parallel_refresh_uses_previous_costs_and_live_support(monkeypatch) -> None:
+    monkeypatch.setattr(
+        MODULE,
+        "_supports_live_raw_symbol",
+        lambda symbol: symbol not in {"XAU/USD"},
+    )
+
+    ordered = MODULE._order_symbols_for_parallel_refresh(
+        ["ADA/USDT", "BTC/USDT", "XAU/USD", "ETH/USDT"],
+        previous_costs={"ETH/USDT": 50.0, "BTC/USDT": 100.0, "ADA/USDT": 10.0},
+    )
+
+    assert ordered == ["BTC/USDT", "ETH/USDT", "ADA/USDT", "XAU/USD"]
+
+
 def test_estimate_parallel_workers_respects_memory_budget() -> None:
     workers = MODULE.estimate_parallel_workers(
         symbol_count=14,
