@@ -243,6 +243,7 @@ def test_unsupported_live_symbol_skips_live_tail_without_failing(monkeypatch, tm
         guard=None,
     )
 
+    assert result.symbol == "XAU/USDT"
     assert result.source_mix == "noop_recent_archive_cutover"
     assert result.live_tail_status == "skipped_unsupported_symbol"
     assert result.live_raw_rows_fetched == 0
@@ -275,6 +276,7 @@ def test_invalid_symbol_error_from_live_fetch_falls_back_to_skip(monkeypatch, tm
         guard=None,
     )
 
+    assert result.symbol == "XPD/USDT"
     assert result.source_mix == "noop_recent_archive_cutover"
     assert result.live_tail_status == "skipped_unsupported_symbol"
     assert result.live_raw_rows_fetched == 0
@@ -289,11 +291,28 @@ def test_prioritize_symbols_keeps_requested_cores_first() -> None:
     assert ordered == ["BTC/USDT", "SOL/USDT", "DOGE/USDT", "BNB/USDT"]
 
 
+def test_parse_symbol_tokens_canonicalizes_research_aliases() -> None:
+    ordered = MODULE.parse_symbol_tokens("XAU/USD,XAU/USDT,BTCUSDT")
+
+    assert ordered == ["XAU/USDT", "BTC/USDT"]
+
+
+def test_order_symbols_for_parallel_refresh_dedupes_aliases(monkeypatch) -> None:
+    monkeypatch.setattr(MODULE, "_supports_live_raw_symbol", lambda _symbol: True)
+
+    ordered = MODULE._order_symbols_for_parallel_refresh(
+        ["XAU/USD", "BTC/USDT", "XAU/USDT"],
+        previous_costs={"BTC/USDT": 10.0, "XAU/USDT": 1.0},
+    )
+
+    assert ordered == ["BTC/USDT", "XAU/USDT"]
+
+
 def test_order_symbols_for_parallel_refresh_uses_previous_costs_and_live_support(monkeypatch) -> None:
     monkeypatch.setattr(
         MODULE,
         "_supports_live_raw_symbol",
-        lambda symbol: symbol not in {"XAU/USD"},
+        lambda symbol: symbol not in {"XAU/USDT"},
     )
 
     ordered = MODULE._order_symbols_for_parallel_refresh(
@@ -301,7 +320,7 @@ def test_order_symbols_for_parallel_refresh_uses_previous_costs_and_live_support
         previous_costs={"ETH/USDT": 50.0, "BTC/USDT": 100.0, "ADA/USDT": 10.0},
     )
 
-    assert ordered == ["BTC/USDT", "ETH/USDT", "ADA/USDT", "XAU/USD"]
+    assert ordered == ["BTC/USDT", "ETH/USDT", "ADA/USDT", "XAU/USDT"]
 
 
 def test_build_source_skew_summary_flags_unsupported_and_slowest_symbols() -> None:
@@ -328,7 +347,7 @@ def test_build_source_skew_summary_flags_unsupported_and_slowest_symbols() -> No
                 stage_timings_seconds={"live_fetch": 12.0, "total_refresh": 13.0},
             ),
             MODULE.OhlcvRefreshResult(
-                symbol="XAU/USD",
+                symbol="XAU/USDT",
                 before_ohlcv_max_utc=None,
                 after_ohlcv_max_utc=None,
                 before_raw_agg_trade_utc=None,
@@ -350,7 +369,7 @@ def test_build_source_skew_summary_flags_unsupported_and_slowest_symbols() -> No
         ]
     )
 
-    assert summary["unsupported_live_tail_symbols"] == ["XAU/USD"]
+    assert summary["unsupported_live_tail_symbols"] == ["XAU/USDT"]
     assert summary["symbols_with_live_tail"] == ["BTC/USDT"]
     assert summary["top_live_fetch_seconds"][0] == {"symbol": "BTC/USDT", "seconds": 12.0}
 

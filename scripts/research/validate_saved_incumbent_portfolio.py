@@ -30,6 +30,7 @@ from lumina_quant.portfolio_split_contract import (
     resolve_incumbent_bundle_path,
 )
 from lumina_quant.storage.parquet import normalize_symbol, timeframe_to_milliseconds
+from lumina_quant.symbol_universe import canonicalize_research_symbol
 from lumina_quant.strategy_factory import run_candidate_research
 from lumina_quant.utils.risk_free import resolve_risk_free_config, sharpe_ratio, sortino_ratio
 
@@ -260,6 +261,13 @@ def build_validation_split(oos_end: datetime) -> dict[str, str]:
     }
 
 
+def _research_symbol(symbol: str) -> str:
+    canonical = canonicalize_research_symbol(str(symbol))
+    if canonical:
+        return canonical
+    return normalize_symbol(str(symbol))
+
+
 def _latest_complete_bucket_start(last_1s_dt: datetime, timeframe: str) -> datetime:
     tf_ms = int(timeframe_to_milliseconds(timeframe))
     last_ms = int(last_1s_dt.timestamp() * 1000)
@@ -280,14 +288,14 @@ def _latest_common_complete_time(
 ) -> tuple[datetime, list[dict[str, str]]]:
     ohlcv_last: dict[str, datetime] = {}
     for row in list(refresh_payload.get("ohlcv_results") or []):
-        symbol = normalize_symbol(str(row.get("symbol") or ""))
+        symbol = _research_symbol(row.get("symbol") or "")
         dt = parse_utc(row.get("after_ohlcv_max_utc"))
         if symbol and dt is not None:
             ohlcv_last[symbol] = dt
 
     feature_last: dict[str, datetime] = {}
     for row in list(refresh_payload.get("feature_results") or []):
-        symbol = normalize_symbol(str(row.get("symbol") or ""))
+        symbol = _research_symbol(row.get("symbol") or "")
         dt = parse_utc(row.get("last_timestamp_utc"))
         if symbol and dt is not None:
             feature_last[symbol] = dt
@@ -313,7 +321,7 @@ def _latest_common_complete_time(
         )
 
     for symbol in list(feature_symbols or []):
-        dt = feature_last.get(normalize_symbol(symbol))
+        dt = feature_last.get(_research_symbol(symbol))
         if dt is None:
             raise ValueError(f"Missing refreshed feature coverage for {symbol}.")
         candidates.append(
@@ -321,7 +329,7 @@ def _latest_common_complete_time(
                 dt,
                 {
                     "source": "feature_points",
-                    "symbol": normalize_symbol(symbol),
+                    "symbol": _research_symbol(symbol),
                     "timeframe": "feature",
                     "last_complete_utc": iso_utc(dt) or "",
                 },
@@ -758,7 +766,7 @@ def main(argv: list[str] | None = None) -> int:
 
     symbols = sorted(
         {
-            normalize_symbol(str(symbol))
+            _research_symbol(symbol)
             for row in selected_team
             for symbol in list(row.get("symbols") or [])
             if str(symbol).strip()

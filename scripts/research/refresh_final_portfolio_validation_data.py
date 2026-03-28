@@ -54,6 +54,7 @@ from lumina_quant.portfolio_split_contract import (
     resolve_incumbent_bundle_path,
 )
 from lumina_quant.storage.parquet import ParquetMarketDataRepository, normalize_symbol
+from lumina_quant.symbol_universe import canonicalize_research_symbol
 
 FEATURE_REQUIRED_STRATEGIES = {"CompositeTrendStrategy", "PerpCrowdingCarryStrategy"}
 DEFAULT_DB_PATH = "data/market_parquet"
@@ -159,8 +160,24 @@ def _day_start(day_value: date) -> datetime:
     return datetime(day_value.year, day_value.month, day_value.day, tzinfo=UTC)
 
 
+def _canonical_refresh_symbol(symbol: str) -> str:
+    canonical = canonicalize_research_symbol(str(symbol))
+    if canonical:
+        return canonical
+    return normalize_symbol(str(symbol))
+
+
+def _canonicalize_refresh_symbols(symbols: list[str] | tuple[str, ...] | None) -> list[str]:
+    ordered: list[str] = []
+    for raw in list(symbols or []):
+        symbol = _canonical_refresh_symbol(raw)
+        if symbol and symbol not in ordered:
+            ordered.append(symbol)
+    return ordered
+
+
 def _latest_feature_partition_day(symbol: str, *, db_path: str, exchange_id: str) -> date | None:
-    compact = normalize_symbol(symbol).replace("/", "")
+    compact = _canonical_refresh_symbol(symbol).replace("/", "")
     root = Path(db_path) / "feature_points" / f"exchange={str(exchange_id).lower()}" / f"symbol={compact}"
     latest: date | None = None
     for path in root.glob("date=*"):
@@ -186,7 +203,7 @@ def load_portfolio_symbols(portfolio_path: Path | str = PORTFOLIO_CURRENT_OPTIMI
     ordered: dict[str, None] = {}
     for row in list(payload.get("weights") or []):
         for symbol in list(row.get("symbols") or []):
-            token = normalize_symbol(str(symbol))
+            token = _canonical_refresh_symbol(symbol)
             if token:
                 ordered[token] = None
     return list(ordered)
@@ -201,7 +218,7 @@ def load_feature_symbols(bundle_path: Path | str | None = None) -> list[str]:
         if strategy_class not in FEATURE_REQUIRED_STRATEGIES:
             continue
         for symbol in list(row.get("symbols") or []):
-            token = normalize_symbol(str(symbol))
+            token = _canonical_refresh_symbol(symbol)
             if token:
                 ordered[token] = None
     return list(ordered)
@@ -210,14 +227,14 @@ def load_feature_symbols(bundle_path: Path | str | None = None) -> list[str]:
 def parse_symbol_tokens(value: str | None, *, default: list[str] | None = None) -> list[str]:
     ordered: dict[str, None] = {}
     for symbol in list(default or []):
-        token = normalize_symbol(str(symbol))
+        token = _canonical_refresh_symbol(symbol)
         if token:
             ordered[token] = None
     raw = str(value or "").strip()
     if not raw:
         return list(ordered)
     for item in raw.split(","):
-        token = normalize_symbol(str(item))
+        token = _canonical_refresh_symbol(item)
         if token:
             ordered[token] = None
     return list(ordered)
@@ -225,13 +242,13 @@ def parse_symbol_tokens(value: str | None, *, default: list[str] | None = None) 
 
 def prioritize_symbols(symbols: list[str], *, priority_symbols: list[str] | None = None) -> list[str]:
     ordered: dict[str, None] = {}
-    priorities = [normalize_symbol(symbol) for symbol in list(priority_symbols or []) if str(symbol).strip()]
-    symbol_set = {normalize_symbol(symbol) for symbol in list(symbols or [])}
+    priorities = [_canonical_refresh_symbol(symbol) for symbol in list(priority_symbols or []) if str(symbol).strip()]
+    symbol_set = {_canonical_refresh_symbol(symbol) for symbol in list(symbols or [])}
     for symbol in priorities:
         if symbol in symbol_set:
             ordered[symbol] = None
     for symbol in list(symbols or []):
-        token = normalize_symbol(symbol)
+        token = _canonical_refresh_symbol(symbol)
         if token:
             ordered[token] = None
     return list(ordered)
@@ -245,7 +262,7 @@ def _load_previous_refresh_costs(report_path: Path | str | None = None) -> dict[
         return {}
     costs: dict[str, float] = {}
     for row in list(payload.get("ohlcv_results") or []):
-        symbol = normalize_symbol(str(row.get("symbol") or ""))
+        symbol = _canonical_refresh_symbol(row.get("symbol") or "")
         if not symbol:
             continue
         timings = dict(row.get("stage_timings_seconds") or {})
@@ -264,7 +281,7 @@ def _order_symbols_for_parallel_refresh(
     *,
     previous_costs: dict[str, float] | None = None,
 ) -> list[str]:
-    ordered_symbols = [normalize_symbol(symbol) for symbol in list(symbols or []) if str(symbol).strip()]
+    ordered_symbols = _canonicalize_refresh_symbols(list(symbols or []))
     if len(ordered_symbols) <= 1:
         return ordered_symbols
 
@@ -272,7 +289,7 @@ def _order_symbols_for_parallel_refresh(
     positions = {symbol: index for index, symbol in enumerate(ordered_symbols)}
 
     def _score(symbol: str) -> tuple[int, float, int]:
-        normalized = normalize_symbol(symbol)
+        normalized = _canonical_refresh_symbol(symbol)
         historical_cost = float(costs.get(normalized, 0.0) or 0.0)
         supported_live_tail = 1 if _supports_live_raw_symbol(normalized) else 0
         return (
@@ -389,7 +406,7 @@ def _live_raw_supported_symbols() -> frozenset[str] | None:
                 continue
             compact = str(row.get("symbol") or "").strip()
             if compact:
-                supported.add(normalize_symbol(compact))
+                supported.add(_canonical_refresh_symbol(compact))
         return frozenset(supported)
     except Exception:
         return None
@@ -403,7 +420,7 @@ def _supports_live_raw_symbol(symbol: str) -> bool:
     supported = _live_raw_supported_symbols()
     if supported is None:
         return True
-    return normalize_symbol(symbol) in supported
+    return _canonical_refresh_symbol(symbol) in supported
 
 
 def _should_cutover_recent_archive_miss(
@@ -487,7 +504,7 @@ def _raw_checkpoint_utc(
     if ts_ms > 0:
         latest = datetime.fromtimestamp(ts_ms / 1000.0, tz=UTC)
 
-    compact = normalize_symbol(symbol).replace("/", "")
+    compact = _canonical_refresh_symbol(symbol).replace("/", "")
     root = (
         Path(db_path)
         / "market_data_raw_aggtrades"
@@ -617,7 +634,7 @@ def _collect_live_raw_rows(
             try:
                 batch = fetch_aggtrades_batch(
                     exchange=exchange,
-                    symbol=normalize_symbol(symbol),
+                    symbol=symbol,
                     since_ms=int(cursor),
                     limit=int(current_limit),
                     retries=max(0, int(retries)),
@@ -627,7 +644,7 @@ def _collect_live_raw_rows(
                 message = str(exc)
                 if _is_invalid_live_symbol_error(exc):
                     raise LiveRawSymbolUnsupportedError(
-                        f"Binance Futures live aggTrades do not support {normalize_symbol(symbol)}."
+                        f"Binance Futures live aggTrades do not support {symbol}."
                     ) from exc
                 if "429" in message or "Too Many Requests" in message or "DDoSProtection" in message:
                     current_limit = max(100, current_limit // 2)
@@ -691,6 +708,7 @@ def refresh_symbol_raw_first_ohlcv(
     floor_dt: datetime,
     guard: RSSGuard | None = None,
 ) -> OhlcvRefreshResult:
+    symbol = _canonical_refresh_symbol(symbol)
     refresh_started_at = time.perf_counter()
     _, before_max = repo.get_symbol_time_range(exchange=exchange_id, symbol=symbol)
     before_max_utc = None
@@ -969,7 +987,7 @@ def refresh_ohlcv_symbols(
     per_worker_memory_bytes: int,
     historical_cost_report_path: Path | str | None = None,
 ) -> tuple[list[OhlcvRefreshResult], dict[str, Any]]:
-    ordered_symbols = [normalize_symbol(symbol) for symbol in list(symbols or []) if str(symbol).strip()]
+    ordered_symbols = _canonicalize_refresh_symbols(list(symbols or []))
     if not ordered_symbols:
         return [], {"requested_workers": 0, "selected_workers": 0, "mode": "empty"}
 

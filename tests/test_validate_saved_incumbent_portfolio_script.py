@@ -97,6 +97,26 @@ def test_latest_common_complete_time_uses_timeframe_complete_buckets() -> None:
     assert any(item["symbol"] == "ETH/USDT" and item["timeframe"] == "4h" for item in evidence)
 
 
+def test_latest_common_complete_time_accepts_refresh_symbol_aliases() -> None:
+    refresh_payload = {
+        "ohlcv_results": [
+            {"symbol": "XAU/USD", "after_ohlcv_max_utc": "2026-03-19T09:30:29Z"},
+        ],
+        "feature_results": [
+            {"symbol": "XAU/USD", "last_timestamp_utc": "2026-03-19T09:00:00Z"},
+        ],
+    }
+
+    anchored_end, evidence = MODULE._latest_common_complete_time(
+        refresh_payload=refresh_payload,
+        required_pairs=[("XAU/USDT", "1m")],
+        feature_symbols=["XAU/USDT"],
+    )
+
+    assert MODULE.iso_utc(anchored_end) == "2026-03-19T09:00:00Z"
+    assert evidence[0]["symbol"] == "XAU/USDT"
+
+
 def test_run_strict_research_rejects_synthetic_fallback(monkeypatch) -> None:
     monkeypatch.setattr(
         MODULE,
