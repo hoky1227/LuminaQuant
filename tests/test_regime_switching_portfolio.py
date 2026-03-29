@@ -552,7 +552,9 @@ def test_write_regime_switch_preflight_reports_blockers_without_rebuild(
 
 def test_extract_portfolio_return_streams_rebuilds_dynamic_payload(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
+    monkeypatch.setattr(MODULE, "_REBUILT_STREAM_CACHE_DIR", tmp_path / "cache")
     monkeypatch.setattr(MODULE, "resolve_followup_artifact_path", lambda path: Path("/tmp/dynamic.json"))
     monkeypatch.setattr(
         MODULE._helper,
@@ -581,13 +583,18 @@ def test_extract_portfolio_return_streams_rebuilds_dynamic_payload(
             "regime_strength": 1.0,
         },
     }
-    streams = MODULE._extract_portfolio_return_streams(payload)
+    source_path = tmp_path / "dynamic_payload.json"
+    source_path.write_text("{}", encoding="utf-8")
+    streams = MODULE._extract_portfolio_return_streams(payload, source_path=source_path)
     assert streams["oos"][0]["v"] == 0.01
+    assert MODULE._stream_mode(source_path, payload) == "cached_rebuild_streams"
 
 
 def test_extract_portfolio_return_streams_rebuilds_overlay_payload(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
+    monkeypatch.setattr(MODULE, "_REBUILT_STREAM_CACHE_DIR", tmp_path / "cache")
     monkeypatch.setattr(MODULE, "resolve_followup_artifact_path", lambda path: Path(str(path)))
     monkeypatch.setattr(MODULE._helper, "_load_candidates", lambda _path: [{"candidate_id": "stub"}])
     monkeypatch.setattr(MODULE._overlay, "_load_backbone_weights", lambda _path: {"stub": 1.0})
@@ -615,5 +622,120 @@ def test_extract_portfolio_return_streams_rebuilds_overlay_payload(
             "cash_buffer": 0.0,
         },
     }
-    streams = MODULE._extract_portfolio_return_streams(payload)
+    source_path = tmp_path / "overlay_payload.json"
+    source_path.write_text("{}", encoding="utf-8")
+    streams = MODULE._extract_portfolio_return_streams(payload, source_path=source_path)
     assert streams["val"][0]["v"] == -0.02
+    assert MODULE._stream_mode(source_path, payload) == "cached_rebuild_streams"
+
+
+def test_extract_portfolio_components_enriches_final_allocation_from_input_candidates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(MODULE, "resolve_followup_artifact_path", lambda path: Path(str(path)))
+    monkeypatch.setattr(
+        MODULE,
+        "_cached_candidate_rows",
+        lambda _path: [
+            {
+                "candidate_id": "pair_b",
+                "name": "pair_b",
+                "family": "market_neutral",
+                "strategy_class": "PairSpreadZScoreStrategy",
+                "symbols": ["BNB/USDT", "TRX/USDT"],
+                "strategy_timeframe": "1h",
+            }
+        ],
+    )
+    payload = {
+        "input_path": "/tmp/incumbent_bundle.json",
+        "final_allocation": [
+            {
+                "candidate_id": "pair_b",
+                "name": "pair_b",
+                "strategy_class": "PairSpreadZScoreStrategy",
+                "weight": 0.75,
+            }
+        ],
+    }
+    components = MODULE._extract_portfolio_components(payload)
+    assert components == [
+        {
+            "candidate_id": "pair_b",
+            "name": "pair_b",
+            "strategy_class": "PairSpreadZScoreStrategy",
+            "weight": 0.75,
+            "family": "market_neutral",
+            "symbols": ["BNB/USDT", "TRX/USDT"],
+            "timeframe": "1h",
+        }
+    ]
+
+
+def test_stream_mode_marks_allocation_reconstructible(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(MODULE, "_REBUILT_STREAM_CACHE_DIR", tmp_path / "cache")
+    monkeypatch.setattr(MODULE, "resolve_followup_artifact_path", lambda path: Path(str(path)))
+    monkeypatch.setattr(
+        MODULE,
+        "_cached_candidate_rows",
+        lambda _path: [
+            {
+                "candidate_id": "pair_b",
+                "name": "pair_b",
+                "return_streams": {"train": [{"t": 1.0, "v": 0.01}]},
+            }
+        ],
+    )
+    source_path = tmp_path / "overlay_payload.json"
+    source_path.write_text("{}", encoding="utf-8")
+    payload = {
+        "input_path": "/tmp/incumbent_bundle.json",
+        "allocations": [
+            {
+                "date": "2026-02-01",
+                "weights": {"pair_b": 1.0},
+            }
+        ],
+    }
+    assert MODULE._stream_mode(source_path, payload) == "allocation_reconstructible"
+
+
+def test_extract_portfolio_return_streams_reconstructs_from_saved_allocations(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(MODULE, "_REBUILT_STREAM_CACHE_DIR", tmp_path / "cache")
+    monkeypatch.setattr(MODULE, "resolve_followup_artifact_path", lambda path: Path(str(path)))
+    monkeypatch.setattr(
+        MODULE,
+        "_cached_candidate_rows",
+        lambda _path: [
+            {
+                "candidate_id": "pair_b",
+                "name": "pair_b",
+                "return_streams": {
+                    "train": [{"t": 1735689600000.0, "v": 0.02}],
+                    "val": [{"t": 1767225600000.0, "v": -0.01}],
+                    "oos": [{"t": 1769904000000.0, "v": 0.03}],
+                },
+            }
+        ],
+    )
+    source_path = tmp_path / "dynamic_payload.json"
+    source_path.write_text("{}", encoding="utf-8")
+    payload = {
+        "input_path": "/tmp/incumbent_bundle.json",
+        "allocations": [
+            {"date": "2025-01-01", "weights": {"pair_b": 1.0}},
+            {"date": "2026-01-01", "weights": {"pair_b": 1.0}},
+            {"date": "2026-02-01", "weights": {"pair_b": 1.0}},
+        ],
+    }
+    streams = MODULE._extract_portfolio_return_streams(payload, source_path=source_path)
+    assert [point["v"] for point in streams["train"]] == pytest.approx([0.02])
+    assert [point["v"] for point in streams["val"]] == pytest.approx([-0.01])
+    assert [point["v"] for point in streams["oos"]] == pytest.approx([0.03])
+    assert MODULE._stream_mode(source_path, payload) == "cached_rebuild_streams"

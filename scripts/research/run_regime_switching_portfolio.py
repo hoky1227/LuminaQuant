@@ -15,6 +15,7 @@ shared follow-up memory contract without breaching the 8 GiB session cap.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import itertools
 import json
@@ -76,6 +77,7 @@ _overlay_spec.loader.exec_module(_overlay)
 _REBUILT_STREAM_CACHE: dict[str, dict[str, list[dict[str, Any]]]] = {}
 _CANDIDATE_ROWS_CACHE: dict[str, list[dict[str, Any]]] = {}
 _REGIME_FEATURE_CACHE: dict[str, dict[str, dict[str, Any]]] = {}
+_REBUILT_STREAM_CACHE_DIR = DEFAULT_OUTPUT_DIR / "rebuild_stream_cache"
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
@@ -138,11 +140,108 @@ def _portfolio_name(path: Path, payload: dict[str, Any]) -> str:
     return path.parent.name or path.stem
 
 
-def _stream_mode(payload: dict[str, Any]) -> str:
+def _rebuild_stream_cache_key(source_path: Path, payload: dict[str, Any]) -> str:
+    source = source_path.resolve()
+    digest = hashlib.sha256()
+    digest.update(str(source).encode("utf-8"))
+    if source.exists():
+        stat = source.stat()
+        digest.update(str(stat.st_mtime_ns).encode("utf-8"))
+        digest.update(str(stat.st_size).encode("utf-8"))
+    digest.update(
+        json.dumps(
+            {
+                "artifact_kind": payload.get("artifact_kind"),
+                "input_path": payload.get("input_path"),
+                "backbone_path": payload.get("backbone_path"),
+                "best_params": payload.get("best_params"),
+            },
+            sort_keys=True,
+        ).encode("utf-8")
+    )
+    return digest.hexdigest()
+
+
+def _rebuild_stream_cache_path(source_path: Path, payload: dict[str, Any]) -> Path:
+    return _REBUILT_STREAM_CACHE_DIR / f"{_rebuild_stream_cache_key(source_path, payload)}.json"
+
+
+def _load_rebuilt_stream_cache(source_path: Path, payload: dict[str, Any]) -> dict[str, list[dict[str, Any]]] | None:
+    cache_path = _rebuild_stream_cache_path(source_path, payload)
+    if not cache_path.exists():
+        return None
+    cached = _load_json(cache_path)
+    streams = cached.get("portfolio_return_streams")
+    if not isinstance(streams, dict):
+        return None
+    return {
+        split: [dict(point) for point in list(streams.get(split) or [])]
+        for split in ("train", "val", "oos")
+    }
+
+
+def _write_rebuilt_stream_cache(
+    source_path: Path,
+    payload: dict[str, Any],
+    streams: dict[str, list[dict[str, Any]]],
+) -> None:
+    cache_path = _rebuild_stream_cache_path(source_path, payload)
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_path.write_text(
+        json.dumps(
+            {
+                "artifact_kind": "regime_switch_rebuilt_stream_cache",
+                "source_path": str(source_path.resolve()),
+                "generated_at": datetime.now(UTC).isoformat(),
+                "portfolio_return_streams": _json_ready(streams),
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _supports_allocation_reconstruction(payload: dict[str, Any]) -> bool:
+    allocations = list(payload.get("allocations") or [])
+    input_path = payload.get("input_path")
+    if not allocations or not input_path:
+        return False
+    try:
+        resolved_input = resolve_followup_artifact_path(Path(str(input_path))).resolve()
+        rows = _cached_candidate_rows(resolved_input)
+    except Exception:
+        return False
+
+    referenced_ids: set[str] = set()
+    for allocation in allocations:
+        weights = dict(allocation.get("weights") or {})
+        referenced_ids.update(str(cid) for cid in weights if str(cid))
+    if not referenced_ids:
+        referenced_ids.update(
+            str(row.get("candidate_id") or row.get("name") or "")
+            for row in list(payload.get("final_allocation") or [])
+            if str(row.get("candidate_id") or row.get("name") or "")
+        )
+    if not referenced_ids:
+        return False
+
+    available_stream_ids = {
+        str(row.get("candidate_id") or row.get("name") or "")
+        for row in rows
+        if isinstance(row.get("return_streams"), dict) and row.get("return_streams")
+    }
+    return referenced_ids <= available_stream_ids
+
+
+def _stream_mode(path: Path, payload: dict[str, Any]) -> str:
     if isinstance(payload.get("portfolio_return_streams"), dict) and payload.get("portfolio_return_streams"):
         return "saved_streams"
     if payload.get("daily_returns") and payload.get("dates"):
         return "saved_daily_returns"
+    if _load_rebuilt_stream_cache(path, payload) is not None:
+        return "cached_rebuild_streams"
+    if _supports_allocation_reconstruction(payload):
+        return "allocation_reconstructible"
     return "rebuild_required"
 
 
@@ -172,6 +271,43 @@ def _extract_portfolio_components(payload: dict[str, Any]) -> list[dict[str, Any
         item["strategy_class"] = str(item.get("strategy_class") or "")
         item["symbols"] = [str(symbol) for symbol in list(item.get("symbols") or [])]
         rows.append(item)
+    if rows:
+        return rows
+
+    final_allocation = list(payload.get("final_allocation") or [])
+    if not final_allocation:
+        return []
+
+    candidate_lookup: dict[str, dict[str, Any]] = {}
+    input_path = payload.get("input_path")
+    if input_path:
+        try:
+            resolved_input = resolve_followup_artifact_path(Path(str(input_path))).resolve()
+            candidate_lookup = {
+                str(row.get("candidate_id") or row.get("name") or ""): dict(row)
+                for row in _cached_candidate_rows(resolved_input)
+            }
+        except Exception:
+            candidate_lookup = {}
+
+    rows = []
+    for row in final_allocation:
+        item = dict(row)
+        cid = str(item.get("candidate_id") or item.get("name") or "")
+        source = dict(candidate_lookup.get(cid) or {})
+        item["candidate_id"] = cid
+        item["name"] = item.get("name") or source.get("name") or cid
+        item["weight"] = _safe_float(item.get("weight"), 0.0)
+        item["family"] = str(
+            item.get("family")
+            or source.get("family")
+            or _helper._strategy_family(source.get("strategy_class") or item.get("strategy_class"))
+            or "other"
+        )
+        item["strategy_class"] = str(item.get("strategy_class") or source.get("strategy_class") or "")
+        item["symbols"] = [str(symbol) for symbol in list(item.get("symbols") or source.get("symbols") or [])]
+        item["timeframe"] = str(item.get("timeframe") or source.get("strategy_timeframe") or source.get("timeframe") or "")
+        rows.append(item)
     return rows
 
 
@@ -187,11 +323,60 @@ def _streams_from_daily_returns(
     return streams
 
 
-def _rebuild_missing_portfolio_streams(
+def _reconstruct_streams_from_saved_allocations(
     payload: dict[str, Any],
 ) -> dict[str, list[dict[str, Any]]] | None:
+    allocations = list(payload.get("allocations") or [])
+    input_path = payload.get("input_path")
+    if not allocations or not input_path:
+        return None
+    try:
+        resolved_input = resolve_followup_artifact_path(Path(str(input_path))).resolve()
+        rows = _cached_candidate_rows(resolved_input)
+    except Exception:
+        return None
+
+    series = {
+        str(row.get("candidate_id") or row.get("name") or ""): {
+            **_helper._daily_compound_stream(list((row.get("return_streams") or {}).get("train") or [])),
+            **_helper._daily_compound_stream(list((row.get("return_streams") or {}).get("val") or [])),
+            **_helper._daily_compound_stream(list((row.get("return_streams") or {}).get("oos") or [])),
+        }
+        for row in rows
+    }
+    dates: list[str] = []
+    daily_returns: list[float] = []
+    for allocation in allocations:
+        day_key = str(allocation.get("date") or "").strip()
+        if not day_key:
+            continue
+        dates.append(day_key)
+        weights = dict(allocation.get("weights") or {})
+        daily_returns.append(
+            sum(
+                _safe_float(weight, 0.0) * _safe_float(series.get(str(cid), {}).get(day_key), 0.0)
+                for cid, weight in weights.items()
+            )
+        )
+    if not dates:
+        return None
+    return _streams_from_daily_returns(dates, daily_returns)
+
+
+def _rebuild_missing_portfolio_streams(
+    payload: dict[str, Any],
+    *,
+    source_path: Path | None = None,
+) -> dict[str, list[dict[str, Any]]] | None:
+    resolved_source = source_path.resolve() if source_path is not None else None
+    if resolved_source is not None:
+        persisted = _load_rebuilt_stream_cache(resolved_source, payload)
+        if persisted is not None:
+            return persisted
+
     cache_key = json.dumps(
         {
+            "source_path": str(resolved_source) if resolved_source is not None else None,
             "artifact_kind": payload.get("artifact_kind"),
             "input_path": payload.get("input_path"),
             "backbone_path": payload.get("backbone_path"),
@@ -205,6 +390,12 @@ def _rebuild_missing_portfolio_streams(
 
     artifact_kind = str(payload.get("artifact_kind") or "")
     best_params = dict(payload.get("best_params") or {})
+    reconstructed = _reconstruct_streams_from_saved_allocations(payload)
+    if reconstructed is not None:
+        if resolved_source is not None:
+            _write_rebuilt_stream_cache(resolved_source, payload, reconstructed)
+        _REBUILT_STREAM_CACHE[cache_key] = reconstructed
+        return reconstructed
     if not best_params:
         return None
 
@@ -224,6 +415,8 @@ def _rebuild_missing_portfolio_streams(
             list(result.get("dates") or []),
             list(result.get("daily_returns") or []),
         )
+        if resolved_source is not None:
+            _write_rebuilt_stream_cache(resolved_source, payload, streams)
         _REBUILT_STREAM_CACHE[cache_key] = streams
         return streams
 
@@ -248,13 +441,19 @@ def _rebuild_missing_portfolio_streams(
             list(result.get("dates") or []),
             list(result.get("daily_returns") or []),
         )
+        if resolved_source is not None:
+            _write_rebuilt_stream_cache(resolved_source, payload, streams)
         _REBUILT_STREAM_CACHE[cache_key] = streams
         return streams
 
     return None
 
 
-def _extract_portfolio_return_streams(payload: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+def _extract_portfolio_return_streams(
+    payload: dict[str, Any],
+    *,
+    source_path: Path | None = None,
+) -> dict[str, list[dict[str, Any]]]:
     portfolio_streams = payload.get("portfolio_return_streams")
     if isinstance(portfolio_streams, dict) and portfolio_streams:
         return {
@@ -267,7 +466,7 @@ def _extract_portfolio_return_streams(payload: dict[str, Any]) -> dict[str, list
     if dates and daily_returns and len(dates) == len(daily_returns):
         return _streams_from_daily_returns(dates, daily_returns)
 
-    rebuilt = _rebuild_missing_portfolio_streams(payload)
+    rebuilt = _rebuild_missing_portfolio_streams(payload, source_path=source_path)
     if rebuilt is not None:
         return rebuilt
 
@@ -288,7 +487,7 @@ def _build_candidate_metadata(
         "path": str(path.resolve()),
         "selection_basis": str(payload.get("selection_basis") or ""),
         "artifact_kind": str(payload.get("artifact_kind") or ""),
-        "stream_mode": _stream_mode(payload),
+        "stream_mode": _stream_mode(path, payload),
         "portfolio_metrics": dict(payload.get("portfolio_metrics") or payload.get("split_metrics") or {}),
         "components": components,
         "symbols": sorted({str(symbol) for row in components for symbol in list(row.get("symbols") or [])}),
@@ -302,7 +501,7 @@ def _build_candidate(
     alias: str | None = None,
 ) -> dict[str, Any]:
     metadata, payload = _build_candidate_metadata(path=path, alias=alias)
-    metadata["return_streams"] = _extract_portfolio_return_streams(payload)
+    metadata["return_streams"] = _extract_portfolio_return_streams(payload, source_path=path)
     return metadata
 
 
