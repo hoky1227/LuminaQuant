@@ -399,6 +399,38 @@ def _latest_common_complete_time(
     return anchor_dt, evidence
 
 
+def _group_candidates_for_strict_research(
+    candidates: list[dict[str, Any]],
+    strategy_timeframes: list[str],
+    symbol_universe: list[str],
+) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, ...], dict[str, Any]] = {}
+    ordered_keys: list[tuple[str, ...]] = []
+    for candidate in list(candidates or []):
+        candidate_symbols = sorted(
+            {
+                _research_symbol(symbol)
+                for symbol in list(candidate.get("symbols") or [])
+                if str(symbol).strip()
+            }
+        ) or list(symbol_universe)
+        candidate_timeframes = (
+            tuple([str(candidate.get("strategy_timeframe") or candidate.get("timeframe") or "").strip().lower()])
+            if str(candidate.get("strategy_timeframe") or candidate.get("timeframe") or "").strip()
+            else tuple(strategy_timeframes)
+        )
+        bucket = grouped.get(candidate_timeframes)
+        if bucket is None:
+            bucket = {"timeframes": list(candidate_timeframes), "symbols": [], "candidates": []}
+            grouped[candidate_timeframes] = bucket
+            ordered_keys.append(candidate_timeframes)
+        bucket["candidates"].append(candidate)
+        for symbol in candidate_symbols:
+            if symbol not in bucket["symbols"]:
+                bucket["symbols"].append(symbol)
+    return [grouped[key] for key in ordered_keys]
+
+
 def _build_comparison(
     saved_metrics: dict[str, Any],
     refreshed_metrics: dict[str, Any],
@@ -624,26 +656,14 @@ def _run_strict_research(
     combined_data_sources: dict[str, list[Any]] = {}
     report_generated_at: str | None = None
 
-    for candidate in list(candidates or []):
-        candidate_symbols = sorted(
-            {
-                _research_symbol(symbol)
-                for symbol in list(candidate.get("symbols") or [])
-                if str(symbol).strip()
-            }
-        ) or list(symbol_universe)
-        candidate_timeframes = (
-            [str(candidate.get("strategy_timeframe") or candidate.get("timeframe") or "").strip().lower()]
-            if str(candidate.get("strategy_timeframe") or candidate.get("timeframe") or "").strip()
-            else list(strategy_timeframes)
-        )
+    for group in _group_candidates_for_strict_research(candidates, strategy_timeframes, symbol_universe):
         report = run_candidate_research(
-            candidates=[candidate],
-            strategy_timeframes=candidate_timeframes,
-            symbol_universe=candidate_symbols,
+            candidates=list(group["candidates"]),
+            strategy_timeframes=list(group["timeframes"]),
+            symbol_universe=list(group["symbols"]),
             split=split,
             stage1_keep_ratio=1.0,
-            max_candidates=1,
+            max_candidates=max(1, len(list(group["candidates"]))),
             data_mode=STRICT_VALIDATION_DATA_MODE,
             allow_csv_fallback=False,
             allow_synthetic_fallback=False,
@@ -655,24 +675,25 @@ def _run_strict_research(
         if list(data_sources.get("csv") or []):
             raise RuntimeError("Strict validation unexpectedly used CSV fallback.")
         report_candidates = list(report.get("candidates") or [])
-        candidate_id = str(candidate.get("candidate_id") or "").strip()
-        candidate_name = str(candidate.get("name") or "").strip()
-        matched_candidates = [
-            row
-            for row in report_candidates
-            if (
-                candidate_id
-                and str(row.get("candidate_id") or "").strip() == candidate_id
-            )
-            or (
-                candidate_name
-                and str(row.get("name") or "").strip() == candidate_name
-            )
-        ] or report_candidates
-        if not matched_candidates:
-            candidate_label = str(candidate.get("name") or candidate.get("candidate_id") or "unknown")
-            raise RuntimeError(f"Strict validation returned no candidate rows for {candidate_label}.")
-        combined_candidates.extend(matched_candidates)
+        for candidate in list(group["candidates"]):
+            candidate_id = str(candidate.get("candidate_id") or "").strip()
+            candidate_name = str(candidate.get("name") or "").strip()
+            matched_candidates = [
+                row
+                for row in report_candidates
+                if (
+                    candidate_id
+                    and str(row.get("candidate_id") or "").strip() == candidate_id
+                )
+                or (
+                    candidate_name
+                    and str(row.get("name") or "").strip() == candidate_name
+                )
+            ] or report_candidates
+            if not matched_candidates:
+                candidate_label = str(candidate.get("name") or candidate.get("candidate_id") or "unknown")
+                raise RuntimeError(f"Strict validation returned no candidate rows for {candidate_label}.")
+            combined_candidates.extend(matched_candidates)
         for key, values in data_sources.items():
             target = combined_data_sources.setdefault(str(key), [])
             if isinstance(values, list):

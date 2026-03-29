@@ -732,6 +732,27 @@ def _matching_report_candidates(
     return matched or list(report_candidates or [])
 
 
+def _group_candidates_for_strict_research(
+    candidates: list[dict[str, Any]],
+    strategy_timeframes: list[str],
+    symbol_universe: list[str],
+) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, ...], dict[str, Any]] = {}
+    ordered_keys: list[tuple[str, ...]] = []
+    for candidate in list(candidates or []):
+        candidate_timeframes = tuple(_candidate_timeframes(candidate, strategy_timeframes))
+        bucket = grouped.get(candidate_timeframes)
+        if bucket is None:
+            bucket = {"timeframes": list(candidate_timeframes), "symbols": [], "candidates": []}
+            grouped[candidate_timeframes] = bucket
+            ordered_keys.append(candidate_timeframes)
+        bucket["candidates"].append(candidate)
+        for symbol in _candidate_symbols(candidate, symbol_universe):
+            if symbol not in bucket["symbols"]:
+                bucket["symbols"].append(symbol)
+    return [grouped[key] for key in ordered_keys]
+
+
 def _run_strict_research(
     *,
     candidates: list[dict[str, Any]],
@@ -744,14 +765,14 @@ def _run_strict_research(
     combined_data_sources: dict[str, list[Any]] = {}
     report_generated_at: str | None = None
 
-    for candidate in list(candidates or []):
+    for group in _group_candidates_for_strict_research(candidates, strategy_timeframes, symbol_universe):
         report = run_candidate_research(
-            candidates=[candidate],
-            strategy_timeframes=_candidate_timeframes(candidate, strategy_timeframes),
-            symbol_universe=_candidate_symbols(candidate, symbol_universe),
+            candidates=list(group["candidates"]),
+            strategy_timeframes=list(group["timeframes"]),
+            symbol_universe=list(group["symbols"]),
             split=split,
             stage1_keep_ratio=1.0,
-            max_candidates=1,
+            max_candidates=max(1, len(list(group["candidates"]))),
             data_mode=STRICT_VALIDATION_DATA_MODE,
             allow_csv_fallback=False,
             allow_synthetic_fallback=False,
@@ -762,14 +783,13 @@ def _run_strict_research(
             raise RuntimeError("Strict validation unexpectedly used synthetic fallback.")
         if list(data_sources.get("csv") or []):
             raise RuntimeError("Strict validation unexpectedly used CSV fallback.")
-        matched_candidates = _matching_report_candidates(
-            list(report.get("candidates") or []),
-            candidate,
-        )
-        if not matched_candidates:
-            candidate_label = str(candidate.get("name") or candidate.get("candidate_id") or "unknown")
-            raise RuntimeError(f"Strict validation returned no candidate rows for {candidate_label}.")
-        combined_candidates.extend(matched_candidates)
+        report_candidates = list(report.get("candidates") or [])
+        for candidate in list(group["candidates"]):
+            matched_candidates = _matching_report_candidates(report_candidates, candidate)
+            if not matched_candidates:
+                candidate_label = str(candidate.get("name") or candidate.get("candidate_id") or "unknown")
+                raise RuntimeError(f"Strict validation returned no candidate rows for {candidate_label}.")
+            combined_candidates.extend(matched_candidates)
         _merge_data_sources(combined_data_sources, data_sources)
         report_generated_at = str(report.get("generated_at") or report_generated_at or "")
         gc.collect()
