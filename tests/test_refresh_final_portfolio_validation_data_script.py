@@ -544,8 +544,15 @@ def test_refresh_payload_reports_backend(monkeypatch, tmp_path: Path) -> None:
     bundle = tmp_path / "bundle.json"
     bundle.write_text(json.dumps({"selected_team": []}), encoding="utf-8")
 
+    class _Lease:
+        lock_path = tmp_path / "session_memory_budget.lock"
+
+        def release(self) -> None:
+            return None
+
     monkeypatch.setattr(MODULE, "load_portfolio_symbols", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(MODULE, "load_feature_symbols", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(MODULE, "acquire_session_memory_lease", lambda **_kwargs: _Lease())
     monkeypatch.setattr(MODULE, "resolve_raw_aggtrades_backend_name", lambda *_args, **_kwargs: "python")
     monkeypatch.setattr(
         MODULE,

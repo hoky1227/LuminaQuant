@@ -415,7 +415,7 @@ def _group_candidates_for_strict_research(
             }
         ) or list(symbol_universe)
         candidate_timeframes = (
-            tuple([str(candidate.get("strategy_timeframe") or candidate.get("timeframe") or "").strip().lower()])
+            (str(candidate.get("strategy_timeframe") or candidate.get("timeframe") or "").strip().lower(),)
             if str(candidate.get("strategy_timeframe") or candidate.get("timeframe") or "").strip()
             else tuple(strategy_timeframes)
         )
