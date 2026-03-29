@@ -19,6 +19,7 @@ DEFAULT_INCUMBENT_PORTFOLIO = (
 DEFAULT_TUNED_COMPARISON = FOLLOWUP_ROOT / "portfolio_comparison_latest.json"
 DEFAULT_DYNAMIC_COMPARISON = FOLLOWUP_ROOT / "portfolio_dynamic_comparison_latest.json"
 DEFAULT_OVERLAY_COMPARISON = FOLLOWUP_ROOT / "portfolio_overlay_comparison_latest.json"
+DEFAULT_REGIME_SWITCH_COMPARISON = FOLLOWUP_ROOT / "portfolio_regime_switch_comparison_latest.json"
 DEFAULT_BACKBONE_TRIPLET = FOLLOWUP_ROOT / "portfolio_backbone_triplet_search_latest.json"
 DEFAULT_ANCHORED_COMPARISON = FOLLOWUP_ROOT / "portfolio_four_sleeve_comparison_latest.json"
 DEFAULT_OUTPUT_JSON = FOLLOWUP_ROOT / "portfolio_max_performance_decision_latest.json"
@@ -105,6 +106,47 @@ def _resolve_split_contract() -> dict[str, Any]:
             resolved[key] = value.strip()
     resolved["source"] = str(SPLIT_CONTRACT_PATH.resolve())
     return resolved
+
+
+def _maybe_split_contract_helper(name: str) -> Any:
+    if not SPLIT_CONTRACT_PATH.exists():
+        return None
+    spec = importlib.util.spec_from_file_location("portfolio_split_contract", SPLIT_CONTRACT_PATH)
+    if spec is None or spec.loader is None:
+        return None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        return None
+    return getattr(module, name, None)
+
+
+def _resolve_incumbent_bundle_path(path: Path | str) -> Path:
+    candidate = Path(path)
+    if candidate.exists():
+        return candidate.resolve()
+    resolver = _maybe_split_contract_helper("resolve_incumbent_bundle_path")
+    if callable(resolver):
+        try:
+            return Path(resolver(candidate)).resolve()
+        except Exception:
+            return candidate.resolve()
+    return candidate.resolve()
+
+
+def _resolve_incumbent_portfolio_path(path: Path | str) -> Path:
+    candidate = Path(path)
+    if candidate.exists():
+        return candidate.resolve()
+    resolver = _maybe_split_contract_helper("resolve_current_optimization_path")
+    if callable(resolver):
+        try:
+            return Path(resolver(candidate)).resolve()
+        except Exception:
+            return candidate.resolve()
+    return candidate.resolve()
 
 
 def _extract_split_metrics(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -262,21 +304,26 @@ def build_portfolio_max_performance_decision(
     tuned_comparison_path: Path | str = DEFAULT_TUNED_COMPARISON,
     dynamic_comparison_path: Path | str = DEFAULT_DYNAMIC_COMPARISON,
     overlay_comparison_path: Path | str = DEFAULT_OVERLAY_COMPARISON,
+    regime_switch_comparison_path: Path | str = DEFAULT_REGIME_SWITCH_COMPARISON,
     backbone_triplet_path: Path | str = DEFAULT_BACKBONE_TRIPLET,
     anchored_comparison_path: Path | str = DEFAULT_ANCHORED_COMPARISON,
     anchored_tuned_comparison_path: Path | str | None = None,
     portfolio_four_sleeve_comparison_path: Path | str | None = None,
     four_sleeve_comparison_path: Path | str | None = None,
 ) -> dict[str, Any]:
-    incumbent_bundle = _load_json(Path(incumbent_bundle_path))
-    incumbent_portfolio = _load_json(Path(incumbent_portfolio_path))
+    resolved_incumbent_bundle_path = _resolve_incumbent_bundle_path(Path(incumbent_bundle_path))
+    resolved_incumbent_portfolio_path = _resolve_incumbent_portfolio_path(
+        Path(incumbent_portfolio_path)
+    )
+    incumbent_bundle = _load_json(resolved_incumbent_bundle_path)
+    incumbent_portfolio = _load_json(resolved_incumbent_portfolio_path)
     split_contract = _resolve_split_contract()
 
     entries = [
         _artifact_entry(
             candidate_key="current_one_shot_incumbent",
             label="Current one-shot incumbent",
-            artifact_path=Path(incumbent_portfolio_path),
+            artifact_path=resolved_incumbent_portfolio_path,
             payload=incumbent_portfolio,
             source_artifact_kind="portfolio_one_shot_current_opt",
             selection_basis=str(
@@ -284,13 +331,13 @@ def build_portfolio_max_performance_decision(
             ),
             notes=[
                 "Baseline incumbent for the max-performance loop.",
-                f"Restricted sleeve bundle: {Path(incumbent_bundle_path).resolve()}",
+                f"Restricted sleeve bundle: {resolved_incumbent_bundle_path}",
             ],
         )
     ]
     supporting_artifacts = {
-        "incumbent_bundle": str(Path(incumbent_bundle_path).resolve()),
-        "incumbent_portfolio": str(Path(incumbent_portfolio_path).resolve()),
+        "incumbent_bundle": str(resolved_incumbent_bundle_path),
+        "incumbent_portfolio": str(resolved_incumbent_portfolio_path),
     }
     missing_artifacts: list[str] = []
 
@@ -379,6 +426,49 @@ def build_portfolio_max_performance_decision(
             )
     else:
         missing_artifacts.append(str(overlay_path.resolve()))
+
+    regime_switch_path = Path(regime_switch_comparison_path)
+    if regime_switch_path.exists():
+        regime_switch_comparison = _load_json(regime_switch_path)
+        supporting_artifacts["portfolio_regime_switch_comparison"] = str(regime_switch_path.resolve())
+        regime_switch_section = dict(regime_switch_comparison.get("regime_switching_portfolio") or {})
+        if regime_switch_section:
+            weights = list(regime_switch_section.get("weights") or [])
+            nonzero_weights = [
+                row for row in weights if _safe_float((row or {}).get("weight"), 0.0) > 0.0
+            ]
+            raw_regime_selection_basis = str(
+                regime_switch_section.get("selection_basis")
+                or regime_switch_comparison.get("selection_basis")
+                or ""
+            ).strip()
+            regime_selection_basis = (
+                raw_regime_selection_basis
+                if raw_regime_selection_basis and raw_regime_selection_basis != "locked_oos_promotion_score"
+                else "regime_switching_allocator"
+            )
+            notes = [
+                "Low-memory regime-switch allocator challenger evaluated on the locked OOS split."
+            ]
+            if nonzero_weights:
+                weight_summary = ", ".join(
+                    f"{row.get('name') or row.get('candidate_id') or 'candidate'!s}={_safe_float(row.get('weight'), 0.0):.2f}"
+                    for row in nonzero_weights
+                )
+                notes.append(f"Active final weights: {weight_summary}")
+            entries.append(
+                _artifact_entry(
+                    candidate_key="regime_switching_portfolio",
+                    label="Regime-switch allocator challenger",
+                    artifact_path=Path(regime_switch_section.get("path") or regime_switch_path),
+                    payload=regime_switch_section,
+                    source_artifact_kind="portfolio_regime_switch_comparison.regime_switching_portfolio",
+                    selection_basis=regime_selection_basis,
+                    notes=notes,
+                )
+            )
+    else:
+        missing_artifacts.append(str(regime_switch_path.resolve()))
 
     anchored_candidates = [
         anchored_comparison_path,
@@ -488,7 +578,7 @@ def build_portfolio_max_performance_decision(
         "comparison_scope": [entry.get("candidate_key") for entry in decorated],
         "supporting_artifacts": supporting_artifacts,
         "missing_artifacts": missing_artifacts,
-        "incumbent_bundle_path": str(Path(incumbent_bundle_path).resolve()),
+        "incumbent_bundle_path": str(resolved_incumbent_bundle_path),
         "incumbent_components": [
             {
                 "candidate_id": row.get("candidate_id"),
@@ -529,6 +619,7 @@ def write_portfolio_max_performance_decision(
     tuned_comparison_path: Path | str = DEFAULT_TUNED_COMPARISON,
     dynamic_comparison_path: Path | str = DEFAULT_DYNAMIC_COMPARISON,
     overlay_comparison_path: Path | str = DEFAULT_OVERLAY_COMPARISON,
+    regime_switch_comparison_path: Path | str = DEFAULT_REGIME_SWITCH_COMPARISON,
     backbone_triplet_path: Path | str = DEFAULT_BACKBONE_TRIPLET,
     anchored_comparison_path: Path | str = DEFAULT_ANCHORED_COMPARISON,
     anchored_tuned_comparison_path: Path | str | None = None,
@@ -543,6 +634,7 @@ def write_portfolio_max_performance_decision(
         tuned_comparison_path=tuned_comparison_path,
         dynamic_comparison_path=dynamic_comparison_path,
         overlay_comparison_path=overlay_comparison_path,
+        regime_switch_comparison_path=regime_switch_comparison_path,
         backbone_triplet_path=backbone_triplet_path,
         anchored_comparison_path=anchored_comparison_path,
         anchored_tuned_comparison_path=anchored_tuned_comparison_path,
@@ -599,6 +691,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--tuned-comparison", default=str(DEFAULT_TUNED_COMPARISON))
     parser.add_argument("--dynamic-comparison", default=str(DEFAULT_DYNAMIC_COMPARISON))
     parser.add_argument("--overlay-comparison", default=str(DEFAULT_OVERLAY_COMPARISON))
+    parser.add_argument("--regime-switch-comparison", default=str(DEFAULT_REGIME_SWITCH_COMPARISON))
     parser.add_argument("--backbone-triplet", default=str(DEFAULT_BACKBONE_TRIPLET))
     parser.add_argument("--anchored-comparison", default=str(DEFAULT_ANCHORED_COMPARISON))
     parser.add_argument("--output-json", default=str(DEFAULT_OUTPUT_JSON))
@@ -614,6 +707,7 @@ def main(argv: list[str] | None = None) -> int:
         tuned_comparison_path=Path(args.tuned_comparison).resolve(),
         dynamic_comparison_path=Path(args.dynamic_comparison).resolve(),
         overlay_comparison_path=Path(args.overlay_comparison).resolve(),
+        regime_switch_comparison_path=Path(args.regime_switch_comparison).resolve(),
         backbone_triplet_path=Path(args.backbone_triplet).resolve(),
         anchored_comparison_path=Path(args.anchored_comparison).resolve(),
         output_json_path=Path(args.output_json).resolve(),

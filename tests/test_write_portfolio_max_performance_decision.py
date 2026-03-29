@@ -121,6 +121,41 @@ def _anchored_candidate_entries(payload: dict[str, object]) -> list[dict[str, ob
     return out
 
 
+def _regime_switch_section(
+    *,
+    path: Path,
+    total_return: float,
+    sharpe: float,
+    sortino: float,
+    calmar: float,
+    max_drawdown: float,
+    volatility: float,
+) -> dict[str, object]:
+    return {
+        "path": str(path),
+        "val": {
+            "total_return": 0.015,
+            "sharpe": 1.1,
+            "sortino": 1.7,
+            "calmar": 3.0,
+            "max_drawdown": 0.03,
+            "volatility": 0.08,
+        },
+        "oos": {
+            "total_return": total_return,
+            "sharpe": sharpe,
+            "sortino": sortino,
+            "calmar": calmar,
+            "max_drawdown": max_drawdown,
+            "volatility": volatility,
+        },
+        "weights": [
+            {"candidate_id": "autoresearch_pair_55_45", "name": "autoresearch_pair_55_45", "weight": 0.35},
+            {"candidate_id": "current_one_shot_incumbent", "name": "current_one_shot_incumbent", "weight": 0.2},
+        ],
+    }
+
+
 def test_build_portfolio_max_performance_decision_retains_incumbent_when_no_challenger_clears_threshold(
     tmp_path: Path,
 ) -> None:
@@ -482,6 +517,135 @@ def test_build_portfolio_max_performance_decision_includes_anchored_four_sleeve_
     assert anchored_entries, "expected anchored four-sleeve candidate to be included"
     assert payload["winner"]["candidate_key"] == "current_one_shot_incumbent"
     assert anchored_entries[0]["promotable"] is False
+
+
+def test_build_portfolio_max_performance_decision_includes_regime_switch_candidate(
+    tmp_path: Path,
+) -> None:
+    incumbent_bundle = tmp_path / "incumbent_bundle.json"
+    incumbent_portfolio = tmp_path / "incumbent_portfolio.json"
+    tuned = tmp_path / "portfolio_comparison_latest.json"
+    dynamic = tmp_path / "portfolio_dynamic_comparison_latest.json"
+    overlay = tmp_path / "portfolio_overlay_comparison_latest.json"
+    regime_switch = tmp_path / "portfolio_regime_switch_comparison_latest.json"
+    triplet = tmp_path / "portfolio_backbone_triplet_search_latest.json"
+
+    incumbent_bundle.write_text(json.dumps(_bundle_payload()), encoding="utf-8")
+    incumbent_portfolio.write_text(
+        json.dumps(
+            _portfolio_payload(
+                total_return=0.05,
+                sharpe=1.60,
+                sortino=2.10,
+                calmar=4.20,
+                max_drawdown=0.065,
+                volatility=0.13,
+            )
+        ),
+        encoding="utf-8",
+    )
+    tuned.write_text(json.dumps({"selection_basis": "validation_only"}), encoding="utf-8")
+    dynamic.write_text(json.dumps({"selection_basis": "validation_only"}), encoding="utf-8")
+    overlay.write_text(json.dumps({"selection_basis": "validation_only"}), encoding="utf-8")
+    triplet.write_text(json.dumps({"artifact_kind": "portfolio_backbone_triplet_search"}), encoding="utf-8")
+    regime_switch.write_text(
+        json.dumps(
+            {
+                "selection_basis": "regime_switching_allocator",
+                "regime_switching_portfolio": _regime_switch_section(
+                    path=tmp_path / "regime_switching.json",
+                    total_return=0.049,
+                    sharpe=1.58,
+                    sortino=2.05,
+                    calmar=4.15,
+                    max_drawdown=0.06,
+                    volatility=0.11,
+                ),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = _call_build_decision(
+        incumbent_bundle_path=incumbent_bundle,
+        incumbent_portfolio_path=incumbent_portfolio,
+        tuned_comparison_path=tuned,
+        dynamic_comparison_path=dynamic,
+        overlay_comparison_path=overlay,
+        regime_switch_comparison_path=regime_switch,
+        backbone_triplet_path=triplet,
+    )
+
+    regime_entry = next(
+        entry
+        for entry in payload["candidates"]
+        if entry["candidate_key"] == "regime_switching_portfolio"
+    )
+    assert regime_entry["label"] == "Regime-switch allocator challenger"
+    assert regime_entry["selection_basis"] == "regime_switching_allocator"
+    assert any("Active final weights:" in note for note in regime_entry["notes"])
+    assert regime_entry["promotable"] is False
+
+
+def test_build_portfolio_max_performance_decision_can_promote_regime_switch_candidate(
+    tmp_path: Path,
+) -> None:
+    incumbent_bundle = tmp_path / "incumbent_bundle.json"
+    incumbent_portfolio = tmp_path / "incumbent_portfolio.json"
+    tuned = tmp_path / "portfolio_comparison_latest.json"
+    dynamic = tmp_path / "portfolio_dynamic_comparison_latest.json"
+    overlay = tmp_path / "portfolio_overlay_comparison_latest.json"
+    regime_switch = tmp_path / "portfolio_regime_switch_comparison_latest.json"
+    triplet = tmp_path / "portfolio_backbone_triplet_search_latest.json"
+
+    incumbent_bundle.write_text(json.dumps(_bundle_payload()), encoding="utf-8")
+    incumbent_portfolio.write_text(
+        json.dumps(
+            _portfolio_payload(
+                total_return=0.05,
+                sharpe=1.50,
+                sortino=2.00,
+                calmar=4.00,
+                max_drawdown=0.07,
+                volatility=0.14,
+            )
+        ),
+        encoding="utf-8",
+    )
+    tuned.write_text(json.dumps({"selection_basis": "validation_only"}), encoding="utf-8")
+    dynamic.write_text(json.dumps({"selection_basis": "validation_only"}), encoding="utf-8")
+    overlay.write_text(json.dumps({"selection_basis": "validation_only"}), encoding="utf-8")
+    triplet.write_text(json.dumps({"artifact_kind": "portfolio_backbone_triplet_search"}), encoding="utf-8")
+    regime_switch.write_text(
+        json.dumps(
+            {
+                "selection_basis": "regime_switching_allocator",
+                "regime_switching_portfolio": _regime_switch_section(
+                    path=tmp_path / "regime_switching.json",
+                    total_return=0.072,
+                    sharpe=1.98,
+                    sortino=2.95,
+                    calmar=5.50,
+                    max_drawdown=0.05,
+                    volatility=0.10,
+                ),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = _call_build_decision(
+        incumbent_bundle_path=incumbent_bundle,
+        incumbent_portfolio_path=incumbent_portfolio,
+        tuned_comparison_path=tuned,
+        dynamic_comparison_path=dynamic,
+        overlay_comparison_path=overlay,
+        regime_switch_comparison_path=regime_switch,
+        backbone_triplet_path=triplet,
+    )
+
+    assert payload["winner"]["candidate_key"] == "regime_switching_portfolio"
+    assert payload["winner"]["status"] == "promoted_challenger"
 
 
 def test_build_portfolio_max_performance_decision_allows_custom_anchored_metadata(
