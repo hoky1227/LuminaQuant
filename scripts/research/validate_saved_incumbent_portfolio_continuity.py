@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import gc
+import hashlib
 import json
 import math
 from collections import defaultdict
@@ -36,6 +37,8 @@ DEFAULT_OUTPUT_MD = FOLLOWUP_ROOT / "portfolio_continuity_validation_latest.md"
 DEFAULT_RSS_LOG = FOLLOWUP_ROOT / "portfolio_continuity_validation_rss_latest.jsonl"
 DEFAULT_SOFT_RSS_BYTES = int(7.2 * 1024 * 1024 * 1024)
 STRICT_VALIDATION_DATA_MODE = "legacy"
+STRICT_VALIDATION_CACHE_VERSION = "v1"
+DEFAULT_STRICT_VALIDATION_CACHE_DIR = FOLLOWUP_ROOT / "strict_validation_cache"
 
 
 def parse_utc(value: str | None) -> datetime | None:
@@ -753,6 +756,58 @@ def _group_candidates_for_strict_research(
     return [grouped[key] for key in ordered_keys]
 
 
+def _strict_validation_cache_key(
+    *,
+    candidates: list[dict[str, Any]],
+    strategy_timeframes: list[str],
+    symbol_universe: list[str],
+    split: dict[str, str],
+    min_bundle_bars: int,
+) -> str:
+    normalized_candidates = [
+        {
+            "candidate_id": str(candidate.get("candidate_id") or "").strip(),
+            "name": str(candidate.get("name") or "").strip(),
+            "strategy_name": str(candidate.get("strategy_name") or "").strip(),
+            "strategy_timeframe": str(
+                candidate.get("strategy_timeframe") or candidate.get("timeframe") or ""
+            ).strip().lower(),
+            "symbols": sorted(
+                str(symbol).strip()
+                for symbol in list(candidate.get("symbols") or [])
+                if str(symbol).strip()
+            ),
+        }
+        for candidate in list(candidates or [])
+    ]
+    payload = {
+        "version": STRICT_VALIDATION_CACHE_VERSION,
+        "data_mode": STRICT_VALIDATION_DATA_MODE,
+        "strategy_timeframes": list(strategy_timeframes),
+        "symbol_universe": list(symbol_universe),
+        "split": dict(split),
+        "min_bundle_bars": int(min_bundle_bars),
+        "candidates": normalized_candidates,
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _load_strict_validation_cache(cache_path: Path) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(cache_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+    except Exception:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _write_strict_validation_cache(cache_path: Path, report: dict[str, Any]) -> None:
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+
+
 def _run_strict_research(
     *,
     candidates: list[dict[str, Any]],
@@ -766,18 +821,29 @@ def _run_strict_research(
     report_generated_at: str | None = None
 
     for group in _group_candidates_for_strict_research(candidates, strategy_timeframes, symbol_universe):
-        report = run_candidate_research(
+        cache_key = _strict_validation_cache_key(
             candidates=list(group["candidates"]),
             strategy_timeframes=list(group["timeframes"]),
             symbol_universe=list(group["symbols"]),
             split=split,
-            stage1_keep_ratio=1.0,
-            max_candidates=max(1, len(list(group["candidates"]))),
-            data_mode=STRICT_VALIDATION_DATA_MODE,
-            allow_csv_fallback=False,
-            allow_synthetic_fallback=False,
-            min_bundle_bars=max(1, int(min_bundle_bars)),
+            min_bundle_bars=min_bundle_bars,
         )
+        cache_path = DEFAULT_STRICT_VALIDATION_CACHE_DIR / f"{cache_key}.json"
+        report = _load_strict_validation_cache(cache_path)
+        if report is None:
+            report = run_candidate_research(
+                candidates=list(group["candidates"]),
+                strategy_timeframes=list(group["timeframes"]),
+                symbol_universe=list(group["symbols"]),
+                split=split,
+                stage1_keep_ratio=1.0,
+                max_candidates=max(1, len(list(group["candidates"]))),
+                data_mode=STRICT_VALIDATION_DATA_MODE,
+                allow_csv_fallback=False,
+                allow_synthetic_fallback=False,
+                min_bundle_bars=max(1, int(min_bundle_bars)),
+            )
+            _write_strict_validation_cache(cache_path, report)
         data_sources = dict(report.get("data_sources") or {})
         if list(data_sources.get("synthetic") or []):
             raise RuntimeError("Strict validation unexpectedly used synthetic fallback.")
