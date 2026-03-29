@@ -89,6 +89,22 @@ def test_portfolio_regime_score_prefers_pair_portfolio_when_trend_is_weak() -> N
     assert pair_score > trend_score
 
 
+def test_kelly_target_exposure_can_reduce_cash() -> None:
+    history = {
+        "a": MODULE.np.asarray([0.01, 0.012, 0.009, 0.011, 0.013], dtype=float),
+        "b": MODULE.np.asarray([0.008, 0.007, 0.009, 0.0085, 0.010], dtype=float),
+    }
+    target_weights = {"a": 0.55, "b": 0.20}
+    exposure = MODULE._kelly_target_exposure(
+        history,
+        target_weights,
+        cash_buffer=0.0,
+        kelly_shrinkage=1.0,
+    )
+    assert exposure > sum(target_weights.values())
+    assert exposure <= 1.0
+
+
 def test_run_regime_switch_allocator_uses_only_prior_history() -> None:
     rows = [
         _candidate(
@@ -140,6 +156,48 @@ def test_run_regime_switch_allocator_uses_only_prior_history() -> None:
     first_val = allocation_by_date["2026-01-01"]
     assert first_val["weights"].get("incumbent", 0.0) > 0.99
     assert first_val["weights"].get("pair55", 0.0) == 0.0
+
+
+def test_search_regime_switch_allocator_uses_weekly_rebalance_grid(monkeypatch: pytest.MonkeyPatch) -> None:
+    rows = [
+        _candidate(
+            "incumbent",
+            components=[
+                {
+                    "candidate_id": "trend_a",
+                    "name": "trend_a",
+                    "strategy_class": "CompositeTrendStrategy",
+                    "family": "trend",
+                    "symbols": ["BTC/USDT"],
+                    "weight": 1.0,
+                }
+            ],
+            train=[0.01] * 10,
+            val=[0.01, 0.01],
+            oos=[0.01],
+        )
+    ]
+    seen: list[int] = []
+
+    def fake_run(rows, params, *, regime_features=None):
+        seen.append(params.rebalance_days)
+        return {
+            "dates": ["2025-01-01"],
+            "daily_returns": [0.0],
+            "allocations": [{"date": "2025-01-01", "weights": {}, "cash_weight": 1.0, "sleeve_turnover": 0.0}],
+            "split_metrics": {
+                "train": {"total_return": 0.0, "sharpe": 0.0, "sortino": 0.0, "calmar": 0.0, "max_drawdown": 0.0, "volatility": 0.0},
+                "val": {"total_return": 0.0, "sharpe": 0.0, "sortino": 0.0, "calmar": 0.0, "max_drawdown": 0.0, "volatility": 0.0},
+                "oos": {"total_return": 0.0, "sharpe": 0.0, "sortino": 0.0, "calmar": 0.0, "max_drawdown": 0.0, "volatility": 0.0},
+            },
+            "all_metrics": {},
+        }
+
+    monkeypatch.setattr(MODULE._helper, "_load_regime_features", lambda _rows: {})
+    monkeypatch.setattr(MODULE, "run_regime_switch_allocator", fake_run)
+    MODULE.search_regime_switch_allocator(rows)
+    assert seen
+    assert set(seen) == {7}
 
 
 def test_run_regime_switch_allocator_applies_turnover_cost_using_sleeves() -> None:

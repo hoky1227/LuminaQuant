@@ -712,10 +712,14 @@ def _blend_scores(
     history: dict[str, np.ndarray],
     raw_scores: dict[str, float],
     *,
+    target_total_exposure: float,
     max_portfolio_weight: float,
     correlation_penalty: float,
 ) -> dict[str, float]:
     if not raw_scores:
+        return {}
+    target_total_exposure = max(0.0, min(1.0, float(target_total_exposure)))
+    if target_total_exposure <= 1e-12:
         return {}
     ids = list(raw_scores.keys())
     adjusted = {}
@@ -725,19 +729,36 @@ def _blend_scores(
     total = sum(max(0.0, score) for score in adjusted.values())
     if total <= 1e-12:
         return {}
-    ordered = sorted(adjusted.items(), key=lambda item: item[1], reverse=True)
-    remaining = 1.0
-    out: dict[str, float] = {}
-    for cid, score in ordered:
-        desired = max(0.0, score) / total
-        allowed = min(max_portfolio_weight, remaining, desired)
-        if allowed <= 1e-12:
-            continue
-        out[cid] = float(allowed)
-        remaining -= float(allowed)
-        if remaining <= 1e-12:
+    positive_ids = [cid for cid, score in adjusted.items() if max(0.0, score) > 1e-12]
+    if not positive_ids:
+        return {}
+    remaining = target_total_exposure
+    unresolved = sorted(positive_ids, key=lambda cid: adjusted[cid], reverse=True)
+    out = dict.fromkeys(positive_ids, 0.0)
+    while unresolved and remaining > 1e-12:
+        unresolved_total = sum(max(0.0, adjusted[cid]) for cid in unresolved)
+        if unresolved_total <= 1e-12:
             break
-    return out
+        capped: list[str] = []
+        for cid in list(unresolved):
+            desired = remaining * (max(0.0, adjusted[cid]) / unresolved_total)
+            capacity = max(0.0, max_portfolio_weight - out[cid])
+            allowed = min(capacity, desired)
+            out[cid] += float(allowed)
+            if capacity - allowed <= 1e-12:
+                capped.append(cid)
+        remaining = max(0.0, target_total_exposure - sum(out.values()))
+        unresolved = [cid for cid in unresolved if cid not in capped and (max_portfolio_weight - out[cid]) > 1e-12]
+        if not capped:
+            break
+    if remaining > 1e-12 and unresolved:
+        unresolved_total = sum(max(0.0, adjusted[cid]) for cid in unresolved)
+        if unresolved_total > 1e-12:
+            for cid in unresolved:
+                capacity = max(0.0, max_portfolio_weight - out[cid])
+                desired = remaining * (max(0.0, adjusted[cid]) / unresolved_total)
+                out[cid] += float(min(capacity, desired))
+    return {cid: weight for cid, weight in out.items() if weight > 1e-12}
 
 
 def _aggregate_component_weights(
@@ -851,12 +872,73 @@ class SwitchParams:
     hysteresis_bonus: float = 0.15
     turnover_cost_bps: float = 6.0
     cash_buffer: float = 0.0
+    kelly_shrinkage: float = 1.0
     switch_score_hurdle: float = 0.10
     min_regime_score: float = 0.70
     max_sleeve_turnover: float = 0.75
     incumbent_floor_weight: float = 0.20
     require_continuity_pass: bool = True
     allow_rebuilt_candidates: bool = False
+
+
+def _kelly_target_exposure(
+    history: dict[str, np.ndarray],
+    target_weights: dict[str, float],
+    *,
+    cash_buffer: float,
+    kelly_shrinkage: float,
+) -> float:
+    base_exposure = max(0.0, min(1.0 - max(0.0, cash_buffer), sum(target_weights.values())))
+    if base_exposure <= 1e-12 or not target_weights:
+        return 0.0
+    weighted: np.ndarray | None = None
+    for cid, weight in target_weights.items():
+        raw_series = history.get(cid)
+        if raw_series is None:
+            series = np.asarray([], dtype=float)
+        else:
+            series = np.asarray(raw_series, dtype=float)
+        if series.size == 0:
+            continue
+        contribution = float(weight) * series
+        weighted = contribution if weighted is None else weighted + contribution
+    if weighted is None or weighted.size < 2:
+        return base_exposure
+    mean_ret = float(np.mean(weighted))
+    variance = float(np.var(weighted, ddof=1))
+    if variance <= 1e-12 or not math.isfinite(variance):
+        return base_exposure
+    raw_fraction = max(0.0, mean_ret / variance)
+    kelly_fraction = max(0.0, min(1.0 - max(0.0, cash_buffer), raw_fraction * max(0.0, kelly_shrinkage)))
+    return max(base_exposure, kelly_fraction)
+
+
+def _allocation_summary(
+    allocations: list[dict[str, Any]],
+    *,
+    candidate_ids: list[str],
+) -> dict[str, Any]:
+    summary: dict[str, Any] = {
+        "days": len(allocations),
+        "avg_cash_weight": 0.0,
+        "avg_sleeve_turnover": 0.0,
+        "max_cash_weight": 0.0,
+        "max_sleeve_turnover": 0.0,
+        "avg_candidate_weights": dict.fromkeys(candidate_ids, 0.0),
+    }
+    if not allocations:
+        return summary
+    cash_values = [_safe_float(row.get("cash_weight"), 0.0) for row in allocations]
+    turnover_values = [_safe_float(row.get("sleeve_turnover"), 0.0) for row in allocations]
+    summary["avg_cash_weight"] = float(np.mean(cash_values))
+    summary["avg_sleeve_turnover"] = float(np.mean(turnover_values))
+    summary["max_cash_weight"] = float(max(cash_values))
+    summary["max_sleeve_turnover"] = float(max(turnover_values))
+    summary["avg_candidate_weights"] = {
+        cid: float(np.mean([_safe_float((row.get("weights") or {}).get(cid), 0.0) for row in allocations]))
+        for cid in candidate_ids
+    }
+    return summary
 
 
 def _candidate_runtime_risk(
@@ -978,15 +1060,29 @@ def run_regime_switch_allocator(
             if not regime_available and incumbent_id is not None:
                 incumbent_only = _safe_float(raw_scores.get(incumbent_id), 0.0)
                 raw_scores = {incumbent_id: incumbent_only} if incumbent_only > 0.0 else {}
+            target_total_exposure = max(0.0, 1.0 - params.cash_buffer)
+            if raw_scores:
+                unconstrained = _blend_scores(
+                    history,
+                    raw_scores,
+                    target_total_exposure=target_total_exposure,
+                    max_portfolio_weight=params.max_portfolio_weight,
+                    correlation_penalty=params.correlation_penalty,
+                )
+                target_total_exposure = _kelly_target_exposure(
+                    history,
+                    unconstrained,
+                    cash_buffer=params.cash_buffer,
+                    kelly_shrinkage=params.kelly_shrinkage,
+                )
             next_portfolio_weights = _blend_scores(
                 history,
                 raw_scores,
+                target_total_exposure=target_total_exposure,
                 max_portfolio_weight=params.max_portfolio_weight,
                 correlation_penalty=params.correlation_penalty,
             )
-            scaled_portfolio_weights = {
-                cid: weight * max(0.0, 1.0 - params.cash_buffer) for cid, weight in next_portfolio_weights.items()
-            }
+            scaled_portfolio_weights = dict(next_portfolio_weights)
             scaled_portfolio_weights = _apply_incumbent_floor(
                 scaled_portfolio_weights,
                 incumbent_id=incumbent_id,
@@ -1038,6 +1134,7 @@ def run_regime_switch_allocator(
                     "runtime_risk_state": runtime_risk,
                     "turnover_cost": float(turnover_cost),
                     "sleeve_turnover": float(sleeve_turnover),
+                    "target_total_exposure": float(target_total_exposure),
                 }
             )
         elif idx == 0:
@@ -1055,6 +1152,7 @@ def run_regime_switch_allocator(
                     "runtime_risk_state": runtime_risk,
                     "turnover_cost": 0.0,
                     "sleeve_turnover": 0.0,
+                    "target_total_exposure": 0.0,
                 }
             )
 
@@ -1106,7 +1204,7 @@ def _objective(
         + (12.0 * _safe_float(metrics.get("total_return"), 0.0))
         - (4.0 * _safe_float(metrics.get("max_drawdown"), 0.0))
         - (0.75 * _safe_float(metrics.get("volatility"), 0.0))
-        - (0.30 * cash_fraction)
+        - (0.60 * cash_fraction)
         - (1.50 * turnover_fraction)
     )
 
@@ -1121,8 +1219,8 @@ def search_regime_switch_allocator(
     grid = param_grid or [
         SwitchParams(*combo)
         for combo in itertools.product(
-            [5, 10],  # lookback
-            [1, 3],  # rebalance
+            [10, 14, 21],  # lookback
+            [7],  # weekly rebalance
             [0.0, 0.25],  # min sharpe
             [0.0],  # min return
             [0.10, 0.15],  # max dd
@@ -1132,6 +1230,7 @@ def search_regime_switch_allocator(
             [0.05, 0.20],  # hysteresis
             [8.0],  # turnover bps
             [0.0],  # cash buffer
+            [0.75, 1.0, 1.25],  # kelly shrinkage
         )
     ]
     best: dict[str, Any] | None = None
@@ -1262,6 +1361,21 @@ def write_regime_switch_report(
         "allocation_count": len(list(result.get("allocations") or [])),
         "final_allocation": _final_allocation_rows(result),
         "allocations": list(result.get("allocations") or []),
+        "allocation_summary": {
+            "all": _allocation_summary(list(result.get("allocations") or []), candidate_ids=[row["candidate_id"] for row in rows]),
+            "train": _allocation_summary(
+                [item for item in list(result.get("allocations") or []) if split_for_day_key(str(item.get("date") or "")) == "train"],
+                candidate_ids=[row["candidate_id"] for row in rows],
+            ),
+            "val": _allocation_summary(
+                [item for item in list(result.get("allocations") or []) if split_for_day_key(str(item.get("date") or "")) == "val"],
+                candidate_ids=[row["candidate_id"] for row in rows],
+            ),
+            "oos": _allocation_summary(
+                [item for item in list(result.get("allocations") or []) if split_for_day_key(str(item.get("date") or "")) == "oos"],
+                candidate_ids=[row["candidate_id"] for row in rows],
+            ),
+        },
         "portfolio_return_streams": _portfolio_return_streams_from_daily(
             list(result.get("dates") or []),
             list(result.get("daily_returns") or []),
@@ -1314,6 +1428,13 @@ def write_regime_switch_report(
         f"- train: {json.dumps(payload['split_metrics'].get('train') or {}, sort_keys=True)}",
         f"- val: {json.dumps(payload['split_metrics'].get('val') or {}, sort_keys=True)}",
         f"- oos: {json.dumps(payload['split_metrics'].get('oos') or {}, sort_keys=True)}",
+        "",
+        "## Cash / allocation summary",
+        "",
+        f"- all: {json.dumps(payload['allocation_summary'].get('all') or {}, sort_keys=True)}",
+        f"- train: {json.dumps(payload['allocation_summary'].get('train') or {}, sort_keys=True)}",
+        f"- val: {json.dumps(payload['allocation_summary'].get('val') or {}, sort_keys=True)}",
+        f"- oos: {json.dumps(payload['allocation_summary'].get('oos') or {}, sort_keys=True)}",
         "",
         "## Final portfolio weights",
         "",
