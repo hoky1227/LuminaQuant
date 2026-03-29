@@ -632,6 +632,17 @@ def _mean_cash_fraction(allocations: list[dict[str, Any]], *, split: str) -> flo
     return float(np.mean(values))
 
 
+def _portfolio_return_streams_from_daily(
+    dates: list[str],
+    daily_returns: list[float],
+) -> dict[str, list[dict[str, Any]]]:
+    streams: dict[str, list[dict[str, Any]]] = {"train": [], "val": [], "oos": []}
+    for day_key, day_return in zip(dates, daily_returns, strict=True):
+        split = _split_index(str(day_key))
+        streams[split].append({"t": f"{day_key}T00:00:00Z", "v": _safe_float(day_return, 0.0)})
+    return streams
+
+
 def search_dynamic_allocator(
     rows: list[dict[str, Any]],
     *,
@@ -782,6 +793,12 @@ def write_dynamic_allocator_report(
         "all_metrics": dict(result.get("all_metrics") or {}),
         "allocation_count": len(list(result.get("allocations") or [])),
         "final_allocation": _top_allocation_rows(result),
+        "dates": list(result.get("dates") or []),
+        "daily_returns": list(result.get("daily_returns") or []),
+        "portfolio_return_streams": _portfolio_return_streams_from_daily(
+            list(result.get("dates") or []),
+            list(result.get("daily_returns") or []),
+        ),
         "allocations": list(result.get("allocations") or []),
         "universe_scope": "preselected_current_incumbent_bundle",
     }

@@ -131,3 +131,14 @@ def test_write_overlay_comparison_refreshes_current_one_shot_snapshot(
     assert written["current_one_shot_optimized"]["oos"]["sharpe"] == 2.98765
     assert "current_one_shot_optimized" in written["comparison_scope"]
     assert abs(written["deltas"]["overlay_vs_current_one_shot_oos_return"] + 0.02789) < 1e-12
+
+
+def test_portfolio_return_streams_from_daily_maps_splits() -> None:
+    streams = MODULE._portfolio_return_streams_from_daily(
+        ["2025-12-31", "2026-01-05", "2026-02-02"],
+        [0.01, -0.01, 0.02],
+    )
+    assert len(streams["train"]) == 1
+    assert len(streams["val"]) == 1
+    assert len(streams["oos"]) == 1
+    assert streams["val"][0]["t"] == "2026-01-05T00:00:00Z"

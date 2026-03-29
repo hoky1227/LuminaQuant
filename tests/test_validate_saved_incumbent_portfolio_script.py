@@ -117,6 +117,55 @@ def test_latest_common_complete_time_accepts_refresh_symbol_aliases() -> None:
     assert evidence[0]["symbol"] == "XAU/USDT"
 
 
+def test_latest_common_complete_time_accepts_latest_universe_results_schema() -> None:
+    refresh_payload = {
+        "results": [
+            {"symbol": "BNB/USDT", "after_ohlcv_max_utc": "2026-03-28T14:33:47Z"},
+        ],
+    }
+
+    anchored_end, evidence = MODULE._latest_common_complete_time(
+        refresh_payload=refresh_payload,
+        required_pairs=[("BNB/USDT", "1h")],
+        feature_symbols=[],
+    )
+
+    assert MODULE.iso_utc(anchored_end) == "2026-03-28T13:00:00Z"
+    assert evidence[0]["symbol"] == "BNB/USDT"
+
+
+def test_latest_common_complete_time_uses_support_inventory_when_feature_results_missing(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    support_path = tmp_path / "support_inventory.json"
+    support_path.write_text(
+        """
+        {
+          "symbols": [
+            {"symbol": "BNBUSDT", "last_timestamp_utc": "2026-03-28T14:33:00+00:00"}
+          ]
+        }
+        """.strip(),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(MODULE, "DEFAULT_SUPPORT_INVENTORY_JSON", support_path)
+    refresh_payload = {
+        "results": [
+            {"symbol": "BNB/USDT", "after_ohlcv_max_utc": "2026-03-28T14:33:47Z"},
+        ],
+    }
+
+    anchored_end, evidence = MODULE._latest_common_complete_time(
+        refresh_payload=refresh_payload,
+        required_pairs=[("BNB/USDT", "1h")],
+        feature_symbols=["BNB/USDT"],
+    )
+
+    assert MODULE.iso_utc(anchored_end) == "2026-03-28T13:00:00Z"
+    assert any(item["source"] == "support_inventory" for item in evidence)
+
+
 def test_run_strict_research_rejects_synthetic_fallback(monkeypatch) -> None:
     monkeypatch.setattr(
         MODULE,

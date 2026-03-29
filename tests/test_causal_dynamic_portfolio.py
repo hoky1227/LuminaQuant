@@ -247,3 +247,14 @@ def test_regime_multiplier_rewards_trend_when_btc_and_breadth_are_positive() -> 
     )
     assert positive > 1.0
     assert negative < 1.0
+
+
+def test_portfolio_return_streams_from_daily_maps_splits() -> None:
+    streams = MODULE._portfolio_return_streams_from_daily(
+        ["2025-12-31", "2026-01-15", "2026-02-03"],
+        [0.01, -0.02, 0.03],
+    )
+    assert len(streams["train"]) == 1
+    assert len(streams["val"]) == 1
+    assert len(streams["oos"]) == 1
+    assert streams["oos"][0]["t"] == "2026-02-03T00:00:00Z"

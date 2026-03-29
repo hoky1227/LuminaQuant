@@ -23,6 +23,7 @@ from lumina_quant.portfolio_split_contract import (
     PORTFOLIO_ONE_SHOT_INCUMBENT_BUNDLE,
     acquire_portfolio_memory_guard,
     memory_policy_payload,
+    resolve_current_optimization_path,
     resolve_incumbent_bundle_path,
     split_windows,
 )
@@ -221,6 +222,7 @@ def run_causal_overlay_allocator(
 
     return {
         "dates": ordered_days,
+        "daily_returns": all_returns,
         "allocations": allocations,
         "split_metrics": {
             split: _helper._metrics(np.asarray(values, dtype=float))
@@ -229,6 +231,19 @@ def run_causal_overlay_allocator(
         "all_metrics": _helper._metrics(np.asarray(all_returns, dtype=float)),
         "meta": meta,
     }
+
+
+def _portfolio_return_streams_from_daily(
+    dates: list[str],
+    daily_returns: list[float],
+) -> dict[str, list[dict[str, Any]]]:
+    streams: dict[str, list[dict[str, Any]]] = {"train": [], "val": [], "oos": []}
+    for day_key, day_return in zip(dates, daily_returns, strict=True):
+        split = _helper._split_index(str(day_key))
+        streams[split].append(
+            {"t": f"{day_key}T00:00:00Z", "v": _helper._safe_float(day_return, 0.0)}
+        )
+    return streams
 
 
 def _objective(metrics: dict[str, float], *, cash_fraction: float) -> float:
@@ -322,12 +337,13 @@ def write_overlay_report(
     output_dir: Path = DEFAULT_OUTPUT_DIR,
 ) -> dict[str, Any]:
     resolved_input = resolve_incumbent_bundle_path(input_path)
+    resolved_backbone = resolve_current_optimization_path(backbone_path)
     output_dir.mkdir(parents=True, exist_ok=True)
     memory_guard = acquire_portfolio_memory_guard(
         run_name="causal_overlay_portfolio",
         output_dir=output_dir,
         input_path=resolved_input,
-        metadata={"backbone_path": str(backbone_path.resolve())},
+        metadata={"backbone_path": str(resolved_backbone)},
         budget_bytes=PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES,
     )
     status = "completed"
@@ -338,11 +354,11 @@ def write_overlay_report(
             context={
                 "requested_input_path": str(Path(input_path).resolve()),
                 "resolved_input_path": str(resolved_input),
-                "backbone_path": str(backbone_path.resolve()),
+                "backbone_path": str(resolved_backbone),
             },
         )
         rows = _helper._load_candidates(resolved_input)
-        backbone_weights = _load_backbone_weights(backbone_path)
+        backbone_weights = _load_backbone_weights(resolved_backbone)
         memory_guard.checkpoint(
             "overlay_candidates_loaded",
             {"candidate_count": len(rows), "backbone_count": len(backbone_weights)},
@@ -368,7 +384,7 @@ def write_overlay_report(
             error=error,
             context={
                 "resolved_input_path": str(resolved_input),
-                "backbone_path": str(backbone_path.resolve()),
+                "backbone_path": str(resolved_backbone),
             },
         )
         memory_guard.release()
@@ -378,7 +394,7 @@ def write_overlay_report(
         "schema_version": "1.0",
         "input_path": str(resolved_input),
         "requested_input_path": str(Path(input_path).resolve()),
-        "backbone_path": str(backbone_path.resolve()),
+        "backbone_path": str(resolved_backbone),
         "selection_basis": "validation_only_overlay_search_on_current_one_shot_backbone",
         "objective_profile": "balanced_multi_metric_with_backbone_overlay",
         "split_windows": split_windows(),
@@ -390,6 +406,12 @@ def write_overlay_report(
         "all_metrics": dict(result.get("all_metrics") or {}),
         "allocation_count": len(list(result.get("allocations") or [])),
         "final_allocation": _final_allocation_rows(result),
+        "dates": list(result.get("dates") or []),
+        "daily_returns": list(result.get("daily_returns") or []),
+        "portfolio_return_streams": _portfolio_return_streams_from_daily(
+            list(result.get("dates") or []),
+            list(result.get("daily_returns") or []),
+        ),
         "allocations": list(result.get("allocations") or []),
         "universe_scope": "current_one_shot_backbone",
     }

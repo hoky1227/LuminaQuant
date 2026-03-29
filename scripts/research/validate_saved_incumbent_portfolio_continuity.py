@@ -30,6 +30,7 @@ from lumina_quant.utils.risk_free import resolve_risk_free_config
 
 FEATURE_REQUIRED_STRATEGIES = {"CompositeTrendStrategy", "PerpCrowdingCarryStrategy"}
 DEFAULT_REFRESH_REPORT = FOLLOWUP_ROOT / "final_portfolio_validation_data_refresh_latest.json"
+DEFAULT_SUPPORT_INVENTORY_JSON = FOLLOWUP_ROOT / "final_portfolio_validation_support_inventory_latest.json"
 DEFAULT_OUTPUT_JSON = FOLLOWUP_ROOT / "portfolio_continuity_validation_latest.json"
 DEFAULT_OUTPUT_MD = FOLLOWUP_ROOT / "portfolio_continuity_validation_latest.md"
 DEFAULT_RSS_LOG = FOLLOWUP_ROOT / "portfolio_continuity_validation_rss_latest.jsonl"
@@ -537,6 +538,55 @@ def _research_symbol(symbol: str) -> str:
     return normalize_symbol(str(symbol))
 
 
+def _load_support_inventory_rows(refresh_payload: dict[str, Any]) -> list[dict[str, Any]]:
+    support_paths: list[Path] = []
+    support_meta = refresh_payload.get("support_inventory")
+    if isinstance(support_meta, dict):
+        json_path = str(support_meta.get("json_path") or "").strip()
+        if json_path:
+            support_paths.append(Path(json_path))
+    support_paths.append(DEFAULT_SUPPORT_INVENTORY_JSON)
+    for path in support_paths:
+        try:
+            resolved = Path(path).expanduser().resolve()
+        except Exception:
+            continue
+        if not resolved.exists():
+            continue
+        try:
+            payload = json.loads(resolved.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        rows = list(payload.get("symbols") or [])
+        if rows:
+            return rows
+    return []
+
+
+def _normalized_refresh_rows(refresh_payload: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    ohlcv_rows = list(refresh_payload.get("ohlcv_results") or refresh_payload.get("results") or [])
+    feature_rows = list(refresh_payload.get("feature_results") or [])
+    if feature_rows:
+        return ohlcv_rows, feature_rows
+    inventory_rows = _load_support_inventory_rows(refresh_payload)
+    if not inventory_rows:
+        return ohlcv_rows, []
+    derived_feature_rows: list[dict[str, Any]] = []
+    for row in inventory_rows:
+        symbol = str(row.get("symbol") or "").strip()
+        last_timestamp_utc = str(row.get("last_timestamp_utc") or "").strip()
+        if not symbol or not last_timestamp_utc:
+            continue
+        derived_feature_rows.append(
+            {
+                "symbol": symbol,
+                "last_timestamp_utc": last_timestamp_utc,
+                "feature_source": "support_inventory",
+            }
+        )
+    return ohlcv_rows, derived_feature_rows
+
+
 def _latest_complete_bucket_start(last_1s_dt: datetime, timeframe: str) -> datetime:
     tf_ms = int(timeframe_to_milliseconds(timeframe))
     last_ms = int(last_1s_dt.timestamp() * 1000)
@@ -555,19 +605,22 @@ def _latest_common_complete_time(
     required_pairs: list[tuple[str, str]],
     feature_symbols: list[str],
 ) -> tuple[datetime, list[dict[str, str]]]:
+    ohlcv_rows, feature_rows = _normalized_refresh_rows(refresh_payload)
     ohlcv_last: dict[str, datetime] = {}
-    for row in list(refresh_payload.get("ohlcv_results") or []):
+    for row in ohlcv_rows:
         symbol = _research_symbol(row.get("symbol") or "")
         dt = parse_utc(row.get("after_ohlcv_max_utc"))
         if symbol and dt is not None:
             ohlcv_last[symbol] = dt
 
     feature_last: dict[str, datetime] = {}
-    for row in list(refresh_payload.get("feature_results") or []):
+    feature_source_by_symbol: dict[str, str] = {}
+    for row in feature_rows:
         symbol = _research_symbol(row.get("symbol") or "")
         dt = parse_utc(row.get("last_timestamp_utc"))
         if symbol and dt is not None:
             feature_last[symbol] = dt
+            feature_source_by_symbol[symbol] = str(row.get("feature_source") or "feature_points")
 
     candidates: list[tuple[datetime, dict[str, str]]] = []
     for symbol, timeframe in required_pairs:
@@ -595,7 +648,7 @@ def _latest_common_complete_time(
             (
                 dt,
                 {
-                    "source": "feature_points",
+                    "source": feature_source_by_symbol.get(_research_symbol(symbol), "feature_points"),
                     "symbol": _research_symbol(symbol),
                     "timeframe": "feature",
                     "last_complete_utc": iso_utc(dt) or "",
