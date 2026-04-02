@@ -116,7 +116,7 @@ def build_basis_search_universes(
     derived_80_20: dict[str, Any],
     soft_allocator: dict[str, Any],
     regime_switch: dict[str, Any],
-    grouped_base: dict[str, Any],
+    grouped_base: dict[str, Any] | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
     universes = {
         RAW_UNIVERSE_NAME: [
@@ -124,14 +124,12 @@ def build_basis_search_universes(
             {**copy.deepcopy(raw_55_45), "lineage": RAW_55_45_LINEAGE},
             {**copy.deepcopy(soft_allocator), "lineage": NEUTRAL_LINEAGE},
             {**copy.deepcopy(regime_switch), "lineage": NEUTRAL_LINEAGE},
-            {**copy.deepcopy(grouped_base), "lineage": NEUTRAL_LINEAGE},
         ],
         DERIVED_UNIVERSE_NAME: [
             {**copy.deepcopy(incumbent), "lineage": NEUTRAL_LINEAGE},
             {**copy.deepcopy(derived_80_20), "lineage": DERIVED_80_20_LINEAGE},
             {**copy.deepcopy(soft_allocator), "lineage": NEUTRAL_LINEAGE},
             {**copy.deepcopy(regime_switch), "lineage": NEUTRAL_LINEAGE},
-            {**copy.deepcopy(grouped_base), "lineage": NEUTRAL_LINEAGE},
         ],
     }
     for rows in universes.values():

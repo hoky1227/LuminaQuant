@@ -89,6 +89,7 @@ def test_build_decision_includes_promoted_meta_search_entry(tmp_path: Path) -> N
         dynamic_comparison_path=tmp_path / "missing_dynamic.json",
         overlay_comparison_path=tmp_path / "missing_overlay.json",
         regime_switch_comparison_path=tmp_path / "missing_regime.json",
+        grouped_static_blend_path=tmp_path / "missing_static_blend.json",
         backbone_triplet_path=tmp_path / "missing_triplet.json",
         anchored_comparison_path=tmp_path / "missing_anchor.json",
         meta_search_summary_paths=(meta_summary,),
@@ -96,7 +97,7 @@ def test_build_decision_includes_promoted_meta_search_entry(tmp_path: Path) -> N
 
     assert "portfolio_superiority_meta_search" in payload["supporting_artifacts"]
     assert any(
-        entry["candidate_key"] == "portfolio_superiority_meta_u1_raw_basis"
+        entry["candidate_key"] == "portfolio_superiority_meta_portfolio"
         for entry in payload["candidates"]
     )
-    assert payload["winner"]["candidate_key"] == "portfolio_superiority_meta_u1_raw_basis"
+    assert payload["winner"]["candidate_key"] == "portfolio_superiority_meta_portfolio"
