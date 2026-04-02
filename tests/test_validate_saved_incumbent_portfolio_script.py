@@ -315,3 +315,74 @@ def test_run_strict_research_reuses_disk_cache(monkeypatch, tmp_path: Path) -> N
     assert len(calls) == 1
     assert first == second
     assert list(tmp_path.glob("*.json"))
+
+
+def test_run_strict_research_does_not_reuse_cache_when_leverage_changes(
+    monkeypatch, tmp_path: Path
+) -> None:
+    calls: list[dict[str, object]] = []
+
+    def _fake_run_candidate_research(**kwargs):
+        calls.append(kwargs)
+        candidate = kwargs["candidates"][0]
+        return {
+            "generated_at": "2026-03-28T00:00:00Z",
+            "data_sources": {"raw-first": [candidate["name"]]},
+            "candidates": [
+                {
+                    "candidate_id": candidate["candidate_id"],
+                    "name": candidate["name"],
+                    "params": dict(candidate.get("params") or {}),
+                    "leverage": candidate.get("leverage"),
+                }
+            ],
+        }
+
+    monkeypatch.setattr(MODULE, "run_candidate_research", _fake_run_candidate_research)
+    monkeypatch.setattr(MODULE, "DEFAULT_STRICT_VALIDATION_CACHE_DIR", tmp_path)
+
+    base_kwargs = dict(
+        strategy_timeframes=["1h"],
+        symbol_universe=["BNB/USDT", "TRX/USDT"],
+        split={
+            "train_start": "2025-01-01T00:00:00Z",
+            "train_end": "2025-12-31T23:59:59Z",
+            "val_start": "2026-01-01T00:00:00Z",
+            "val_end": "2026-01-31T23:59:59Z",
+            "oos_start": "2026-02-01T00:00:00Z",
+            "oos_end": "2026-03-01T00:00:00Z",
+        },
+        min_bundle_bars=1,
+    )
+
+    first = MODULE._run_strict_research(
+        candidates=[
+            {
+                "candidate_id": "pair",
+                "name": "pair",
+                "strategy_timeframe": "1h",
+                "symbols": ["BNB/USDT", "TRX/USDT"],
+                "strategy_class": "PairSpreadZScoreStrategy",
+                "leverage": 1,
+                "params": {"lookback_window": 96, "leverage": 1},
+            }
+        ],
+        **base_kwargs,
+    )
+    second = MODULE._run_strict_research(
+        candidates=[
+            {
+                "candidate_id": "pair",
+                "name": "pair",
+                "strategy_timeframe": "1h",
+                "symbols": ["BNB/USDT", "TRX/USDT"],
+                "strategy_class": "PairSpreadZScoreStrategy",
+                "leverage": 3,
+                "params": {"lookback_window": 96, "leverage": 3},
+            }
+        ],
+        **base_kwargs,
+    )
+
+    assert len(calls) == 2
+    assert first != second

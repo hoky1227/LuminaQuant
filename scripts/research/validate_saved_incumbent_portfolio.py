@@ -45,7 +45,7 @@ DEFAULT_OUTPUT_MD = FOLLOWUP_ROOT / "final_portfolio_validation_latest.md"
 DEFAULT_RSS_LOG = FOLLOWUP_ROOT / "final_portfolio_validation_rss_latest.jsonl"
 DEFAULT_SOFT_RSS_BYTES = int(7.2 * 1024 * 1024 * 1024)
 STRICT_VALIDATION_DATA_MODE = "legacy"
-STRICT_VALIDATION_CACHE_VERSION = "v1"
+STRICT_VALIDATION_CACHE_VERSION = "v2"
 DEFAULT_STRICT_VALIDATION_CACHE_DIR = FOLLOWUP_ROOT / "strict_validation_cache"
 
 
@@ -78,6 +78,25 @@ def safe_float(value: Any, default: float = 0.0) -> float:
     if not math.isfinite(out):
         return float(default)
     return out
+
+
+def _normalize_cache_value(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, dict):
+        return {
+            str(key): _normalize_cache_value(item)
+            for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+        }
+    if isinstance(value, (list, tuple)):
+        return [_normalize_cache_value(item) for item in value]
+    if isinstance(value, set):
+        return sorted(_normalize_cache_value(item) for item in value)
+    if isinstance(value, datetime):
+        return iso_utc(value)
+    if isinstance(value, Path):
+        return str(value)
+    return str(value)
 
 
 def _timestamp_token(point: dict[str, Any], idx: int) -> tuple[str, tuple[int, float, float]]:
@@ -660,6 +679,7 @@ def _strict_validation_cache_key(
             "candidate_id": str(candidate.get("candidate_id") or "").strip(),
             "name": str(candidate.get("name") or "").strip(),
             "strategy_name": str(candidate.get("strategy_name") or "").strip(),
+            "strategy_class": str(candidate.get("strategy_class") or "").strip(),
             "strategy_timeframe": str(
                 candidate.get("strategy_timeframe") or candidate.get("timeframe") or ""
             ).strip().lower(),
@@ -668,6 +688,8 @@ def _strict_validation_cache_key(
                 for symbol in list(candidate.get("symbols") or [])
                 if str(symbol).strip()
             ),
+            "leverage": int(safe_float(candidate.get("leverage"), safe_float((candidate.get("params") or {}).get("leverage"), 0.0))),
+            "params": _normalize_cache_value(dict(candidate.get("params") or {})),
         }
         for candidate in list(candidates or [])
     ]
