@@ -4,6 +4,7 @@ import queue
 from dataclasses import dataclass
 
 from lumina_quant.core.events import MarketEvent
+from lumina_quant.strategies import composite_trend as composite_trend_module
 from lumina_quant.strategies.candidate_vol_compression_reversion import (
     VolatilityCompressionReversionStrategy,
 )
@@ -80,6 +81,47 @@ def test_composite_trend_state_roundtrip():
     clone.set_state(state)
 
     assert clone.get_state() == state
+
+
+def test_composite_trend_entry_signal_includes_trailing_percent(monkeypatch):
+    bars = _BarsMock(["BTC/USDT"])
+    events = queue.Queue()
+    monkeypatch.setattr(
+        composite_trend_module,
+        "pv_trend_score",
+        lambda *args, **kwargs: {
+            "score": 0.9,
+            "gate": True,
+            "trend_efficiency": 0.8,
+            "volatility_ratio": 1.0,
+            "choppiness": 25.0,
+        },
+    )
+    strategy = CompositeTrendStrategy(
+        bars,
+        events,
+        long_threshold=0.01,
+        short_threshold=99.0,
+        min_history_bars=8,
+        vol_window=8,
+        atr_window=4,
+        benchmark_regime_ma=0,
+        allow_short=False,
+    )
+
+    _feed_basic_series(strategy, bars, "BTC/USDT", n=40)
+
+    signals = []
+    while not events.empty():
+        signals.append(events.get_nowait())
+
+    long_entries = [event for event in signals if getattr(event, "signal_type", "") == "LONG"]
+    assert long_entries, "expected at least one composite trend long entry"
+    first = long_entries[0]
+    assert first.stop_loss is not None
+    assert first.take_profit is not None
+    assert first.trailing_percent is not None
+    assert float(first.trailing_percent) > 0.0
 
 
 def test_volcomp_reversion_state_roundtrip():

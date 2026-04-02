@@ -393,6 +393,7 @@ class CompositeTrendStrategy(Strategy):
         strength: float,
         stop_loss: float | None = None,
         take_profit: float | None = None,
+        trailing_percent: float | None = None,
         metadata: dict | None = None,
     ) -> None:
         self.events.put(
@@ -404,6 +405,7 @@ class CompositeTrendStrategy(Strategy):
                 strength=float(strength),
                 stop_loss=stop_loss,
                 take_profit=take_profit,
+                trailing_percent=trailing_percent,
                 metadata=metadata,
             )
         )
@@ -524,6 +526,7 @@ class CompositeTrendStrategy(Strategy):
         if long_gate and score >= self.long_threshold:
             stop = float(close) - (self.atr_stop_mult * atr_abs)
             take = float(close) + (self.atr_stop_mult * atr_abs * self.take_profit_atr_mult)
+            trailing_percent = max(0.0, (float(close) - stop) / max(float(close), self.atr_abs_floor))
             self._emit(
                 symbol,
                 event_time,
@@ -531,6 +534,7 @@ class CompositeTrendStrategy(Strategy):
                 strength=strength,
                 stop_loss=stop,
                 take_profit=take,
+                trailing_percent=trailing_percent,
                 metadata={**metadata, "reason": "long_entry"},
             )
             item.mode = "LONG"
@@ -542,6 +546,7 @@ class CompositeTrendStrategy(Strategy):
         if self.allow_short and gate and score <= -self.short_threshold:
             stop = float(close) + (self.atr_stop_mult * atr_abs)
             take = float(close) - (self.atr_stop_mult * atr_abs * self.take_profit_atr_mult)
+            trailing_percent = max(0.0, (stop - float(close)) / max(float(close), self.atr_abs_floor))
             self._emit(
                 symbol,
                 event_time,
@@ -549,6 +554,7 @@ class CompositeTrendStrategy(Strategy):
                 strength=strength,
                 stop_loss=stop,
                 take_profit=take,
+                trailing_percent=trailing_percent,
                 metadata={**metadata, "reason": "short_entry"},
             )
             item.mode = "SHORT"
