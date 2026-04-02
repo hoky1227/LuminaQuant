@@ -10,6 +10,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from lumina_quant.portfolio_followup_rules import (
+    ROBUST_PROMOTION_GATES,
+    evaluate_robustness_gates,
+)
+
 ROOT = Path(__file__).resolve().parents[2]
 FOLLOWUP_ROOT = ROOT / "var" / "reports" / "exact_window_backtests" / "followup_status"
 DEFAULT_INCUMBENT_BUNDLE = FOLLOWUP_ROOT / "portfolio_one_shot_incumbent_bundle_latest.json"
@@ -20,6 +25,28 @@ DEFAULT_TUNED_COMPARISON = FOLLOWUP_ROOT / "portfolio_comparison_latest.json"
 DEFAULT_DYNAMIC_COMPARISON = FOLLOWUP_ROOT / "portfolio_dynamic_comparison_latest.json"
 DEFAULT_OVERLAY_COMPARISON = FOLLOWUP_ROOT / "portfolio_overlay_comparison_latest.json"
 DEFAULT_REGIME_SWITCH_COMPARISON = FOLLOWUP_ROOT / "portfolio_regime_switch_comparison_latest.json"
+DEFAULT_GROUPED_ALLOCATOR = (
+    FOLLOWUP_ROOT
+    / "portfolio_incumbent_autoresearch_grouped"
+    / "three_way_market_regime_allocator_current"
+    / "three_way_market_regime_allocator_latest.json"
+)
+DEFAULT_GROUPED_STRICT_VALIDATION = (
+    FOLLOWUP_ROOT
+    / "portfolio_incumbent_autoresearch_grouped"
+    / "grouped_allocator_strict_leverage_validation_current"
+    / "grouped_allocator_strict_leverage_validation_latest.json"
+)
+DEFAULT_GROUPED_STATIC_BLEND = (
+    FOLLOWUP_ROOT
+    / "portfolio_incumbent_autoresearch_grouped"
+    / "grouped_incumbent_autoresearch_static_blend_latest.json"
+)
+DEFAULT_PORTFOLIO_SUPERIORITY_META = (
+    FOLLOWUP_ROOT
+    / "portfolio_superiority_meta_search_current"
+    / "portfolio_superiority_meta_portfolio_latest.json"
+)
 DEFAULT_BACKBONE_TRIPLET = FOLLOWUP_ROOT / "portfolio_backbone_triplet_search_latest.json"
 DEFAULT_ANCHORED_COMPARISON = FOLLOWUP_ROOT / "portfolio_four_sleeve_comparison_latest.json"
 DEFAULT_OUTPUT_JSON = FOLLOWUP_ROOT / "portfolio_max_performance_decision_latest.json"
@@ -38,11 +65,14 @@ PROMOTION_FORMULA = (
     "(1.0 * oos_sharpe) + (0.35 * oos_sortino) + (0.10 * oos_calmar) + "
     "(10.0 * oos_total_return) - (4.0 * oos_max_drawdown) - (0.75 * oos_volatility)"
 )
-PROMOTION_THRESHOLDS = {
-    "promotion_score_delta_min": 0.10,
-    "promotion_score_delta_with_drawdown_relief_min": 0.25,
-    "require_positive_total_return_delta": True,
-    "drawdown_relief_required": True,
+PROMOTION_THRESHOLDS = dict(ROBUST_PROMOTION_GATES)
+_REJECTION_REASON_LABELS = {
+    "train_total_return_non_positive": "train total return did not stay above 0",
+    "val_total_return_non_positive": "validation total return did not stay above 0",
+    "train_sharpe_below_floor": "train Sharpe fell below -0.10",
+    "oos_total_return_not_above_incumbent": "locked OOS total return did not beat the incumbent",
+    "oos_monthly_mean_below_floor": "locked OOS monthly mean stayed below 2%",
+    "oos_drawdown_worse_without_sharpe_relief": "drawdown worsened without a 0.50 Sharpe relief",
 }
 
 
@@ -173,6 +203,98 @@ def _extract_weights(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return []
 
 
+def _grouped_allocator_weights(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    current = dict(payload.get("current_state") or {})
+    weights = dict(current.get("weights") or {})
+    if not weights:
+        return []
+    return [
+        {
+            "candidate_id": str(name),
+            "name": str(name),
+            "weight": _safe_float(value, 0.0),
+        }
+        for name, value in weights.items()
+        if _safe_float(value, 0.0) > 0.0
+    ]
+
+
+def _strict_liquidation_total(strict_payload: dict[str, Any]) -> int:
+    validation = dict((strict_payload.get("strict_allocator") or {}).get("state_leverage_validation") or {})
+    counts = dict(validation.get("liquidation_counts") or {})
+    return int(sum(int(value) for value in counts.values()))
+
+
+def _strict_grouped_allocator_entry(
+    *,
+    grouped_allocator_path: Path,
+    grouped_payload: dict[str, Any],
+    strict_validation_path: Path | None,
+    strict_validation_payload: dict[str, Any] | None,
+) -> dict[str, Any]:
+    current_state = dict(grouped_payload.get("current_state") or {})
+    state_summary = dict(grouped_payload.get("state_summary") or {})
+    notes = [
+        "Grouped three-way allocator challenger over incumbent / blend_85_15 / autoresearch_55_45.",
+        (
+            "Current state="
+            f"{current_state.get('state')} raw_target={current_state.get('raw_target_state')} "
+            f"confidence={_safe_float(current_state.get('confidence'), 0.0):.4f}"
+        ),
+        (
+            "State usage oos="
+            f"{json.dumps(dict((state_summary.get('oos') or {}).get('counts') or {}), sort_keys=True)}"
+        ),
+    ]
+
+    payload_for_entry = dict(grouped_payload)
+    artifact_path = grouped_allocator_path
+    selection_basis = str(
+        grouped_payload.get("selection_basis") or "grouped_three_way_market_regime_allocator"
+    )
+    source_artifact_kind = "portfolio_incumbent_autoresearch_grouped.three_way_market_regime_allocator"
+
+    if strict_validation_payload is not None:
+        strict_allocator = dict(strict_validation_payload.get("strict_allocator") or {})
+        if strict_allocator:
+            payload_for_entry = dict(strict_allocator)
+            payload_for_entry["weights"] = _grouped_allocator_weights(strict_allocator)
+            payload_for_entry["artifact_kind"] = str(
+                strict_validation_payload.get("artifact_kind") or payload_for_entry.get("artifact_kind") or "grouped_allocator_strict_validation"
+            )
+            artifact_path = strict_validation_path or grouped_allocator_path
+            selection_basis = "strict_grouped_allocator_state_leverage_validation"
+            source_artifact_kind = "portfolio_incumbent_autoresearch_grouped.grouped_allocator_strict_leverage_validation"
+            notes.append(
+                "Decision metrics are sourced from the strict grouped allocator validation artifact, not the proxy allocator artifact."
+            )
+            notes.append(
+                f"Strict leverage_by_state={json.dumps(dict(strict_validation_payload.get('leverage_by_state') or {}), sort_keys=True)}"
+            )
+            notes.append(
+                f"Strict liquidation_count={_strict_liquidation_total(strict_validation_payload)}"
+            )
+
+    entry = _artifact_entry(
+        candidate_key="grouped_three_way_market_regime_allocator",
+        label="Grouped three-way allocator challenger",
+        artifact_path=artifact_path,
+        payload=payload_for_entry,
+        source_artifact_kind=source_artifact_kind,
+        selection_basis=selection_basis,
+        notes=notes,
+    )
+    if strict_validation_payload is not None:
+        entry["strict_validation"] = {
+            "path": str((strict_validation_path or grouped_allocator_path).resolve()),
+            "leverage_by_state": dict(strict_validation_payload.get("leverage_by_state") or {}),
+            "comparison_vs_promoted_challenger": dict(strict_validation_payload.get("comparison_vs_promoted_challenger") or {}),
+            "state_leverage_validation": dict((strict_validation_payload.get("strict_allocator") or {}).get("state_leverage_validation") or {}),
+            "split_metrics": dict((strict_validation_payload.get("strict_allocator") or {}).get("split_metrics") or {}),
+        }
+    return entry
+
+
 def _promotion_score(metrics: dict[str, Any]) -> float:
     return (
         (1.0 * _safe_float(metrics.get("sharpe"), 0.0))
@@ -206,6 +328,12 @@ def _artifact_entry(
         "val": dict(split_metrics.get("val") or {}),
         "oos": dict(split_metrics.get("oos") or {}),
         "weights": _extract_weights(payload),
+        "portfolio_return_streams": dict(payload.get("portfolio_return_streams") or {}),
+        "portfolio_daily_return_streams": dict(payload.get("portfolio_daily_return_streams") or {}),
+        "oos_monthly_returns": [
+            dict(row) for row in list(payload.get("oos_monthly_returns") or []) if isinstance(row, dict)
+        ],
+        "validation_objective": payload.get("validation_objective"),
         "notes": list(notes or []),
     }
 
@@ -221,23 +349,46 @@ def _normalized_notes(value: Any) -> list[str]:
 
 def _challenger_reason(entry: dict[str, Any]) -> str:
     if entry.get("promotable"):
-        if _safe_float(entry.get("oos_total_return_delta"), 0.0) > 0.0:
-            return "Promotable because promotion score and OOS total return both improved over the incumbent."
-        return "Promotable because promotion score improved materially while OOS max drawdown declined."
+        return (
+            "Promotable because it cleared the train/validation robustness gates, beat the "
+            "incumbent on locked OOS return, and satisfied the drawdown-or-sharpe relief rule."
+        )
 
-    reasons: list[str] = []
-    if (
-        _safe_float(entry.get("promotion_score_delta"), 0.0)
-        <= PROMOTION_THRESHOLDS["promotion_score_delta_min"]
-    ):
-        reasons.append("promotion score improvement did not clear the base threshold")
-    if _safe_float(entry.get("oos_total_return_delta"), 0.0) <= 0.0:
-        reasons.append("OOS total return did not improve")
-    if _safe_float(entry.get("oos_max_drawdown_delta"), 0.0) >= 0.0:
-        reasons.append("OOS max drawdown did not improve")
+    reasons = [
+        _REJECTION_REASON_LABELS.get(reason, str(reason).replace("_", " "))
+        for reason in list(entry.get("rejection_reasons") or [])
+    ]
     if not reasons:
         reasons.append("incumbent tie policy kept the current one-shot leader")
     return "; ".join(reasons)
+
+
+def _strict_grouped_gate_failures(
+    *,
+    entry: dict[str, Any],
+    incumbent_oos: dict[str, Any],
+) -> list[str]:
+    strict = dict(entry.get("strict_validation") or {})
+    metrics = dict(strict.get("split_metrics") or {})
+    if not metrics:
+        return []
+
+    failures: list[str] = []
+    train = dict(metrics.get("train") or {})
+    val = dict(metrics.get("val") or {})
+    oos = dict(metrics.get("oos") or {})
+    liquidation_counts = dict((strict.get("state_leverage_validation") or {}).get("liquidation_counts") or {})
+    total_liquidations = int(sum(int(value) for value in liquidation_counts.values()))
+
+    if _safe_float(train.get("total_return"), 0.0) <= 0.0:
+        failures.append("strict train total return is not positive")
+    if _safe_float(val.get("total_return"), 0.0) <= 0.0:
+        failures.append("strict validation total return is not positive")
+    if total_liquidations > 0:
+        failures.append(f"strict leverage replay recorded {total_liquidations} liquidations")
+    if _safe_float(oos.get("sharpe"), 0.0) < _safe_float(incumbent_oos.get("sharpe"), 0.0):
+        failures.append("strict OOS sharpe does not beat the incumbent")
+    return failures
 
 
 def _decorate_vs_incumbent(
@@ -263,36 +414,19 @@ def _decorate_vs_incumbent(
         oos = dict(entry.get("oos") or {})
         score = _promotion_score(oos)
         score_delta = score - incumbent_score
-        total_return_delta = _safe_float(
-            oos.get("total_return", oos.get("return")), 0.0
-        ) - _safe_float(
-            incumbent_oos.get("total_return", incumbent_oos.get("return")),
-            0.0,
-        )
-        max_drawdown_delta = _safe_float(
-            oos.get("max_drawdown", oos.get("mdd")), 0.0
-        ) - _safe_float(
-            incumbent_oos.get("max_drawdown", incumbent_oos.get("mdd")),
-            0.0,
-        )
-        sharpe_delta = _safe_float(oos.get("sharpe"), 0.0) - _safe_float(
-            incumbent_oos.get("sharpe"), 0.0
-        )
-        promotable = (
-            score_delta > PROMOTION_THRESHOLDS["promotion_score_delta_min"]
-            and total_return_delta > 0.0
-        ) or (
-            score_delta > PROMOTION_THRESHOLDS["promotion_score_delta_with_drawdown_relief_min"]
-            and total_return_delta > 0.0
-            and max_drawdown_delta < 0.0
-        )
+        gate_result = evaluate_robustness_gates(entry, incumbent)
         entry["promotion_score"] = score
         entry["promotion_score_delta"] = score_delta
-        entry["oos_total_return_delta"] = total_return_delta
-        entry["oos_max_drawdown_delta"] = max_drawdown_delta
-        entry["oos_sharpe_delta"] = sharpe_delta
-        entry["promotable"] = promotable
+        entry.update(gate_result)
+        gate_failures = _strict_grouped_gate_failures(entry=entry, incumbent_oos=incumbent_oos)
+        entry["strict_gate_failures"] = list(gate_failures)
+        entry["promotable"] = bool(entry.get("promotable") and not gate_failures)
         entry["decision_reason"] = _challenger_reason(entry)
+        if gate_failures:
+            entry["decision_reason"] = (
+                f"{entry['decision_reason']}; strict gate rejected candidate because "
+                + "; ".join(gate_failures)
+            )
         decorated.append(entry)
     return decorated, incumbent
 
@@ -305,6 +439,10 @@ def build_portfolio_max_performance_decision(
     dynamic_comparison_path: Path | str = DEFAULT_DYNAMIC_COMPARISON,
     overlay_comparison_path: Path | str = DEFAULT_OVERLAY_COMPARISON,
     regime_switch_comparison_path: Path | str = DEFAULT_REGIME_SWITCH_COMPARISON,
+    grouped_allocator_path: Path | str | None = None,
+    grouped_strict_validation_path: Path | str | None = DEFAULT_GROUPED_STRICT_VALIDATION,
+    grouped_static_blend_path: Path | str | None = DEFAULT_GROUPED_STATIC_BLEND,
+    portfolio_superiority_meta_path: Path | str | None = DEFAULT_PORTFOLIO_SUPERIORITY_META,
     backbone_triplet_path: Path | str = DEFAULT_BACKBONE_TRIPLET,
     anchored_comparison_path: Path | str = DEFAULT_ANCHORED_COMPARISON,
     anchored_tuned_comparison_path: Path | str | None = None,
@@ -340,6 +478,7 @@ def build_portfolio_max_performance_decision(
         "incumbent_portfolio": str(resolved_incumbent_portfolio_path),
     }
     missing_artifacts: list[str] = []
+    fallback_retune_required = False
 
     tuned_path = Path(tuned_comparison_path)
     if tuned_path.exists():
@@ -470,6 +609,109 @@ def build_portfolio_max_performance_decision(
     else:
         missing_artifacts.append(str(regime_switch_path.resolve()))
 
+    grouped_allocator = Path(grouped_allocator_path) if grouped_allocator_path is not None else None
+    grouped_strict_validation = (
+        Path(grouped_strict_validation_path)
+        if grouped_strict_validation_path is not None
+        else None
+    )
+    if grouped_allocator is not None and grouped_allocator.exists():
+        grouped_payload = _load_json(grouped_allocator)
+        supporting_artifacts["portfolio_incumbent_autoresearch_grouped_allocator"] = str(
+            grouped_allocator.resolve()
+        )
+        strict_validation_payload = None
+        if grouped_strict_validation is not None and grouped_strict_validation.exists():
+            strict_validation_payload = _load_json(grouped_strict_validation)
+            supporting_artifacts["portfolio_incumbent_autoresearch_grouped_strict_validation"] = str(
+                grouped_strict_validation.resolve()
+            )
+        elif grouped_strict_validation is not None:
+            missing_artifacts.append(str(grouped_strict_validation.resolve()))
+        entries.append(
+            _strict_grouped_allocator_entry(
+                grouped_allocator_path=grouped_allocator,
+                grouped_payload=grouped_payload,
+                strict_validation_path=grouped_strict_validation,
+                strict_validation_payload=strict_validation_payload,
+            )
+        )
+    elif grouped_allocator is not None:
+        missing_artifacts.append(str(grouped_allocator.resolve()))
+
+    grouped_static_blend = (
+        Path(grouped_static_blend_path)
+        if grouped_static_blend_path is not None
+        else None
+    )
+    if grouped_static_blend is not None and grouped_static_blend.exists():
+        grouped_static_blend_payload = _load_json(grouped_static_blend)
+        supporting_artifacts["portfolio_incumbent_autoresearch_grouped_static_blend"] = str(
+            grouped_static_blend.resolve()
+        )
+        entries.append(
+            _artifact_entry(
+                candidate_key="incumbent_autoresearch_static_blend",
+                label="Incumbent/55-45 static blend challenger",
+                artifact_path=grouped_static_blend,
+                payload=grouped_static_blend_payload,
+                source_artifact_kind="portfolio_incumbent_autoresearch_grouped.grouped_static_blend",
+                selection_basis=str(
+                    grouped_static_blend_payload.get("selection_basis")
+                    or "validation_only_static_group_blend"
+                ),
+                notes=[
+                    "Static blend between the current incumbent and the autoresearch 55/45 sleeve.",
+                    (
+                        "Blend weights="
+                        f"{json.dumps(dict(grouped_static_blend_payload.get('best_weights') or {}), sort_keys=True)}"
+                    ),
+                ],
+            )
+        )
+    elif grouped_static_blend is not None:
+        missing_artifacts.append(str(grouped_static_blend.resolve()))
+
+    portfolio_superiority_meta = (
+        Path(portfolio_superiority_meta_path)
+        if portfolio_superiority_meta_path is not None
+        else None
+    )
+    if portfolio_superiority_meta is not None and portfolio_superiority_meta.exists():
+        portfolio_superiority_meta_payload = _load_json(portfolio_superiority_meta)
+        supporting_artifacts["portfolio_superiority_meta_search"] = str(
+            portfolio_superiority_meta.resolve()
+        )
+        fallback_retune_required = bool(
+            portfolio_superiority_meta_payload.get("fallback_retune_required")
+        )
+        entries.append(
+            _artifact_entry(
+                candidate_key="portfolio_superiority_meta_portfolio",
+                label="Robust meta-portfolio challenger",
+                artifact_path=portfolio_superiority_meta,
+                payload=portfolio_superiority_meta_payload,
+                source_artifact_kind="portfolio_superiority_meta_search.portfolio_superiority_meta_portfolio",
+                selection_basis=str(
+                    portfolio_superiority_meta_payload.get("selection_basis")
+                    or "validation_objective_then_locked_oos_robust_promotion"
+                ),
+                notes=[
+                    "Deduped saved-stream meta-portfolio challenger with explicit robustness gates.",
+                    (
+                        "Weights="
+                        f"{json.dumps({str((row or {}).get('candidate_id') or (row or {}).get('name')): _safe_float((row or {}).get('weight'), 0.0) for row in list(portfolio_superiority_meta_payload.get('weights') or []) if isinstance(row, dict)}, sort_keys=True)}"
+                    ),
+                    (
+                        "Universe="
+                        f"{portfolio_superiority_meta_payload.get('universe')}"
+                    ),
+                ],
+            )
+        )
+    elif portfolio_superiority_meta is not None:
+        missing_artifacts.append(str(portfolio_superiority_meta.resolve()))
+
     anchored_candidates = [
         anchored_comparison_path,
         anchored_tuned_comparison_path,
@@ -549,8 +791,12 @@ def build_portfolio_max_performance_decision(
     else:
         winner = incumbent
         winner_status = "retained_incumbent"
-        winner_reason = "No challenger cleared the locked-OOS promotion rule; keep the current one-shot incumbent."
-        recommended_action = "Retain the incumbent and continue with cleanup, evidence collation, and reproducibility hardening."
+        winner_reason = (
+            "No challenger cleared the locked-OOS robustness gates; keep the current one-shot incumbent."
+        )
+        recommended_action = (
+            "Retain the incumbent and continue with cleanup, evidence collation, and reproducibility hardening."
+        )
 
     challenger_rankings = [
         {
@@ -571,13 +817,14 @@ def build_portfolio_max_performance_decision(
         "generated_at": datetime.now(UTC).isoformat(),
         "artifact_kind": "portfolio_max_performance_decision",
         "schema_version": "1.0",
-        "selection_basis": "locked_oos_promotion_score",
+        "selection_basis": "locked_oos_robustness_gates",
         "split_contract": split_contract,
         "promotion_formula": PROMOTION_FORMULA,
         "promotion_thresholds": PROMOTION_THRESHOLDS,
         "comparison_scope": [entry.get("candidate_key") for entry in decorated],
         "supporting_artifacts": supporting_artifacts,
         "missing_artifacts": missing_artifacts,
+        "fallback_retune_required": fallback_retune_required,
         "incumbent_bundle_path": str(resolved_incumbent_bundle_path),
         "incumbent_components": [
             {
@@ -606,7 +853,8 @@ def build_portfolio_max_performance_decision(
         "notes": [
             "Promotion uses locked-OOS metrics only after each challenger artifact is frozen.",
             f"Locked OOS starts at {split_contract['oos_start']} and remains excluded from tuning decisions.",
-            "If thresholds are not clearly exceeded, incumbent tie policy keeps the current one-shot leader.",
+            "A challenger is promotable only if train/validation returns stay positive, train Sharpe stays above -0.10, locked OOS beats the incumbent, locked OOS monthly mean stays above 2%, and drawdown is no worse unless Sharpe improves by at least 0.50.",
+            f"Fallback retune required: {fallback_retune_required}.",
         ],
     }
     return payload
@@ -620,6 +868,10 @@ def write_portfolio_max_performance_decision(
     dynamic_comparison_path: Path | str = DEFAULT_DYNAMIC_COMPARISON,
     overlay_comparison_path: Path | str = DEFAULT_OVERLAY_COMPARISON,
     regime_switch_comparison_path: Path | str = DEFAULT_REGIME_SWITCH_COMPARISON,
+    grouped_allocator_path: Path | str | None = None,
+    grouped_strict_validation_path: Path | str | None = DEFAULT_GROUPED_STRICT_VALIDATION,
+    grouped_static_blend_path: Path | str | None = DEFAULT_GROUPED_STATIC_BLEND,
+    portfolio_superiority_meta_path: Path | str | None = DEFAULT_PORTFOLIO_SUPERIORITY_META,
     backbone_triplet_path: Path | str = DEFAULT_BACKBONE_TRIPLET,
     anchored_comparison_path: Path | str = DEFAULT_ANCHORED_COMPARISON,
     anchored_tuned_comparison_path: Path | str | None = None,
@@ -635,6 +887,10 @@ def write_portfolio_max_performance_decision(
         dynamic_comparison_path=dynamic_comparison_path,
         overlay_comparison_path=overlay_comparison_path,
         regime_switch_comparison_path=regime_switch_comparison_path,
+        grouped_allocator_path=grouped_allocator_path,
+        grouped_strict_validation_path=grouped_strict_validation_path,
+        grouped_static_blend_path=grouped_static_blend_path,
+        portfolio_superiority_meta_path=portfolio_superiority_meta_path,
         backbone_triplet_path=backbone_triplet_path,
         anchored_comparison_path=anchored_comparison_path,
         anchored_tuned_comparison_path=anchored_tuned_comparison_path,
@@ -692,6 +948,10 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dynamic-comparison", default=str(DEFAULT_DYNAMIC_COMPARISON))
     parser.add_argument("--overlay-comparison", default=str(DEFAULT_OVERLAY_COMPARISON))
     parser.add_argument("--regime-switch-comparison", default=str(DEFAULT_REGIME_SWITCH_COMPARISON))
+    parser.add_argument("--grouped-allocator", default=str(DEFAULT_GROUPED_ALLOCATOR))
+    parser.add_argument("--grouped-strict-validation", default=str(DEFAULT_GROUPED_STRICT_VALIDATION))
+    parser.add_argument("--grouped-static-blend", default=str(DEFAULT_GROUPED_STATIC_BLEND))
+    parser.add_argument("--portfolio-superiority-meta", default=str(DEFAULT_PORTFOLIO_SUPERIORITY_META))
     parser.add_argument("--backbone-triplet", default=str(DEFAULT_BACKBONE_TRIPLET))
     parser.add_argument("--anchored-comparison", default=str(DEFAULT_ANCHORED_COMPARISON))
     parser.add_argument("--output-json", default=str(DEFAULT_OUTPUT_JSON))
@@ -708,6 +968,10 @@ def main(argv: list[str] | None = None) -> int:
         dynamic_comparison_path=Path(args.dynamic_comparison).resolve(),
         overlay_comparison_path=Path(args.overlay_comparison).resolve(),
         regime_switch_comparison_path=Path(args.regime_switch_comparison).resolve(),
+        grouped_allocator_path=Path(args.grouped_allocator).resolve(),
+        grouped_strict_validation_path=Path(args.grouped_strict_validation).resolve(),
+        grouped_static_blend_path=Path(args.grouped_static_blend).resolve(),
+        portfolio_superiority_meta_path=Path(args.portfolio_superiority_meta).resolve(),
         backbone_triplet_path=Path(args.backbone_triplet).resolve(),
         anchored_comparison_path=Path(args.anchored_comparison).resolve(),
         output_json_path=Path(args.output_json).resolve(),
