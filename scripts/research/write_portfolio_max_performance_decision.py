@@ -22,6 +22,11 @@ DEFAULT_OVERLAY_COMPARISON = FOLLOWUP_ROOT / "portfolio_overlay_comparison_lates
 DEFAULT_REGIME_SWITCH_COMPARISON = FOLLOWUP_ROOT / "portfolio_regime_switch_comparison_latest.json"
 DEFAULT_BACKBONE_TRIPLET = FOLLOWUP_ROOT / "portfolio_backbone_triplet_search_latest.json"
 DEFAULT_ANCHORED_COMPARISON = FOLLOWUP_ROOT / "portfolio_four_sleeve_comparison_latest.json"
+DEFAULT_META_SEARCH_DIR = FOLLOWUP_ROOT / "portfolio_superiority_meta_search"
+DEFAULT_META_SEARCH_SUMMARIES = (
+    DEFAULT_META_SEARCH_DIR / "u1_raw_basis_summary_latest.json",
+    DEFAULT_META_SEARCH_DIR / "u2_derived_basis_summary_latest.json",
+)
 DEFAULT_OUTPUT_JSON = FOLLOWUP_ROOT / "portfolio_max_performance_decision_latest.json"
 DEFAULT_OUTPUT_MD = FOLLOWUP_ROOT / "portfolio_max_performance_decision_latest.md"
 SPLIT_CONTRACT_PATH = ROOT / "src" / "lumina_quant" / "portfolio_split_contract.py"
@@ -219,6 +224,45 @@ def _normalized_notes(value: Any) -> list[str]:
     return []
 
 
+def _meta_search_entries(summary_paths: tuple[Path, ...]) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    for summary_path in summary_paths:
+        if not summary_path.exists():
+            continue
+        summary_payload = _load_json(summary_path)
+        winner = dict(summary_payload.get("winner") or {})
+        if not winner or not list(winner.get("weights") or []):
+            continue
+        if str(summary_payload.get("winner_status") or "") != "promoted_challenger":
+            continue
+        universe_name = str(summary_payload.get("universe_name") or summary_path.stem)
+        notes = [
+            f"Basis-deduped portfolio-superiority meta-search winner from {universe_name}.",
+            f"Selection basis: {summary_payload.get('selection_basis') or 'validation_objective_then_locked_oos'}",
+        ]
+        rejection_reasons = list(winner.get("rejection_reasons") or [])
+        if rejection_reasons:
+            notes.append(f"Winner rejection reasons: {json.dumps(rejection_reasons)}")
+        entries.append(
+            _artifact_entry(
+                candidate_key=f"portfolio_superiority_meta_{universe_name}",
+                label=f"Portfolio superiority meta search ({universe_name})",
+                artifact_path=summary_path,
+                payload={
+                    **winner,
+                    "artifact_kind": "portfolio_superiority_meta_search_winner",
+                },
+                source_artifact_kind="portfolio_superiority_meta_search.winner",
+                selection_basis=str(
+                    summary_payload.get("selection_basis")
+                    or "validation_objective_then_locked_oos"
+                ),
+                notes=notes,
+            )
+        )
+    return entries
+
+
 def _challenger_reason(entry: dict[str, Any]) -> str:
     if entry.get("promotable"):
         if _safe_float(entry.get("oos_total_return_delta"), 0.0) > 0.0:
@@ -310,6 +354,7 @@ def build_portfolio_max_performance_decision(
     anchored_tuned_comparison_path: Path | str | None = None,
     portfolio_four_sleeve_comparison_path: Path | str | None = None,
     four_sleeve_comparison_path: Path | str | None = None,
+    meta_search_summary_paths: tuple[Path | str, ...] = DEFAULT_META_SEARCH_SUMMARIES,
 ) -> dict[str, Any]:
     resolved_incumbent_bundle_path = _resolve_incumbent_bundle_path(Path(incumbent_bundle_path))
     resolved_incumbent_portfolio_path = _resolve_incumbent_portfolio_path(
@@ -529,6 +574,14 @@ def build_portfolio_max_performance_decision(
     else:
         missing_artifacts.append(str(Path(anchored_comparison_path).resolve()))
 
+    meta_search_paths = tuple(Path(path) for path in meta_search_summary_paths)
+    meta_entries = _meta_search_entries(meta_search_paths)
+    if meta_entries:
+        supporting_artifacts["portfolio_superiority_meta_search"] = [
+            str(path.resolve()) for path in meta_search_paths if path.exists()
+        ]
+        entries.extend(meta_entries)
+
     decorated, incumbent = _decorate_vs_incumbent(entries)
     challengers = [dict(entry) for entry in decorated[1:]]
     promotable = [entry for entry in challengers if bool(entry.get("promotable"))]
@@ -625,6 +678,7 @@ def write_portfolio_max_performance_decision(
     anchored_tuned_comparison_path: Path | str | None = None,
     portfolio_four_sleeve_comparison_path: Path | str | None = None,
     four_sleeve_comparison_path: Path | str | None = None,
+    meta_search_summary_paths: tuple[Path | str, ...] = DEFAULT_META_SEARCH_SUMMARIES,
     output_json_path: Path | str = DEFAULT_OUTPUT_JSON,
     output_md_path: Path | str = DEFAULT_OUTPUT_MD,
 ) -> dict[str, Any]:
@@ -640,6 +694,7 @@ def write_portfolio_max_performance_decision(
         anchored_tuned_comparison_path=anchored_tuned_comparison_path,
         portfolio_four_sleeve_comparison_path=portfolio_four_sleeve_comparison_path,
         four_sleeve_comparison_path=four_sleeve_comparison_path,
+        meta_search_summary_paths=meta_search_summary_paths,
     )
     json_path = Path(output_json_path)
     md_path = Path(output_md_path)
