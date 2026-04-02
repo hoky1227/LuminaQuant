@@ -185,6 +185,52 @@ def _extract_streams(payload: dict[str, Any]) -> dict[str, list[dict[str, Any]]]
                 split: [dict(point) for point in list(block.get(split) or []) if isinstance(point, dict)]
                 for split in ("train", "val", "oos")
             }
+
+    states = list(payload.get("states") or [])
+    if states:
+        rebuilt: dict[str, list[dict[str, Any]]] = {"train": [], "val": [], "oos": []}
+        for row in states:
+            if not isinstance(row, dict):
+                continue
+            split = str(row.get("split_group") or "").strip().lower()
+            if split not in rebuilt:
+                continue
+            token = str(row.get("date") or "")
+            rebuilt[split].append(
+                {
+                    "datetime": token,
+                    "t": token,
+                    "v": _safe_float(row.get("return"), 0.0),
+                }
+            )
+        if any(rebuilt.values()):
+            return rebuilt
+
+    dates = list(payload.get("dates") or [])
+    daily_returns = list(payload.get("daily_returns") or [])
+    if dates and len(dates) == len(daily_returns):
+        rebuilt = {"train": [], "val": [], "oos": []}
+        for raw_dt, raw_ret in zip(dates, daily_returns, strict=False):
+            dt = pd.to_datetime(raw_dt, utc=True, errors="coerce")
+            if pd.isna(dt):
+                continue
+            split = "oos"
+            if hasattr(dt, "date"):
+                try:
+                    from lumina_quant.portfolio_split_contract import split_for_date
+
+                    split = split_for_date(dt.date())
+                except Exception:
+                    split = "oos"
+            rebuilt[split].append(
+                {
+                    "datetime": dt.isoformat(),
+                    "t": float(dt.timestamp() * 1000.0),
+                    "v": _safe_float(raw_ret, 0.0),
+                }
+            )
+        if any(rebuilt.values()):
+            return rebuilt
     raise CandidatePayloadError("candidate payload is missing portfolio_return_streams/combined_streams")
 
 
