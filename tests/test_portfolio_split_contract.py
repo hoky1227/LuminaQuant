@@ -48,6 +48,24 @@ def test_resolve_followup_artifact_path_falls_back_to_latest_worktree(monkeypatc
     assert resolved == newer
 
 
+def test_resolve_followup_artifact_path_uses_generic_worktree_fallback(
+    monkeypatch, tmp_path: Path
+) -> None:
+    repo_root = tmp_path / "repo"
+    target_rel = Path(
+        "var/reports/exact_window_backtests/followup_status/autoresearch_candidate_portfolio_opt/portfolio_optimization_latest.json"
+    )
+    generic = repo_root / ".omx" / "worktrees" / "autoresearch-run" / target_rel
+    generic.parent.mkdir(parents=True, exist_ok=True)
+    generic.write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(contract, "ROOT", repo_root)
+
+    resolved = contract.resolve_followup_artifact_path(target_rel)
+
+    assert resolved == generic.resolve()
+
+
 def test_resolve_current_optimization_path_uses_worktree_fallback(monkeypatch, tmp_path: Path) -> None:
     repo_root = tmp_path / "repo"
     current_opt = (

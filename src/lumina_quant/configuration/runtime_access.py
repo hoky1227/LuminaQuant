@@ -516,6 +516,9 @@ def _backtest_config_values(runtime) -> dict[str, object]:
         "RANDOM_SEED": int(backtest.random_seed),
         "PERSIST_OUTPUT": bool(backtest.persist_output),
         "LEVERAGE": int(backtest.leverage),
+        "MARGIN_MODE": str(getattr(backtest, "margin_mode", "isolated") or "isolated")
+        .strip()
+        .lower(),
         "POLL_SECONDS": poll_seconds,
         "WINDOW_SECONDS": window_seconds,
         "DECISION_CADENCE_SECONDS": decision_cadence_seconds,

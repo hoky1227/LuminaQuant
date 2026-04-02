@@ -113,13 +113,23 @@ class SimulatedExecutionHandler(ExecutionHandler):
                 continue
         self.active_orders = kept
 
-    def _build_protective_orders(self, order: dict[str, Any]) -> list[dict[str, Any]]:
+    def _build_protective_orders(
+        self,
+        order: dict[str, Any],
+        *,
+        fill_price: float | None = None,
+    ) -> list[dict[str, Any]]:
         if bool(order.get("reduce_only", False)):
             return []
 
         stop_loss = order.get("stop_loss")
         take_profit = order.get("take_profit")
-        if stop_loss is None and take_profit is None:
+        trailing_percent = order.get("trailing_percent")
+        if (
+            stop_loss is None
+            and take_profit is None
+            and (trailing_percent is None or float(trailing_percent) <= 0.0)
+        ):
             return []
 
         position_side = order.get("position_side")
@@ -173,6 +183,36 @@ class SimulatedExecutionHandler(ExecutionHandler):
                 }
             )
 
+        if trailing_percent is not None and float(trailing_percent) > 0.0:
+            trailing_value = float(trailing_percent)
+            initial_price = float(fill_price) if fill_price is not None else None
+            trailing_order = {
+                "order_id": self._next_order_id(),
+                "symbol": order.get("symbol"),
+                "type": "TRAIL_STOP",
+                "quantity": quantity,
+                "direction": exit_direction,
+                "position_side": position_side,
+                "reduce_only": True,
+                "client_order_id": f"{order.get('client_order_id')}-TRAIL"
+                if order.get("client_order_id")
+                else None,
+                "is_protective": True,
+                "oco_group": oco_group,
+                "parent_order_id": order.get("order_id"),
+                "trailing_percent": trailing_value,
+                "stop_price": None,
+                "highest_price": None,
+                "lowest_price": None,
+            }
+            if exit_direction == "SELL" and initial_price is not None:
+                trailing_order["highest_price"] = initial_price
+                trailing_order["stop_price"] = initial_price * (1.0 - trailing_value)
+            elif exit_direction == "BUY" and initial_price is not None:
+                trailing_order["lowest_price"] = initial_price
+                trailing_order["stop_price"] = initial_price * (1.0 + trailing_value)
+            out.append(trailing_order)
+
         return out
 
     def execute_order(self, event: Any) -> None:
@@ -204,6 +244,7 @@ class SimulatedExecutionHandler(ExecutionHandler):
                         "client_order_id": event.client_order_id,
                         "stop_loss": event.stop_loss,
                         "take_profit": event.take_profit,
+                        "trailing_percent": event.trailing_percent,
                     }
                 )
 
@@ -311,6 +352,7 @@ class SimulatedExecutionHandler(ExecutionHandler):
                         "client_order_id": order.get("client_order_id"),
                         "stop_loss": order.get("stop_loss"),
                         "take_profit": order.get("take_profit"),
+                        "trailing_percent": order.get("trailing_percent"),
                     }
                     remainder_orders.append(remainder_order)
 
@@ -352,6 +394,20 @@ class SimulatedExecutionHandler(ExecutionHandler):
 
                     if bar_low <= order["stop_price"]:
                         exec_price = order["stop_price"]
+                        if bar_open < exec_price:
+                            exec_price = bar_open
+                        triggered = True
+                elif order["direction"] == "BUY":
+                    if order["lowest_price"] is None or bar_low < order["lowest_price"]:
+                        order["lowest_price"] = bar_low
+                        order["stop_price"] = order["lowest_price"] * (
+                            1.0 + order["trailing_percent"]
+                        )
+
+                    if bar_high >= order["stop_price"]:
+                        exec_price = order["stop_price"]
+                        if bar_open > exec_price:
+                            exec_price = bar_open
                         triggered = True
 
             if triggered and exec_price is not None:
@@ -379,7 +435,9 @@ class SimulatedExecutionHandler(ExecutionHandler):
                 self.events.put(fill_event)
 
                 if order.get("type") == "MKT":
-                    remainder_orders.extend(self._build_protective_orders(order))
+                    remainder_orders.extend(
+                        self._build_protective_orders(order, fill_price=fill_price)
+                    )
 
                 if bool(order.get("reduce_only", False)):
                     closed_positions.add(

@@ -147,12 +147,22 @@ def resolve_followup_artifact_path(path: str | Path) -> Path:
     if not omx_root.exists():
         return repo_candidate
 
-    fallback_matches = sorted(
-        (
-            matched
-            for matched in omx_root.glob(f"team/*/worktrees/*/{candidate.as_posix()}")
-            if matched.exists()
-        ),
+    fallback_matches: list[Path] = []
+    seen: set[Path] = set()
+    for pattern in (
+        f"worktrees/*/{candidate.as_posix()}",
+        f"manual-worktrees/*/{candidate.as_posix()}",
+        f"team/*/worktrees/*/{candidate.as_posix()}",
+    ):
+        for matched in omx_root.glob(pattern):
+            if not matched.exists():
+                continue
+            resolved = matched.resolve()
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            fallback_matches.append(resolved)
+    fallback_matches.sort(
         key=lambda matched: (matched.stat().st_mtime_ns, matched.as_posix()),
         reverse=True,
     )

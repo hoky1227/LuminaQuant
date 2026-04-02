@@ -104,6 +104,70 @@ class TestExecutionProtectiveOrders(unittest.TestCase):
         self.assertEqual(stop_fill.status, "FILLED")
         self.assertEqual(len(self.handler.active_orders), 0)
 
+    def test_trailing_stop_bracket_fills_for_long_position(self):
+        self.handler.execute_order(
+            OrderEvent(
+                symbol=self.symbol,
+                order_type="MKT",
+                quantity=1.0,
+                direction="BUY",
+                position_side="LONG",
+                trailing_percent=0.01,
+            )
+        )
+
+        self._push_market(self.t0, 100.0, 100.2, 99.8, 100.1)
+        first_fill = self.events.get_nowait()
+        self.assertEqual(first_fill.direction, "BUY")
+
+        self.assertEqual(len(self.handler.active_orders), 1)
+        trail = self.handler.active_orders[0]
+        self.assertEqual(trail["type"], "TRAIL_STOP")
+        self.assertAlmostEqual(float(trail["stop_price"]), 99.0)
+
+        self._push_market(self.t0 + timedelta(seconds=1), 100.2, 105.0, 104.0, 104.5)
+        trail = self.handler.active_orders[0]
+        self.assertAlmostEqual(float(trail["highest_price"]), 105.0)
+        self.assertAlmostEqual(float(trail["stop_price"]), 103.95)
+
+        self._push_market(self.t0 + timedelta(seconds=2), 104.0, 104.2, 103.0, 103.2)
+        stop_fill = self.events.get_nowait()
+        self.assertEqual(stop_fill.direction, "SELL")
+        self.assertEqual(stop_fill.status, "FILLED")
+        self.assertEqual(len(self.handler.active_orders), 0)
+
+    def test_trailing_stop_bracket_fills_for_short_position(self):
+        self.handler.execute_order(
+            OrderEvent(
+                symbol=self.symbol,
+                order_type="MKT",
+                quantity=1.0,
+                direction="SELL",
+                position_side="SHORT",
+                trailing_percent=0.02,
+            )
+        )
+
+        self._push_market(self.t0, 100.0, 100.2, 99.8, 100.1)
+        first_fill = self.events.get_nowait()
+        self.assertEqual(first_fill.direction, "SELL")
+
+        self.assertEqual(len(self.handler.active_orders), 1)
+        trail = self.handler.active_orders[0]
+        self.assertEqual(trail["type"], "TRAIL_STOP")
+        self.assertAlmostEqual(float(trail["stop_price"]), 102.0)
+
+        self._push_market(self.t0 + timedelta(seconds=1), 99.5, 96.0, 95.0, 95.5)
+        trail = self.handler.active_orders[0]
+        self.assertAlmostEqual(float(trail["lowest_price"]), 95.0)
+        self.assertAlmostEqual(float(trail["stop_price"]), 96.9)
+
+        self._push_market(self.t0 + timedelta(seconds=2), 96.5, 97.5, 96.4, 97.2)
+        stop_fill = self.events.get_nowait()
+        self.assertEqual(stop_fill.direction, "BUY")
+        self.assertEqual(stop_fill.status, "FILLED")
+        self.assertEqual(len(self.handler.active_orders), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

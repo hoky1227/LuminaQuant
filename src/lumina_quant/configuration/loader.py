@@ -583,6 +583,9 @@ def _normalize_live_runtime_section(runtime: RuntimeConfig, live_raw: dict[str, 
 def _normalize_backtest_runtime_section(runtime: RuntimeConfig, backtest_raw: dict[str, Any]) -> None:
     runtime.backtest.random_seed = _as_int(runtime.backtest.random_seed, 42)
     runtime.backtest.leverage = _as_int(runtime.backtest.leverage, 3)
+    runtime.backtest.margin_mode = str(
+        getattr(runtime.backtest, "margin_mode", "isolated") or "isolated"
+    ).strip().lower()
     runtime.backtest.data_source = str(
         getattr(runtime.backtest, "data_source", "auto") or "auto"
     ).strip().lower()

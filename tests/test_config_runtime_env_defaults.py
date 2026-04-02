@@ -137,6 +137,7 @@ def test_config_module_keeps_runtime_alias_fields_in_sync(tmp_path, monkeypatch)
         config_module.BacktestConfig.BACKTEST_POLL_SECONDS
         == config_module.BacktestConfig.POLL_SECONDS
     )
+    assert config_module.BacktestConfig.MARGIN_MODE == "isolated"
     assert config_module.LiveConfig.EXCHANGE_ID == "binance"
     assert config_module.LiveConfig.LEVERAGE == 2
 

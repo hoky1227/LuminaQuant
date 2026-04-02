@@ -6,6 +6,7 @@ import textwrap
 import unittest
 
 from lumina_quant.configuration.loader import build_runtime_config, load_runtime_config
+from lumina_quant.configuration.validate import validate_runtime_config
 
 
 class TestRuntimeConfigLoader(unittest.TestCase):
@@ -162,6 +163,7 @@ class TestRuntimeConfigLoader(unittest.TestCase):
             env["LQ__BACKTEST__DECISION_CADENCE_SECONDS"] = "15"
             env["LQ__BACKTEST__POLL_SECONDS"] = "21"
             env["LQ__BACKTEST__WINDOW_SECONDS"] = "22"
+            env["LQ__BACKTEST__MARGIN_MODE"] = "isolated"
             env["LQ__EXECUTION__GPU_MODE"] = "gpu"
             env["LQ__EXECUTION__GPU_VRAM_GB"] = "6.5"
             env["LQ__STORAGE__COLLECTOR_BOOTSTRAP_LOOKBACK_HOURS"] = "36"
@@ -173,6 +175,7 @@ class TestRuntimeConfigLoader(unittest.TestCase):
             self.assertFalse(runtime.backtest.skip_ahead_enabled)
             self.assertEqual(runtime.backtest.decision_cadence_seconds, 15)
             self.assertEqual(runtime.backtest.backtest_decision_seconds, 15)
+            self.assertEqual(runtime.backtest.margin_mode, "isolated")
             self.assertEqual(runtime.backtest.poll_seconds, 21)
             self.assertEqual(runtime.backtest.backtest_poll_seconds, 21)
             self.assertEqual(runtime.backtest.window_seconds, 22)
@@ -232,6 +235,34 @@ class TestRuntimeConfigLoader(unittest.TestCase):
             )
             self.assertEqual(runtime.execution.gpu_mode, "gpu")
             self.assertEqual(runtime.execution.compute_backend, "gpu")
+        finally:
+            os.remove(path)
+
+    def test_backtest_margin_mode_rejects_cross_until_cross_liquidation_model_exists(self):
+        yaml_text = textwrap.dedent(
+            """
+            trading:
+              symbols: ["BTC/USDT"]
+            backtest:
+              margin_mode: "cross"
+            live:
+              mode: "paper"
+              exchange:
+                driver: "binance_futures"
+                name: "binance"
+                market_type: "future"
+                position_mode: "HEDGE"
+                margin_mode: "isolated"
+                leverage: 2
+            """
+        ).strip()
+        with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False, encoding="utf-8") as fp:
+            fp.write(yaml_text)
+            path = fp.name
+        try:
+            runtime = load_runtime_config(config_path=path, env=os.environ)
+            with self.assertRaisesRegex(ValueError, "backtest.margin_mode"):
+                validate_runtime_config(runtime)
         finally:
             os.remove(path)
 

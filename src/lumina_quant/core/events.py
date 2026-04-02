@@ -69,6 +69,7 @@ class SignalEvent(Event):
     client_order_id: str | None = None
     time_in_force: str | None = None
     metadata: dict[str, Any] | None = None
+    trailing_percent: float | None = None
     timestamp_ns: int | None = None
     sequence: int | None = None
     type: str = "SIGNAL"

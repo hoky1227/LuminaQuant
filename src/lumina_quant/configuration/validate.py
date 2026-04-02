@@ -241,6 +241,10 @@ def _validate_backtest_runtime_invariants(runtime: RuntimeConfig) -> None:
         raise ValueError("backtest.sortino_target_annual must be > -1.0.")
     if runtime.backtest.leverage < 1 or runtime.backtest.leverage > 20:
         raise ValueError("backtest.leverage must be in range [1, 20].")
+    if str(getattr(runtime.backtest, "margin_mode", "isolated")).strip().lower() != "isolated":
+        raise ValueError(
+            "backtest.margin_mode currently supports isolated only because liquidation modeling is isolated-mode based."
+        )
     if int(getattr(runtime.backtest, "poll_seconds", 1)) < 1:
         raise ValueError("backtest.poll_seconds must be >= 1.")
     if int(getattr(runtime.backtest, "window_seconds", 20)) < 1:

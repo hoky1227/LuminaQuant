@@ -42,12 +42,14 @@ class TestPortfolioSizing(unittest.TestCase):
             datetime=datetime(2026, 1, 1),
             signal_type="LONG",
             stop_loss=99.0,
+            trailing_percent=0.02,
         )
         order = p.generate_order_from_signal(signal)
         self.assertIsNotNone(order)
         self.assertGreater(order.quantity, 0.0)
         self.assertEqual(order.direction, "BUY")
         self.assertEqual(order.position_side, "LONG")
+        self.assertAlmostEqual(float(order.trailing_percent), 0.02)
 
 
 if __name__ == "__main__":

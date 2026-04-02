@@ -16,6 +16,7 @@ import pandas as pd
 from lumina_quant.portfolio_split_contract import (
     FOLLOWUP_ROOT,
     resolve_current_optimization_path,
+    resolve_followup_artifact_path,
     resolve_incumbent_bundle_path,
 )
 
@@ -121,6 +122,44 @@ def _candidate_list_from_any_json(path: Path) -> list[dict[str, Any]]:
     return []
 
 
+def _matches_candidate_row(
+    row: dict[str, Any],
+    *,
+    candidate_id: str,
+    candidate_name: str,
+) -> bool:
+    row_id, row_name = _candidate_key(row)
+    return bool(candidate_id and row_id == candidate_id) or bool(candidate_name and row_name == candidate_name)
+
+
+def _resolve_candidate_from_strict_cache(
+    *,
+    candidate_id: str,
+    candidate_name: str,
+) -> dict[str, Any] | None:
+    cache_dir = Path(_validation.DEFAULT_STRICT_VALIDATION_CACHE_DIR).expanduser().resolve()
+    if not cache_dir.exists():
+        return None
+    cache_paths = sorted(
+        cache_dir.glob("*.json"),
+        key=lambda path: (path.stat().st_mtime_ns, path.as_posix()),
+        reverse=True,
+    )
+    for cache_path in cache_paths:
+        payload = _validation._load_strict_validation_cache(cache_path)
+        if not isinstance(payload, dict):
+            continue
+        for row in list(payload.get("candidates") or []):
+            if not isinstance(row, dict):
+                continue
+            if _matches_candidate_row(row, candidate_id=candidate_id, candidate_name=candidate_name):
+                resolved = dict(row)
+                resolved.setdefault("source_path", str(cache_path))
+                resolved.setdefault("artifact_path", str(cache_path))
+                return resolved
+    return None
+
+
 def _portfolio_oos_end(payload: dict[str, Any]) -> datetime:
     streams = dict(payload.get("portfolio_return_streams") or {})
     oos_stream = list(streams.get("oos") or [])
@@ -138,18 +177,27 @@ def _candidate_key(candidate: dict[str, Any]) -> tuple[str, str]:
 
 
 def _resolve_candidate_from_source_component(component: dict[str, Any]) -> dict[str, Any]:
-    artifact_path = Path(str(component.get("artifact_path") or "")).expanduser().resolve()
-    rows = _candidate_list_from_any_json(artifact_path)
     candidate_id = str(component.get("candidate_id") or "").strip()
     candidate_name = str(component.get("name") or "").strip()
-    for row in rows:
-        row_id, row_name = _candidate_key(row)
-        if candidate_id and row_id == candidate_id:
-            return dict(row)
-        if candidate_name and row_name == candidate_name:
-            return dict(row)
+    raw_artifact_path = str(component.get("artifact_path") or "").strip()
+    artifact_path = resolve_followup_artifact_path(raw_artifact_path) if raw_artifact_path else Path()
+    if raw_artifact_path and artifact_path.exists():
+        rows = _candidate_list_from_any_json(artifact_path)
+        for row in rows:
+            if _matches_candidate_row(row, candidate_id=candidate_id, candidate_name=candidate_name):
+                return dict(row)
+
+    cached = _resolve_candidate_from_strict_cache(
+        candidate_id=candidate_id,
+        candidate_name=candidate_name,
+    )
+    if cached is not None:
+        return cached
     label = candidate_id or candidate_name or artifact_path.name
-    raise RuntimeError(f"unable to resolve candidate {label} from {artifact_path}")
+    source_label = raw_artifact_path or str(artifact_path) or "<missing-artifact-path>"
+    raise RuntimeError(
+        f"unable to resolve candidate {label} from {source_label} or strict validation cache"
+    )
 
 
 def _resolve_portfolio_candidates(*, bundle_payload: dict[str, Any] | None = None, portfolio_payload: dict[str, Any]) -> list[dict[str, Any]]:

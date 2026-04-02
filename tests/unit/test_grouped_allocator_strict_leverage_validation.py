@@ -53,6 +53,49 @@ def test_resolve_portfolio_candidates_uses_source_components(tmp_path: Path) -> 
     assert resolved[0]["params"]["lookback"] == 20
 
 
+def test_resolve_portfolio_candidates_falls_back_to_strict_cache(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    cache_dir = tmp_path / "strict_validation_cache"
+    cache_dir.mkdir(parents=True)
+    cache_path = cache_dir / "cached.json"
+    cache_path.write_text(
+        json.dumps(
+            {
+                "candidates": [
+                    {
+                        "candidate_id": "cand-2",
+                        "name": "beta",
+                        "strategy_timeframe": "1h",
+                        "symbols": ["ETH/USDT"],
+                        "params": {"lookback": 48, "leverage": 3},
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(MODULE._validation, "DEFAULT_STRICT_VALIDATION_CACHE_DIR", cache_dir)
+
+    portfolio_payload = {
+        "source_components": [
+            {
+                "candidate_id": "cand-2",
+                "name": "beta",
+                "artifact_path": str(tmp_path / "missing.json"),
+            }
+        ]
+    }
+
+    resolved = MODULE._resolve_portfolio_candidates(portfolio_payload=portfolio_payload)
+
+    assert len(resolved) == 1
+    assert resolved[0]["candidate_id"] == "cand-2"
+    assert resolved[0]["params"]["lookback"] == 48
+    assert resolved[0]["params"]["leverage"] == 3
+
+
 def test_apply_group_leverage_adds_root_and_param_fields() -> None:
     candidates = [
         {

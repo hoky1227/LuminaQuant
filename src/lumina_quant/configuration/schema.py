@@ -130,6 +130,7 @@ class BacktestRuntimeConfig:
     random_seed: int = 42
     persist_output: bool = True
     leverage: int = 3
+    margin_mode: str = "isolated"
     poll_seconds: int = 20
     window_seconds: int = 20
     decision_cadence_seconds: int = 20

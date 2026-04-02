@@ -484,6 +484,10 @@ class Portfolio:
 
     def _check_liquidations(self, latest_datetime):
         leverage = max(1, int(getattr(self.config, "LEVERAGE", 1)))
+        configured_margin_mode = str(
+            getattr(self.config, "MARGIN_MODE", "isolated") or "isolated"
+        ).strip().lower()
+        modeled_margin_mode = "isolated"
         mmr = float(getattr(self.config, "MAINTENANCE_MARGIN_RATE", 0.005))
         liq_buffer = float(getattr(self.config, "LIQUIDATION_BUFFER_RATE", 0.0))
         if leverage <= 1:
@@ -567,6 +571,8 @@ class Portfolio:
                     "bar_low": bar_low,
                     "close_price": close_price,
                     "leverage": leverage,
+                    "configured_margin_mode": configured_margin_mode,
+                    "modeled_margin_mode": modeled_margin_mode,
                 },
             )
             self.events.put(fill_event)
@@ -578,6 +584,8 @@ class Portfolio:
                     "entry_price": entry_price,
                     "liquidation_price": liq_price,
                     "close_price": close_price,
+                    "configured_margin_mode": configured_margin_mode,
+                    "modeled_margin_mode": modeled_margin_mode,
                 }
             )
             self._pending_liquidation.add(symbol)
@@ -714,6 +722,7 @@ class Portfolio:
                 client_order_id=signal.client_order_id,
                 stop_loss=signal.stop_loss,
                 take_profit=signal.take_profit,
+                trailing_percent=signal.trailing_percent,
                 time_in_force=signal.time_in_force,
                 metadata=signal.metadata,
             )
@@ -732,6 +741,7 @@ class Portfolio:
                 client_order_id=signal.client_order_id,
                 stop_loss=signal.stop_loss,
                 take_profit=signal.take_profit,
+                trailing_percent=signal.trailing_percent,
                 time_in_force=signal.time_in_force,
                 metadata=signal.metadata,
             )
