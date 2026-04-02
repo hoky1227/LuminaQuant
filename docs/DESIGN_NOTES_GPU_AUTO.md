@@ -52,7 +52,7 @@ and `ON CONFLICT DO UPDATE` to prevent duplicate semantic rows during retries/re
 - use `LQ_GPU_MODE=auto` when you want opportunistic fallback semantics on shared/mixed hardware
 - use `LQ_GPU_MODE=forced-gpu` only when GPU availability is guaranteed
 - install GPU runtime extras before enabling GPU mode:
-  - `uv sync --extra gpu` (includes `cudf-polars-cu12` and `nvidia-nvjitlink-cu12`)
+- `uv sync --extra gpu` (pins `cudf-polars-cu12>=26.2,<26.3` and includes `nvidia-nvjitlink-cu12`)
 - run determinism tests after any pipeline/grouping change
 
 ## CI Design

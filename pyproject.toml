@@ -54,7 +54,7 @@ all = [
     "matplotlib>=3.8.0",
 ]
 gpu = [
-    "cudf-polars-cu12>=25.8.0; platform_system == 'Linux' and platform_machine == 'x86_64'",
+    "cudf-polars-cu12>=26.2,<26.3; platform_system == 'Linux' and platform_machine == 'x86_64'",
     "nvidia-nvjitlink-cu12>=12; platform_system == 'Linux' and platform_machine == 'x86_64'",
 ]
 dashboard = [

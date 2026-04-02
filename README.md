@@ -66,7 +66,7 @@ Current local-first stack defaults:
 ### Prerequisites
 - Python 3.11 to 3.13
 - [uv](https://docs.astral.sh/uv/) for dependency/runtime management
-- [Polars](https://pola.rs/) pinned to `polars>=1.35.2,<1.36` (for stable GPU adapter behavior)
+- [Polars](https://pola.rs/) pinned to `polars>=1.35.2,<1.36` and GPU extra pinned to `cudf-polars-cu12>=26.2,<26.3` (validated RAPIDS line for current CI/runtime contract)
 - [Talib](https://github.com/TA-Lib/ta-lib-python) (for technical indicators)
 
 ### Environment Variables

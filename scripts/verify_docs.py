@@ -17,10 +17,12 @@ SKIP_PREFIXES = ("http://", "https://", "mailto:", "tel:", "data:", "#")
 REQUIRED_SNIPPETS = {
     ROOT / "README.md": [
         "polars>=1.35.2,<1.36",
+        "cudf-polars-cu12>=26.2,<26.3",
         "uv sync --extra gpu",
     ],
     ROOT / "README_KR.md": [
         "polars>=1.35.2,<1.36",
+        "cudf-polars-cu12>=26.2,<26.3",
         "uv sync --extra gpu",
     ],
 }
