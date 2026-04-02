@@ -21,14 +21,31 @@
 - Prefer committed repo artifacts over `.omx` worktree copies whenever both exist.
 - Only fall back to `.omx/team/*/worktrees/*/...` when the repo-root artifact is absent.
 - Keep session-memory lease paths rooted under repo `var/reports/...`, not worker-local temporary paths.
+- Treat the leader-root manual worktree path as canonical for shared-artifact inspection when it exposes
+  `var/reports/exact_window_backtests/followup_status` as a symlink into the real repo artifact store.
+- Worker-local `.omx/plans/*.md` and `.omx/worktrees` may be absent; use the leader-root `.omx/plans/...`
+  and `.omx/team/<team>/worktrees/...` paths for plan/isolation checks when they are not mirrored locally.
 - Avoid concurrent heavy follow-up runs while validating push readiness; the shared lease/lock is the intended isolation boundary.
+
+## Minimal isolation inspection commands
+
+```bash
+leader_root=/home/hoky/Quants-agent/LuminaQuant/.omx/manual-worktrees/portfolio-superiority-8gb-moonshot-20260402T1025Z
+
+stat -c '%N' \
+  "$leader_root/var/reports/exact_window_backtests/followup_status" \
+  var/reports/exact_window_backtests/followup_status
+
+test -e .omx/worktrees && stat -c '%N' .omx/worktrees || echo '.omx/worktrees missing in worker worktree'
+ls -ld "$leader_root/.omx/team/execute-the-approved-plan-in-o/worktrees"
+```
 
 ## Targeted verification commands
 
 ```bash
-uv run ruff check tests/test_portfolio_split_contract.py
+uv run --extra dev ruff check tests/test_portfolio_split_contract.py
 
-uv run pytest -q \
+uv run --extra dev pytest -q \
   tests/test_portfolio_split_contract.py \
   tests/test_exact_window_runtime.py \
   tests/test_portfolio_followup_memory_guard.py \
