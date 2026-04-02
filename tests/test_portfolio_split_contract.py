@@ -5,6 +5,28 @@ from pathlib import Path
 from lumina_quant import portfolio_split_contract as contract
 
 
+def test_resolve_followup_artifact_path_prefers_repo_artifact_over_worktree_copy(
+    monkeypatch, tmp_path: Path
+) -> None:
+    repo_root = tmp_path / "repo"
+    target_rel = Path(
+        "var/reports/exact_window_backtests/followup_status/portfolio_one_shot_current_opt/portfolio_optimization_latest.json"
+    )
+    repo_target = repo_root / target_rel
+    worktree_target = repo_root / ".omx" / "team" / "demo" / "worktrees" / "worker-9" / target_rel
+    repo_target.parent.mkdir(parents=True, exist_ok=True)
+    worktree_target.parent.mkdir(parents=True, exist_ok=True)
+    repo_target.write_text("repo", encoding="utf-8")
+    worktree_target.write_text("worktree", encoding="utf-8")
+    worktree_target.touch()
+
+    monkeypatch.setattr(contract, "ROOT", repo_root)
+
+    resolved = contract.resolve_followup_artifact_path(target_rel)
+
+    assert resolved == repo_target
+
+
 def test_resolve_followup_artifact_path_falls_back_to_latest_worktree(monkeypatch, tmp_path: Path) -> None:
     repo_root = tmp_path / "repo"
     target_rel = Path(
