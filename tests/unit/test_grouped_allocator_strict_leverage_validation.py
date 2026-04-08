@@ -136,6 +136,39 @@ def test_apply_candidate_level_leverage_to_rows_transforms_streams() -> None:
     assert leveraged[0]["metadata"]["candidate_level_leverage"] == 3
 
 
+def test_apply_candidate_level_leverage_preserves_epoch_millisecond_timestamps() -> None:
+    rows = [
+        {
+            "candidate_id": "cand-epoch-ms",
+            "name": "epoch-ms",
+            "params": {"leverage": 2},
+            "return_streams": {
+                "train": [
+                    {"t": 1735689600000, "v": 0.01},
+                    {"t": 1735776000000, "v": -0.02},
+                ],
+                "val": [],
+                "oos": [],
+            },
+        }
+    ]
+
+    leveraged, _ = MODULE._apply_candidate_level_leverage_to_rows(rows)
+    train_stream = leveraged[0]["return_streams"]["train"]
+
+    assert train_stream[0]["datetime"].startswith("2025-01-01T00:00:00")
+    assert train_stream[1]["datetime"].startswith("2025-01-02T00:00:00")
+
+    evaluation = MODULE._validation.evaluate_saved_weight_portfolio(
+        [{**leveraged[0], "_saved_weight": 1.0}]
+    )
+    daily_train = evaluation["portfolio_daily_return_streams"]["train"]
+
+    assert len(daily_train) == 2
+    assert daily_train[0]["datetime"].startswith("2025-01-01T00:00:00")
+    assert daily_train[1]["datetime"].startswith("2025-01-02T00:00:00")
+
+
 def test_build_blend_payload_combines_group_streams() -> None:
     incumbent_payload = {
         "source_portfolio_path": "/tmp/incumbent.json",

@@ -3562,6 +3562,281 @@ def _topcap_residualized_rows(
     return residualized
 
 
+def _cross_sectional_score_map(values: Mapping[str, float]) -> dict[str, float]:
+    finite = {
+        str(symbol): float(value)
+        for symbol, value in values.items()
+        if np.isfinite(float(value))
+    }
+    out = {str(symbol): 0.0 for symbol in values}
+    if len(finite) < 2:
+        return out
+    arr = np.asarray(list(finite.values()), dtype=float)
+    std = _safe_std(arr)
+    if not np.isfinite(std) or std <= 1e-12:
+        return out
+    mean_value = _safe_mean(arr)
+    for symbol, value in finite.items():
+        out[symbol] = float((value - mean_value) / std)
+    return out
+
+
+@dataclass(frozen=True, slots=True)
+class _CarryTrendFactorRotationConfig:
+    lookback_bars: int
+    rebalance_bars: int
+    signal_threshold: float
+    stop_loss_pct: float
+    take_profit_pct: float
+    max_longs: int
+    max_shorts: int
+    min_price: float
+    btc_regime_ma: int
+    benchmark_drawdown_window: int
+    benchmark_drawdown_limit: float
+    vol_window: int
+    crowding_window: int
+    trend_weight: float
+    carry_weight: float
+    defensive_weight: float
+    crowding_weight: float
+    allow_short: bool
+    btc_symbol: str
+
+
+def _resolve_carry_trend_factor_rotation_config(
+    params: Mapping[str, Any],
+    symbols: Sequence[str],
+) -> _CarryTrendFactorRotationConfig:
+    return _CarryTrendFactorRotationConfig(
+        lookback_bars=max(4, int(params.get("lookback_bars", 24))),
+        rebalance_bars=max(1, int(params.get("rebalance_bars", 8))),
+        signal_threshold=max(0.0, float(params.get("signal_threshold", 0.25))),
+        stop_loss_pct=max(0.0, float(params.get("stop_loss_pct", 0.05))),
+        take_profit_pct=max(0.0, float(params.get("take_profit_pct", 0.0))),
+        max_longs=max(0, int(params.get("max_longs", 3))),
+        max_shorts=max(0, int(params.get("max_shorts", 2))),
+        min_price=max(0.0, float(params.get("min_price", 0.10))),
+        btc_regime_ma=max(0, int(params.get("btc_regime_ma", 72))),
+        benchmark_drawdown_window=max(0, int(params.get("benchmark_drawdown_window", 0))),
+        benchmark_drawdown_limit=max(0.0, float(params.get("benchmark_drawdown_limit", 0.0))),
+        vol_window=max(4, int(params.get("vol_window", 48))),
+        crowding_window=max(12, int(params.get("crowding_window", 72))),
+        trend_weight=float(params.get("trend_weight", 0.55)),
+        carry_weight=float(params.get("carry_weight", 0.20)),
+        defensive_weight=float(params.get("defensive_weight", 0.15)),
+        crowding_weight=float(params.get("crowding_weight", 0.10)),
+        allow_short=bool(params.get("allow_short", True)),
+        btc_symbol=_resolve_strategy_anchor_symbol(
+            params.get("btc_symbol"),
+            symbols,
+            default="BTC/USDT",
+        ),
+    )
+
+
+def _carry_trend_factor_rows(
+    *,
+    close_by_symbol: Mapping[str, np.ndarray],
+    realized_vol_by_symbol: Mapping[str, np.ndarray],
+    crowding_support_by_symbol: Mapping[str, dict[str, np.ndarray]],
+    symbols: Sequence[str],
+    idx: int,
+    config: _CarryTrendFactorRotationConfig,
+) -> list[tuple[float, str]]:
+    raw_momentum: dict[str, float] = {}
+    raw_carry: dict[str, float] = {}
+    raw_defensive: dict[str, float] = {}
+    raw_crowding: dict[str, float] = {}
+
+    for symbol in symbols:
+        close_arr = close_by_symbol[symbol]
+        latest = float(close_arr[idx])
+        base = float(close_arr[idx - config.lookback_bars])
+        if latest < config.min_price or base <= 0.0 or not np.isfinite(latest) or not np.isfinite(base):
+            continue
+
+        raw_momentum[symbol] = float((latest / base) - 1.0)
+        realized_vol = float(realized_vol_by_symbol[symbol][idx])
+        raw_defensive[symbol] = float(-realized_vol) if np.isfinite(realized_vol) else 0.0
+
+        support = crowding_support_by_symbol.get(symbol) or {}
+        if support:
+            funding_series = support.get("funding_z")
+            basis_series = support.get("basis_z")
+            crowding_series = support.get("crowding_score")
+            funding_z = float(funding_series[idx]) if funding_series is not None else 0.0
+            basis_z = float(basis_series[idx]) if basis_series is not None else 0.0
+            crowding_score = float(crowding_series[idx]) if crowding_series is not None else 0.0
+        else:
+            funding_z = 0.0
+            basis_z = 0.0
+            crowding_score = 0.0
+        raw_carry[symbol] = float(-(funding_z + (0.5 * basis_z))) if np.isfinite(funding_z) or np.isfinite(basis_z) else 0.0
+        raw_crowding[symbol] = float(-crowding_score) if np.isfinite(crowding_score) else 0.0
+
+    if not raw_momentum:
+        return []
+
+    momentum_score = _cross_sectional_score_map(raw_momentum)
+    carry_score = _cross_sectional_score_map(raw_carry)
+    defensive_score = _cross_sectional_score_map(raw_defensive)
+    crowding_score = _cross_sectional_score_map(raw_crowding)
+
+    rows = [
+        (
+            float(
+                (config.trend_weight * momentum_score.get(symbol, 0.0))
+                + (config.carry_weight * carry_score.get(symbol, 0.0))
+                + (config.defensive_weight * defensive_score.get(symbol, 0.0))
+                + (config.crowding_weight * crowding_score.get(symbol, 0.0))
+            ),
+            symbol,
+        )
+        for symbol in raw_momentum
+    ]
+    rows.sort(key=lambda item: item[0])
+    return rows
+
+
+def _carry_trend_factor_target_sets(
+    score_rows: list[tuple[float, str]],
+    *,
+    regime: str,
+    config: _CarryTrendFactorRotationConfig,
+) -> tuple[set[str], set[str]]:
+    longs = [symbol for score, symbol in reversed(score_rows) if score >= config.signal_threshold][: config.max_longs]
+    shorts: list[str] = []
+    if config.allow_short:
+        shorts = [symbol for score, symbol in score_rows if score <= -config.signal_threshold][: config.max_shorts]
+    if regime == "RISK_ON":
+        shorts = []
+    elif regime == "RISK_OFF":
+        longs = []
+
+    long_set = set(longs)
+    short_set = {symbol for symbol in shorts if symbol not in long_set}
+    return long_set, short_set
+
+
+def _apply_carry_trend_factor_rotation_strategy(
+    *,
+    params: Mapping[str, Any],
+    aligned: Mapping[str, np.ndarray],
+    symbols: Sequence[str],
+    n: int,
+    exposures: np.ndarray,
+    meta: dict[str, Any],
+) -> None:
+    config = _resolve_carry_trend_factor_rotation_config(params, symbols)
+    close_by_symbol = {
+        symbol: np.asarray(aligned[f"{symbol}:close"], dtype=float)
+        for symbol in symbols
+    }
+    btc_close = close_by_symbol[config.btc_symbol]
+    position_state = np.zeros(len(symbols), dtype=float)
+    entry_price = np.full(len(symbols), np.nan, dtype=float)
+    realized_vol_by_symbol = {
+        symbol: _rolling_realized_vol(close_arr, config.vol_window)
+        for symbol, close_arr in close_by_symbol.items()
+    }
+
+    crowding_support_by_symbol: dict[str, dict[str, np.ndarray]] = {}
+    missing_symbols: list[str] = []
+    for symbol in symbols:
+        support_inputs = _resolve_crowding_support_inputs(aligned=aligned, symbol=symbol)
+        if support_inputs is None:
+            missing_symbols.append(symbol)
+            continue
+        support = _crowding_support_series(
+            funding_rate=support_inputs.funding_rate,
+            open_interest=support_inputs.open_interest,
+            mark_price=support_inputs.mark_price,
+            index_price=support_inputs.index_price,
+            liquidation_long_notional=support_inputs.liquidation_long_notional,
+            liquidation_short_notional=support_inputs.liquidation_short_notional,
+            window=config.crowding_window,
+        )
+        crowding_support_by_symbol[symbol] = support
+        _note_support_data_symbol(meta, symbol=symbol, values=np.asarray(support.get("crowding_score"), dtype=float))
+    _finalize_missing_support_symbols(meta, missing_symbols=missing_symbols)
+
+    topcap_proxy_config = _TopCapTimeSeriesMomentumConfig(
+        lookback_bars=config.lookback_bars,
+        rebalance_bars=config.rebalance_bars,
+        signal_threshold=config.signal_threshold,
+        stop_loss_pct=config.stop_loss_pct,
+        take_profit_pct=config.take_profit_pct,
+        max_longs=config.max_longs,
+        max_shorts=config.max_shorts if config.allow_short else 0,
+        min_price=config.min_price,
+        btc_regime_ma=config.btc_regime_ma,
+        benchmark_drawdown_window=config.benchmark_drawdown_window,
+        benchmark_drawdown_limit=config.benchmark_drawdown_limit,
+        residualize_btc=False,
+        residualize_mean=False,
+        btc_symbol=config.btc_symbol,
+    )
+
+    for idx in range(n):
+        current_close_map = {
+            symbol: float(close_by_symbol[symbol][idx])
+            for symbol in symbols
+        }
+        _apply_topcap_risk_exits(
+            current_close_map=current_close_map,
+            symbols=symbols,
+            position_state=position_state,
+            entry_price=entry_price,
+            config=topcap_proxy_config,
+        )
+
+        if not _topcap_rebalance_due(idx=idx, config=topcap_proxy_config):
+            exposures[:, idx] = position_state
+            continue
+
+        score_rows = _carry_trend_factor_rows(
+            close_by_symbol=close_by_symbol,
+            realized_vol_by_symbol=realized_vol_by_symbol,
+            crowding_support_by_symbol=crowding_support_by_symbol,
+            symbols=symbols,
+            idx=idx,
+            config=config,
+        )
+        regime = _topcap_market_regime(
+            btc_close,
+            idx=idx,
+            config=topcap_proxy_config,
+        )
+        long_set, short_set = _carry_trend_factor_target_sets(
+            score_rows,
+            regime=regime,
+            config=config,
+        )
+        _apply_topcap_target_positions(
+            current_close_map=current_close_map,
+            symbols=symbols,
+            position_state=position_state,
+            entry_price=entry_price,
+            long_set=long_set,
+            short_set=short_set,
+        )
+        exposures[:, idx] = position_state
+
+    meta["cross_sectional"] = True
+    meta["factor_rotation"] = True
+    meta["factor_rotation_strategy"] = "CarryTrendFactorRotationStrategy"
+    meta["trend_weight"] = config.trend_weight
+    meta["carry_weight"] = config.carry_weight
+    meta["defensive_weight"] = config.defensive_weight
+    meta["crowding_weight"] = config.crowding_weight
+    meta["allow_short"] = config.allow_short
+    if config.benchmark_drawdown_window > 0 and config.benchmark_drawdown_limit > 0.0:
+        meta["crash_aware_gate"] = True
+        meta["benchmark_drawdown_window"] = config.benchmark_drawdown_window
+        meta["benchmark_drawdown_limit"] = config.benchmark_drawdown_limit
+
+
 def _topcap_target_sets(
     momentum_rows: list[tuple[float, str]],
     *,
@@ -4598,6 +4873,11 @@ _STRATEGY_SIGNAL_DISPATCHER = StrategySignalDispatcher(
         "LeadLagSpilloverStrategy": _wrap_strategy_handler(_apply_leadlag_spillover_strategy),
         "TopCapTimeSeriesMomentumStrategy": _wrap_strategy_handler(
             _apply_topcap_tsmom_strategy,
+            include_n=True,
+            include_meta=True,
+        ),
+        "CarryTrendFactorRotationStrategy": _wrap_strategy_handler(
+            _apply_carry_trend_factor_rotation_strategy,
             include_n=True,
             include_meta=True,
         ),

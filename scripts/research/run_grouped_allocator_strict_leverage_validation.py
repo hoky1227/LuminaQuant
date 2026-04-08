@@ -279,10 +279,40 @@ def _apply_candidate_level_leverage_to_stream(
     if int(leverage) <= 1 or not list(stream or []):
         return [dict(point) for point in list(stream or []) if isinstance(point, dict)], 0
 
+    def _resolve_point_timestamp(point: dict[str, Any]) -> pd.Timestamp:
+        raw_datetime = point.get("datetime")
+        if isinstance(raw_datetime, str) and raw_datetime.strip():
+            parsed = pd.to_datetime(raw_datetime, utc=True, errors="coerce")
+            if not pd.isna(parsed):
+                return pd.Timestamp(parsed)
+
+        raw_t = point.get("t")
+        if isinstance(raw_t, str) and raw_t.strip():
+            parsed = pd.to_datetime(raw_t, utc=True, errors="coerce")
+            if not pd.isna(parsed):
+                return pd.Timestamp(parsed)
+
+        if raw_t is not None:
+            try:
+                raw_numeric = float(raw_t)
+            except (TypeError, ValueError):
+                raw_numeric = None
+            if raw_numeric is not None:
+                unit = "ms" if abs(raw_numeric) >= 1e12 else "s" if abs(raw_numeric) >= 1e9 else None
+                parsed = (
+                    pd.to_datetime(raw_numeric, unit=unit, utc=True, errors="coerce")
+                    if unit is not None
+                    else pd.to_datetime(raw_numeric, utc=True, errors="coerce")
+                )
+                if not pd.isna(parsed):
+                    return pd.Timestamp(parsed)
+
+        return pd.NaT
+
     frame = pd.DataFrame(
         [
             {
-                "date": pd.to_datetime(point.get("datetime") or point.get("t"), utc=True, errors="coerce"),
+                "date": _resolve_point_timestamp(point),
                 "split_group": "split",
                 "state": str(label),
                 "base_return": float(point.get("v") or 0.0),

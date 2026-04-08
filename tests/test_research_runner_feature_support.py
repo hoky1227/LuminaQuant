@@ -2498,6 +2498,119 @@ def test_apply_topcap_tsmom_strategy_rebalances_only_on_cadence(monkeypatch):
     assert meta["cross_sectional"] is True
 
 
+def test_carry_trend_factor_rotation_strategy_prefers_uncrowded_trend_leaders(monkeypatch):
+    def _stub_crowding_support_series(**kwargs):
+        funding = float(np.asarray(kwargs["funding_rate"], dtype=float)[0])
+        length = len(np.asarray(kwargs["funding_rate"], dtype=float))
+        if funding <= 0.00012:  # ETH: favorable carry, uncrowded
+            return {
+                "crowding_score": np.full(length, -0.8, dtype=float),
+                "funding_z": np.full(length, -1.0, dtype=float),
+                "oi_delta_z": np.zeros(length, dtype=float),
+                "basis_z": np.full(length, -0.4, dtype=float),
+                "liquidation_imbalance_z": np.zeros(length, dtype=float),
+            }
+        if funding <= 0.00045:  # BTC: neutral
+            return {
+                "crowding_score": np.zeros(length, dtype=float),
+                "funding_z": np.zeros(length, dtype=float),
+                "oi_delta_z": np.zeros(length, dtype=float),
+                "basis_z": np.zeros(length, dtype=float),
+                "liquidation_imbalance_z": np.zeros(length, dtype=float),
+            }
+        if funding <= 0.00075:  # BNB: crowded/expensive long
+            return {
+                "crowding_score": np.full(length, 1.1, dtype=float),
+                "funding_z": np.full(length, 1.3, dtype=float),
+                "oi_delta_z": np.zeros(length, dtype=float),
+                "basis_z": np.full(length, 0.8, dtype=float),
+                "liquidation_imbalance_z": np.zeros(length, dtype=float),
+            }
+        # SOL: crowded and negative trend -> short
+        return {
+            "crowding_score": np.full(length, 0.7, dtype=float),
+            "funding_z": np.full(length, 1.1, dtype=float),
+            "oi_delta_z": np.zeros(length, dtype=float),
+            "basis_z": np.full(length, 0.5, dtype=float),
+            "liquidation_imbalance_z": np.zeros(length, dtype=float),
+        }
+
+    monkeypatch.setattr(research_runner, "_crowding_support_series", _stub_crowding_support_series)
+
+    length = 16
+    symbols = ["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT"]
+    close_map = {
+        "BTC/USDT": np.linspace(100.0, 108.0, length, dtype=float),
+        "ETH/USDT": np.linspace(100.0, 126.0, length, dtype=float),
+        "BNB/USDT": np.linspace(100.0, 116.0, length, dtype=float),
+        "SOL/USDT": np.linspace(100.0, 84.0, length, dtype=float),
+    }
+    funding_map = {
+        "BTC/USDT": 0.00030,
+        "ETH/USDT": 0.00010,
+        "BNB/USDT": 0.00060,
+        "SOL/USDT": 0.00100,
+    }
+
+    aligned = {"datetime": _minute_datetimes(length)}
+    for symbol in symbols:
+        close = close_map[symbol]
+        aligned[f"{symbol}:open"] = close - 0.1
+        aligned[f"{symbol}:high"] = close + 0.2
+        aligned[f"{symbol}:low"] = close - 0.2
+        aligned[f"{symbol}:close"] = close
+        aligned[f"{symbol}:volume"] = np.full(length, 120.0, dtype=float)
+        aligned[f"{symbol}:funding_rate"] = np.full(length, funding_map[symbol], dtype=float)
+        aligned[f"{symbol}:open_interest"] = np.linspace(1_000_000.0, 1_100_000.0, length, dtype=float)
+        aligned[f"{symbol}:liquidation_long_notional"] = np.full(length, 100_000.0, dtype=float)
+        aligned[f"{symbol}:liquidation_short_notional"] = np.full(length, 40_000.0, dtype=float)
+        aligned[f"{symbol}:mark_price"] = close * 1.001
+        aligned[f"{symbol}:index_price"] = close
+
+    exposures = np.zeros((len(symbols), length), dtype=float)
+    meta: dict[str, object] = {}
+
+    research_runner._apply_carry_trend_factor_rotation_strategy(
+        params={
+            "lookback_bars": 8,
+            "rebalance_bars": 2,
+            "signal_threshold": 0.10,
+            "stop_loss_pct": 0.0,
+            "take_profit_pct": 0.0,
+            "max_longs": 1,
+            "max_shorts": 1,
+            "min_price": 0.10,
+            "btc_regime_ma": 0,
+            "benchmark_drawdown_window": 0,
+            "benchmark_drawdown_limit": 0.0,
+            "vol_window": 6,
+            "crowding_window": 24,
+            "trend_weight": 0.55,
+            "carry_weight": 0.20,
+            "defensive_weight": 0.15,
+            "crowding_weight": 0.10,
+            "allow_short": True,
+            "btc_symbol": "BTC/USDT",
+        },
+        aligned=aligned,
+        symbols=symbols,
+        n=length,
+        exposures=exposures,
+        meta=meta,
+    )
+
+    turnover = np.sum(np.abs(np.diff(exposures, axis=1)), axis=0, dtype=float)
+
+    assert exposures.shape == (len(symbols), length)
+    assert meta["cross_sectional"] is True
+    assert meta["factor_rotation"] is True
+    assert meta["factor_rotation_strategy"] == "CarryTrendFactorRotationStrategy"
+    assert np.any(turnover > 0.0)
+    assert exposures[symbols.index("ETH/USDT"), -1] == 1.0
+    assert exposures[symbols.index("SOL/USDT"), -1] == -1.0
+    assert exposures[symbols.index("BNB/USDT"), -1] == 0.0
+
+
 def test_regime_breakout_strategy_signal_still_trades_persistent_breakout():
     length = 160
     close = np.linspace(100.0, 170.0, length, dtype=float)

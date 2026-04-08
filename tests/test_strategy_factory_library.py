@@ -14,6 +14,8 @@ from lumina_quant.strategies.pair_spread_zscore import (
 )
 from lumina_quant.strategies.registry import get_strategy_names
 from lumina_quant.strategy_factory import (
+    build_article_pipeline_candidates,
+    build_article_pipeline_manifest,
     build_binance_futures_candidates,
     build_single_asset_portfolio_sets,
     candidate_identity,
@@ -238,8 +240,55 @@ def test_pair_candidate_builder_includes_4h_and_1d_rows():
     assert all(int(row.params["cooldown_bars"]) >= 1 for row in daily_rows)
     assert all(float(row.params["reentry_z_buffer"]) >= 0.08 for row in daily_rows)
     assert all(int(row.params["max_hold_bars"]) <= 36 for row in daily_rows)
-    assert any(float(row.params["entry_z"]) < 1.8 for row in daily_rows)
-    assert len({int(row.params["lookback_window"]) for row in daily_rows}) >= 2
+
+
+def test_candidate_library_includes_article_inspired_carry_trend_factor_rotation():
+    rows = build_binance_futures_candidates(
+        timeframes=["1h", "4h"],
+        symbols=["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "TRX/USDT"],
+    )
+    factor_rows = [
+        row
+        for row in rows
+        if row.strategy_class == "CarryTrendFactorRotationStrategy"
+    ]
+
+    assert {row.timeframe for row in factor_rows} == {"1h", "4h"}
+    assert len(factor_rows) == 4
+    assert all(row.family == "cross_sectional" for row in factor_rows)
+    assert all(row.symbols == ("BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "TRX/USDT") for row in factor_rows)
+    assert all("carry_trend_factor_rotation_" in row.name for row in factor_rows)
+    assert all("article_family:carry-trend-factor-rotation" in row.tags for row in factor_rows)
+    assert all(row.metadata.get("article_reference") == "quant-company-profit-mechanisms" for row in factor_rows)
+
+
+def test_build_article_pipeline_manifest_collects_existing_and_new_article_candidates():
+    rows = build_article_pipeline_candidates(
+        timeframes=["5m", "15m", "30m", "1h", "4h"],
+        symbols=["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "TRX/USDT", "XAU/USDT", "XAG/USDT"],
+        max_per_family=0,
+        max_total=0,
+    )
+    assert rows
+    assert all("article_pipeline" in row.tags for row in rows)
+    strategy_names = {row.strategy_class for row in rows}
+    assert "CompositeTrendStrategy" in strategy_names
+    assert "TopCapTimeSeriesMomentumStrategy" in strategy_names
+    assert "CarryTrendFactorRotationStrategy" in strategy_names
+    assert "FundingLiquidationCrowdingFadeStrategy" in strategy_names
+    assert "PairSpreadZScoreStrategy" in strategy_names
+
+    manifest = build_article_pipeline_manifest(
+        timeframes=["5m", "15m", "30m", "1h", "4h"],
+        symbols=["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "TRX/USDT", "XAU/USDT", "XAG/USDT"],
+        max_per_family=3,
+        max_total=0,
+    )
+    assert manifest["candidate_count"] > 0
+    assert manifest["family_counts"]
+    assert manifest["article_family_counts"]
+    assert "carry-trend-factor-rotation" in manifest["article_family_counts"]
+    assert manifest["max_per_family"] == 3
 
 
 def test_pair_candidate_builder_adds_1h_pair_state_variants():

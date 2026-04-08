@@ -4,6 +4,8 @@ from .candidate_library import (
     DEFAULT_BINANCE_TOP10_PLUS_METALS,
     DEFAULT_TIMEFRAMES,
     StrategyCandidate,
+    build_article_pipeline_candidates,
+    build_article_pipeline_manifest,
     build_binance_futures_candidates,
     build_candidate_manifest,
 )
@@ -38,6 +40,8 @@ __all__ = [
     "StrategyCandidate",
     "StrategySignalDispatcher",
     "allocate_portfolio_weights",
+    "build_article_pipeline_candidates",
+    "build_article_pipeline_manifest",
     "build_binance_futures_candidates",
     "build_candidate_manifest",
     "build_default_candidate_rows",

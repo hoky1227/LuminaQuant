@@ -1141,6 +1141,97 @@ _TOPCAP_TSMOM_SLICE: dict[str, tuple[dict[str, Any], ...]] = {
     ),
 }
 
+_CARRY_TREND_FACTOR_ROTATION_SLICE: dict[str, tuple[dict[str, Any], ...]] = {
+    "1h": (
+        {
+            "variant": "balanced_lo",
+            "lookback_bars": 24,
+            "rebalance_bars": 8,
+            "signal_threshold": 0.20,
+            "stop_loss_pct": 0.06,
+            "max_longs": 3,
+            "max_shorts": 0,
+            "min_price": 0.10,
+            "btc_regime_ma": 72,
+            "btc_symbol": "BTC/USDT",
+            "benchmark_drawdown_window": 48,
+            "benchmark_drawdown_limit": 0.08,
+            "vol_window": 48,
+            "crowding_window": 72,
+            "trend_weight": 0.55,
+            "carry_weight": 0.20,
+            "defensive_weight": 0.15,
+            "crowding_weight": 0.10,
+            "allow_short": False,
+        },
+        {
+            "variant": "guarded_ls",
+            "lookback_bars": 32,
+            "rebalance_bars": 8,
+            "signal_threshold": 0.15,
+            "stop_loss_pct": 0.05,
+            "max_longs": 2,
+            "max_shorts": 2,
+            "min_price": 0.10,
+            "btc_regime_ma": 96,
+            "btc_symbol": "BTC/USDT",
+            "benchmark_drawdown_window": 72,
+            "benchmark_drawdown_limit": 0.10,
+            "vol_window": 72,
+            "crowding_window": 96,
+            "trend_weight": 0.45,
+            "carry_weight": 0.20,
+            "defensive_weight": 0.20,
+            "crowding_weight": 0.15,
+            "allow_short": True,
+        },
+    ),
+    "4h": (
+        {
+            "variant": "balanced_lo",
+            "lookback_bars": 12,
+            "rebalance_bars": 3,
+            "signal_threshold": 0.20,
+            "stop_loss_pct": 0.07,
+            "max_longs": 2,
+            "max_shorts": 0,
+            "min_price": 0.10,
+            "btc_regime_ma": 24,
+            "btc_symbol": "BTC/USDT",
+            "benchmark_drawdown_window": 18,
+            "benchmark_drawdown_limit": 0.10,
+            "vol_window": 24,
+            "crowding_window": 36,
+            "trend_weight": 0.50,
+            "carry_weight": 0.20,
+            "defensive_weight": 0.20,
+            "crowding_weight": 0.10,
+            "allow_short": False,
+        },
+        {
+            "variant": "carry_guarded_ls",
+            "lookback_bars": 16,
+            "rebalance_bars": 4,
+            "signal_threshold": 0.15,
+            "stop_loss_pct": 0.06,
+            "max_longs": 2,
+            "max_shorts": 1,
+            "min_price": 0.10,
+            "btc_regime_ma": 24,
+            "btc_symbol": "BTC/USDT",
+            "benchmark_drawdown_window": 18,
+            "benchmark_drawdown_limit": 0.10,
+            "vol_window": 24,
+            "crowding_window": 36,
+            "trend_weight": 0.40,
+            "carry_weight": 0.25,
+            "defensive_weight": 0.20,
+            "crowding_weight": 0.15,
+            "allow_short": True,
+        },
+    ),
+}
+
 _ALPHA101_SIGNAL_SLICE: dict[str, tuple[dict[str, Any], ...]] = {
     "1h": (
         {
@@ -1368,6 +1459,8 @@ def _article_pipeline_family_ids(
         return ("metals-lag-convergence",) if symbol_set.intersection(_METALS) else ()
     if strategy_token == "TopCapTimeSeriesMomentumStrategy":
         return ("topcap-rotation-relative-momentum",)
+    if strategy_token == "CarryTrendFactorRotationStrategy":
+        return ("carry-trend-factor-rotation",)
     if strategy_token == "Alpha101FormulaStrategy":
         return ("formulaic-alpha101-research",)
     if strategy_token in {"RollingBreakoutStrategy", "RegimeBreakoutCandidateStrategy"}:
@@ -2187,8 +2280,55 @@ def _build_cross_sectional_rotation_candidates(ctx: _CandidateBuildContext) -> N
                         "residualize_mean": bool(spec.get("residualize_mean", False)),
                         "benchmark_drawdown_window": int(spec.get("benchmark_drawdown_window", 0) or 0),
                         "benchmark_drawdown_limit": float(spec.get("benchmark_drawdown_limit", 0.0) or 0.0),
-                },
-            )
+                    },
+                )
+
+            for spec in _CARRY_TREND_FACTOR_ROTATION_SLICE.get(timeframe, ()):
+                params = {
+                    "lookback_bars": int(spec["lookback_bars"]),
+                    "rebalance_bars": int(spec["rebalance_bars"]),
+                    "signal_threshold": float(spec["signal_threshold"]),
+                    "stop_loss_pct": float(spec["stop_loss_pct"]),
+                    "max_longs": int(spec["max_longs"]),
+                    "max_shorts": int(spec["max_shorts"]),
+                    "min_price": float(spec["min_price"]),
+                    "btc_regime_ma": int(spec["btc_regime_ma"]),
+                    "btc_symbol": str(spec["btc_symbol"]),
+                    "benchmark_drawdown_window": int(spec["benchmark_drawdown_window"]),
+                    "benchmark_drawdown_limit": float(spec["benchmark_drawdown_limit"]),
+                    "vol_window": int(spec["vol_window"]),
+                    "crowding_window": int(spec["crowding_window"]),
+                    "trend_weight": float(spec["trend_weight"]),
+                    "carry_weight": float(spec["carry_weight"]),
+                    "defensive_weight": float(spec["defensive_weight"]),
+                    "crowding_weight": float(spec["crowding_weight"]),
+                    "allow_short": bool(spec["allow_short"]),
+                }
+                _add_candidate(
+                    candidates,
+                    name=(
+                        f"carry_trend_factor_rotation_{tf_tag}_{spec['variant']}_"
+                        f"{int(spec['lookback_bars'])}_{int(spec['rebalance_bars'])}_{float(spec['signal_threshold']):.3f}"
+                    ),
+                    family="cross_sectional",
+                    strategy_class="CarryTrendFactorRotationStrategy",
+                    timeframe=timeframe,
+                    symbols=crypto_symbols,
+                    params=params,
+                    notes=(
+                        "Article-inspired factor rotation that combines trend persistence, carry/crowding pressure, "
+                        f"and defensive volatility scaling for {timeframe} ({spec['variant']})."
+                    ),
+                    tags=("cross_sectional", "factor", "carry", "momentum", "defensive", "crypto"),
+                    metadata={
+                        "timeframe": timeframe,
+                        "retune_profile": str(spec["variant"]),
+                        "symbol_scope": "crypto",
+                        "allow_short": bool(spec["allow_short"]),
+                        "data_dependent": True,
+                        "article_reference": "quant-company-profit-mechanisms",
+                    },
+                )
 
     if len(crypto_symbols) >= 4:
         for timeframe in residual_basket_tfs:
@@ -2719,6 +2859,39 @@ def build_binance_futures_candidates(
         normalized_symbols=normalized_symbols,
     ).build()
 
+
+def build_article_pipeline_candidates(
+    *,
+    timeframes: Sequence[str] = ("5m", "15m", "30m", "1h", "4h"),
+    symbols: Sequence[str] = DEFAULT_BINANCE_TOP10_PLUS_METALS,
+    max_per_family: int = 0,
+    max_total: int = 0,
+) -> list[StrategyCandidate]:
+    """Build only candidates tagged for the article-driven research pipeline.
+
+    Defaults deliberately exclude the 1s micro sleeve and 1d long-horizon sweep so
+    the resulting manifest remains lightweight for low-memory sequential research.
+    """
+    rows = build_binance_futures_candidates(timeframes=timeframes, symbols=symbols)
+    article_rows = [row for row in rows if "article_pipeline" in row.tags]
+    article_rows.sort(key=lambda row: (row.family, row.timeframe, row.strategy_class, row.name))
+
+    if max_per_family > 0:
+        family_counts: dict[str, int] = {}
+        limited_rows: list[StrategyCandidate] = []
+        for row in article_rows:
+            count = family_counts.get(row.family, 0)
+            if count >= max_per_family:
+                continue
+            family_counts[row.family] = count + 1
+            limited_rows.append(row)
+        article_rows = limited_rows
+
+    if max_total > 0:
+        article_rows = article_rows[: max(1, int(max_total))]
+    return article_rows
+
+
 def build_candidate_manifest(
     *,
     timeframes: Sequence[str] = DEFAULT_TIMEFRAMES,
@@ -2755,5 +2928,54 @@ def build_candidate_manifest(
         "family_counts": family_counts,
         "strategy_counts": strategy_counts,
         "timeframe_counts": timeframe_counts,
+        "candidates": [candidate.to_dict() for candidate in candidates],
+    }
+
+
+def build_article_pipeline_manifest(
+    *,
+    timeframes: Sequence[str] = ("5m", "15m", "30m", "1h", "4h"),
+    symbols: Sequence[str] = DEFAULT_BINANCE_TOP10_PLUS_METALS,
+    max_per_family: int = 0,
+    max_total: int = 0,
+) -> dict[str, Any]:
+    normalized_symbols = tuple(canonicalize_symbol_list(symbols))
+    normalized_timeframes = tuple(
+        normalize_strategy_timeframes(
+            list(timeframes),
+            required=CANONICAL_STRATEGY_TIMEFRAMES,
+            strict_subset=True,
+        )
+    )
+    candidates = build_article_pipeline_candidates(
+        timeframes=normalized_timeframes,
+        symbols=normalized_symbols,
+        max_per_family=max_per_family,
+        max_total=max_total,
+    )
+
+    family_counts: dict[str, int] = {}
+    strategy_counts: dict[str, int] = {}
+    timeframe_counts: dict[str, int] = {}
+    article_family_counts: dict[str, int] = {}
+    for candidate in candidates:
+        family_counts[candidate.family] = family_counts.get(candidate.family, 0) + 1
+        strategy_counts[candidate.strategy_class] = strategy_counts.get(candidate.strategy_class, 0) + 1
+        timeframe_counts[candidate.timeframe] = timeframe_counts.get(candidate.timeframe, 0) + 1
+        for family_id in list(candidate.metadata.get("article_pipeline_family_ids") or []):
+            token = str(family_id)
+            article_family_counts[token] = article_family_counts.get(token, 0) + 1
+
+    return {
+        "generated_at": datetime.now(UTC).isoformat(),
+        "symbol_universe": list(normalized_symbols),
+        "timeframes": list(normalized_timeframes),
+        "candidate_count": len(candidates),
+        "family_counts": family_counts,
+        "strategy_counts": strategy_counts,
+        "timeframe_counts": timeframe_counts,
+        "article_family_counts": article_family_counts,
+        "max_per_family": int(max_per_family),
+        "max_total": int(max_total),
         "candidates": [candidate.to_dict() for candidate in candidates],
     }
