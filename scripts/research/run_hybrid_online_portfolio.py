@@ -71,6 +71,7 @@ PAIR_NAME = "pair_spread_1h_exec_tightstop_tp_fastexit_bnbusdt_trxusdt_2.5_0.75"
 @dataclass(slots=True)
 class HybridOnlineConfig:
     variant: str = "fixed_default"
+    warmup_days: int = 182
     lookback_days: int = 13
     default_boost: float = 0.2335751227788591
     sticky_default_bonus: float = 0.09538352712472187
@@ -422,7 +423,8 @@ def run_hybrid_online_allocator(
 
     for idx, day_key in enumerate(ordered_days):
         split = _DYN._split_index(day_key)
-        if idx < config.lookback_days:
+        warmup_days = max(int(config.warmup_days), int(config.lookback_days))
+        if idx < warmup_days:
             weights = {default_id: 1.0} if default_id != "risk_off_cash" else {}
             cash_weight = 0.0 if weights else 1.0
             raw_scores = {cid: 0.0 for cid in ids if cid != "risk_off_cash"}

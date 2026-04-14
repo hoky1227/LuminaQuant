@@ -75,7 +75,7 @@ def test_hybrid_online_allocator_uses_cash_fallback_when_all_non_cash_scores_are
     ]
     result = MODULE.run_hybrid_online_allocator(
         rows,
-        config=MODULE.HybridOnlineConfig(lookback_days=5),
+        config=MODULE.HybridOnlineConfig(warmup_days=5, lookback_days=5),
         refreshed_health_metrics={
             "soft_three_way_regime": {"total_return": -0.02, "sharpe": -2.0},
             "balanced_overlay_80_20": {"total_return": -0.01, "sharpe": -1.0},
@@ -96,7 +96,7 @@ def test_hybrid_online_allocator_enforces_pair_cap() -> None:
     ]
     result = MODULE.run_hybrid_online_allocator(
         rows,
-        config=MODULE.HybridOnlineConfig(lookback_days=5, pair_weight_cap=0.3, min_positive_score=0.0),
+        config=MODULE.HybridOnlineConfig(warmup_days=5, lookback_days=5, pair_weight_cap=0.3, min_positive_score=0.0),
         refreshed_health_metrics={
             "soft_three_way_regime": {"total_return": -0.02, "sharpe": -2.0},
             "balanced_overlay_80_20": {"total_return": -0.01, "sharpe": -1.0},
@@ -117,12 +117,29 @@ def test_hybrid_online_allocator_warmup_defaults_to_soft() -> None:
     ]
     result = MODULE.run_hybrid_online_allocator(
         rows,
-        config=MODULE.HybridOnlineConfig(lookback_days=5, use_current_health_priors=False),
+        config=MODULE.HybridOnlineConfig(warmup_days=5, lookback_days=5, use_current_health_priors=False),
         refreshed_health_metrics=None,
     )
     first = result["allocations"][0]
     assert first["default_sleeve"] == "soft_three_way_regime"
     assert first["weights"]["soft_three_way_regime"] == 1.0
+
+
+def test_hybrid_online_allocator_uses_warmup_days_not_just_lookback() -> None:
+    rows = [
+        _row("risk_off_cash", train=[0.0] * 20, val=[0.0] * 2, oos=[0.0]),
+        _row("soft_three_way_regime", train=[0.01] * 20, val=[0.01] * 2, oos=[0.01]),
+        _row("balanced_overlay_80_20", train=[0.02] * 20, val=[0.02] * 2, oos=[0.02]),
+        _row("pair_tactical_mode", train=[0.0] * 20, val=[0.0] * 2, oos=[0.0], oos_extra={"trade_count": 20.0, "pbo": 0.0}),
+    ]
+    result = MODULE.run_hybrid_online_allocator(
+        rows,
+        config=MODULE.HybridOnlineConfig(warmup_days=10, lookback_days=5, min_positive_score=0.0, use_current_health_priors=False),
+        refreshed_health_metrics=None,
+    )
+    warmup_defaults = [alloc["default_sleeve"] for alloc in result["allocations"][:10]]
+    assert set(warmup_defaults) == {"soft_three_way_regime"}
+    assert result["allocations"][10]["default_sleeve"] in {"soft_three_way_regime", "balanced_overlay_80_20"}
 
 
 def test_hybrid_online_allocator_respects_sticky_default_margin() -> None:
@@ -134,7 +151,7 @@ def test_hybrid_online_allocator_respects_sticky_default_margin() -> None:
     ]
     result = MODULE.run_hybrid_online_allocator(
         rows,
-        config=MODULE.HybridOnlineConfig(lookback_days=5, min_positive_score=0.0, sticky_default_bonus=0.2, switch_margin=0.2, use_current_health_priors=False),
+        config=MODULE.HybridOnlineConfig(warmup_days=5, lookback_days=5, min_positive_score=0.0, sticky_default_bonus=0.2, switch_margin=0.2, use_current_health_priors=False),
         refreshed_health_metrics=None,
     )
     # After warmup, the default should remain sticky to soft_three_way_regime despite a small balanced edge.
@@ -151,7 +168,7 @@ def test_fixed_default_variant_keeps_previous_default_when_positive() -> None:
     ]
     result = MODULE.run_hybrid_online_allocator(
         rows,
-        config=MODULE.HybridOnlineConfig(variant="fixed_default", lookback_days=5, min_positive_score=0.0, use_current_health_priors=False),
+        config=MODULE.HybridOnlineConfig(variant="fixed_default", warmup_days=5, lookback_days=5, min_positive_score=0.0, use_current_health_priors=False),
         refreshed_health_metrics=None,
     )
     later_defaults = [alloc["default_sleeve"] for alloc in result["allocations"][5:10]]
@@ -169,6 +186,7 @@ def test_disagreement_switching_variant_scales_down_active_weights_when_scores_a
         rows,
         config=MODULE.HybridOnlineConfig(
             variant="disagreement_switching",
+            warmup_days=5,
             lookback_days=5,
             min_positive_score=0.0,
             disagreement_threshold=0.5,
