@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from lumina_quant.portfolio_followup_rules import (
+    build_correlation_aware_sparse_fold_ensemble,
+    build_sparse_fold_aware_ensemble,
     build_basis_search_universes,
     build_memory_ledger_row,
     evaluate_robustness_gates,
@@ -11,9 +13,9 @@ from lumina_quant.portfolio_followup_rules import (
 )
 
 
-def _payload(*, train_total_return: float, val_total_return: float, oos_total_return: float, train_sharpe: float, oos_sharpe: float, oos_max_drawdown: float, monthly: list[float]) -> dict[str, object]:
+def _payload(*, train_total_return: float, val_total_return: float, oos_total_return: float, train_sharpe: float, oos_sharpe: float, oos_max_drawdown: float, monthly: list[float], train_trade_count: float = 12.0) -> dict[str, object]:
     return {
-        "train": {"total_return": train_total_return, "sharpe": train_sharpe},
+        "train": {"total_return": train_total_return, "sharpe": train_sharpe, "trade_count": train_trade_count},
         "val": {"total_return": val_total_return, "sharpe": 1.0},
         "oos": {
             "total_return": oos_total_return,
@@ -113,6 +115,33 @@ def test_evaluate_robustness_gates_rejects_negative_train_return() -> None:
     assert "train_total_return_non_positive" in result["rejection_reasons"]
 
 
+def test_evaluate_robustness_gates_rejects_no_trade_train_candidate() -> None:
+    incumbent = _payload(
+        train_total_return=0.02,
+        val_total_return=0.03,
+        oos_total_return=0.05,
+        train_sharpe=0.4,
+        oos_sharpe=1.5,
+        oos_max_drawdown=0.07,
+        monthly=[0.02, 0.02, 0.02],
+    )
+    candidate = _payload(
+        train_total_return=0.0,
+        train_trade_count=0.0,
+        val_total_return=0.04,
+        oos_total_return=0.08,
+        train_sharpe=0.8,
+        oos_sharpe=2.2,
+        oos_max_drawdown=0.04,
+        monthly=[0.02, 0.03, 0.04],
+    )
+
+    result = evaluate_robustness_gates(candidate, incumbent)
+
+    assert result["promotable"] is False
+    assert "train_no_trade" in result["rejection_reasons"]
+
+
 
 def test_memory_ledger_row_round_trips() -> None:
     row = build_memory_ledger_row(
@@ -134,3 +163,126 @@ def test_memory_ledger_row_round_trips() -> None:
     assert parsed["basis_universe"] == "raw_basis"
     assert parsed["one_heavy_lane_only"] is True
     assert parsed["combination_count"] == 10626
+
+
+def test_build_sparse_fold_aware_ensemble_penalizes_sparse_components() -> None:
+    dense = {
+        "name": "dense_candidate",
+        "train": {"total_return": 0.03, "trade_count": 20.0},
+        "val": {"total_return": 0.04, "sharpe": 1.2},
+        "oos": {
+            "total_return": 0.05,
+            "return": 0.05,
+            "sharpe": 2.0,
+            "pbo": 0.20,
+            "active_fold_ratio": 1.0,
+            "inactive_fold_count": 0.0,
+            "failed_fold_ratio": 0.0,
+        },
+        "return_streams": {
+            "train": [{"t": 1, "v": 0.01}, {"t": 2, "v": 0.0}],
+            "val": [{"t": 3, "v": 0.01}, {"t": 4, "v": 0.0}],
+            "oos": [{"t": 5, "v": 0.01}, {"t": 6, "v": 0.0}],
+        },
+    }
+    sparse = {
+        "name": "sparse_candidate",
+        "train": {"total_return": 0.03, "trade_count": 20.0},
+        "val": {"total_return": 0.04, "sharpe": 1.2},
+        "oos": {
+            "total_return": 0.05,
+            "return": 0.05,
+            "sharpe": 2.0,
+            "pbo": 0.20,
+            "active_fold_ratio": 0.5,
+            "inactive_fold_count": 4.0,
+            "failed_fold_ratio": 0.5,
+        },
+        "return_streams": {
+            "train": [{"t": 1, "v": 0.01}, {"t": 2, "v": 0.0}],
+            "val": [{"t": 3, "v": 0.01}, {"t": 4, "v": 0.0}],
+            "oos": [{"t": 5, "v": 0.01}, {"t": 6, "v": 0.0}],
+        },
+    }
+
+    payload = build_sparse_fold_aware_ensemble([dense, sparse], max_members=2)
+
+    components = {row["name"]: row for row in payload["components"]}
+    assert components["dense_candidate"]["weight"] > components["sparse_candidate"]["weight"]
+
+
+def test_correlation_aware_sparse_fold_ensemble_prefers_orthogonal_candidate() -> None:
+    benchmark = {
+        "name": "benchmark",
+        "train": {"total_return": 0.03, "trade_count": 20.0},
+        "val": {"total_return": 0.03, "sharpe": 1.1},
+        "oos": {
+            "total_return": 0.06,
+            "return": 0.06,
+            "sharpe": 3.0,
+            "pbo": 0.20,
+            "turnover": 0.2,
+            "active_fold_ratio": 1.0,
+            "inactive_fold_count": 0.0,
+            "failed_fold_ratio": 0.0,
+        },
+        "return_streams": {
+            "train": [{"t": 1, "v": 0.01}, {"t": 2, "v": 0.0}],
+            "val": [{"t": 3, "v": 0.01}, {"t": 4, "v": 0.0}],
+            "oos": [{"datetime": "2026-02-01T00:00:00Z", "v": 0.01}, {"datetime": "2026-02-02T00:00:00Z", "v": -0.01}, {"datetime": "2026-02-03T00:00:00Z", "v": 0.01}, {"datetime": "2026-02-04T00:00:00Z", "v": -0.01}],
+        },
+    }
+    highly_correlated = {
+        "name": "high_corr_candidate",
+        "train": {"total_return": 0.04, "trade_count": 18.0},
+        "val": {"total_return": 0.03, "sharpe": 1.2},
+        "oos": {
+            "total_return": 0.05,
+            "return": 0.05,
+            "sharpe": 2.8,
+            "pbo": 0.20,
+            "turnover": 0.2,
+            "active_fold_ratio": 0.9,
+            "inactive_fold_count": 0.0,
+            "failed_fold_ratio": 0.0,
+        },
+        "return_streams": {
+            "train": [{"t": 1, "v": 0.01}, {"t": 2, "v": 0.0}],
+            "val": [{"t": 3, "v": 0.01}, {"t": 4, "v": 0.0}],
+            "oos": [{"datetime": "2026-02-01T00:00:00Z", "v": 0.009}, {"datetime": "2026-02-02T00:00:00Z", "v": -0.011}, {"datetime": "2026-02-03T00:00:00Z", "v": 0.009}, {"datetime": "2026-02-04T00:00:00Z", "v": -0.011}],
+        },
+    }
+    orthogonal = {
+        "name": "orthogonal_candidate",
+        "train": {"total_return": 0.04, "trade_count": 18.0},
+        "val": {"total_return": 0.03, "sharpe": 1.2},
+        "oos": {
+            "total_return": 0.05,
+            "return": 0.05,
+            "sharpe": 2.8,
+            "pbo": 0.20,
+            "turnover": 0.2,
+            "active_fold_ratio": 0.9,
+            "inactive_fold_count": 0.0,
+            "failed_fold_ratio": 0.0,
+        },
+        "return_streams": {
+            "train": [{"t": 1, "v": 0.01}, {"t": 2, "v": 0.0}],
+            "val": [{"t": 3, "v": 0.01}, {"t": 4, "v": 0.0}],
+            "oos": [{"datetime": "2026-02-01T00:00:00Z", "v": 0.01}, {"datetime": "2026-02-02T00:00:00Z", "v": 0.01}, {"datetime": "2026-02-03T00:00:00Z", "v": -0.01}, {"datetime": "2026-02-04T00:00:00Z", "v": -0.01}],
+        },
+    }
+
+    payload = build_correlation_aware_sparse_fold_ensemble(
+        [benchmark, highly_correlated, orthogonal],
+        max_members=2,
+        correlation_penalty=3.0,
+        max_weight=0.75,
+    )
+
+    selected_names = {row["name"] for row in payload["components"]}
+    assert "benchmark" in selected_names
+    assert "orthogonal_candidate" in selected_names
+    assert "high_corr_candidate" not in selected_names
+    excluded = {row["name"]: row["reason"] for row in payload["excluded_candidates"]}
+    assert excluded["high_corr_candidate"] in {"correlation_penalty_dominated", "max_members_reached"}

@@ -16,6 +16,11 @@ DEFAULT_ROBUST_SCORE_WEIGHTS: dict[str, float] = {
     "drawdown_penalty": 3.0,
     "turnover_penalty": 2.5,
     "cross_corr_penalty": 0.8,
+    "inactive_fold_penalty": 0.75,
+    "failed_fold_penalty": 1.5,
+    "low_active_fold_penalty": 2.0,
+    "active_fold_ratio_floor": 0.75,
+    "no_trade_train_penalty": 1_000_000.0,
 }
 DEFAULT_ROBUST_SCORE_PARAMS: dict[str, float] = {
     "turnover_threshold": 2.5,
@@ -88,6 +93,9 @@ def robust_score_from_metrics(
 ) -> float:
     cfg = _resolve_robust_score_params(params)
     turnover_threshold = float(cfg["turnover_threshold"])
+    active_fold_ratio = min(1.0, max(0.0, safe_float(metrics.get("active_fold_ratio"), 1.0)))
+    inactive_fold_count = max(0.0, safe_float(metrics.get("inactive_fold_count"), 0.0))
+    failed_fold_ratio = min(1.0, max(0.0, safe_float(metrics.get("failed_fold_ratio"), safe_float(metrics.get("pbo"), 1.0))))
     return float(
         (float(cfg["sharpe_weight"]) * safe_float(metrics.get("sharpe"), 0.0))
         + (float(cfg["deflated_sharpe_weight"]) * safe_float(metrics.get("deflated_sharpe"), 0.0))
@@ -99,7 +107,20 @@ def robust_score_from_metrics(
             * max(0.0, safe_float(metrics.get("turnover"), 0.0) - turnover_threshold)
         )
         - (float(cfg["cross_corr_penalty"]) * safe_float(metrics.get("cross_candidate_corr"), 0.0))
+        - (float(cfg["inactive_fold_penalty"]) * inactive_fold_count)
+        - (float(cfg["failed_fold_penalty"]) * failed_fold_ratio)
+        - (
+            float(cfg["low_active_fold_penalty"])
+            * max(0.0, float(cfg["active_fold_ratio_floor"]) - active_fold_ratio)
+        )
     )
+
+
+def _has_no_trade_train(candidate: dict[str, Any]) -> bool:
+    train = dict(candidate.get("train") or {})
+    train_return = safe_float(train.get("total_return", train.get("return")), 0.0)
+    train_trades = safe_float(train.get("trade_count", train.get("trades")), 0.0)
+    return abs(train_return) <= 1e-12 and train_trades <= 0.0
 
 
 def hurdle_score(
@@ -125,6 +146,8 @@ def hurdle_score(
     metrics = candidate.get(metric_key)
     if isinstance(metrics, dict):
         robust_score = robust_score_from_metrics(metrics, params=robust_score_params)
+        if _has_no_trade_train(candidate):
+            return failed_candidate_base_penalty - abs(float(cfg["no_trade_train_penalty"]))
         if passed:
             return max(score, robust_score)
         metric_return = safe_float(metrics.get("return"), sentinel_floor_score)

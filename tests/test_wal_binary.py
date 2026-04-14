@@ -66,6 +66,43 @@ def test_wal_repair_truncates_invalid_crc_record(tmp_path: Path):
     assert items[0].ts_ms == 1_700_000_000_000
 
 
+def test_wal_read_only_open_ignores_partial_tail_without_truncating(tmp_path: Path):
+    wal_path = tmp_path / "wal.bin"
+    wal = BinaryWAL(wal_path, auto_repair=True)
+    wal.append(_rows(3))
+
+    with wal_path.open("ab") as fh:
+        fh.write(b"broken-tail")
+
+    read_only = BinaryWAL(wal_path, auto_repair=False)
+
+    assert read_only.size_bytes() == 3 * RECORD_LEN + len(b"broken-tail")
+    assert [item.ts_ms for item in read_only.iter_all()] == [
+        1_700_000_000_000,
+        1_700_000_001_000,
+        1_700_000_002_000,
+    ]
+
+
+def test_wal_read_only_open_stops_at_invalid_crc_tail_without_truncating(tmp_path: Path):
+    wal_path = tmp_path / "wal.bin"
+    wal = BinaryWAL(wal_path, auto_repair=True)
+    wal.append(_rows(2))
+
+    with wal_path.open("r+b") as fh:
+        fh.seek(RECORD_LEN + 12)
+        byte = fh.read(1)
+        fh.seek(RECORD_LEN + 12)
+        fh.write(bytes([byte[0] ^ 0xFF]))
+
+    read_only = BinaryWAL(wal_path, auto_repair=False)
+
+    assert read_only.size_bytes() == 2 * RECORD_LEN
+    items = list(read_only.iter_all())
+    assert len(items) == 1
+    assert items[0].ts_ms == 1_700_000_000_000
+
+
 def test_wal_iter_range_filters_bounds(tmp_path: Path):
     wal = BinaryWAL(tmp_path / "wal.bin", auto_repair=True)
     wal.append(_rows(6))

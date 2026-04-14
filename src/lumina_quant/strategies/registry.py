@@ -59,6 +59,12 @@ VolCompressionVwapReversionStrategy = _optional_strategy_class(
 LeadLagSpilloverStrategy = _optional_strategy_class(
     "leadlag_spillover", "LeadLagSpilloverStrategy"
 )
+AbnormalReturnContinuationStrategy = _optional_strategy_class(
+    "abnormal_return_continuation", "AbnormalReturnContinuationStrategy"
+)
+LastDayLiquidityRegimeStrategy = _optional_strategy_class(
+    "last_day_liquidity_regime", "LastDayLiquidityRegimeStrategy"
+)
 PairSpreadZScoreStrategy = _optional_strategy_class("pair_spread_zscore", "PairSpreadZScoreStrategy")
 MicroRangeExpansion1sStrategy = _optional_strategy_class(
     "micro_range_expansion_1s", "MicroRangeExpansion1sStrategy"
@@ -90,6 +96,8 @@ _RAW_STRATEGY_MAP: dict[str, StrategyClass | None] = {
     "VolCompressionVWAPReversionStrategy": VolCompressionVWAPReversionStrategy,
     "VolCompressionVwapReversionStrategy": VolCompressionVwapReversionStrategy,
     "LeadLagSpilloverStrategy": LeadLagSpilloverStrategy,
+    "AbnormalReturnContinuationStrategy": AbnormalReturnContinuationStrategy,
+    "LastDayLiquidityRegimeStrategy": LastDayLiquidityRegimeStrategy,
     "MicroRangeExpansion1sStrategy": MicroRangeExpansion1sStrategy,
 }
 if _has_perp_support_data():
@@ -116,6 +124,8 @@ _STRATEGY_TIER_HINTS: dict[str, str] = {
     "VolCompressionVWAPReversionStrategy": "live_opt_in",
     "VolCompressionVwapReversionStrategy": "live_opt_in",
     "LeadLagSpilloverStrategy": "live_opt_in",
+    "AbnormalReturnContinuationStrategy": "live_opt_in",
+    "LastDayLiquidityRegimeStrategy": "live_opt_in",
     "PerpCrowdingCarryStrategy": "live_opt_in",
     "RegimeBreakoutCandidateStrategy": "research_only",
     "VolatilityCompressionReversionStrategy": "research_only",
@@ -147,6 +157,8 @@ _OPTUNA_TRIAL_OVERRIDES: dict[str, str] = {
     "VolCompressionVWAPReversionStrategy": "24",
     "VolCompressionVwapReversionStrategy": "24",
     "LeadLagSpilloverStrategy": "24",
+    "AbnormalReturnContinuationStrategy": "20",
+    "LastDayLiquidityRegimeStrategy": "24",
     "PerpCrowdingCarryStrategy": "16",
     "MicroRangeExpansion1sStrategy": "16",
 }

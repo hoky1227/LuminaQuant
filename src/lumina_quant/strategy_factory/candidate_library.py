@@ -443,6 +443,44 @@ _PAIR_RETUNE_PARAM_SETS_BY_TIMEFRAME: dict[str, tuple[dict[str, float | int | st
     ),
 }
 
+_PAIR_ADAPTIVE_RLS_1H_SPECS: tuple[dict[str, float | int | str], ...] = (
+    {
+        "variant": "adaptive_rls_fast",
+        "lookback_window": 96,
+        "hedge_window": 192,
+        "entry_z": 2.5,
+        "exit_z": 0.65,
+        "stop_z": 4.1,
+        "min_correlation": 0.18,
+        "cooldown_bars": 6,
+        "reentry_z_buffer": 0.20,
+        "max_hold_bars": 168,
+        "stop_loss_pct": 0.025,
+        "hedge_mode": "rls",
+        "hedge_forgetting_factor": 0.985,
+        "hedge_covariance_init": 8.0,
+        "take_profit_pct": 0.06,
+    },
+    {
+        "variant": "adaptive_rls_stable",
+        "lookback_window": 120,
+        "hedge_window": 240,
+        "entry_z": 2.6,
+        "exit_z": 0.70,
+        "stop_z": 4.2,
+        "min_correlation": 0.20,
+        "cooldown_bars": 8,
+        "reentry_z_buffer": 0.22,
+        "max_hold_bars": 168,
+        "stop_loss_pct": 0.025,
+        "hedge_mode": "rls",
+        "hedge_forgetting_factor": 0.992,
+        "hedge_covariance_init": 10.0,
+        "atr_window": 14,
+        "atr_max_pct": 0.04,
+    },
+)
+
 _LAG_CONVERGENCE_FOCUS_PAIRS_BY_TIMEFRAME: dict[str, tuple[tuple[str, str], ...]] = {
     "4h": (
         ("XAU/USDT", "XAG/USDT"),
@@ -906,6 +944,43 @@ _SESSION_GATED_RESIDUAL_BASKET_REVERSION_SLICE: dict[str, tuple[dict[str, Any], 
     ),
 }
 
+_VOL_REGIME_RESIDUAL_BASKET_REVERSION_SLICE: dict[str, tuple[dict[str, Any], ...]] = {
+    "15m": (
+        {
+            "variant": "volcap_ls",
+            "residual_window": 48,
+            "entry_z": 1.8,
+            "exit_z": 0.4,
+            "rebalance_bars": 2,
+            "max_longs": 1,
+            "max_shorts": 1,
+            "stop_loss_pct": 0.020,
+            "allow_short": True,
+            "btc_symbol": "BTC/USDT",
+            "btc_vol_fast": 12,
+            "btc_vol_slow": 60,
+            "btc_vol_ratio_cap": 1.15,
+            "dispersion_floor": 0.0020,
+        },
+        {
+            "variant": "volcap_guarded_lo",
+            "residual_window": 64,
+            "entry_z": 2.0,
+            "exit_z": 0.35,
+            "rebalance_bars": 2,
+            "max_longs": 1,
+            "max_shorts": 0,
+            "stop_loss_pct": 0.018,
+            "allow_short": False,
+            "btc_symbol": "BTC/USDT",
+            "btc_vol_fast": 16,
+            "btc_vol_slow": 72,
+            "btc_vol_ratio_cap": 1.05,
+            "dispersion_floor": 0.0025,
+        },
+    ),
+}
+
 _LIQUIDATION_CONTAGION_FADE_SLICE: dict[str, tuple[dict[str, Any], ...]] = {
     "5m": (
         {
@@ -1137,6 +1212,104 @@ _TOPCAP_TSMOM_SLICE: dict[str, tuple[dict[str, Any], ...]] = {
             "min_price": 0.10,
             "btc_regime_ma": 18,
             "btc_symbol": "BTC/USDT",
+        },
+    ),
+}
+
+_LAST_DAY_LIQUIDITY_REGIME_SLICE: dict[str, tuple[dict[str, Any], ...]] = {
+    "1h": (
+        {
+            "variant": "liquid_momo_ls",
+            "momentum_lookback_bars": 24,
+            "signal_skip_bars": 1,
+            "liquidity_window": 24,
+            "volatility_window": 24,
+            "rebalance_bars": 6,
+            "signal_threshold": 0.012,
+            "liquidity_quantile": 0.60,
+            "max_longs": 2,
+            "max_shorts": 1,
+            "min_price": 0.10,
+            "max_realized_vol": 0.09,
+            "stop_loss_pct": 0.05,
+            "allow_short": True,
+            "illiquid_reversal": True,
+        },
+        {
+            "variant": "guarded_lo",
+            "momentum_lookback_bars": 24,
+            "signal_skip_bars": 1,
+            "liquidity_window": 36,
+            "volatility_window": 24,
+            "rebalance_bars": 12,
+            "signal_threshold": 0.015,
+            "liquidity_quantile": 0.70,
+            "max_longs": 2,
+            "max_shorts": 0,
+            "min_price": 0.10,
+            "max_realized_vol": 0.07,
+            "stop_loss_pct": 0.04,
+            "allow_short": False,
+            "illiquid_reversal": False,
+        },
+    ),
+    "1d": (
+        {
+            "variant": "liquid_momo_ls",
+            "momentum_lookback_bars": 1,
+            "signal_skip_bars": 1,
+            "liquidity_window": 20,
+            "volatility_window": 20,
+            "rebalance_bars": 1,
+            "signal_threshold": 0.008,
+            "liquidity_quantile": 0.60,
+            "max_longs": 2,
+            "max_shorts": 1,
+            "min_price": 0.10,
+            "max_realized_vol": 0.15,
+            "stop_loss_pct": 0.08,
+            "allow_short": True,
+            "illiquid_reversal": True,
+        },
+        {
+            "variant": "guarded_lo",
+            "momentum_lookback_bars": 1,
+            "signal_skip_bars": 1,
+            "liquidity_window": 20,
+            "volatility_window": 20,
+            "rebalance_bars": 1,
+            "signal_threshold": 0.006,
+            "liquidity_quantile": 0.70,
+            "max_longs": 2,
+            "max_shorts": 0,
+            "min_price": 0.10,
+            "max_realized_vol": 0.12,
+            "stop_loss_pct": 0.07,
+            "allow_short": False,
+            "illiquid_reversal": False,
+        },
+    ),
+}
+
+_ABNORMAL_RETURN_CONTINUATION_SLICE: dict[str, tuple[dict[str, Any], ...]] = {
+    "1d": (
+        {
+            "variant": "event_ls",
+            "return_z_window": 20,
+            "entry_z": 1.4,
+            "exit_z": 0.25,
+            "hold_bars": 2,
+            "stop_loss_pct": 0.06,
+            "allow_short": True,
+        },
+        {
+            "variant": "event_lo",
+            "return_z_window": 24,
+            "entry_z": 1.8,
+            "exit_z": 0.35,
+            "hold_bars": 1,
+            "stop_loss_pct": 0.05,
+            "allow_short": False,
         },
     ),
 }
@@ -1701,6 +1874,8 @@ class _CandidateBuildContext:
     breadth_tfs: list[str] = field(init=False)
     trend_exhaustion_tfs: list[str] = field(init=False)
     topcap_tfs: list[str] = field(init=False)
+    liquidity_regime_tfs: list[str] = field(init=False)
+    abnormal_return_tfs: list[str] = field(init=False)
     alpha101_tfs: list[str] = field(init=False)
     pair_tfs: list[str] = field(init=False)
     residual_basket_tfs: list[str] = field(init=False)
@@ -1727,6 +1902,8 @@ class _CandidateBuildContext:
         self.breadth_tfs = self._present('30m')
         self.trend_exhaustion_tfs = self._present('30m')
         self.topcap_tfs = self._present('1h', '4h')
+        self.liquidity_regime_tfs = self._present('1h', '1d')
+        self.abnormal_return_tfs = self._present('1d')
         self.alpha101_tfs = self._present('1h', '4h')
         self.pair_tfs = self._present('15m', '30m', '1h', '4h', '1d')
         self.residual_basket_tfs = self._present('15m')
@@ -2205,6 +2382,8 @@ def _build_cross_sectional_rotation_candidates(ctx: _CandidateBuildContext) -> N
     candidates = ctx.candidates
     crypto_symbols = ctx.crypto_symbols
     topcap_tfs = ctx.topcap_tfs
+    liquidity_regime_tfs = ctx.liquidity_regime_tfs
+    abnormal_return_tfs = ctx.abnormal_return_tfs
     residual_basket_tfs = ctx.residual_basket_tfs
     session_residual_tfs = ctx.session_residual_tfs
     if len(crypto_symbols) >= 4:
@@ -2283,6 +2462,8 @@ def _build_cross_sectional_rotation_candidates(ctx: _CandidateBuildContext) -> N
                     },
                 )
 
+        for timeframe in topcap_tfs:
+            tf_tag = timeframe.replace("/", "-")
             for spec in _CARRY_TREND_FACTOR_ROTATION_SLICE.get(timeframe, ()):
                 params = {
                     "lookback_bars": int(spec["lookback_bars"]),
@@ -2329,6 +2510,94 @@ def _build_cross_sectional_rotation_candidates(ctx: _CandidateBuildContext) -> N
                         "article_reference": "quant-company-profit-mechanisms",
                     },
                 )
+
+    if len(crypto_symbols) >= 2:
+        for timeframe in liquidity_regime_tfs:
+            tf_tag = timeframe.replace("/", "-")
+            for spec in _LAST_DAY_LIQUIDITY_REGIME_SLICE.get(timeframe, ()):
+                params = {
+                    "momentum_lookback_bars": int(spec["momentum_lookback_bars"]),
+                    "signal_skip_bars": int(spec["signal_skip_bars"]),
+                    "liquidity_window": int(spec["liquidity_window"]),
+                    "volatility_window": int(spec["volatility_window"]),
+                    "rebalance_bars": int(spec["rebalance_bars"]),
+                    "signal_threshold": float(spec["signal_threshold"]),
+                    "liquidity_quantile": float(spec["liquidity_quantile"]),
+                    "max_longs": int(spec["max_longs"]),
+                    "max_shorts": int(spec["max_shorts"]),
+                    "min_price": float(spec["min_price"]),
+                    "max_realized_vol": float(spec["max_realized_vol"]),
+                    "stop_loss_pct": float(spec["stop_loss_pct"]),
+                    "allow_short": bool(spec["allow_short"]),
+                    "illiquid_reversal": bool(spec["illiquid_reversal"]),
+                }
+                _add_candidate(
+                    candidates,
+                    name=(
+                        f"last_day_liquidity_regime_{tf_tag}_{spec['variant']}_"
+                        f"{int(spec['momentum_lookback_bars'])}_{int(spec['rebalance_bars'])}_{float(spec['signal_threshold']):.3f}"
+                    ),
+                    family="cross_sectional",
+                    strategy_class="LastDayLiquidityRegimeStrategy",
+                    timeframe=timeframe,
+                    symbols=crypto_symbols,
+                    params=params,
+                    notes=(
+                        "Liquidity-conditioned last-day-return continuation/reversal sleeve "
+                        f"for {timeframe} ({spec['variant']}) based on liquid-momentum / illiquid-reversal evidence."
+                    ),
+                    tags=(
+                        "cross_sectional",
+                        "pure_momentum",
+                        "liquidity_conditioned",
+                        "last_day_return",
+                        "crypto",
+                    ),
+                    metadata={
+                        "timeframe": timeframe,
+                        "retune_profile": str(spec["variant"]),
+                        "symbol_scope": "crypto",
+                        "allow_short": bool(spec["allow_short"]),
+                        "illiquid_reversal": bool(spec["illiquid_reversal"]),
+                    },
+                )
+
+    if len(crypto_symbols) >= 2:
+        for timeframe in abnormal_return_tfs:
+            tf_tag = timeframe.replace("/", "-")
+            for spec in _ABNORMAL_RETURN_CONTINUATION_SLICE.get(timeframe, ()):
+                for symbol in crypto_symbols:
+                    params = {
+                        "return_z_window": int(spec["return_z_window"]),
+                        "entry_z": float(spec["entry_z"]),
+                        "exit_z": float(spec["exit_z"]),
+                        "hold_bars": int(spec["hold_bars"]),
+                        "stop_loss_pct": float(spec["stop_loss_pct"]),
+                        "allow_short": bool(spec["allow_short"]),
+                    }
+                    _add_candidate(
+                        candidates,
+                        name=(
+                            f"abnormal_return_continuation_{tf_tag}_{spec['variant']}_"
+                            f"{symbol.replace('/', '').lower()}_{float(spec['entry_z']):.1f}_{int(spec['hold_bars'])}"
+                        ),
+                        family="event_alpha",
+                        strategy_class="AbnormalReturnContinuationStrategy",
+                        timeframe=timeframe,
+                        symbols=(symbol,),
+                        params=params,
+                        notes=(
+                            "Abnormal one-day return continuation sleeve that follows large daily shocks "
+                            f"for {symbol} on {timeframe} ({spec['variant']})."
+                        ),
+                        tags=("event_alpha", "abnormal_return", "continuation", "single_asset", "crypto"),
+                        metadata={
+                            "timeframe": timeframe,
+                            "retune_profile": str(spec["variant"]),
+                            "symbol_scope": symbol,
+                            "allow_short": bool(spec["allow_short"]),
+                        },
+                    )
 
     if len(crypto_symbols) >= 4:
         for timeframe in residual_basket_tfs:
@@ -2401,6 +2670,55 @@ def _build_cross_sectional_rotation_candidates(ctx: _CandidateBuildContext) -> N
                         f"for {timeframe} ({spec['variant']})."
                     ),
                     tags=("cross_sectional", "residual_reversion", "session_transition", "btc_beta_neutral", "crypto"),
+                    metadata={
+                        "timeframe": timeframe,
+                        "retune_profile": str(spec["variant"]),
+                        "symbol_scope": "crypto",
+                        "btc_symbol": str(spec["btc_symbol"]),
+                    },
+                )
+
+    if len(crypto_symbols) >= 3:
+        for timeframe in residual_basket_tfs:
+            tf_tag = timeframe.replace("/", "-")
+            for spec in _VOL_REGIME_RESIDUAL_BASKET_REVERSION_SLICE.get(timeframe, ()):
+                params = {
+                    "residual_window": int(spec["residual_window"]),
+                    "entry_z": float(spec["entry_z"]),
+                    "exit_z": float(spec["exit_z"]),
+                    "rebalance_bars": int(spec["rebalance_bars"]),
+                    "max_longs": int(spec["max_longs"]),
+                    "max_shorts": int(spec["max_shorts"]),
+                    "stop_loss_pct": float(spec["stop_loss_pct"]),
+                    "allow_short": bool(spec["allow_short"]),
+                    "btc_symbol": str(spec["btc_symbol"]),
+                    "btc_vol_fast": int(spec["btc_vol_fast"]),
+                    "btc_vol_slow": int(spec["btc_vol_slow"]),
+                    "btc_vol_ratio_cap": float(spec["btc_vol_ratio_cap"]),
+                    "dispersion_floor": float(spec["dispersion_floor"]),
+                }
+                _add_candidate(
+                    candidates,
+                    name=(
+                        f"volatility_regime_residual_basket_reversion_{tf_tag}_{spec['variant']}_"
+                        f"{int(spec['residual_window'])}_{float(spec['entry_z']):.2f}"
+                    ),
+                    family="cross_sectional",
+                    strategy_class="VolatilityRegimeResidualBasketReversionStrategy",
+                    timeframe=timeframe,
+                    symbols=crypto_symbols,
+                    params=params,
+                    notes=(
+                        "Volatility-regime-gated residual basket reversion using BTC-neutral residual zscores "
+                        f"for {timeframe} ({spec['variant']})."
+                    ),
+                    tags=(
+                        "cross_sectional",
+                        "residual_reversion",
+                        "volatility_regime",
+                        "btc_beta_neutral",
+                        "crypto",
+                    ),
                     metadata={
                         "timeframe": timeframe,
                         "retune_profile": str(spec["variant"]),
@@ -2725,6 +3043,53 @@ def _build_pair_and_intermarket_candidates(ctx: _CandidateBuildContext) -> None:
                             "pair_variant": variant,
                         },
                     )
+
+        if timeframe == "1h" and ("BNB/USDT", "TRX/USDT") in pair_universe:
+            pair_token = "bnbusdt_trxusdt"
+            for adaptive_spec in _PAIR_ADAPTIVE_RLS_1H_SPECS:
+                params = {
+                    "lookback_window": int(adaptive_spec["lookback_window"]),
+                    "hedge_window": int(adaptive_spec["hedge_window"]),
+                    "entry_z": float(adaptive_spec["entry_z"]),
+                    "exit_z": float(adaptive_spec["exit_z"]),
+                    "stop_z": float(adaptive_spec["stop_z"]),
+                    "max_hold_bars": int(adaptive_spec["max_hold_bars"]),
+                    "min_correlation": float(adaptive_spec["min_correlation"]),
+                    "cooldown_bars": int(adaptive_spec["cooldown_bars"]),
+                    "reentry_z_buffer": float(adaptive_spec["reentry_z_buffer"]),
+                    "stop_loss_pct": float(adaptive_spec["stop_loss_pct"]),
+                    "symbol_x": "BNB/USDT",
+                    "symbol_y": "TRX/USDT",
+                    "hedge_mode": str(adaptive_spec["hedge_mode"]),
+                    "hedge_forgetting_factor": float(adaptive_spec["hedge_forgetting_factor"]),
+                    "hedge_covariance_init": float(adaptive_spec["hedge_covariance_init"]),
+                }
+                for optional_key in ("take_profit_pct", "atr_window", "atr_max_pct"):
+                    if optional_key in adaptive_spec:
+                        params[optional_key] = adaptive_spec[optional_key]
+                _add_candidate(
+                    candidates,
+                    name=(
+                        f"pair_spread_{tf_tag}_{adaptive_spec['variant']}_{pair_token}_"
+                        f"{float(adaptive_spec['entry_z']):.1f}_{float(adaptive_spec['exit_z']):.2f}"
+                    ),
+                    family="market_neutral",
+                    strategy_class="PairSpreadZScoreStrategy",
+                    timeframe=timeframe,
+                    symbols=("BNB/USDT", "TRX/USDT"),
+                    params=params,
+                    notes=(
+                        "Adaptive scalar-RLS hedge update for BNB/TRX 1h pair trading. "
+                        "Focused broader-redesign follow-up candidate with capped count and explicit sparse-fold validation."
+                    ),
+                    tags=("market_neutral", "pair", "spread", "zscore", "adaptive_hedge", "focused_followup"),
+                    metadata={
+                        "timeframe": timeframe,
+                        "pair": "BNB/USDT_TRX/USDT",
+                        "pair_variant": str(adaptive_spec["variant"]),
+                        "focused_followup": True,
+                    },
+                )
 
     for timeframe in lag_convergence_tfs:
         tf_tag = timeframe.replace("/", "-")

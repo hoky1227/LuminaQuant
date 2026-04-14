@@ -387,6 +387,360 @@ def evaluate_weighted_portfolio(
     }
 
 
+def _sparse_fold_component_score(row: Mapping[str, Any]) -> float:
+    oos = dict(row.get("oos") or {})
+    train = dict(row.get("train") or {})
+    active_fold_ratio = safe_float(oos.get("active_fold_ratio"), 1.0)
+    inactive_fold_count = safe_float(oos.get("inactive_fold_count"), 0.0)
+    failed_fold_ratio = safe_float(oos.get("failed_fold_ratio"), safe_float(oos.get("pbo"), 1.0))
+    no_trade_train = (
+        abs(safe_float(train.get("total_return", train.get("return")), 0.0)) <= 1e-12
+        and safe_float(train.get("trade_count", train.get("trades")), 0.0) <= 0.0
+    )
+    return float(
+        (2.0 * safe_float(oos.get("sharpe"), 0.0))
+        + (12.0 * safe_float(oos.get("total_return", oos.get("return")), 0.0))
+        - (2.0 * safe_float(oos.get("pbo"), 1.0))
+        - (0.75 * inactive_fold_count)
+        - (1.5 * failed_fold_ratio)
+        - (2.0 * max(0.0, 0.75 - active_fold_ratio))
+        - (999_999.0 if no_trade_train else 0.0)
+    )
+
+
+def _candidate_preblend_reasons(
+    row: Mapping[str, Any],
+    *,
+    active_fold_ratio_floor: float,
+    max_pbo: float,
+    max_turnover: float,
+) -> list[str]:
+    metadata = dict(row.get("metadata") or {})
+    if bool(row.get("bypass_preblend_gate")) or bool(metadata.get("bypass_preblend_gate")):
+        return []
+    train = dict(row.get("train") or {})
+    val = dict(row.get("val") or {})
+    oos = dict(row.get("oos") or {})
+    reasons: list[str] = []
+    if safe_float(train.get("total_return", train.get("return")), 0.0) <= 0.0:
+        reasons.append("train_total_return_non_positive")
+    if safe_float(val.get("total_return", val.get("return")), 0.0) <= 0.0:
+        reasons.append("val_total_return_non_positive")
+    if (
+        abs(safe_float(train.get("total_return", train.get("return")), 0.0)) <= 1e-12
+        and safe_float(train.get("trade_count", train.get("trades")), 0.0) <= 0.0
+    ):
+        reasons.append("train_no_trade")
+    if safe_float(oos.get("active_fold_ratio"), 1.0) < active_fold_ratio_floor:
+        reasons.append("active_fold_ratio_below_floor")
+    if safe_float(oos.get("pbo"), 1.0) > max_pbo:
+        reasons.append("pbo_above_ceiling")
+    if safe_float(oos.get("turnover"), 0.0) > max_turnover:
+        reasons.append("turnover_above_ceiling")
+    return reasons
+
+
+def _oos_daily_return_map(payload: Mapping[str, Any]) -> dict[str, float]:
+    streams = extract_portfolio_streams(payload)
+    oos_stream = list(streams.get("oos") or [])
+    if not oos_stream:
+        return {}
+    daily = _daily_return_stream(oos_stream)
+    result: dict[str, float] = {}
+    for point in daily:
+        dt = _point_datetime(point)
+        if dt is None:
+            continue
+        result[dt.date().isoformat()] = safe_float(point.get("v"), 0.0)
+    return result
+
+
+def _pairwise_oos_correlation(left: Mapping[str, Any], right: Mapping[str, Any]) -> float:
+    left_map = _oos_daily_return_map(left)
+    right_map = _oos_daily_return_map(right)
+    common_days = sorted(set(left_map) & set(right_map))
+    if len(common_days) < 2:
+        return 0.0
+    left_values = np.asarray([left_map[day] for day in common_days], dtype=float)
+    right_values = np.asarray([right_map[day] for day in common_days], dtype=float)
+    if left_values.size < 2 or right_values.size < 2:
+        return 0.0
+    if np.std(left_values) <= 1e-12 or np.std(right_values) <= 1e-12:
+        return 0.0
+    corr = np.corrcoef(left_values, right_values)[0, 1]
+    if not np.isfinite(corr):
+        return 0.0
+    return float(corr)
+
+
+def _normalize_capped_weights(raw_scores: list[float], *, max_weight: float) -> np.ndarray:
+    scores = np.asarray(raw_scores, dtype=float)
+    if scores.size == 0:
+        return scores
+    shifted = scores - float(np.max(scores))
+    weights = np.exp(np.clip(shifted, -60.0, 0.0))
+    total = float(np.sum(weights))
+    if total <= 0.0:
+        return np.full(scores.shape, 1.0 / float(scores.size), dtype=float)
+    weights /= total
+
+    cap = min(1.0, max(0.0, float(max_weight)))
+    if cap <= 0.0 or cap >= 1.0 or scores.size == 1:
+        return weights
+
+    fixed = np.zeros(scores.shape, dtype=float)
+    free = weights.copy()
+    free_mask = np.ones(scores.shape, dtype=bool)
+    while True:
+        violating = free_mask & (free > cap + 1e-12)
+        if not np.any(violating):
+            break
+        fixed[violating] = cap
+        free_mask[violating] = False
+        remaining = 1.0 - float(np.sum(fixed))
+        if remaining <= 0.0 or not np.any(free_mask):
+            break
+        free_weights = weights[free_mask]
+        free_total = float(np.sum(free_weights))
+        if free_total <= 0.0:
+            free[free_mask] = remaining / float(np.sum(free_mask))
+        else:
+            free[free_mask] = remaining * (free_weights / free_total)
+        free[~free_mask] = fixed[~free_mask]
+    result = fixed
+    result[free_mask] = free[free_mask]
+    total = float(np.sum(result))
+    if total <= 0.0:
+        return np.full(scores.shape, 1.0 / float(scores.size), dtype=float)
+    return result / total
+
+
+def build_sparse_fold_aware_ensemble(
+    rows: list[Mapping[str, Any]],
+    *,
+    max_members: int = 3,
+) -> dict[str, Any]:
+    selected = [dict(row) for row in rows][: max(1, int(max_members))]
+    if not selected:
+        return {
+            "artifact_kind": "sparse_fold_aware_ensemble",
+            "component_count": 0,
+            "components": [],
+            "portfolio_payload": evaluate_weighted_portfolio([]),
+        }
+
+    raw_scores: list[float] = []
+    for row in selected:
+        raw_scores.append(_sparse_fold_component_score(row))
+
+    max_score = max(raw_scores)
+    weights = np.asarray([math.exp(max(-60.0, min(0.0, score - max_score))) for score in raw_scores], dtype=float)
+    if float(np.sum(weights)) <= 0.0:
+        weights = np.full(len(selected), 1.0 / float(len(selected)), dtype=float)
+    else:
+        weights /= float(np.sum(weights))
+
+    weighted_rows: list[dict[str, Any]] = []
+    for row, weight in zip(selected, weights, strict=True):
+        payload = dict(row)
+        payload["_saved_weight"] = float(weight)
+        weighted_rows.append(payload)
+
+    portfolio_payload = evaluate_weighted_portfolio(weighted_rows, weight_key="_saved_weight")
+    return {
+        "artifact_kind": "sparse_fold_aware_ensemble",
+        "component_count": len(weighted_rows),
+        "components": [
+            {
+                "name": str(row.get("name") or ""),
+                "weight": float(row["_saved_weight"]),
+                "oos_pbo": safe_float((row.get("oos") or {}).get("pbo"), 1.0),
+                "oos_active_fold_ratio": safe_float((row.get("oos") or {}).get("active_fold_ratio"), 0.0),
+            }
+            for row in weighted_rows
+        ],
+        "portfolio_payload": portfolio_payload,
+    }
+
+
+def build_correlation_aware_sparse_fold_ensemble(
+    rows: list[Mapping[str, Any]],
+    *,
+    max_members: int = 3,
+    correlation_penalty: float = 2.0,
+    max_weight: float = 0.80,
+    active_fold_ratio_floor: float = 0.50,
+    max_pbo: float = 0.75,
+    max_turnover: float = 4.0,
+) -> dict[str, Any]:
+    candidates = [dict(row) for row in rows]
+    if not candidates:
+        return {
+            "artifact_kind": "correlation_aware_sparse_fold_ensemble",
+            "component_count": 0,
+            "components": [],
+            "excluded_candidates": [],
+            "pairwise_oos_correlation": [],
+            "portfolio_payload": evaluate_weighted_portfolio([]),
+        }
+
+    ranked: list[dict[str, Any]] = []
+    for row in candidates:
+        base_score = _sparse_fold_component_score(row)
+        preblend_reasons = _candidate_preblend_reasons(
+            row,
+            active_fold_ratio_floor=active_fold_ratio_floor,
+            max_pbo=max_pbo,
+            max_turnover=max_turnover,
+        )
+        ranked.append(
+            {
+                "row": row,
+                "name": str(row.get("name") or row.get("label") or "candidate"),
+                "base_score": float(base_score),
+                "preblend_reasons": preblend_reasons,
+                "preblend_passed": not preblend_reasons,
+            }
+        )
+    ranked.sort(key=lambda item: (item["preblend_passed"], item["base_score"]), reverse=True)
+
+    selected: list[dict[str, Any]] = []
+    excluded: list[dict[str, Any]] = []
+    remaining: list[dict[str, Any]] = []
+    for entry in ranked:
+        if not entry["preblend_passed"]:
+            excluded.append(
+                {
+                    "name": entry["name"],
+                    "reason": "preblend_gate_failed",
+                    "base_score": entry["base_score"],
+                    "preblend_reasons": list(entry["preblend_reasons"]),
+                }
+            )
+            continue
+        remaining.append(entry)
+
+    while remaining and len(selected) < max(1, int(max_members)):
+        best_idx = -1
+        best_adjusted = float("-inf")
+        best_avg_abs_corr = 0.0
+        for idx, entry in enumerate(remaining):
+            corr_values = [
+                abs(_pairwise_oos_correlation(entry["row"], existing["row"]))
+                for existing in selected
+            ]
+            avg_abs_corr = float(sum(corr_values) / len(corr_values)) if corr_values else 0.0
+            adjusted_score = float(entry["base_score"] - (correlation_penalty * avg_abs_corr))
+            if adjusted_score > best_adjusted:
+                best_idx = idx
+                best_adjusted = adjusted_score
+                best_avg_abs_corr = avg_abs_corr
+
+        if best_idx < 0:
+            break
+        chosen = remaining.pop(best_idx)
+        if selected and best_adjusted <= 0.0:
+            excluded.append(
+                {
+                    "name": chosen["name"],
+                    "reason": "correlation_penalty_dominated",
+                    "base_score": chosen["base_score"],
+                    "adjusted_score": best_adjusted,
+                    "avg_abs_corr": best_avg_abs_corr,
+                    "preblend_reasons": list(chosen["preblend_reasons"]),
+                }
+            )
+            break
+        selected.append(
+            {
+                "row": dict(chosen["row"]),
+                "name": chosen["name"],
+                "base_score": float(chosen["base_score"]),
+                "adjusted_score": best_adjusted,
+                "avg_abs_corr": best_avg_abs_corr,
+                "preblend_reasons": list(chosen["preblend_reasons"]),
+            }
+        )
+
+    for entry in remaining:
+        excluded.append(
+            {
+                "name": entry["name"],
+                "reason": "max_members_reached",
+                "base_score": entry["base_score"],
+                "preblend_reasons": list(entry["preblend_reasons"]),
+            }
+        )
+
+    if not selected:
+        fallback = max(ranked, key=lambda item: item["base_score"])
+        excluded = [row for row in excluded if row.get("name") != fallback["name"]]
+        selected = [
+            {
+                "row": dict(fallback["row"]),
+                "name": fallback["name"],
+                "base_score": float(fallback["base_score"]),
+                "adjusted_score": float(fallback["base_score"]),
+                "avg_abs_corr": 0.0,
+                "preblend_reasons": list(fallback["preblend_reasons"]),
+            }
+        ]
+
+    raw_scores = [
+        float(item["adjusted_score"]) * max(0.05, 1.0 - (0.5 * float(item["avg_abs_corr"])))
+        for item in selected
+    ]
+    weights = _normalize_capped_weights(raw_scores, max_weight=max_weight)
+
+    weighted_rows: list[dict[str, Any]] = []
+    for item, weight in zip(selected, weights, strict=True):
+        payload = dict(item["row"])
+        payload["_saved_weight"] = float(weight)
+        weighted_rows.append(payload)
+
+    pairwise_oos_correlation: list[dict[str, Any]] = []
+    for idx, left in enumerate(selected):
+        for jdx in range(idx + 1, len(selected)):
+            right = selected[jdx]
+            pairwise_oos_correlation.append(
+                {
+                    "left": left["name"],
+                    "right": right["name"],
+                    "corr": _pairwise_oos_correlation(left["row"], right["row"]),
+                }
+            )
+
+    portfolio_payload = evaluate_weighted_portfolio(weighted_rows, weight_key="_saved_weight")
+    return {
+        "artifact_kind": "correlation_aware_sparse_fold_ensemble",
+        "component_count": len(weighted_rows),
+        "components": [
+            {
+                "name": item["name"],
+                "weight": float(row["_saved_weight"]),
+                "base_score": float(item["base_score"]),
+                "adjusted_score": float(item["adjusted_score"]),
+                "avg_abs_oos_corr": float(item["avg_abs_corr"]),
+                "preblend_reasons": list(item["preblend_reasons"]),
+                "oos_pbo": safe_float((row.get("oos") or {}).get("pbo"), 1.0),
+                "oos_active_fold_ratio": safe_float((row.get("oos") or {}).get("active_fold_ratio"), 0.0),
+            }
+            for item, row in zip(selected, weighted_rows, strict=True)
+        ],
+        "excluded_candidates": excluded,
+        "pairwise_oos_correlation": pairwise_oos_correlation,
+        "portfolio_payload": portfolio_payload,
+        "config": {
+            "max_members": int(max_members),
+            "correlation_penalty": float(correlation_penalty),
+            "max_weight": float(max_weight),
+            "active_fold_ratio_floor": float(active_fold_ratio_floor),
+            "max_pbo": float(max_pbo),
+            "max_turnover": float(max_turnover),
+        },
+    }
+
+
 def validation_objective(metrics: Mapping[str, Any]) -> float:
     return float(
         (1.0 * safe_float(metrics.get("sharpe"), 0.0))
@@ -427,6 +781,13 @@ def evaluate_robustness_gates(
         "train_total_return": safe_float(
             candidate_train.get("total_return", candidate_train.get("return")), 0.0
         ) > ROBUST_PROMOTION_GATES["train_total_return_min_exclusive"],
+        "train_real_participation": not (
+            abs(
+                safe_float(candidate_train.get("total_return", candidate_train.get("return")), 0.0)
+            )
+            <= 1e-12
+            and safe_float(candidate_train.get("trade_count", candidate_train.get("trades")), 0.0) <= 0.0
+        ),
         "val_total_return": safe_float(
             candidate_val.get("total_return", candidate_val.get("return")), 0.0
         ) > ROBUST_PROMOTION_GATES["val_total_return_min_exclusive"],
@@ -449,6 +810,8 @@ def evaluate_robustness_gates(
     rejection_reasons: list[str] = []
     if not checks["train_total_return"]:
         rejection_reasons.append("train_total_return_non_positive")
+    if not checks["train_real_participation"]:
+        rejection_reasons.append("train_no_trade")
     if not checks["val_total_return"]:
         rejection_reasons.append("val_total_return_non_positive")
     if not checks["train_sharpe"]:
@@ -527,6 +890,7 @@ __all__ = [
     "annotate_basis_lineage",
     "build_basis_search_universes",
     "build_memory_ledger_row",
+    "build_sparse_fold_aware_ensemble",
     "evaluate_robustness_gates",
     "evaluate_weighted_portfolio",
     "extract_oos_monthly_returns",

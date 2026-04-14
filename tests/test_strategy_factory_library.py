@@ -262,6 +262,42 @@ def test_candidate_library_includes_article_inspired_carry_trend_factor_rotation
     assert all(row.metadata.get("article_reference") == "quant-company-profit-mechanisms" for row in factor_rows)
 
 
+def test_candidate_library_includes_last_day_liquidity_regime_family():
+    rows = build_binance_futures_candidates(
+        timeframes=["1h"],
+        symbols=["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "TRX/USDT"],
+    )
+    regime_rows = [
+        row
+        for row in rows
+        if row.strategy_class == "LastDayLiquidityRegimeStrategy"
+    ]
+
+    assert len(regime_rows) == 2
+    assert {row.timeframe for row in regime_rows} == {"1h"}
+    assert all(row.family == "cross_sectional" for row in regime_rows)
+    assert all("last_day_liquidity_regime_" in row.name for row in regime_rows)
+    assert all(int(row.params["momentum_lookback_bars"]) == 24 for row in regime_rows)
+    assert any(bool(row.params["illiquid_reversal"]) for row in regime_rows)
+
+
+def test_candidate_library_includes_abnormal_return_continuation_family():
+    rows = build_binance_futures_candidates(
+        timeframes=["1d"],
+        symbols=["BNB/USDT", "TRX/USDT"],
+    )
+    event_rows = [
+        row
+        for row in rows
+        if row.strategy_class == "AbnormalReturnContinuationStrategy"
+    ]
+
+    assert len(event_rows) == 4
+    assert {row.timeframe for row in event_rows} == {"1d"}
+    assert all(row.family == "event_alpha" for row in event_rows)
+    assert all("abnormal_return_continuation_" in row.name for row in event_rows)
+
+
 def test_build_article_pipeline_manifest_collects_existing_and_new_article_candidates():
     rows = build_article_pipeline_candidates(
         timeframes=["5m", "15m", "30m", "1h", "4h"],
@@ -319,6 +355,18 @@ def test_pair_candidate_builder_adds_1h_pair_state_variants():
     assert atr_row.params["atr_window"] == 14
     assert atr_row.params["atr_max_pct"] == 0.04
     assert "pair_state" in atr_row.tags
+
+    adaptive_fast_row = by_name["pair_spread_1h_adaptive_rls_fast_bnbusdt_trxusdt_2.5_0.65"]
+    assert adaptive_fast_row.params["hedge_mode"] == "rls"
+    assert adaptive_fast_row.params["hedge_forgetting_factor"] == 0.985
+    assert adaptive_fast_row.params["take_profit_pct"] == 0.06
+    assert "adaptive_hedge" in adaptive_fast_row.tags
+
+    adaptive_stable_row = by_name["pair_spread_1h_adaptive_rls_stable_bnbusdt_trxusdt_2.6_0.70"]
+    assert adaptive_stable_row.params["hedge_mode"] == "rls"
+    assert adaptive_stable_row.params["hedge_forgetting_factor"] == 0.992
+    assert adaptive_stable_row.params["atr_window"] == 14
+    assert "focused_followup" in adaptive_stable_row.tags
 
 
 def test_composite_trend_candidate_builder_uses_explicit_30m_1h_stability_slice():
@@ -547,6 +595,11 @@ def test_candidate_library_adds_article_pipeline_provenance_tags_and_metadata():
         "cross-sectional-residual-basket-reversion"
     ]
     assert "article_family:cross-sectional-residual-basket-reversion" in residual_basket_row.tags
+
+    vol_regime_row = by_name["volatility_regime_residual_basket_reversion_15m_volcap_ls_48_1.80"]
+    assert vol_regime_row.params["btc_vol_fast"] == 12
+    assert vol_regime_row.params["btc_vol_ratio_cap"] == 1.15
+    assert "volatility_regime" in vol_regime_row.tags
 
     residual_topcap_row = by_name["topcap_tsmom_1h_resid_btc_16_4_0.010"]
     assert residual_topcap_row.params["residualize_btc"] is True

@@ -63,6 +63,41 @@ def rolling_corr(x_values, y_values) -> float | None:
     return max(-1.0, min(1.0, corr))
 
 
+def recursive_least_squares_beta_update(
+    beta: float,
+    covariance: float,
+    *,
+    x_value: float,
+    y_value: float,
+    forgetting_factor: float = 0.985,
+    covariance_floor: float = 1e-6,
+    covariance_cap: float = 1e6,
+) -> tuple[float, float] | None:
+    """Update a scalar hedge ratio with an O(1) recursive least-squares step."""
+    x_val = float(x_value)
+    y_val = float(y_value)
+    if not math.isfinite(x_val) or not math.isfinite(y_val) or abs(y_val) <= 1e-12:
+        return None
+
+    beta_val = float(beta)
+    cov_val = max(float(covariance_floor), min(float(covariance_cap), float(covariance)))
+    lambda_val = max(1e-6, min(0.999999, float(forgetting_factor)))
+
+    gain_num = cov_val * y_val
+    denom = lambda_val + (y_val * gain_num)
+    if not math.isfinite(denom) or denom <= 1e-12:
+        return None
+
+    gain = gain_num / denom
+    error = x_val - (beta_val * y_val)
+    updated_beta = beta_val + (gain * error)
+    updated_cov = (cov_val - (gain * y_val * cov_val)) / lambda_val
+    if not math.isfinite(updated_beta) or not math.isfinite(updated_cov):
+        return None
+    updated_cov = max(float(covariance_floor), min(float(covariance_cap), float(updated_cov)))
+    return float(updated_beta), float(updated_cov)
+
+
 class RollingZScoreWindow:
     """Rolling z-score helper preserving O(1) aggregate updates."""
 

@@ -142,6 +142,44 @@ def approx_pbo(returns: np.ndarray) -> float:
     return float(failures / trials)
 
 
+def fold_participation_stats(returns: np.ndarray) -> tuple[float, float, float]:
+    """Return active-fold ratio, inactive-fold count, and failed-fold ratio."""
+    n = returns.size
+    if n < 64:
+        return 0.0, 0.0, 1.0
+    folds = min(8, max(4, n // 32))
+    fold_size = n // folds
+    if fold_size <= 0:
+        return 0.0, 0.0, 1.0
+
+    trials = 0
+    active = 0
+    inactive = 0
+    failures = 0
+    for idx in range(folds):
+        test_start = idx * fold_size
+        test_end = n if idx == folds - 1 else (idx + 1) * fold_size
+        test = returns[test_start:test_end]
+        train = np.concatenate((returns[:test_start], returns[test_end:]))
+        if train.size < 8 or test.size < 8:
+            continue
+        train_std = safe_std(train)
+        test_std = safe_std(test)
+        train_sharpe = 0.0 if train_std <= 1e-12 else safe_mean(train) / train_std
+        test_sharpe = 0.0 if test_std <= 1e-12 else safe_mean(test) / test_std
+        test_active = bool(np.any(np.abs(test) > 1e-12))
+        trials += 1
+        if test_active:
+            active += 1
+        else:
+            inactive += 1
+        if train_sharpe > 0.0 and (not test_active or test_sharpe <= 0.0):
+            failures += 1
+    if trials <= 0:
+        return 0.0, 0.0, 1.0
+    return float(active / trials), float(inactive), float(failures / trials)
+
+
 def spa_like_pvalue(returns: np.ndarray, *, bootstrap_rounds: int = 200) -> float:
     """Simple bootstrap p-value proxy for data-snooping correction."""
     if returns.size < 16:
@@ -198,6 +236,9 @@ class ComputedMetricPayload:
     benchmark_corr: float
     deflated_sharpe: float
     pbo: float
+    active_fold_ratio: float
+    inactive_fold_count: float
+    failed_fold_ratio: float
     spa_pvalue: float
 
 
@@ -221,6 +262,9 @@ def empty_compute_metric_payload() -> ComputedMetricPayload:
         benchmark_corr=0.0,
         deflated_sharpe=0.0,
         pbo=1.0,
+        active_fold_ratio=0.0,
+        inactive_fold_count=0.0,
+        failed_fold_ratio=1.0,
         spa_pvalue=1.0,
     )
 
@@ -269,6 +313,8 @@ def resolve_compute_metric_payload(
     )
     stability = 0.5 * max(-3.0, min(3.0, rolling_min)) + 0.5 * worst_month_value
 
+    active_fold_ratio, inactive_fold_count, failed_fold_ratio = fold_participation_stats(returns)
+
     return ComputedMetricPayload(
         total_return=total_return,
         cagr=cagr,
@@ -288,6 +334,9 @@ def resolve_compute_metric_payload(
         benchmark_corr=float(correlation(returns, benchmark_returns)),
         deflated_sharpe=float(deflated_sharpe_ratio(returns, num_trials=num_trials)),
         pbo=float(approx_pbo(returns)),
+        active_fold_ratio=float(active_fold_ratio),
+        inactive_fold_count=float(inactive_fold_count),
+        failed_fold_ratio=float(failed_fold_ratio),
         spa_pvalue=float(spa_like_pvalue(returns)),
     )
 
@@ -323,6 +372,9 @@ def compute_metric_summary(
         "benchmark_corr": metric_payload.benchmark_corr,
         "deflated_sharpe": metric_payload.deflated_sharpe,
         "pbo": metric_payload.pbo,
+        "active_fold_ratio": metric_payload.active_fold_ratio,
+        "inactive_fold_count": metric_payload.inactive_fold_count,
+        "failed_fold_ratio": metric_payload.failed_fold_ratio,
         "spa_pvalue": metric_payload.spa_pvalue,
         "risk_free_annual": risk_free_annual,
         "risk_free_per_period": risk_free_per_period,
@@ -377,6 +429,7 @@ __all__ = [
     "correlation",
     "deflated_sharpe_ratio",
     "empty_compute_metric_payload",
+    "fold_participation_stats",
     "max_drawdown",
     "resolve_compute_metric_payload",
     "resolve_risk_free_config",

@@ -110,6 +110,24 @@ def test_load_ohlcv_resamples_with_bucket_groupby(tmp_path: Path):
     assert minute["volume"].to_list() == [6.0, 4.0]
 
 
+def test_load_ohlcv_reads_valid_prefix_without_forcing_repair(tmp_path: Path):
+    repo = ParquetMarketDataRepository(tmp_path)
+    repo.upsert_1s(exchange="binance", symbol="BTC/USDT", rows=_sample_1s_frame())
+
+    wal_path = tmp_path / "market_ohlcv_1s" / "binance" / "BTCUSDT" / "wal.bin"
+    original_size = wal_path.stat().st_size
+    with wal_path.open("ab") as fh:
+        fh.write(b"broken-tail")
+
+    minute = repo.load_ohlcv(exchange="binance", symbol="BTC/USDT", timeframe="1m")
+
+    assert wal_path.stat().st_size == original_size + len(b"broken-tail")
+    assert minute.height == 2
+    assert minute["open"].to_list() == [100.0, 103.0]
+    assert minute["close"].to_list() == [102.5, 103.5]
+    assert minute["volume"].to_list() == [6.0, 4.0]
+
+
 def test_compact_partition_merges_files(tmp_path: Path):
     repo = ParquetMarketDataRepository(tmp_path)
     frame = _sample_1s_frame().head(2)

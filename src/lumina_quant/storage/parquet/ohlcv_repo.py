@@ -1544,7 +1544,10 @@ class ParquetMarketDataRepository:
         if not wal_path.exists():
             return self._empty_ohlcv_frame()
 
-        wal = BinaryWAL(wal_path, auto_repair=True)
+        # Read paths only need the valid prefix. Avoid eagerly repairing/truncating the
+        # WAL on every load because large healthy WALs can spend most of the batch budget
+        # re-validating bytes that will be decoded again immediately afterwards.
+        wal = BinaryWAL(wal_path, auto_repair=False)
         start_ms = self._datetime_to_ms(start_date)
         end_ms = self._datetime_to_ms(end_date)
         records = list(wal.iter_range(start_ms, end_ms))
@@ -2191,7 +2194,9 @@ class ParquetMarketDataRepository:
 
         wal_path = self._wal_path(exchange=exchange, symbol=symbol)
         if wal_path.exists():
-            wal = BinaryWAL(wal_path, auto_repair=True)
+            # Metadata scans are read-only; iterate the valid prefix without forcing a
+            # full repair pass on every open.
+            wal = BinaryWAL(wal_path, auto_repair=False)
             first_wal: WALRecord | None = None
             last_wal: WALRecord | None = None
             for record in wal.iter_all():

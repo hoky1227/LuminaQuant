@@ -9,6 +9,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+_ROLLING_RANK_MAX_TEMP_BYTES = 64 * 1024 * 1024
+
 
 def _tail(values, window: int) -> list[float] | None:
     window_i = max(1, int(window))
@@ -153,9 +155,37 @@ def adv(closes, volumes, window: int = 20) -> float | None:
     return float(sum(dollars) / float(window_i))
 
 
+def _rolling_rank_chunk_rows(window: int) -> int:
+    window_i = max(2, int(window))
+    bytes_per_row = max(1, window_i * 3)  # valid, less-than, equal-to masks
+    return max(1, int(_ROLLING_RANK_MAX_TEMP_BYTES // bytes_per_row))
+
+
 def rolling_rank_series(series: pd.Series, window: int = 20) -> pd.Series:
     w = max(2, int(window))
-    return series.rolling(w).apply(lambda a: pd.Series(a).rank(pct=True).iloc[-1], raw=False)
+    values = series.to_numpy(dtype=float, na_value=np.nan, copy=False)
+    out = np.full(values.shape, np.nan, dtype=float)
+    if values.size < w:
+        return pd.Series(out, index=series.index, dtype=float)
+
+    windows = np.lib.stride_tricks.sliding_window_view(values, window_shape=w)
+    chunk_rows = _rolling_rank_chunk_rows(w)
+
+    for start in range(0, windows.shape[0], chunk_rows):
+        end = min(windows.shape[0], start + chunk_rows)
+        chunk = windows[start:end]
+        last = chunk[:, -1]
+        valid = np.isfinite(chunk)
+        valid_last = np.isfinite(last)
+        below = (valid & (chunk < last[:, None])).sum(axis=1, dtype=np.int32)
+        equal = (valid & (chunk == last[:, None])).sum(axis=1, dtype=np.int32)
+        denom = valid.sum(axis=1, dtype=np.int32)
+        ranked = np.full(end - start, np.nan, dtype=float)
+        ok = valid_last & (denom == w)
+        ranked[ok] = (below[ok] + ((equal[ok] + 1.0) / 2.0)) / denom[ok]
+        out[w - 1 + start : w - 1 + end] = ranked
+
+    return pd.Series(out, index=series.index, dtype=float)
 
 
 def ts_sum_series(series: pd.Series, window: int) -> pd.Series:
@@ -199,4 +229,3 @@ def adv_series(closes: pd.Series, volumes: pd.Series, window: int = 20) -> pd.Se
     vol = volumes.clip(lower=0.0)
     dollars = closes * vol
     return dollars.rolling(w).mean()
-

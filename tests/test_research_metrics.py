@@ -38,6 +38,9 @@ def test_compute_metric_summary_exposes_alias_fields() -> None:
         benchmark_corr=0.7,
         deflated_sharpe=0.6,
         pbo=0.1,
+        active_fold_ratio=0.75,
+        inactive_fold_count=1.0,
+        failed_fold_ratio=0.25,
         spa_pvalue=0.2,
     )
     resolved_rf = SimpleNamespace(
@@ -52,8 +55,28 @@ def test_compute_metric_summary_exposes_alias_fields() -> None:
     assert summary["return"] == summary["total_return"] == 0.12
     assert summary["trades"] == summary["trade_count"] == 4.0
     assert summary["mdd"] == summary["max_drawdown"] == 0.15
+    assert summary["active_fold_ratio"] == 0.75
+    assert summary["inactive_fold_count"] == 1.0
+    assert summary["failed_fold_ratio"] == 0.25
     assert summary["risk_free_annual"] == 0.04
     assert summary["sortino_target_per_period"] == 0.0008
+
+
+def test_fold_participation_stats_flags_inactive_and_failed_folds() -> None:
+    returns = np.concatenate(
+        [
+            np.full(32, 0.01, dtype=float),
+            np.zeros(32, dtype=float),
+            np.full(32, -0.01, dtype=float),
+            np.zeros(32, dtype=float),
+        ]
+    )
+
+    active_fold_ratio, inactive_fold_count, failed_fold_ratio = research_metrics.fold_participation_stats(returns)
+
+    assert active_fold_ratio < 1.0
+    assert inactive_fold_count >= 1.0
+    assert failed_fold_ratio > 0.0
 
 
 def test_research_metrics_compute_metrics_matches_runner_wrapper() -> None:

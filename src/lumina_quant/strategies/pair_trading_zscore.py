@@ -10,13 +10,19 @@ from statistics import mean
 
 from lumina_quant.core.events import SignalEvent
 from lumina_quant.indicators.common import safe_float
-from lumina_quant.indicators.rolling_stats import rolling_beta, rolling_corr, sample_std
+from lumina_quant.indicators.rolling_stats import (
+    recursive_least_squares_beta_update,
+    rolling_beta,
+    rolling_corr,
+    sample_std,
+)
 from lumina_quant.indicators.vwap import rolling_vwap
 from lumina_quant.strategy import Strategy
 from lumina_quant.symbols import canonical_symbol
 from lumina_quant.tuning import HyperParam, resolve_params_from_schema
 
 LOGGER = logging.getLogger(__name__)
+MAX_HEDGE_FORGETTING_FACTOR = math.nextafter(1.0, 0.0)
 
 
 class PairTradingZScoreStrategy(Strategy):
@@ -173,6 +179,21 @@ class PairTradingZScoreStrategy(Strategy):
             "symbol_x": HyperParam.string("symbol_x", default="", tunable=False),
             "symbol_y": HyperParam.string("symbol_y", default="", tunable=False),
             "use_log_price": HyperParam.boolean("use_log_price", default=True, tunable=False),
+            "hedge_mode": HyperParam.string("hedge_mode", default="rolling", tunable=False),
+            "hedge_forgetting_factor": HyperParam.floating(
+                "hedge_forgetting_factor",
+                default=0.985,
+                low=0.5,
+                high=0.999999,
+                tunable=False,
+            ),
+            "hedge_covariance_init": HyperParam.floating(
+                "hedge_covariance_init",
+                default=10.0,
+                low=1e-6,
+                high=1e6,
+                tunable=False,
+            ),
             "vol_lag_bars": HyperParam.integer("vol_lag_bars", default=0, low=0, tunable=False),
             "min_vol_convergence": HyperParam.floating(
                 "min_vol_convergence",
@@ -245,6 +266,9 @@ class PairTradingZScoreStrategy(Strategy):
         symbol_x=None,
         symbol_y=None,
         use_log_price=True,
+        hedge_mode="rolling",
+        hedge_forgetting_factor=0.985,
+        hedge_covariance_init=10.0,
         vol_lag_bars=0,
         min_vol_convergence=0.0,
         vwap_window=0,
@@ -286,6 +310,9 @@ class PairTradingZScoreStrategy(Strategy):
                 "symbol_x": symbol_x,
                 "symbol_y": symbol_y,
                 "use_log_price": use_log_price,
+                "hedge_mode": hedge_mode,
+                "hedge_forgetting_factor": hedge_forgetting_factor,
+                "hedge_covariance_init": hedge_covariance_init,
                 "vol_lag_bars": vol_lag_bars,
                 "min_vol_convergence": min_vol_convergence,
                 "vwap_window": vwap_window,
@@ -327,6 +354,13 @@ class PairTradingZScoreStrategy(Strategy):
         self.min_volume_window = int(resolved["min_volume_window"])
         self.min_volume_ratio = float(resolved["min_volume_ratio"])
         self.use_log_price = bool(resolved["use_log_price"])
+        hedge_mode_raw = str(resolved["hedge_mode"]).strip().lower()
+        self.hedge_mode = "rls" if hedge_mode_raw == "rls" else "rolling"
+        self.hedge_forgetting_factor = max(
+            0.5,
+            min(MAX_HEDGE_FORGETTING_FACTOR, float(resolved["hedge_forgetting_factor"])),
+        )
+        self.hedge_covariance_init = max(1e-6, float(resolved["hedge_covariance_init"]))
         self.vol_lag_bars = int(resolved["vol_lag_bars"])
         self.min_vol_convergence = float(resolved["min_vol_convergence"])
         self.vwap_window = int(resolved["vwap_window"])
@@ -371,6 +405,8 @@ class PairTradingZScoreStrategy(Strategy):
         self._prev_zscore = None
 
         self._last_hedge_ratio = 1.0
+        self._adaptive_beta = None
+        self._adaptive_covariance = self.hedge_covariance_init
         self._last_zscore = None
         self._last_correlation = None
         self._last_vol_zscore = None
@@ -391,7 +427,12 @@ class PairTradingZScoreStrategy(Strategy):
             "spread_history": list(self._spread_history),
             "x_volume_history": list(self._x_volume_history),
             "y_volume_history": list(self._y_volume_history),
+            "hedge_mode": str(self.hedge_mode),
+            "hedge_forgetting_factor": float(self.hedge_forgetting_factor),
+            "hedge_covariance_init": float(self.hedge_covariance_init),
             "last_hedge_ratio": float(self._last_hedge_ratio),
+            "adaptive_beta": self._adaptive_beta,
+            "adaptive_covariance": float(self._adaptive_covariance),
             "last_zscore": self._last_zscore,
             "last_correlation": self._last_correlation,
             "last_vol_zscore": self._last_vol_zscore,
@@ -452,6 +493,19 @@ class PairTradingZScoreStrategy(Strategy):
         hedge_ratio = safe_float(state.get("last_hedge_ratio"))
         if hedge_ratio is not None:
             self._last_hedge_ratio = hedge_ratio
+        adaptive_beta = safe_float(state.get("adaptive_beta"))
+        self._adaptive_beta = adaptive_beta if adaptive_beta is not None else None
+        adaptive_covariance = safe_float(state.get("adaptive_covariance"))
+        if adaptive_covariance is not None:
+            self._adaptive_covariance = max(1e-6, float(adaptive_covariance))
+        hedge_mode = str(state.get("hedge_mode", self.hedge_mode)).strip().lower()
+        self.hedge_mode = "rls" if hedge_mode == "rls" else "rolling"
+        hedge_ff = safe_float(state.get("hedge_forgetting_factor"))
+        if hedge_ff is not None:
+            self.hedge_forgetting_factor = max(0.5, min(MAX_HEDGE_FORGETTING_FACTOR, float(hedge_ff)))
+        hedge_cov_init = safe_float(state.get("hedge_covariance_init"))
+        if hedge_cov_init is not None:
+            self.hedge_covariance_init = max(1e-6, float(hedge_cov_init))
 
         zscore = state.get("last_zscore")
         self._last_zscore = safe_float(zscore) if zscore is not None else None
@@ -545,6 +599,34 @@ class PairTradingZScoreStrategy(Strategy):
         if len(self._x_history) < self.hedge_window or len(self._y_history) < self.hedge_window:
             return None
         return rolling_beta(self._x_history, self._y_history)
+
+    def _adaptive_rls_beta(self, x_value: float, y_value: float):
+        if len(self._x_history) < max(8, min(self.hedge_window, 16)):
+            return None
+        if self._adaptive_beta is None:
+            initial_beta = self._rolling_beta()
+            if initial_beta is None:
+                return None
+            self._adaptive_beta = float(initial_beta)
+            self._adaptive_covariance = self.hedge_covariance_init
+        updated = recursive_least_squares_beta_update(
+            float(self._adaptive_beta),
+            float(self._adaptive_covariance),
+            x_value=float(x_value),
+            y_value=float(y_value),
+            forgetting_factor=float(self.hedge_forgetting_factor),
+        )
+        if updated is None:
+            return None
+        beta, covariance = updated
+        self._adaptive_beta = float(beta)
+        self._adaptive_covariance = float(covariance)
+        return float(beta)
+
+    def _resolve_hedge_beta(self, x_value: float, y_value: float):
+        if self.hedge_mode == "rls":
+            return self._adaptive_rls_beta(x_value, y_value)
+        return self._rolling_beta()
 
     def _rolling_corr(self):
         if (
@@ -812,7 +894,7 @@ class PairTradingZScoreStrategy(Strategy):
         self._x_history.append(x_value)
         self._y_history.append(y_value)
 
-        beta = self._rolling_beta()
+        beta = self._resolve_hedge_beta(x_value, y_value)
         if beta is None:
             return
         if not (self.min_abs_beta <= abs(beta) <= self.max_abs_beta):

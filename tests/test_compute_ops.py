@@ -26,6 +26,15 @@ def test_adv_series_outputs_expected_rolling_mean():
     assert round(float(adv.iloc[-1]), 8) == 405.0
 
 
+def test_rolling_rank_series_matches_legacy_pandas_apply_for_ties_and_nans():
+    series = pd.Series([1.0, 2.0, 2.0, float("nan"), 3.0, 1.0, 1.0, 4.0], dtype=float)
+    expected = series.rolling(4).apply(lambda a: pd.Series(a).rank(pct=True).iloc[-1], raw=False)
+
+    actual = compute_ops.rolling_rank_series(series, window=4)
+
+    pd.testing.assert_series_equal(actual, expected)
+
+
 def test_formulaic_operator_delta_is_routed_to_compute_ops(monkeypatch):
     monkeypatch.setattr(fops.compute_ops, "delta", lambda values, periods=1: 123.0)
     assert fops.delta([1.0, 2.0, 3.0], periods=1) == 123.0
@@ -34,4 +43,3 @@ def test_formulaic_operator_delta_is_routed_to_compute_ops(monkeypatch):
 def test_volume_price_volume_correlation_uses_compute_ops(monkeypatch):
     monkeypatch.setattr(volume_indicators.compute_ops, "ts_corr", lambda *_args, **_kwargs: 0.25)
     assert volume_indicators.price_volume_correlation([1.0, 2.0], [3.0, 4.0], window=2) == 0.25
-

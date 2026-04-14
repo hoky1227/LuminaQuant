@@ -44,6 +44,64 @@ def momentum_spread(momentum_x: float, momentum_y: float) -> float:
     return float(momentum_x) - float(momentum_y)
 
 
+def lagged_momentum_return(
+    values,
+    *,
+    lookback: int,
+    skip_bars: int = 1,
+) -> float | None:
+    """Return lagged momentum while skipping the most-recent bars.
+
+    This is useful for short-horizon crypto continuation effects where the
+    predictive signal comes from the previous day's move rather than the
+    in-progress bar.
+    """
+    values_f = [float(value) for value in values]
+    lookback_i = max(1, int(lookback))
+    skip_i = max(0, int(skip_bars))
+    required = lookback_i + skip_i + 1
+    if len(values_f) < required:
+        return None
+
+    latest_idx = len(values_f) - 1 - skip_i
+    start_idx = latest_idx - lookback_i
+    if start_idx < 0:
+        return None
+
+    base = values_f[start_idx]
+    latest = values_f[latest_idx]
+    if base <= 0.0:
+        return None
+    momentum = (latest / base) - 1.0
+    return momentum if math.isfinite(momentum) else None
+
+
+def rolling_mean_dollar_volume(
+    close_values,
+    volume_values,
+    *,
+    window: int,
+) -> float | None:
+    """Return trailing average dollar volume over ``window`` bars."""
+    close_f = [float(value) for value in close_values]
+    volume_f = [float(value) for value in volume_values]
+    window_i = max(1, int(window))
+    if len(close_f) < window_i or len(volume_f) < window_i:
+        return None
+
+    total = 0.0
+    count = 0
+    for close, volume in zip(close_f[-window_i:], volume_f[-window_i:], strict=True):
+        if close <= 0.0 or volume < 0.0:
+            continue
+        total += close * volume
+        count += 1
+    if count <= 0:
+        return None
+    value = total / float(count)
+    return value if math.isfinite(value) else None
+
+
 def kaufman_efficiency_ratio(values, *, period: int = 10) -> float | None:
     """Return Kaufman Efficiency Ratio over trailing window."""
     period_i = max(1, int(period))

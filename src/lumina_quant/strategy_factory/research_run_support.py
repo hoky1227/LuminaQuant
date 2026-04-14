@@ -45,6 +45,11 @@ DEFAULT_RESEARCH_SCORING_CONFIG: dict[str, Any] = {
         "instability_sharpe_penalty": 0.75,
         "instability_return_penalty": 35.0,
         "instability_turnover_penalty": 1.0,
+        "inactive_fold_penalty": 0.75,
+        "failed_fold_penalty": 1.5,
+        "low_active_fold_penalty": 2.0,
+        "active_fold_ratio_floor": 0.75,
+        "no_trade_train_penalty": 1_000_000.0,
     },
     "hurdle_score_weights": {
         "sharpe_weight": 2.4,
@@ -140,6 +145,10 @@ def _candidate_identity(candidate: dict[str, Any]) -> str:
 
 def _family_from_strategy(strategy_class: str) -> str:
     token = str(strategy_class).strip().lower()
+    if "abnormalreturncontinuation" in token or "abnormal_return_continuation" in token:
+        return "event_alpha"
+    if "lastdayliquidityregime" in token or "last_day_liquidity_regime" in token:
+        return "cross_sectional"
     if "composite" in token or "trend" in token:
         return "trend"
     if "vwap" in token or "reversion" in token:
@@ -250,16 +259,15 @@ def _resolve_research_run_timeframes_and_universe(
         required=CANONICAL_STRATEGY_TIMEFRAMES,
         strict_subset=True,
     )
-    universe = canonicalize_symbol_list(
-        symbol_universe or current_research_market_data_settings()["symbols"]
-    )
     candidate_symbols = canonicalize_symbol_list(
         itertools.chain.from_iterable(list(row.get("symbols") or []) for row in adapted)
     )
-    if candidate_symbols:
-        universe = canonicalize_symbol_list(
-            list(dict.fromkeys(list(universe) + list(candidate_symbols)))
-        )
+    if symbol_universe:
+        universe = canonicalize_symbol_list(symbol_universe)
+    elif candidate_symbols:
+        universe = candidate_symbols
+    else:
+        universe = canonicalize_symbol_list(current_research_market_data_settings()["symbols"])
     return normalized_timeframes, universe
 
 

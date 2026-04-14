@@ -7,6 +7,7 @@ import numpy as np
 import polars as pl
 
 from lumina_quant.strategy_factory import research_runner
+from lumina_quant.strategy_factory import research_run_support
 
 
 def _minute_datetimes(length: int) -> np.ndarray:
@@ -60,6 +61,24 @@ def test_align_bundles_augments_feature_series_from_feature_cache():
     assert "BTC/USDT:crowding_score" in aligned
     assert np.isclose(float(aligned["BTC/USDT:funding_fee_rate"][-1]), 0.00025)
     assert np.isfinite(float(aligned["BTC/USDT:crowding_score"][-1]))
+
+
+def test_research_run_uses_candidate_symbols_as_default_universe() -> None:
+    adapted = [
+        {
+            "strategy_timeframe": "1h",
+            "timeframe": "1h",
+            "symbols": ["BTC/USDT", "ETH/USDT"],
+        }
+    ]
+
+    _, universe = research_run_support._resolve_research_run_timeframes_and_universe(
+        adapted=adapted,
+        strategy_timeframes=None,
+        symbol_universe=None,
+    )
+
+    assert universe == ["BTC/USDT", "ETH/USDT"]
 
 
 def test_align_bundles_ignores_empty_feature_frames():
@@ -166,6 +185,106 @@ def test_composite_trend_blocks_entries_when_crowding_score_is_extreme():
     )
 
     assert np.allclose(exposure, 0.0)
+
+
+def test_last_day_liquidity_regime_strategy_routes_liquid_momentum_and_illiquid_reversal():
+    length = 120
+    symbols = ["BTC/USDT", "ETH/USDT", "BNB/USDT", "TRX/USDT"]
+    aligned = {"datetime": _minute_datetimes(length)}
+
+    close_map = {
+        "BTC/USDT": np.linspace(100.0, 145.0, length, dtype=float),
+        "ETH/USDT": np.linspace(140.0, 120.0, length, dtype=float),
+        "BNB/USDT": np.linspace(80.0, 120.0, length, dtype=float),
+        "TRX/USDT": np.linspace(90.0, 60.0, length, dtype=float),
+    }
+    volume_map = {
+        "BTC/USDT": np.linspace(5_000.0, 6_000.0, length, dtype=float),
+        "ETH/USDT": np.linspace(4_500.0, 5_500.0, length, dtype=float),
+        "BNB/USDT": np.linspace(200.0, 250.0, length, dtype=float),
+        "TRX/USDT": np.linspace(180.0, 220.0, length, dtype=float),
+    }
+    for symbol in symbols:
+        close = close_map[symbol]
+        aligned[f"{symbol}:open"] = close - 0.2
+        aligned[f"{symbol}:high"] = close + 0.4
+        aligned[f"{symbol}:low"] = close - 0.4
+        aligned[f"{symbol}:close"] = close
+        aligned[f"{symbol}:volume"] = volume_map[symbol]
+
+    candidate = {
+        "strategy_class": "LastDayLiquidityRegimeStrategy",
+        "params": {
+            "momentum_lookback_bars": 24,
+            "signal_skip_bars": 1,
+            "liquidity_window": 24,
+            "volatility_window": 24,
+            "rebalance_bars": 6,
+            "signal_threshold": 0.01,
+            "liquidity_quantile": 0.50,
+            "max_longs": 2,
+            "max_shorts": 1,
+            "min_price": 0.10,
+            "max_realized_vol": 1.0,
+            "stop_loss_pct": 0.05,
+            "allow_short": True,
+            "illiquid_reversal": True,
+        },
+    }
+
+    _, turnover, exposure, meta = research_runner._strategy_signal(
+        candidate,
+        aligned=aligned,
+        symbols=symbols,
+    )
+
+    assert turnover.shape == (length,)
+    assert exposure.shape == (length,)
+    assert meta.get("liquidity_conditioned") is True
+    assert meta.get("signal_family") == "last_day_liquidity_regime"
+    assert np.any(turnover > 0.0)
+
+
+def test_abnormal_return_continuation_strategy_generates_event_exposure() -> None:
+    length = 80
+    symbols = ["BNB/USDT"]
+    aligned = {"datetime": _minute_datetimes(length)}
+    close = np.concatenate(
+        [
+            np.linspace(100.0, 102.0, 20, dtype=float),
+            np.linspace(102.0, 125.0, 5, dtype=float),
+            np.linspace(125.0, 130.0, 20, dtype=float),
+            np.linspace(130.0, 120.0, 35, dtype=float),
+        ]
+    )
+    aligned["BNB/USDT:open"] = close - 0.2
+    aligned["BNB/USDT:high"] = close + 0.4
+    aligned["BNB/USDT:low"] = close - 0.4
+    aligned["BNB/USDT:close"] = close
+    aligned["BNB/USDT:volume"] = np.linspace(1_000.0, 1_500.0, length, dtype=float)
+
+    candidate = {
+        "strategy_class": "AbnormalReturnContinuationStrategy",
+        "params": {
+            "return_z_window": 12,
+            "entry_z": 1.0,
+            "exit_z": 0.15,
+            "hold_bars": 2,
+            "stop_loss_pct": 0.08,
+            "allow_short": True,
+        },
+    }
+
+    _, turnover, exposure, meta = research_runner._strategy_signal(
+        candidate,
+        aligned=aligned,
+        symbols=symbols,
+    )
+
+    assert turnover.shape == (length,)
+    assert exposure.shape == (length,)
+    assert meta.get("signal_family") == "abnormal_return_continuation"
+    assert np.any(turnover > 0.0)
 
 
 def test_composite_trend_respects_long_only_retune_and_exposure_damping():
@@ -1515,6 +1634,60 @@ def test_session_gated_residual_basket_reversion_strategy_signal_produces_exposu
     assert np.any(turnover > 0.0)
     assert meta.get("session_gated") is True
     assert meta.get("residualized_cross_sectional") is True
+
+
+def test_volatility_regime_residual_basket_reversion_strategy_signal_produces_exposure():
+    length = 420
+    btc_close = np.linspace(100.0, 118.0, length, dtype=float)
+    eth_close = np.linspace(100.0, 112.0, length, dtype=float)
+    bnb_close = np.linspace(100.0, 108.0, length, dtype=float)
+    sol_close = np.linspace(100.0, 110.0, length, dtype=float)
+    eth_close[200:210] *= np.linspace(0.96, 0.92, 10, dtype=float)
+    bnb_close[200:210] *= np.linspace(1.04, 1.08, 10, dtype=float)
+    sol_close[200:210] *= np.linspace(0.95, 0.91, 10, dtype=float)
+    aligned = {"datetime": _minute_datetimes(length)}
+    for symbol, close in {
+        "BTC/USDT": btc_close,
+        "ETH/USDT": eth_close,
+        "BNB/USDT": bnb_close,
+        "SOL/USDT": sol_close,
+    }.items():
+        aligned[f"{symbol}:open"] = close
+        aligned[f"{symbol}:high"] = close + 0.2
+        aligned[f"{symbol}:low"] = close - 0.2
+        aligned[f"{symbol}:close"] = close
+        aligned[f"{symbol}:volume"] = np.full(length, 120.0, dtype=float)
+
+    candidate = {
+        "strategy_class": "VolatilityRegimeResidualBasketReversionStrategy",
+        "params": {
+            "residual_window": 32,
+            "entry_z": 0.8,
+            "exit_z": 0.2,
+            "rebalance_bars": 2,
+            "max_longs": 1,
+            "max_shorts": 1,
+            "stop_loss_pct": 0.02,
+            "allow_short": True,
+            "btc_symbol": "BTC/USDT",
+            "btc_vol_fast": 12,
+            "btc_vol_slow": 60,
+            "btc_vol_ratio_cap": 1.2,
+            "dispersion_floor": 0.0005,
+        },
+    }
+
+    _, turnover, exposure, meta = research_runner._strategy_signal(
+        candidate,
+        aligned=aligned,
+        symbols=["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT"],
+    )
+
+    assert np.any(np.abs(exposure) > 0.0)
+    assert np.any(turnover > 0.0)
+    assert meta.get("volatility_regime_gated") is True
+    assert meta.get("residualized_cross_sectional") is True
+    assert meta.get("btc_vol_fast") == 12
 
 
 def test_session_gated_residual_basket_reversion_preserves_default_window(monkeypatch):

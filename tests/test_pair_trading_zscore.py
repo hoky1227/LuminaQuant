@@ -134,6 +134,17 @@ class TestPairTradingZScore(unittest.TestCase):
         signal_types = [signal_type for _, _, signal_type in signals]
         self.assertIn("EXIT", signal_types)
 
+    def test_rls_hedge_mode_roundtrip_preserves_signal_sequence(self):
+        prices = _build_pair_prices()
+        params = {
+            "hedge_mode": "rls",
+            "hedge_forgetting_factor": 0.99,
+            "hedge_covariance_init": 6.0,
+        }
+        full_signals = _run_strategy(prices, param_overrides=params)
+        split_signals = _run_strategy(prices, split=190, param_overrides=params)
+        self.assertEqual(full_signals, split_signals)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -577,6 +577,9 @@ class _ComputedMetricPayload:
     benchmark_corr: float
     deflated_sharpe: float
     pbo: float
+    active_fold_ratio: float
+    inactive_fold_count: float
+    failed_fold_ratio: float
     spa_pvalue: float
 
 
@@ -2561,6 +2564,15 @@ class _ResidualBasketReversionConfig:
     allow_short: bool
 
 
+@dataclass(frozen=True, slots=True)
+class _VolatilityRegimeResidualBasketReversionConfig:
+    residual: _ResidualBasketReversionConfig
+    btc_vol_fast: int
+    btc_vol_slow: int
+    btc_vol_ratio_cap: float
+    dispersion_floor: float
+
+
 def _resolve_residual_basket_reversion_config(
     params: Mapping[str, Any],
     *,
@@ -2576,6 +2588,33 @@ def _resolve_residual_basket_reversion_config(
         stop_loss_pct=float(params.get("stop_loss_pct", 0.02)),
         allow_short=bool(params.get("allow_short", True)),
     )
+
+
+def _resolve_volatility_regime_residual_basket_reversion_config(
+    params: Mapping[str, Any],
+) -> _VolatilityRegimeResidualBasketReversionConfig:
+    return _VolatilityRegimeResidualBasketReversionConfig(
+        residual=_resolve_residual_basket_reversion_config(params),
+        btc_vol_fast=max(4, int(params.get("btc_vol_fast", 12))),
+        btc_vol_slow=max(8, int(params.get("btc_vol_slow", 60))),
+        btc_vol_ratio_cap=float(params.get("btc_vol_ratio_cap", 1.10)),
+        dispersion_floor=max(0.0, float(params.get("dispersion_floor", 0.002))),
+    )
+
+
+def _cross_sectional_return_dispersion(close_map_np: Mapping[str, np.ndarray]) -> np.ndarray:
+    symbols = list(close_map_np.keys())
+    if not symbols:
+        return np.asarray([], dtype=float)
+    rows: list[np.ndarray] = []
+    for symbol in symbols:
+        close = np.clip(np.asarray(close_map_np[symbol], dtype=float), 1e-12, np.inf)
+        log_close = np.log(close)
+        rows.append(np.diff(log_close, prepend=log_close[0]))
+    stacked = np.vstack(rows)
+    if stacked.shape[0] < 2:
+        return np.zeros(stacked.shape[1], dtype=float)
+    return np.std(stacked, axis=0, ddof=1)
 
 
 def _apply_residual_basket_reversion_strategy(
@@ -3993,6 +4032,372 @@ def _apply_topcap_tsmom_strategy(
 
 
 @dataclass(frozen=True, slots=True)
+class _LastDayLiquidityRegimeConfig:
+    momentum_lookback_bars: int
+    signal_skip_bars: int
+    liquidity_window: int
+    volatility_window: int
+    rebalance_bars: int
+    signal_threshold: float
+    liquidity_quantile: float
+    max_longs: int
+    max_shorts: int
+    min_price: float
+    max_realized_vol: float
+    stop_loss_pct: float
+    allow_short: bool
+    illiquid_reversal: bool
+
+
+def _resolve_last_day_liquidity_regime_config(
+    params: Mapping[str, Any],
+) -> _LastDayLiquidityRegimeConfig:
+    return _LastDayLiquidityRegimeConfig(
+        momentum_lookback_bars=max(4, int(params.get("momentum_lookback_bars", 24))),
+        signal_skip_bars=max(0, int(params.get("signal_skip_bars", 1))),
+        liquidity_window=max(4, int(params.get("liquidity_window", 24))),
+        volatility_window=max(4, int(params.get("volatility_window", 24))),
+        rebalance_bars=max(1, int(params.get("rebalance_bars", 6))),
+        signal_threshold=max(0.0, float(params.get("signal_threshold", 0.012))),
+        liquidity_quantile=min(1.0, max(0.0, float(params.get("liquidity_quantile", 0.60)))),
+        max_longs=max(0, int(params.get("max_longs", 2))),
+        max_shorts=max(0, int(params.get("max_shorts", 1))),
+        min_price=max(0.0, float(params.get("min_price", 0.10))),
+        max_realized_vol=max(0.0, float(params.get("max_realized_vol", 0.09))),
+        stop_loss_pct=max(0.0, float(params.get("stop_loss_pct", 0.05))),
+        allow_short=bool(params.get("allow_short", True)),
+        illiquid_reversal=bool(params.get("illiquid_reversal", True)),
+    )
+
+
+def _lagged_return_series(values: np.ndarray, *, lookback: int, skip_bars: int) -> np.ndarray:
+    arr = np.asarray(values, dtype=float)
+    out = np.full(arr.shape, np.nan, dtype=float)
+    required = max(1, int(lookback)) + max(0, int(skip_bars))
+    for idx in range(required, arr.size):
+        latest_idx = idx - max(0, int(skip_bars))
+        base_idx = latest_idx - max(1, int(lookback))
+        if base_idx < 0 or latest_idx < 0:
+            continue
+        base = float(arr[base_idx])
+        latest = float(arr[latest_idx])
+        if not np.isfinite(base) or not np.isfinite(latest) or base <= 0.0:
+            continue
+        out[idx] = (latest / base) - 1.0
+    return out
+
+
+def _rolling_mean_dollar_volume_series(
+    close: np.ndarray,
+    volume: np.ndarray,
+    *,
+    window: int,
+) -> np.ndarray:
+    close_arr = np.asarray(close, dtype=float)
+    volume_arr = np.asarray(volume, dtype=float)
+    out = np.full(close_arr.shape, np.nan, dtype=float)
+    win = max(1, int(window))
+    for idx in range(win - 1, close_arr.size):
+        close_tail = close_arr[idx - win + 1 : idx + 1]
+        volume_tail = volume_arr[idx - win + 1 : idx + 1]
+        valid = np.isfinite(close_tail) & np.isfinite(volume_tail) & (close_tail > 0.0) & (volume_tail >= 0.0)
+        if not np.any(valid):
+            continue
+        dollar_volume = close_tail[valid] * volume_tail[valid]
+        out[idx] = float(np.mean(dollar_volume))
+    return out
+
+
+def _liquidity_threshold_for_index(
+    liquidity_by_symbol: Mapping[str, np.ndarray],
+    *,
+    idx: int,
+    quantile: float,
+) -> float | None:
+    values = sorted(
+        float(series[idx])
+        for series in liquidity_by_symbol.values()
+        if idx < len(series) and np.isfinite(series[idx]) and float(series[idx]) > 0.0
+    )
+    if not values:
+        return None
+    pos = min(len(values) - 1, max(0, math.floor((len(values) - 1) * quantile)))
+    return float(values[pos])
+
+
+def _rebalance_last_day_liquidity_positions(
+    *,
+    idx: int,
+    symbols: Sequence[str],
+    close_by_symbol: Mapping[str, np.ndarray],
+    momentum_by_symbol: Mapping[str, np.ndarray],
+    liquidity_by_symbol: Mapping[str, np.ndarray],
+    realized_vol_by_symbol: Mapping[str, np.ndarray],
+    position_state: np.ndarray,
+    entry_price: np.ndarray,
+    config: _LastDayLiquidityRegimeConfig,
+) -> tuple[dict[str, float], dict[str, str], float | None]:
+    liquidity_threshold = _liquidity_threshold_for_index(
+        liquidity_by_symbol,
+        idx=idx,
+        quantile=config.liquidity_quantile,
+    )
+    adjusted_scores: dict[str, float] = {}
+    liquidity_regimes: dict[str, str] = {}
+
+    for symbol in symbols:
+        close_value = float(close_by_symbol[symbol][idx])
+        momentum = float(momentum_by_symbol[symbol][idx])
+        liquidity = float(liquidity_by_symbol[symbol][idx])
+        realized_vol = float(realized_vol_by_symbol[symbol][idx])
+        if (
+            not np.isfinite(close_value)
+            or close_value < config.min_price
+            or not np.isfinite(momentum)
+            or not np.isfinite(liquidity)
+            or liquidity <= 0.0
+        ):
+            continue
+        if not np.isfinite(realized_vol):
+            realized_vol = 0.0
+        if realized_vol > config.max_realized_vol:
+            continue
+
+        is_liquid = liquidity_threshold is None or liquidity >= liquidity_threshold
+        if is_liquid:
+            adjusted_scores[symbol] = momentum
+            liquidity_regimes[symbol] = "liquid_momentum"
+        elif config.illiquid_reversal:
+            adjusted_scores[symbol] = -momentum
+            liquidity_regimes[symbol] = "illiquid_reversal"
+        else:
+            liquidity_regimes[symbol] = "filtered_illiquid"
+
+    ordered = sorted(adjusted_scores.items(), key=lambda item: item[1])
+    longs = [
+        symbol for symbol, score in reversed(ordered) if score >= config.signal_threshold
+    ][: config.max_longs]
+    shorts: list[str] = []
+    if config.allow_short and config.max_shorts > 0:
+        shorts = [
+            symbol for symbol, score in ordered if score <= -config.signal_threshold
+        ][: config.max_shorts]
+    long_set = set(longs)
+    shorts = [symbol for symbol in shorts if symbol not in long_set]
+
+    symbol_index = {symbol: s_idx for s_idx, symbol in enumerate(symbols)}
+    targets = dict.fromkeys(longs, 1.0)
+    targets.update(dict.fromkeys(shorts, -1.0))
+    for symbol in symbols:
+        target = float(targets.get(symbol, 0.0))
+        s_idx = symbol_index[symbol]
+        position_state[s_idx] = target
+        entry_price[s_idx] = float(close_by_symbol[symbol][idx]) if abs(target) > 0.0 else np.nan
+
+    return adjusted_scores, liquidity_regimes, liquidity_threshold
+
+
+def _apply_last_day_liquidity_regime_strategy(
+    *,
+    params: Mapping[str, Any],
+    aligned: Mapping[str, np.ndarray],
+    symbols: Sequence[str],
+    n: int,
+    exposures: np.ndarray,
+    meta: dict[str, Any],
+) -> None:
+    config = _resolve_last_day_liquidity_regime_config(params)
+    close_by_symbol = {
+        symbol: np.asarray(aligned[f"{symbol}:close"], dtype=float)
+        for symbol in symbols
+    }
+    volume_by_symbol = {
+        symbol: np.asarray(aligned[f"{symbol}:volume"], dtype=float)
+        for symbol in symbols
+    }
+    momentum_by_symbol = {
+        symbol: _lagged_return_series(
+            close_arr,
+            lookback=config.momentum_lookback_bars,
+            skip_bars=config.signal_skip_bars,
+        )
+        for symbol, close_arr in close_by_symbol.items()
+    }
+    liquidity_by_symbol = {
+        symbol: _rolling_mean_dollar_volume_series(
+            close_by_symbol[symbol],
+            volume_by_symbol[symbol],
+            window=config.liquidity_window,
+        )
+        for symbol in symbols
+    }
+    realized_vol_by_symbol = {
+        symbol: _rolling_realized_vol(close_arr, config.volatility_window)
+        for symbol, close_arr in close_by_symbol.items()
+    }
+
+    position_state = np.zeros(len(symbols), dtype=float)
+    entry_price = np.full(len(symbols), np.nan, dtype=float)
+    last_adjusted_scores: dict[str, float] = {}
+    last_regimes: dict[str, str] = {}
+    last_liquidity_threshold: float | None = None
+
+    for idx in range(n):
+        current_close_map = {
+            symbol: float(close_by_symbol[symbol][idx])
+            for symbol in symbols
+        }
+        for s_idx, symbol in enumerate(symbols):
+            if not np.isfinite(entry_price[s_idx]) or abs(position_state[s_idx]) <= 0.0:
+                continue
+            current_close = current_close_map[symbol]
+            if not np.isfinite(current_close) or current_close <= 0.0:
+                continue
+            if (
+                (position_state[s_idx] > 0.0 and current_close <= entry_price[s_idx] * (1.0 - config.stop_loss_pct))
+                or (position_state[s_idx] < 0.0 and current_close >= entry_price[s_idx] * (1.0 + config.stop_loss_pct))
+            ):
+                position_state[s_idx] = 0.0
+                entry_price[s_idx] = np.nan
+
+        if idx % config.rebalance_bars == 0:
+            (
+                last_adjusted_scores,
+                last_regimes,
+                last_liquidity_threshold,
+            ) = _rebalance_last_day_liquidity_positions(
+                idx=idx,
+                symbols=symbols,
+                close_by_symbol=close_by_symbol,
+                momentum_by_symbol=momentum_by_symbol,
+                liquidity_by_symbol=liquidity_by_symbol,
+                realized_vol_by_symbol=realized_vol_by_symbol,
+                position_state=position_state,
+                entry_price=entry_price,
+                config=config,
+            )
+
+        exposures[:, idx] = position_state
+
+    meta["cross_sectional"] = True
+    meta["liquidity_conditioned"] = True
+    meta["signal_family"] = "last_day_liquidity_regime"
+    meta["liquidity_quantile"] = config.liquidity_quantile
+    meta["illiquid_reversal"] = config.illiquid_reversal
+    meta["last_liquidity_threshold"] = last_liquidity_threshold
+    if last_adjusted_scores:
+        meta["last_adjusted_scores"] = dict(last_adjusted_scores)
+    if last_regimes:
+        meta["last_liquidity_regimes"] = dict(last_regimes)
+
+
+@dataclass(frozen=True, slots=True)
+class _AbnormalReturnContinuationConfig:
+    return_z_window: int
+    entry_z: float
+    exit_z: float
+    hold_bars: int
+    stop_loss_pct: float
+    allow_short: bool
+
+
+def _resolve_abnormal_return_continuation_config(
+    params: Mapping[str, Any],
+) -> _AbnormalReturnContinuationConfig:
+    return _AbnormalReturnContinuationConfig(
+        return_z_window=max(4, int(params.get("return_z_window", 20))),
+        entry_z=max(0.1, float(params.get("entry_z", 1.5))),
+        exit_z=max(0.0, float(params.get("exit_z", 0.25))),
+        hold_bars=max(1, int(params.get("hold_bars", 2))),
+        stop_loss_pct=max(0.0, float(params.get("stop_loss_pct", 0.06))),
+        allow_short=bool(params.get("allow_short", True)),
+    )
+
+
+def _abnormal_return_continuation_position_series(
+    *,
+    close: np.ndarray,
+    config: _AbnormalReturnContinuationConfig,
+) -> np.ndarray:
+    returns = _returns_from_close(close)
+    zscore = np.nan_to_num(_rolling_z(returns, config.return_z_window), nan=0.0)
+    position = np.zeros(close.shape, dtype=float)
+    mode = 0
+    entry_price: float | None = None
+    bars_held = 0
+
+    for idx in range(close.size):
+        price = float(close[idx])
+        z_i = float(zscore[idx]) if np.isfinite(zscore[idx]) else 0.0
+
+        if mode == 1:
+            bars_held += 1
+            should_exit = (
+                bars_held >= config.hold_bars
+                or z_i <= config.exit_z
+                or (entry_price is not None and price <= entry_price * (1.0 - config.stop_loss_pct))
+            )
+            if should_exit:
+                mode = 0
+                entry_price = None
+                bars_held = 0
+                position[idx] = 0.0
+                continue
+            position[idx] = 1.0
+            continue
+
+        if mode == -1:
+            bars_held += 1
+            should_exit = (
+                bars_held >= config.hold_bars
+                or z_i >= -config.exit_z
+                or (entry_price is not None and price >= entry_price * (1.0 + config.stop_loss_pct))
+            )
+            if should_exit:
+                mode = 0
+                entry_price = None
+                bars_held = 0
+                position[idx] = 0.0
+                continue
+            position[idx] = -1.0
+            continue
+
+        if z_i >= config.entry_z:
+            mode = 1
+            entry_price = price
+            bars_held = 0
+            position[idx] = 1.0
+            continue
+        if config.allow_short and z_i <= -config.entry_z:
+            mode = -1
+            entry_price = price
+            bars_held = 0
+            position[idx] = -1.0
+            continue
+
+    return position
+
+
+def _apply_abnormal_return_continuation_strategy(
+    *,
+    params: Mapping[str, Any],
+    aligned: Mapping[str, np.ndarray],
+    symbols: Sequence[str],
+    exposures: np.ndarray,
+    meta: dict[str, Any],
+) -> None:
+    config = _resolve_abnormal_return_continuation_config(params)
+    for s_idx, symbol in enumerate(symbols):
+        close = np.asarray(aligned[f"{symbol}:close"], dtype=float)
+        exposures[s_idx] = _abnormal_return_continuation_position_series(close=close, config=config)
+    meta["event_alpha"] = True
+    meta["signal_family"] = "abnormal_return_continuation"
+    meta["hold_bars"] = config.hold_bars
+    meta["entry_z"] = config.entry_z
+    meta["allow_short"] = config.allow_short
+
+
+@dataclass(frozen=True, slots=True)
 class _MeanReversionStdConfig:
     window: int
     entry_z: float
@@ -4725,6 +5130,47 @@ def _apply_session_gated_residual_basket_reversion_strategy(
     )
 
 
+def _apply_volatility_regime_residual_basket_reversion_strategy(
+    *,
+    params: Mapping[str, Any],
+    aligned: Mapping[str, np.ndarray],
+    symbols: Sequence[str],
+    exposures: np.ndarray,
+    meta: dict[str, Any],
+) -> None:
+    config = _resolve_volatility_regime_residual_basket_reversion_config(params)
+    btc_symbol = canonical_symbol(str(params.get("btc_symbol") or "BTC/USDT"))
+    if btc_symbol not in symbols:
+        btc_symbol = canonical_symbol(str(symbols[0]))
+
+    btc_close = np.asarray(aligned[f"{btc_symbol}:close"], dtype=float)
+    close_map_np = {
+        symbol: np.asarray(aligned[f"{symbol}:close"], dtype=float)
+        for symbol in symbols
+    }
+    vol_ratio = np.nan_to_num(
+        _vol_ratio_series(btc_close, config.btc_vol_fast, config.btc_vol_slow),
+        nan=0.0,
+    )
+    dispersion = np.nan_to_num(_cross_sectional_return_dispersion(close_map_np), nan=0.0)
+    entry_gate = (vol_ratio > 0.0) & (vol_ratio <= config.btc_vol_ratio_cap) & (dispersion >= config.dispersion_floor)
+
+    _apply_residual_basket_reversion_strategy(
+        params=params,
+        aligned=aligned,
+        symbols=symbols,
+        exposures=exposures,
+        meta=meta,
+        entry_gate=entry_gate,
+        session_gated=False,
+    )
+    meta["volatility_regime_gated"] = True
+    meta["btc_vol_fast"] = int(config.btc_vol_fast)
+    meta["btc_vol_slow"] = int(config.btc_vol_slow)
+    meta["btc_vol_ratio_cap"] = float(config.btc_vol_ratio_cap)
+    meta["dispersion_floor"] = float(config.dispersion_floor)
+
+
 def _apply_pair_spread_strategy(
     *,
     strategy_class: str,
@@ -4871,8 +5317,17 @@ _STRATEGY_SIGNAL_DISPATCHER = StrategySignalDispatcher(
             _apply_vol_compression_vwap_reversion_strategy,
         ),
         "LeadLagSpilloverStrategy": _wrap_strategy_handler(_apply_leadlag_spillover_strategy),
+        "AbnormalReturnContinuationStrategy": _wrap_strategy_handler(
+            _apply_abnormal_return_continuation_strategy,
+            include_meta=True,
+        ),
         "TopCapTimeSeriesMomentumStrategy": _wrap_strategy_handler(
             _apply_topcap_tsmom_strategy,
+            include_n=True,
+            include_meta=True,
+        ),
+        "LastDayLiquidityRegimeStrategy": _wrap_strategy_handler(
+            _apply_last_day_liquidity_regime_strategy,
             include_n=True,
             include_meta=True,
         ),
@@ -4908,6 +5363,10 @@ _STRATEGY_SIGNAL_DISPATCHER = StrategySignalDispatcher(
         ),
         "SessionGatedResidualBasketReversionStrategy": _wrap_strategy_handler(
             _apply_session_gated_residual_basket_reversion_strategy,
+            include_meta=True,
+        ),
+        "VolatilityRegimeResidualBasketReversionStrategy": _wrap_strategy_handler(
+            _apply_volatility_regime_residual_basket_reversion_strategy,
             include_meta=True,
         ),
         "BreadthThrustFailureReversalStrategy": _wrap_strategy_handler(
@@ -4954,6 +5413,7 @@ _STRATEGY_SIGNAL_DISPATCHER = StrategySignalDispatcher(
         "PairSpreadZScoreStrategy": 2,
         "PairTradingZScoreStrategy": 2,
         "LagConvergenceStrategy": 2,
+        "LastDayLiquidityRegimeStrategy": 2,
     },
 )
 
@@ -5408,6 +5868,42 @@ def _candidate_instability_penalty(
     )
 
 
+def _candidate_sparse_fold_penalty(
+    row: dict[str, Any],
+    *,
+    scoring_config: Mapping[str, Any] | None = None,
+) -> float:
+    cfg = _resolve_score_config(scoring_config)
+    weights = dict(cfg["candidate_rank_score_weights"])
+    oos = dict(row.get("oos") or {})
+    active_fold_ratio = max(0.0, min(1.0, float(oos.get("active_fold_ratio", 1.0))))
+    inactive_fold_count = max(0.0, float(oos.get("inactive_fold_count", 0.0)))
+    failed_fold_ratio = max(0.0, min(1.0, float(oos.get("failed_fold_ratio", float(oos.get("pbo", 1.0))))))
+    return float(
+        (float(weights["inactive_fold_penalty"]) * inactive_fold_count)
+        + (float(weights["failed_fold_penalty"]) * failed_fold_ratio)
+        + (
+            float(weights["low_active_fold_penalty"])
+            * max(0.0, float(weights["active_fold_ratio_floor"]) - active_fold_ratio)
+        )
+    )
+
+
+def _candidate_no_trade_train_penalty(
+    row: dict[str, Any],
+    *,
+    scoring_config: Mapping[str, Any] | None = None,
+) -> float:
+    cfg = _resolve_score_config(scoring_config)
+    weights = dict(cfg["candidate_rank_score_weights"])
+    train = dict(row.get("train") or {})
+    train_return = float(train.get("total_return", train.get("return", 0.0)) or 0.0)
+    train_trade_count = float(train.get("trade_count", train.get("trades", 0.0)) or 0.0)
+    if abs(train_return) <= 1e-12 and train_trade_count <= 0.0:
+        return float(weights["no_trade_train_penalty"])
+    return 0.0
+
+
 def _candidate_rank_score(row: dict[str, Any], *, scoring_config: Mapping[str, Any] | None = None) -> float:
     cfg = _resolve_score_config(scoring_config)
     weights = dict(cfg["candidate_rank_score_weights"])
@@ -5423,6 +5919,8 @@ def _candidate_rank_score(row: dict[str, Any], *, scoring_config: Mapping[str, A
         )
         - (float(weights["drawdown_penalty"]) * float(oos.get("mdd", 0.0)))
         - _candidate_instability_penalty(row, scoring_config=scoring_config)
+        - _candidate_sparse_fold_penalty(row, scoring_config=scoring_config)
+        - _candidate_no_trade_train_penalty(row, scoring_config=scoring_config)
     )
 
 

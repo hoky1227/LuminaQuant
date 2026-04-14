@@ -43,6 +43,9 @@ _EXPECTED_METRIC_KEYS = {
     "benchmark_corr",
     "deflated_sharpe",
     "pbo",
+    "active_fold_ratio",
+    "inactive_fold_count",
+    "failed_fold_ratio",
     "spa_pvalue",
     "risk_free_annual",
     "risk_free_per_period",
@@ -159,6 +162,9 @@ def test_compute_metrics_assembles_resolved_payload(monkeypatch) -> None:
         benchmark_corr=0.25,
         deflated_sharpe=0.7,
         pbo=0.2,
+        active_fold_ratio=0.75,
+        inactive_fold_count=1.0,
+        failed_fold_ratio=0.25,
         spa_pvalue=0.15,
     )
 
