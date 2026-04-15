@@ -7,6 +7,7 @@ inside the same causal online governor.
 
 from __future__ import annotations
 
+import argparse
 import importlib.util
 import json
 import sys
@@ -51,7 +52,14 @@ def _json_default(value: Any) -> Any:
     raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 
 
-def write_major_report(*, output_dir: Path = OUTPUT_DIR) -> dict[str, Any]:
+def write_major_report(
+    *,
+    output_dir: Path = OUTPUT_DIR,
+    split_config: _MOD.HybridSplitConfig | None = None,
+    config: _MOD.HybridOnlineConfig | None = None,
+) -> dict[str, Any]:
+    split_config = split_config or _MOD.HybridSplitConfig()
+    config = config or _MOD.HybridOnlineConfig()
     output_dir.mkdir(parents=True, exist_ok=True)
     memory_guard = _MOD.acquire_portfolio_memory_guard(
         run_name="hybrid_online_portfolio_major",
@@ -62,15 +70,15 @@ def write_major_report(*, output_dir: Path = OUTPUT_DIR) -> dict[str, Any]:
     status = "completed"
     error: str | None = None
     try:
-        historical_active = _majorize(_MOD._historical_active_rows() + _MOD._historical_benchmark_rows())
-        refreshed_active, refreshed_benchmarks = _MOD._refreshed_rows()
+        historical_active = _majorize(_MOD._historical_active_rows(split_config=split_config) + _MOD._historical_benchmark_rows(split_config=split_config))
+        refreshed_active, refreshed_benchmarks = _MOD._refreshed_rows(split_config=split_config)
         refreshed_active = _majorize(refreshed_active + refreshed_benchmarks)
         refreshed_health_metrics = {row["name"]: dict(row.get("oos") or {}) for row in refreshed_active}
 
-        historical_config = _MOD.HybridOnlineConfig(**{**_MOD.asdict(_MOD.HybridOnlineConfig()), "use_current_health_priors": False})
-        historical_result = _MOD.run_hybrid_online_allocator(historical_active, config=historical_config, refreshed_health_metrics=None)
+        historical_config = _MOD.HybridOnlineConfig(**{**_MOD.asdict(config), "use_current_health_priors": False})
+        historical_result = _MOD.run_hybrid_online_allocator(historical_active, config=historical_config, refreshed_health_metrics=None, split_config=split_config)
         memory_guard.sample(event="major_historical_done")
-        refreshed_result = _MOD.run_hybrid_online_allocator(refreshed_active, config=_MOD.HybridOnlineConfig(), refreshed_health_metrics=refreshed_health_metrics)
+        refreshed_result = _MOD.run_hybrid_online_allocator(refreshed_active, config=config, refreshed_health_metrics=refreshed_health_metrics, split_config=split_config)
         memory_guard.sample(event="major_refreshed_done")
     except _MOD.RSSLimitExceeded as exc:
         status = "aborted_rss_guard"
@@ -91,7 +99,8 @@ def write_major_report(*, output_dir: Path = OUTPUT_DIR) -> dict[str, Any]:
         "artifact_kind": "hybrid_online_portfolio_major",
         "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "memory_summary": memory_summary,
-        "config": _MOD.asdict(_MOD.HybridOnlineConfig()),
+        "config": _MOD.asdict(config),
+        "split_windows": split_config.as_payload(),
         "scenarios": {
             "historical_saved_baseline": {
                 "active_sleeves": [row["name"] for row in historical_active],
@@ -126,7 +135,30 @@ def write_major_report(*, output_dir: Path = OUTPUT_DIR) -> dict[str, Any]:
     return {"latest_json": str(latest_json.resolve()), "md_path": str(md_path.resolve())}
 
 
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    _MOD.add_split_config_arguments(parser)
+    parser.add_argument("--warmup-ratio", type=float, default=_MOD.HybridOnlineConfig().warmup_ratio)
+    parser.add_argument("--warmup-days", type=int, default=None)
+    parser.add_argument("--lookback-days", type=int, default=_MOD.HybridOnlineConfig().lookback_days)
+    parser.add_argument("--output-dir", type=Path, default=OUTPUT_DIR)
+    return parser
+
+
 if __name__ == "__main__":
-    result = write_major_report()
+    parser = _build_parser()
+    args = parser.parse_args()
+    result = write_major_report(
+        output_dir=Path(args.output_dir).resolve(),
+        split_config=_MOD.split_config_from_args(args),
+        config=_MOD.HybridOnlineConfig(
+            **{
+                **_MOD.asdict(_MOD.HybridOnlineConfig()),
+                "warmup_ratio": float(args.warmup_ratio),
+                "warmup_days": None if args.warmup_days is None else int(args.warmup_days),
+                "lookback_days": int(args.lookback_days),
+            }
+        ),
+    )
     print(result["latest_json"])
     print(result["md_path"])

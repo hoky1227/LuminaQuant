@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import importlib.util
 import json
 import sys
@@ -28,13 +29,17 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
     return float(_MOD._safe_float(value, default))
 
 
-def _candidate_configs() -> list[tuple[str, _MOD.HybridOnlineConfig]]:
-    base = _MOD.HybridOnlineConfig()
+def _candidate_configs(*, base: _MOD.HybridOnlineConfig | None = None) -> list[tuple[str, _MOD.HybridOnlineConfig]]:
+    base = base or _MOD.HybridOnlineConfig()
+
+    def _cfg(**overrides: Any) -> _MOD.HybridOnlineConfig:
+        return _MOD.HybridOnlineConfig(**({**asdict(base), **overrides}))
+
     variants = [
         ("baseline", base),
         (
             "conservative_cash_bias",
-            _MOD.HybridOnlineConfig(
+            _cfg(
                 lookback_days=28,
                 default_boost=0.25,
                 sticky_default_bonus=0.20,
@@ -48,7 +53,7 @@ def _candidate_configs() -> list[tuple[str, _MOD.HybridOnlineConfig]]:
         ),
         (
             "responsive_pair",
-            _MOD.HybridOnlineConfig(
+            _cfg(
                 lookback_days=14,
                 default_boost=0.30,
                 sticky_default_bonus=0.05,
@@ -62,7 +67,7 @@ def _candidate_configs() -> list[tuple[str, _MOD.HybridOnlineConfig]]:
         ),
         (
             "balanced_sticky",
-            _MOD.HybridOnlineConfig(
+            _cfg(
                 lookback_days=21,
                 default_boost=0.40,
                 sticky_default_bonus=0.20,
@@ -76,7 +81,7 @@ def _candidate_configs() -> list[tuple[str, _MOD.HybridOnlineConfig]]:
         ),
         (
             "strict_health",
-            _MOD.HybridOnlineConfig(
+            _cfg(
                 lookback_days=21,
                 default_boost=0.35,
                 sticky_default_bonus=0.15,
@@ -90,7 +95,7 @@ def _candidate_configs() -> list[tuple[str, _MOD.HybridOnlineConfig]]:
         ),
         (
             "soft_health",
-            _MOD.HybridOnlineConfig(
+            _cfg(
                 lookback_days=21,
                 default_boost=0.30,
                 sticky_default_bonus=0.10,
@@ -104,7 +109,7 @@ def _candidate_configs() -> list[tuple[str, _MOD.HybridOnlineConfig]]:
         ),
         (
             "long_memory",
-            _MOD.HybridOnlineConfig(
+            _cfg(
                 lookback_days=35,
                 default_boost=0.30,
                 sticky_default_bonus=0.20,
@@ -118,7 +123,7 @@ def _candidate_configs() -> list[tuple[str, _MOD.HybridOnlineConfig]]:
         ),
         (
             "high_conviction_switch",
-            _MOD.HybridOnlineConfig(
+            _cfg(
                 lookback_days=21,
                 default_boost=0.45,
                 sticky_default_bonus=0.05,
@@ -132,7 +137,7 @@ def _candidate_configs() -> list[tuple[str, _MOD.HybridOnlineConfig]]:
         ),
         (
             "pair_penalty_strict",
-            _MOD.HybridOnlineConfig(
+            _cfg(
                 lookback_days=21,
                 default_boost=0.35,
                 sticky_default_bonus=0.15,
@@ -148,7 +153,7 @@ def _candidate_configs() -> list[tuple[str, _MOD.HybridOnlineConfig]]:
         ),
         (
             "pair_penalty_relaxed",
-            _MOD.HybridOnlineConfig(
+            _cfg(
                 lookback_days=21,
                 default_boost=0.35,
                 sticky_default_bonus=0.15,
@@ -192,23 +197,39 @@ def _objective(payload: dict[str, Any]) -> float:
 
 
 def main() -> None:
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    historical_active = _MOD._historical_active_rows()
-    refreshed_active, refreshed_benchmarks = _MOD._refreshed_rows()
+    parser = argparse.ArgumentParser(description=__doc__)
+    _MOD.add_split_config_arguments(parser)
+    parser.add_argument("--warmup-ratio", type=float, default=_MOD.HybridOnlineConfig().warmup_ratio)
+    parser.add_argument("--warmup-days", type=int, default=None)
+    parser.add_argument("--output-dir", type=Path, default=OUTPUT_DIR)
+    args = parser.parse_args()
+
+    output_dir = Path(args.output_dir).resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    split_config = _MOD.split_config_from_args(args)
+    base_config = _MOD.HybridOnlineConfig(
+        warmup_ratio=float(args.warmup_ratio),
+        warmup_days=None if args.warmup_days is None else int(args.warmup_days),
+    )
+
+    historical_active = _MOD._historical_active_rows(split_config=split_config)
+    refreshed_active, refreshed_benchmarks = _MOD._refreshed_rows(split_config=split_config)
     refreshed_health_metrics = {row["name"]: dict(row.get("oos") or {}) for row in refreshed_active + refreshed_benchmarks}
 
     leaderboard: list[dict[str, Any]] = []
-    for name, config in _candidate_configs():
+    for name, config in _candidate_configs(base=base_config):
         historical_config = _MOD.HybridOnlineConfig(**({**asdict(config), "use_current_health_priors": False}))
         historical_result = _MOD.run_hybrid_online_allocator(
             historical_active,
             config=historical_config,
             refreshed_health_metrics=None,
+            split_config=split_config,
         )
         refreshed_result = _MOD.run_hybrid_online_allocator(
             refreshed_active,
             config=config,
             refreshed_health_metrics=refreshed_health_metrics,
+            split_config=split_config,
         )
         refreshed_rows = _MOD._comparison_rows(
             hybrid_result=refreshed_result,
@@ -246,12 +267,20 @@ def main() -> None:
     best = leaderboard[0]
 
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    json_path = OUTPUT_DIR / f"hybrid_online_tuning_{stamp}.json"
-    latest_json = OUTPUT_DIR / "hybrid_online_tuning_latest.json"
-    md_path = OUTPUT_DIR / f"hybrid_online_tuning_{stamp}.md"
+    json_path = output_dir / f"hybrid_online_tuning_{stamp}.json"
+    latest_json = output_dir / "hybrid_online_tuning_latest.json"
+    md_path = output_dir / f"hybrid_online_tuning_{stamp}.md"
     payload = {
         "artifact_kind": "hybrid_online_portfolio_tuning",
         "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        "split_windows": split_config.as_payload(),
+        "warmup_ratio": float(base_config.warmup_ratio),
+        "fixed_warmup_days": (
+            None
+            if base_config.warmup_days is None
+            else int(base_config.warmup_days)
+        ),
+        "resolved_warmup_days": _MOD.resolve_warmup_days(config=base_config, split_config=split_config),
         "leaderboard": leaderboard,
         "best": best,
     }

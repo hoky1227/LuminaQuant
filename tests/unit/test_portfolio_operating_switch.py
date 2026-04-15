@@ -288,6 +288,28 @@ def test_recommend_operating_mode_uses_risk_off_when_all_active_sleeves_are_unhe
     assert decision.allocation == {"cash": 1.0}
 
 
+def test_balanced_strategy_health_prefers_hybrid_source_metrics() -> None:
+    health = MODULE._balanced_strategy_health(
+        operating_plan_payload=_base_operating_plan(),
+        balanced_strategy_payload={
+            "portfolio_metrics": {
+                "val": {"total_return": -0.02, "sharpe": -1.0, "max_drawdown": 0.03, "volatility": 0.01},
+                "oos": {"total_return": -0.01, "sharpe": -1.0, "max_drawdown": 0.02},
+            }
+        },
+        hybrid_source_metrics={
+            "balanced_overlay_80_20": {
+                "val": {"total_return": 0.01, "sharpe": 1.0},
+                "oos": {"total_return": 0.02, "sharpe": 1.5, "max_drawdown": 0.01},
+            }
+        },
+    )
+
+    assert health["healthy"] is True
+    assert health["oos_total_return"] == 0.02
+    assert health["oos_sharpe"] == 1.5
+
+
 def test_recommend_operating_mode_uses_risk_off_even_in_bullish_state_when_all_active_sleeves_are_unhealthy() -> None:
     plan = _base_operating_plan()
     plan["deployment_modes"]["balanced_overlay_mode"]["metrics"] = {

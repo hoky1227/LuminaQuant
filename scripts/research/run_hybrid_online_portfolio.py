@@ -15,11 +15,12 @@ This runner is intentionally thin and deterministic:
 
 from __future__ import annotations
 
+import argparse
 import importlib.util
 import json
 import sys
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -68,10 +69,74 @@ BENCHMARK_SLEEVES = ("three_way_regime", "static_blend_76_24", "incumbent_only")
 PAIR_NAME = "pair_spread_1h_exec_tightstop_tp_fastexit_bnbusdt_trxusdt_2.5_0.75"
 
 
+@dataclass(frozen=True, slots=True)
+class HybridSplitConfig:
+    train_start: str = "2025-01-01"
+    train_end: str = "2025-12-31"
+    val_start: str = "2026-01-01"
+    val_end: str = "2026-02-28"
+    oos_start: str = "2026-03-01"
+    oos_end: str | None = None
+
+    def train_start_date(self) -> date:
+        return _parse_split_day(self.train_start)
+
+    def train_end_date(self) -> date:
+        return _parse_split_day(self.train_end)
+
+    def val_start_date(self) -> date:
+        return _parse_split_day(self.val_start)
+
+    def val_end_date(self) -> date:
+        return _parse_split_day(self.val_end)
+
+    def oos_start_date(self) -> date:
+        return _parse_split_day(self.oos_start)
+
+    def oos_end_date(self) -> date | None:
+        if self.oos_end is None:
+            return None
+        token = str(self.oos_end).strip()
+        if not token:
+            return None
+        return _parse_split_day(token)
+
+    def split_for_day_key(self, day_key: str) -> str | None:
+        day_value = _parse_split_day(day_key)
+        if day_value < self.train_start_date():
+            return None
+        if day_value <= self.train_end_date():
+            return "train"
+        if self.val_start_date() <= day_value <= self.val_end_date():
+            return "val"
+        oos_end = self.oos_end_date()
+        if day_value >= self.oos_start_date() and (oos_end is None or day_value <= oos_end):
+            return "oos"
+        return None
+
+    def online_start_date(self, warmup_days: int) -> str:
+        return (self.train_start_date() + timedelta(days=max(0, int(warmup_days)))).isoformat()
+
+    def pre_oos_days(self) -> int:
+        return int((self.oos_start_date() - self.train_start_date()).days)
+
+    def as_payload(self) -> dict[str, Any]:
+        return {
+            "train_start": self.train_start_date().isoformat(),
+            "train_end_inclusive": self.train_end_date().isoformat(),
+            "val_start": self.val_start_date().isoformat(),
+            "val_end_inclusive": self.val_end_date().isoformat(),
+            "oos_start": self.oos_start_date().isoformat(),
+            "oos_end_inclusive": self.oos_end_date().isoformat() if self.oos_end_date() else "latest",
+            "pre_oos_days": self.pre_oos_days(),
+        }
+
+
 @dataclass(slots=True)
 class HybridOnlineConfig:
     variant: str = "fixed_default"
-    warmup_days: int = 182
+    warmup_days: int | None = None
+    warmup_ratio: float = 0.60
     lookback_days: int = 13
     default_boost: float = 0.2335751227788591
     sticky_default_bonus: float = 0.09538352712472187
@@ -96,6 +161,53 @@ def _json_default(value: Any) -> Any:
     raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 
 
+def _parse_split_day(value: Any) -> date:
+    token = str(value or "").strip()
+    if not token:
+        raise ValueError("missing split day token")
+    token = token.split("T", 1)[0]
+    return date.fromisoformat(token)
+
+
+def add_split_config_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    defaults = HybridSplitConfig()
+    parser.add_argument("--train-start", default=defaults.train_start)
+    parser.add_argument("--train-end", default=defaults.train_end)
+    parser.add_argument("--val-start", default=defaults.val_start)
+    parser.add_argument("--val-end", default=defaults.val_end)
+    parser.add_argument("--oos-start", default=defaults.oos_start)
+    parser.add_argument("--oos-end", default=defaults.oos_end)
+    return parser
+
+
+def split_config_from_args(args: argparse.Namespace) -> HybridSplitConfig:
+    return HybridSplitConfig(
+        train_start=str(args.train_start),
+        train_end=str(args.train_end),
+        val_start=str(args.val_start),
+        val_end=str(args.val_end),
+        oos_start=str(args.oos_start),
+        oos_end=None if args.oos_end in (None, "") else str(args.oos_end),
+    )
+
+
+def resolve_warmup_days(*, config: HybridOnlineConfig, split_config: HybridSplitConfig) -> int:
+    if config.warmup_days is not None:
+        return max(0, int(config.warmup_days))
+    return max(0, int(np.ceil(split_config.pre_oos_days() * float(config.warmup_ratio))))
+
+
+def _load_hybrid_config_payload(path: Path) -> dict[str, Any]:
+    payload = _load_json(path)
+    if "config" in payload and isinstance(payload.get("config"), dict):
+        return dict(payload.get("config") or {})
+    if "best" in payload and isinstance(dict(payload.get("best") or {}).get("config"), dict):
+        return dict((payload.get("best") or {}).get("config") or {})
+    if "best_trial" in payload and isinstance(dict(payload.get("best_trial") or {}).get("config"), dict):
+        return dict((payload.get("best_trial") or {}).get("config") or {})
+    return payload
+
+
 def _load_json(path: Path) -> dict[str, Any]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
@@ -107,17 +219,41 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
     return float(_DYN._safe_float(value, default))
 
 
-def _payload_daily_streams(payload: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
-    if isinstance(payload.get("portfolio_daily_return_streams"), dict):
-        return {
-            split: list((payload.get("portfolio_daily_return_streams") or {}).get(split) or [])
-            for split in ("train", "val", "oos")
-        }
-    if isinstance(payload.get("portfolio_return_streams"), dict):
-        return {
-            split: list((payload.get("portfolio_return_streams") or {}).get(split) or [])
-            for split in ("train", "val", "oos")
-        }
+def _split_index(day_key: str, *, split_config: HybridSplitConfig) -> str | None:
+    return split_config.split_for_day_key(day_key)
+
+
+def _portfolio_return_streams_from_daily(
+    dates: list[str],
+    daily_returns: list[float],
+    *,
+    split_config: HybridSplitConfig,
+) -> dict[str, list[dict[str, Any]]]:
+    streams: dict[str, list[dict[str, Any]]] = {"train": [], "val": [], "oos": []}
+    for day_key, day_return in zip(dates, daily_returns, strict=True):
+        split = _split_index(str(day_key), split_config=split_config)
+        if split is None:
+            continue
+        streams[split].append({"t": f"{day_key}T00:00:00Z", "v": _safe_float(day_return, 0.0)})
+    return streams
+
+
+def _split_metrics_from_streams(streams: dict[str, list[dict[str, Any]]]) -> dict[str, dict[str, float]]:
+    return {
+        split: _DYN._metrics(np.asarray([_safe_float(point.get("v"), 0.0) for point in list(streams.get(split) or [])], dtype=float))
+        for split in ("train", "val", "oos")
+    }
+
+
+def _payload_daily_map(payload: dict[str, Any]) -> dict[str, float]:
+    for key in ("portfolio_daily_return_streams", "portfolio_return_streams", "return_streams"):
+        stream_payload = payload.get(key)
+        if isinstance(stream_payload, dict):
+            merged: dict[str, float] = {}
+            for split in ("train", "val", "oos"):
+                merged.update(_DYN._daily_compound_stream(list(stream_payload.get(split) or [])))
+            if merged:
+                return merged
     dates = list(payload.get("dates") or [])
     daily_returns = list(payload.get("daily_returns") or [])
     if dates and daily_returns:
@@ -127,8 +263,19 @@ def _payload_daily_streams(payload: dict[str, Any]) -> dict[str, list[dict[str, 
             if "T" in token:
                 token = token.split("T", 1)[0]
             normalized_dates.append(token)
-        return _DYN._portfolio_return_streams_from_daily(normalized_dates, daily_returns)
+        return {day_key: _safe_float(day_return, 0.0) for day_key, day_return in zip(normalized_dates, daily_returns, strict=True)}
     raise RuntimeError("Could not resolve daily return streams from payload")
+
+
+def _payload_daily_streams(
+    payload: dict[str, Any],
+    *,
+    split_config: HybridSplitConfig,
+) -> dict[str, list[dict[str, Any]]]:
+    daily_map = _payload_daily_map(payload)
+    dates = sorted(daily_map)
+    returns = [_safe_float(daily_map[day_key], 0.0) for day_key in dates]
+    return _portfolio_return_streams_from_daily(dates, returns, split_config=split_config)
 
 
 def _load_pair_candidate(path: Path, *, refreshed: bool) -> dict[str, Any]:
@@ -151,6 +298,7 @@ def _make_sleeve_row(
     streams: dict[str, list[dict[str, Any]]],
     metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    split_metrics = _split_metrics_from_streams(streams)
     return {
         "candidate_id": sleeve_name,
         "name": sleeve_name,
@@ -163,9 +311,9 @@ def _make_sleeve_row(
             **(metadata or {}),
             "source_payload_path": str(metadata.get("source_payload_path") or ""),
         },
-        "train": dict((source_payload.get("portfolio_metrics") or source_payload.get("split_metrics") or {}).get("train") or source_payload.get("train") or {}),
-        "val": dict((source_payload.get("portfolio_metrics") or source_payload.get("split_metrics") or {}).get("val") or source_payload.get("val") or {}),
-        "oos": dict((source_payload.get("portfolio_metrics") or source_payload.get("split_metrics") or {}).get("oos") or source_payload.get("oos") or {}),
+        "train": dict(split_metrics.get("train") or {}),
+        "val": dict(split_metrics.get("val") or {}),
+        "oos": dict(split_metrics.get("oos") or {}),
     }
 
 
@@ -182,6 +330,7 @@ def _blend_streams(
     *,
     left_weight: float,
     right_weight: float,
+    split_config: HybridSplitConfig,
 ) -> dict[str, list[dict[str, Any]]]:
     left_map = _merged_daily_map(left)
     right_map = _merged_daily_map(right)
@@ -190,7 +339,22 @@ def _blend_streams(
         (left_weight * _safe_float(left_map.get(day), 0.0)) + (right_weight * _safe_float(right_map.get(day), 0.0))
         for day in all_days
     ]
-    return _DYN._portfolio_return_streams_from_daily(all_days, daily_returns)
+    return _portfolio_return_streams_from_daily(all_days, daily_returns, split_config=split_config)
+
+
+def _source_sleeve_metrics(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    return {
+        str(row.get("name")): {
+            "family": str(row.get("family") or ""),
+            "strategy_class": str(row.get("strategy_class") or ""),
+            "timeframe": str(row.get("strategy_timeframe") or ""),
+            "symbols": list(row.get("symbols") or []),
+            "train": dict(row.get("train") or {}),
+            "val": dict(row.get("val") or {}),
+            "oos": dict(row.get("oos") or {}),
+        }
+        for row in rows
+    }
 
 
 def _cash_row(day_keys: list[str]) -> dict[str, Any]:
@@ -209,24 +373,28 @@ def _cash_row(day_keys: list[str]) -> dict[str, Any]:
     }
 
 
-def _historical_active_rows() -> list[dict[str, Any]]:
+def _historical_active_rows(
+    *,
+    split_config: HybridSplitConfig | None = None,
+) -> list[dict[str, Any]]:
+    split_config = split_config or HybridSplitConfig()
     soft_payload = _load_json(HISTORICAL_INPUTS["soft_three_way_regime"])
     pair_row = _load_pair_candidate(HISTORICAL_INPUTS["pair_tactical_mode"], refreshed=False)
     rows = [
         _make_sleeve_row(
             sleeve_name="soft_three_way_regime",
             source_payload=soft_payload,
-            streams=_payload_daily_streams(soft_payload),
+            streams=_payload_daily_streams(soft_payload, split_config=split_config),
             metadata={"strategy_class": "SoftThreeWayAllocator", "timeframe": "1d", "family": "portfolio", "source_payload_path": str(HISTORICAL_INPUTS["soft_three_way_regime"].resolve())},
         ),
         _make_sleeve_row(
             sleeve_name="pair_tactical_mode",
             source_payload=pair_row,
-            streams=dict(pair_row.get("return_streams") or {}),
+            streams=_payload_daily_streams(pair_row, split_config=split_config),
             metadata={"strategy_class": "PairSpreadZScoreStrategy", "timeframe": "1h", "family": "market_neutral_pair", "symbols": list(pair_row.get("symbols") or []), "source_payload_path": str(HISTORICAL_INPUTS["pair_tactical_mode"].resolve())},
         ),
     ]
-    balanced_streams = _blend_streams(rows[0]["return_streams"], rows[1]["return_streams"], left_weight=0.8, right_weight=0.2)
+    balanced_streams = _blend_streams(rows[0]["return_streams"], rows[1]["return_streams"], left_weight=0.8, right_weight=0.2, split_config=split_config)
     balanced_metrics = {
         split: _DYN._metrics(np.asarray([point["v"] for point in balanced_streams[split]], dtype=float))
         for split in ("train", "val", "oos")
@@ -249,7 +417,11 @@ def _historical_active_rows() -> list[dict[str, Any]]:
     return rows
 
 
-def _historical_benchmark_rows() -> list[dict[str, Any]]:
+def _historical_benchmark_rows(
+    *,
+    split_config: HybridSplitConfig | None = None,
+) -> list[dict[str, Any]]:
+    split_config = split_config or HybridSplitConfig()
     benchmarks: list[dict[str, Any]] = []
     for sleeve_name in BENCHMARK_SLEEVES:
         payload = _load_json(HISTORICAL_INPUTS[sleeve_name])
@@ -257,14 +429,18 @@ def _historical_benchmark_rows() -> list[dict[str, Any]]:
             _make_sleeve_row(
                 sleeve_name=sleeve_name,
                 source_payload=payload,
-                streams=_payload_daily_streams(payload),
+                streams=_payload_daily_streams(payload, split_config=split_config),
                 metadata={"strategy_class": sleeve_name, "timeframe": "1d", "family": "portfolio", "source_payload_path": str(HISTORICAL_INPUTS[sleeve_name].resolve())},
             )
         )
     return benchmarks
 
 
-def _refreshed_rows() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def _refreshed_rows(
+    *,
+    split_config: HybridSplitConfig | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    split_config = split_config or HybridSplitConfig()
     active: list[dict[str, Any]] = []
     benchmarks: list[dict[str, Any]] = []
     soft_payload = _load_json(REFRESHED_INPUTS["soft_three_way_regime"])
@@ -274,7 +450,7 @@ def _refreshed_rows() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         _make_sleeve_row(
             sleeve_name="soft_three_way_regime",
             source_payload=soft_payload,
-            streams=_payload_daily_streams(soft_payload),
+            streams=_payload_daily_streams(soft_payload, split_config=split_config),
             metadata={"strategy_class": "SoftThreeWayAllocator", "timeframe": "1d", "family": "portfolio", "source_payload_path": str(REFRESHED_INPUTS["soft_three_way_regime"].resolve())},
         )
     )
@@ -282,7 +458,7 @@ def _refreshed_rows() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         _make_sleeve_row(
             sleeve_name="balanced_overlay_80_20",
             source_payload=balanced_payload,
-            streams=_payload_daily_streams(balanced_payload),
+            streams=_payload_daily_streams(balanced_payload, split_config=split_config),
             metadata={"strategy_class": "BalancedOverlayPortfolio", "timeframe": "1d", "family": "portfolio_overlay", "source_payload_path": str(REFRESHED_INPUTS["balanced_overlay_80_20"].resolve())},
         )
     )
@@ -290,7 +466,7 @@ def _refreshed_rows() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         _make_sleeve_row(
             sleeve_name="pair_tactical_mode",
             source_payload=pair_payload,
-            streams=dict(pair_payload.get("return_streams") or {}),
+            streams=_payload_daily_streams(pair_payload, split_config=split_config),
             metadata={"strategy_class": "PairSpreadZScoreStrategy", "timeframe": "1h", "family": "market_neutral_pair", "symbols": list(pair_payload.get("symbols") or []), "source_payload_path": str(REFRESHED_INPUTS["pair_tactical_mode"].resolve())},
         )
     )
@@ -300,7 +476,7 @@ def _refreshed_rows() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
             _make_sleeve_row(
                 sleeve_name=sleeve_name,
                 source_payload=payload,
-                streams=_payload_daily_streams(payload),
+                streams=_payload_daily_streams(payload, split_config=split_config),
                 metadata={"strategy_class": sleeve_name, "timeframe": "1d", "family": "portfolio", "source_payload_path": str(REFRESHED_INPUTS[sleeve_name].resolve())},
             )
         )
@@ -387,7 +563,9 @@ def run_hybrid_online_allocator(
     *,
     config: HybridOnlineConfig,
     refreshed_health_metrics: dict[str, dict[str, Any]] | None = None,
+    split_config: HybridSplitConfig | None = None,
 ) -> dict[str, Any]:
+    split_config = split_config or HybridSplitConfig()
     ordered_days, matrix, _meta = _DYN._build_daily_panel(rows)
     ids = [str(row.get("candidate_id") or row.get("name")) for row in rows]
     name_by_id = {str(row.get("candidate_id") or row.get("name")): str(row.get("name") or "") for row in rows}
@@ -421,10 +599,12 @@ def run_hybrid_online_allocator(
         for cid in ids
     }
 
+    resolved_warmup_days = max(resolve_warmup_days(config=config, split_config=split_config), int(config.lookback_days))
     for idx, day_key in enumerate(ordered_days):
-        split = _DYN._split_index(day_key)
-        warmup_days = max(int(config.warmup_days), int(config.lookback_days))
-        if idx < warmup_days:
+        split = _split_index(day_key, split_config=split_config)
+        if split is None:
+            continue
+        if idx < resolved_warmup_days:
             weights = {default_id: 1.0} if default_id != "risk_off_cash" else {}
             cash_weight = 0.0 if weights else 1.0
             raw_scores = {cid: 0.0 for cid in ids if cid != "risk_off_cash"}
@@ -519,6 +699,7 @@ def run_hybrid_online_allocator(
     return {
         "dates": ordered_days,
         "daily_returns": daily_returns,
+        "resolved_warmup_days": int(resolved_warmup_days),
         "split_metrics": split_metrics,
         "all_metrics": all_metrics,
         "allocations": allocations,
@@ -561,8 +742,14 @@ def _scoreboard_markdown(title: str, rows: list[dict[str, Any]]) -> list[str]:
     return lines
 
 
-def write_hybrid_online_report(*, output_dir: Path = OUTPUT_DIR, config: HybridOnlineConfig | None = None) -> dict[str, Any]:
+def write_hybrid_online_report(
+    *,
+    output_dir: Path = OUTPUT_DIR,
+    config: HybridOnlineConfig | None = None,
+    split_config: HybridSplitConfig | None = None,
+) -> dict[str, Any]:
     config = config or HybridOnlineConfig()
+    split_config = split_config or HybridSplitConfig()
     output_dir.mkdir(parents=True, exist_ok=True)
     memory_guard = acquire_portfolio_memory_guard(
         run_name="hybrid_online_portfolio",
@@ -573,9 +760,9 @@ def write_hybrid_online_report(*, output_dir: Path = OUTPUT_DIR, config: HybridO
     status = "completed"
     error: str | None = None
     try:
-        historical_active = _historical_active_rows()
-        historical_benchmarks = _historical_benchmark_rows()
-        refreshed_active, refreshed_benchmarks = _refreshed_rows()
+        historical_active = _historical_active_rows(split_config=split_config)
+        historical_benchmarks = _historical_benchmark_rows(split_config=split_config)
+        refreshed_active, refreshed_benchmarks = _refreshed_rows(split_config=split_config)
         refreshed_health_metrics = {row["name"]: dict(row.get("oos") or {}) for row in refreshed_active + refreshed_benchmarks}
         memory_guard.sample(event="hybrid_online_loaded", context={"historical_active_count": len(historical_active), "refreshed_active_count": len(refreshed_active)})
 
@@ -584,12 +771,14 @@ def write_hybrid_online_report(*, output_dir: Path = OUTPUT_DIR, config: HybridO
             historical_active,
             config=historical_config,
             refreshed_health_metrics=None,
+            split_config=split_config,
         )
         memory_guard.sample(event="hybrid_online_historical_done", context={"oos_return": _safe_float((historical_result.get('split_metrics') or {}).get('oos', {}).get('total_return'), 0.0)})
         refreshed_result = run_hybrid_online_allocator(
             refreshed_active,
             config=config,
             refreshed_health_metrics=refreshed_health_metrics,
+            split_config=split_config,
         )
         memory_guard.sample(event="hybrid_online_refreshed_done", context={"oos_return": _safe_float((refreshed_result.get('split_metrics') or {}).get('oos', {}).get('total_return'), 0.0)})
     except RSSLimitExceeded as exc:
@@ -642,6 +831,13 @@ def write_hybrid_online_report(*, output_dir: Path = OUTPUT_DIR, config: HybridO
         "artifact_kind": "hybrid_online_portfolio",
         "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "selection_basis": "deterministic_hybrid_online_governor_over_saved_sleeves",
+        "split_windows": split_config.as_payload(),
+        "online_policy": {
+            "warmup_ratio": float(config.warmup_ratio),
+            "warmup_days": int(refreshed_result.get("resolved_warmup_days") or resolve_warmup_days(config=config, split_config=split_config)),
+            "lookback_days": int(config.lookback_days),
+            "online_start": split_config.online_start_date(refreshed_result.get("resolved_warmup_days") or resolve_warmup_days(config=config, split_config=split_config)),
+        },
         "memory_policy": memory_policy_payload(budget_bytes=PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES),
         "memory_summary": memory_summary,
         "config": asdict(config),
@@ -651,12 +847,14 @@ def write_hybrid_online_report(*, output_dir: Path = OUTPUT_DIR, config: HybridO
             "historical_saved_baseline": {
                 "active_sleeves": [row["name"] for row in historical_active],
                 "benchmark_sleeves": [row["name"] for row in historical_benchmarks],
+                "source_sleeve_metrics": _source_sleeve_metrics(historical_active + historical_benchmarks),
                 **historical_result,
                 "comparison_rows": _comparison_rows(hybrid_result=historical_result, benchmarks=historical_benchmarks, active_rows=historical_active),
             },
             "refreshed_latest_tail": {
                 "active_sleeves": [row["name"] for row in refreshed_active],
                 "benchmark_sleeves": [row["name"] for row in refreshed_benchmarks],
+                "source_sleeve_metrics": _source_sleeve_metrics(refreshed_active + refreshed_benchmarks),
                 **refreshed_result,
                 "comparison_rows": refreshed_rows,
             },
@@ -689,6 +887,16 @@ def write_hybrid_online_report(*, output_dir: Path = OUTPUT_DIR, config: HybridO
         "```json",
         json.dumps(payload["config"], indent=2, sort_keys=True),
         "```",
+        "",
+        "## Split windows",
+        "",
+        "```json",
+        json.dumps(payload["split_windows"], indent=2, sort_keys=True),
+        "```",
+        "",
+        f"- warmup_days: `{payload['online_policy']['warmup_days']}`",
+        f"- lookback_days: `{payload['online_policy']['lookback_days']}`",
+        f"- online_start: `{payload['online_policy']['online_start']}`",
         "",
         "## Readiness",
         "",
@@ -734,8 +942,40 @@ def write_hybrid_online_report(*, output_dir: Path = OUTPUT_DIR, config: HybridO
         "md_path": str(md_path.resolve()),
     }
 
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    add_split_config_arguments(parser)
+    parser.add_argument("--warmup-ratio", type=float, default=HybridOnlineConfig().warmup_ratio)
+    parser.add_argument("--warmup-days", type=int, default=None)
+    parser.add_argument("--lookback-days", type=int, default=HybridOnlineConfig().lookback_days)
+    parser.add_argument("--output-dir", type=Path, default=OUTPUT_DIR)
+    parser.add_argument("--config-json", type=Path, default=None)
+    return parser
 
-if __name__ == "__main__":
-    result = write_hybrid_online_report()
+
+def main() -> None:
+    parser = _build_parser()
+    args = parser.parse_args()
+    split_config = split_config_from_args(args)
+    config_kwargs = {
+        **asdict(HybridOnlineConfig()),
+        "warmup_ratio": float(args.warmup_ratio),
+        "warmup_days": None if args.warmup_days is None else int(args.warmup_days),
+        "lookback_days": int(args.lookback_days),
+    }
+    if args.config_json is not None:
+        config_kwargs.update(_load_hybrid_config_payload(Path(args.config_json).resolve()))
+        config_kwargs["warmup_ratio"] = float(args.warmup_ratio)
+        config_kwargs["warmup_days"] = None if args.warmup_days is None else int(args.warmup_days)
+    config = HybridOnlineConfig(**config_kwargs)
+    result = write_hybrid_online_report(
+        output_dir=Path(args.output_dir).resolve(),
+        config=config,
+        split_config=split_config,
+    )
     print(result["latest_path"])
     print(result["md_path"])
+
+
+if __name__ == "__main__":
+    main()

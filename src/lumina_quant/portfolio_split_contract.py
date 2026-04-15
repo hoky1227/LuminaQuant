@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import asdict, dataclass
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -20,15 +20,32 @@ ROOT = Path(__file__).resolve().parents[2]
 REPORT_ROOT = ROOT / "var" / "reports" / "exact_window_backtests"
 FOLLOWUP_ROOT = REPORT_ROOT / "followup_status"
 
-TRAIN_START = "2025-01-01T00:00:00Z"
-TRAIN_END_EXCLUSIVE = "2026-01-01T00:00:00Z"
-VAL_START = "2026-01-01T00:00:00Z"
-VAL_END_EXCLUSIVE = "2026-02-01T00:00:00Z"
-OOS_START = "2026-02-01T00:00:00Z"
+_ENV_TRAIN_START = "LQ_PORTFOLIO_TRAIN_START"
+_ENV_TRAIN_END = "LQ_PORTFOLIO_TRAIN_END"
+_ENV_VAL_START = "LQ_PORTFOLIO_VAL_START"
+_ENV_VAL_END = "LQ_PORTFOLIO_VAL_END"
+_ENV_OOS_START = "LQ_PORTFOLIO_OOS_START"
 
-TRAIN_START_DATE = date(2025, 1, 1)
-VAL_START_DATE = date(2026, 1, 1)
-OOS_START_DATE = date(2026, 2, 1)
+
+def _parse_day_env(value: str | None, *, default: str) -> date:
+    token = str(value or default).strip()
+    if not token:
+        token = default
+    token = token.split("T", 1)[0]
+    return date.fromisoformat(token)
+
+
+TRAIN_START_DATE = _parse_day_env(os.getenv(_ENV_TRAIN_START), default="2025-01-01")
+TRAIN_END_DATE = _parse_day_env(os.getenv(_ENV_TRAIN_END), default="2025-12-31")
+VAL_START_DATE = _parse_day_env(os.getenv(_ENV_VAL_START), default="2026-01-01")
+VAL_END_DATE = _parse_day_env(os.getenv(_ENV_VAL_END), default="2026-01-31")
+OOS_START_DATE = _parse_day_env(os.getenv(_ENV_OOS_START), default="2026-02-01")
+
+TRAIN_START = f"{TRAIN_START_DATE.isoformat()}T00:00:00Z"
+TRAIN_END_EXCLUSIVE = f"{(TRAIN_END_DATE + timedelta(days=1)).isoformat()}T00:00:00Z"
+VAL_START = f"{VAL_START_DATE.isoformat()}T00:00:00Z"
+VAL_END_EXCLUSIVE = f"{(VAL_END_DATE + timedelta(days=1)).isoformat()}T00:00:00Z"
+OOS_START = f"{OOS_START_DATE.isoformat()}T00:00:00Z"
 
 PORTFOLIO_ONE_SHOT_INCUMBENT_BUNDLE = (
     FOLLOWUP_ROOT / "portfolio_one_shot_incumbent_bundle_latest.json"

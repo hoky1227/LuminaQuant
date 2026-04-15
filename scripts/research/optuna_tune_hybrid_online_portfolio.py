@@ -70,13 +70,17 @@ def _objective_from_payload(payload: dict, *, profile: str) -> float:
     return float(score)
 
 
-def _evaluate_config(config: _MOD.HybridOnlineConfig) -> dict:
-    historical_active = _MOD._historical_active_rows()
-    refreshed_active, refreshed_benchmarks = _MOD._refreshed_rows()
+def _evaluate_config(
+    config: _MOD.HybridOnlineConfig,
+    *,
+    split_config: _MOD.HybridSplitConfig,
+) -> dict:
+    historical_active = _MOD._historical_active_rows(split_config=split_config)
+    refreshed_active, refreshed_benchmarks = _MOD._refreshed_rows(split_config=split_config)
     refreshed_health_metrics = {row["name"]: dict(row.get("oos") or {}) for row in refreshed_active + refreshed_benchmarks}
     historical_config = _MOD.HybridOnlineConfig(**({**asdict(config), "use_current_health_priors": False}))
-    historical_result = _MOD.run_hybrid_online_allocator(historical_active, config=historical_config, refreshed_health_metrics=None)
-    refreshed_result = _MOD.run_hybrid_online_allocator(refreshed_active, config=config, refreshed_health_metrics=refreshed_health_metrics)
+    historical_result = _MOD.run_hybrid_online_allocator(historical_active, config=historical_config, refreshed_health_metrics=None, split_config=split_config)
+    refreshed_result = _MOD.run_hybrid_online_allocator(refreshed_active, config=config, refreshed_health_metrics=refreshed_health_metrics, split_config=split_config)
     refreshed_rows = _MOD._comparison_rows(hybrid_result=refreshed_result, benchmarks=refreshed_benchmarks, active_rows=refreshed_active)
     refreshed_by_name = {row["name"]: row for row in refreshed_rows}
     pair_alloc_weights = [
@@ -104,9 +108,16 @@ def _evaluate_config(config: _MOD.HybridOnlineConfig) -> dict:
     return payload
 
 
-def _build_config(trial: optuna.Trial) -> _MOD.HybridOnlineConfig:
+def _build_config(
+    trial: optuna.Trial,
+    *,
+    warmup_ratio: float,
+    warmup_days: int | None,
+) -> _MOD.HybridOnlineConfig:
     return _MOD.HybridOnlineConfig(
         variant=trial.suggest_categorical("variant", ["dynamic_default", "fixed_default", "disagreement_switching"]),
+        warmup_ratio=float(warmup_ratio),
+        warmup_days=None if warmup_days is None else int(warmup_days),
         lookback_days=trial.suggest_int("lookback_days", 10, 28),
         default_boost=trial.suggest_float("default_boost", 0.15, 0.5),
         sticky_default_bonus=trial.suggest_float("sticky_default_bonus", 0.0, 0.25),
@@ -128,6 +139,10 @@ def _build_config(trial: optuna.Trial) -> _MOD.HybridOnlineConfig:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
+    _MOD.add_split_config_arguments(parser)
+    parser.add_argument("--warmup-ratio", type=float, default=_MOD.HybridOnlineConfig().warmup_ratio)
+    parser.add_argument("--warmup-days", type=int, default=None)
+    parser.add_argument("--output-dir", type=Path, default=OUTPUT_DIR)
     parser.add_argument(
         "--objective-profile",
         choices=("live_guarded", "train_aware_guarded"),
@@ -135,14 +150,20 @@ def main() -> None:
     )
     parser.add_argument("--n-trials", type=int, default=24)
     args = parser.parse_args()
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    output_dir = Path(args.output_dir).resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    split_config = _MOD.split_config_from_args(args)
 
     best_payload: dict | None = None
 
     def objective(trial: optuna.Trial) -> float:
         nonlocal best_payload
-        config = _build_config(trial)
-        payload = _evaluate_config(config)
+        config = _build_config(
+            trial,
+            warmup_ratio=float(args.warmup_ratio),
+            warmup_days=None if args.warmup_days is None else int(args.warmup_days),
+        )
+        payload = _evaluate_config(config, split_config=split_config)
         payload["objective_profile"] = args.objective_profile
         trial_score = float(_objective_from_payload(payload, profile=args.objective_profile))
         payload["objective"] = trial_score
@@ -168,13 +189,16 @@ def main() -> None:
     trials.sort(key=lambda row: float(row["objective"]), reverse=True)
 
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    json_path = OUTPUT_DIR / f"hybrid_online_optuna_{stamp}.json"
-    latest_json = OUTPUT_DIR / "hybrid_online_optuna_latest.json"
-    md_path = OUTPUT_DIR / f"hybrid_online_optuna_{stamp}.md"
+    json_path = output_dir / f"hybrid_online_optuna_{stamp}.json"
+    latest_json = output_dir / "hybrid_online_optuna_latest.json"
+    md_path = output_dir / f"hybrid_online_optuna_{stamp}.md"
     payload = {
         "artifact_kind": "hybrid_online_portfolio_optuna",
         "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "objective_profile": args.objective_profile,
+        "split_windows": split_config.as_payload(),
+        "warmup_ratio": float(args.warmup_ratio),
+        "fixed_warmup_days": None if args.warmup_days is None else int(args.warmup_days),
         "best_trial": trials[0],
         "top_trials": trials[:10],
     }

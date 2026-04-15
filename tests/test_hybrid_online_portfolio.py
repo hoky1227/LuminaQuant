@@ -46,6 +46,32 @@ def _row(name: str, *, train: list[float], val: list[float], oos: list[float], o
     }
 
 
+def test_payload_daily_streams_resplits_old_oos_days_into_new_val_window() -> None:
+    payload = {
+        "portfolio_daily_return_streams": {
+            "oos": [
+                {"t": "2026-02-15T00:00:00Z", "v": 0.01},
+                {"t": "2026-03-05T00:00:00Z", "v": 0.02},
+            ]
+        }
+    }
+    streams = MODULE._payload_daily_streams(
+        payload,
+        split_config=MODULE.HybridSplitConfig(),
+    )
+    assert [point["t"] for point in streams["val"]] == ["2026-02-15T00:00:00Z"]
+    assert [point["t"] for point in streams["oos"]] == ["2026-03-05T00:00:00Z"]
+
+
+def test_resolve_warmup_days_uses_ratio_when_days_not_explicit() -> None:
+    warmup_days = MODULE.resolve_warmup_days(
+        config=MODULE.HybridOnlineConfig(warmup_days=None, warmup_ratio=0.60),
+        split_config=MODULE.HybridSplitConfig(),
+    )
+    assert warmup_days == 255
+    assert MODULE.HybridSplitConfig().online_start_date(warmup_days) == "2025-09-13"
+
+
 def test_health_prior_shrinks_negative_sleeves() -> None:
     cfg = MODULE.HybridOnlineConfig()
     assert MODULE._health_prior({"total_return": 0.01, "sharpe": 0.5}, cfg) == 1.0

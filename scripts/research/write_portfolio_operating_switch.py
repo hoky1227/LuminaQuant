@@ -405,7 +405,11 @@ def _balanced_strategy_health(
     *,
     operating_plan_payload: Mapping[str, Any],
     balanced_strategy_payload: Mapping[str, Any] | None = None,
+    hybrid_source_metrics: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
+    hybrid_source_metrics = dict(hybrid_source_metrics or {})
+    if "balanced_overlay_80_20" in hybrid_source_metrics:
+        return _allocator_health_from_split_metrics(dict(hybrid_source_metrics["balanced_overlay_80_20"]))
     if isinstance(balanced_strategy_payload, Mapping):
         metrics = dict((balanced_strategy_payload.get("portfolio_metrics") or {}).get("oos") or {})
         val = dict((balanced_strategy_payload.get("portfolio_metrics") or {}).get("val") or {})
@@ -435,7 +439,11 @@ def _balanced_strategy_health(
 
 
 def _allocator_health(payload: Mapping[str, Any]) -> dict[str, Any]:
-    split_metrics = dict(payload.get("split_metrics") or {})
+    return _allocator_health_from_split_metrics(dict(payload.get("split_metrics") or {}))
+
+
+def _allocator_health_from_split_metrics(split_metrics: Mapping[str, Any] | None) -> dict[str, Any]:
+    split_metrics = dict(split_metrics or {})
     val = dict(split_metrics.get("val") or {})
     oos = dict(split_metrics.get("oos") or {})
     return {
@@ -447,6 +455,22 @@ def _allocator_health(payload: Mapping[str, Any]) -> dict[str, Any]:
             _safe_float(oos.get("total_return"), 0.0) > 0.0
             and _safe_float(oos.get("sharpe"), 0.0) > 0.0
         ),
+    }
+
+
+def _hybrid_source_sleeve_metrics(
+    hybrid_payload: Mapping[str, Any] | None,
+    *,
+    scenario: str = "refreshed_latest_tail",
+) -> dict[str, Any]:
+    if not isinstance(hybrid_payload, Mapping):
+        return {}
+    scenarios = dict(hybrid_payload.get("scenarios") or {})
+    scenario_payload = dict(scenarios.get(scenario) or {})
+    return {
+        str(name): dict(metrics or {})
+        for name, metrics in dict(scenario_payload.get("source_sleeve_metrics") or {}).items()
+        if str(name).strip()
     }
 
 
@@ -689,8 +713,17 @@ def build_operating_switch_payload(
     snapshot = dict(current_judgement.get("feature_snapshot") or {})
     soft_current = dict(soft_allocator_payload.get("current_state") or {})
     hard_current = dict(three_way_allocator_payload.get("current_state") or {})
-    soft_current["_allocator_health"] = _allocator_health(soft_allocator_payload)
-    hard_current["_allocator_health"] = _allocator_health(three_way_allocator_payload)
+    hybrid_source_metrics = _hybrid_source_sleeve_metrics(hybrid_portfolio_payload)
+    soft_current["_allocator_health"] = (
+        _allocator_health_from_split_metrics(dict(hybrid_source_metrics["soft_three_way_regime"]))
+        if "soft_three_way_regime" in hybrid_source_metrics
+        else _allocator_health(soft_allocator_payload)
+    )
+    hard_current["_allocator_health"] = (
+        _allocator_health_from_split_metrics(dict(hybrid_source_metrics["three_way_regime"]))
+        if "three_way_regime" in hybrid_source_metrics
+        else _allocator_health(three_way_allocator_payload)
+    )
     pair_liquidity_state = _pair_liquidity_state(pair_volume_signals)
     decision = recommend_operating_mode(
         current_judgement=current_judgement,
@@ -701,6 +734,7 @@ def build_operating_switch_payload(
         balanced_health=_balanced_strategy_health(
             operating_plan_payload=operating_plan_payload,
             balanced_strategy_payload=balanced_strategy_payload,
+            hybrid_source_metrics=hybrid_source_metrics,
         ),
         hybrid_health=_hybrid_portfolio_health(hybrid_portfolio_payload),
     )

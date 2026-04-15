@@ -49,6 +49,8 @@ def _normalize_mode_metrics(metrics: dict[str, Any] | None) -> dict[str, float]:
     raw = dict(metrics or {})
     if not raw:
         return {"total_return": 0.0, "sharpe": 0.0, "max_drawdown": 0.0}
+    if "total_return" not in raw and "oos" in raw and isinstance(raw.get("oos"), dict):
+        raw = dict(raw.get("oos") or {})
     return {
         "total_return": _safe_float(
             raw.get("total_return", raw.get("oos_total_return", raw.get("return"))),
@@ -78,19 +80,37 @@ def _hybrid_mode_entry(hybrid_payload: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
+def _hybrid_source_sleeve_metrics(
+    hybrid_payload: dict[str, Any] | None,
+    *,
+    scenario: str = "refreshed_latest_tail",
+) -> dict[str, Any]:
+    payload = dict(hybrid_payload or {})
+    scenario_payload = dict(dict(payload.get("scenarios") or {}).get(scenario) or {})
+    return {
+        str(name): dict(metrics or {})
+        for name, metrics in dict(scenario_payload.get("source_sleeve_metrics") or {}).items()
+        if str(name).strip()
+    }
+
+
 def build_playbook(*, base_plan: dict[str, Any], switch_validation: dict[str, Any], switch_recommendation: dict[str, Any], bearish_scan: dict[str, Any], hybrid_payload: dict[str, Any] | None = None) -> dict[str, Any]:
     base_modes = dict(base_plan.get("deployment_modes") or {})
     refreshed_metrics = dict(switch_validation.get("refreshed_metrics") or {})
+    hybrid_source_metrics = _hybrid_source_sleeve_metrics(hybrid_payload)
     core_metrics = _normalize_mode_metrics(
-        refreshed_metrics.get("soft_three_way_regime")
+        hybrid_source_metrics.get("soft_three_way_regime")
+        or refreshed_metrics.get("soft_three_way_regime")
         or refreshed_metrics.get("switch_strategy_core_soft100")
     )
     balanced_metrics = _normalize_mode_metrics(
-        refreshed_metrics.get("strategy1_balanced_overlay_80_20")
+        hybrid_source_metrics.get("balanced_overlay_80_20")
+        or refreshed_metrics.get("strategy1_balanced_overlay_80_20")
         or refreshed_metrics.get("balanced_overlay_80_20")
     )
     aggressive_metrics = _normalize_mode_metrics(
-        refreshed_metrics.get("three_way_regime")
+        hybrid_source_metrics.get("three_way_regime")
+        or refreshed_metrics.get("three_way_regime")
         or refreshed_metrics.get("aggressive_three_way")
     )
     risk_off_mode = {
@@ -103,7 +123,10 @@ def build_playbook(*, base_plan: dict[str, Any], switch_validation: dict[str, An
     pair_tactical_mode = {
         "allocation": {"pair_fast_exit": 1.0},
         "why": "Tactical sleeve-only mode for operators who must keep active exposure in a hostile regime. Use only when accepting sparse / high-PBO behavior.",
-        "metrics": dict((pair_row or {}).get("oos") or {}),
+        "metrics": _normalize_mode_metrics(
+            hybrid_source_metrics.get("pair_tactical_mode")
+            or dict((pair_row or {}).get("oos") or {})
+        ),
     }
     hybrid_guarded_mode = _hybrid_mode_entry(hybrid_payload)
     refreshed_modes = {
@@ -162,7 +185,10 @@ def build_playbook(*, base_plan: dict[str, Any], switch_validation: dict[str, An
                 "the refreshed pair sleeve turns negative on OOS return or Sharpe",
                 "a safer active allocator becomes healthy and beats the sleeve on refreshed validation",
             ],
-            "current_refreshed_oos": dict((pair_row or {}).get("oos") or {}),
+            "current_refreshed_oos": dict(
+                hybrid_source_metrics.get("pair_tactical_mode")
+                or dict((pair_row or {}).get("oos") or {})
+            ),
         },
         "hybrid_guarded_rules": {
             "portfolio_name": "hybrid_online_portfolio",
