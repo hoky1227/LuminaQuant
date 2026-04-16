@@ -455,6 +455,115 @@ def test_recommend_operating_mode_promotes_hybrid_guarded_in_mixed_calm_when_it_
     assert any("materially outperforms balanced" in item for item in decision.rationale)
 
 
+def test_recommend_operating_mode_uses_performance_first_override_when_hybrid_oos_edge_is_decisive() -> None:
+    decision = MODULE.recommend_operating_mode(
+        current_judgement={
+            "favored_group": "mixed",
+            "confidence": 0.0,
+            "feature_snapshot": {
+                "btc_above_ma192": True,
+                "btc_above_ma336": True,
+                "btc_trend_gap_192": 0.0236,
+                "btc_trend_gap_336": 0.0288,
+                "btc_trend_accel": 0.01,
+                "breadth_ma96": 1.0,
+                "breadth_ma192": 1.0,
+                "breadth_delta": 0.05,
+                "basket_vol_ratio": 0.46,
+            },
+        },
+        soft_current_state={
+            "effective_incumbent_exposure": 0.95,
+            "effective_autoresearch_exposure": 0.05,
+            "_allocator_health": {"healthy": True, "oos_total_return": 0.0009, "oos_sharpe": 0.74},
+        },
+        hard_current_state={
+            "state": "blend_85_15",
+            "raw_target_state": "incumbent",
+            "_allocator_health": {"healthy": True, "oos_total_return": 0.0020, "oos_sharpe": 1.31},
+        },
+        operating_plan_payload=_base_operating_plan(),
+        pair_liquidity_state="normal",
+        balanced_health={
+            "healthy": True,
+            "val_total_return": 0.08308,
+            "val_sharpe": 4.1120,
+            "oos_total_return": 0.00109,
+            "oos_sharpe": 0.4828,
+            "oos_max_drawdown": 0.005162,
+        },
+        hybrid_health={
+            "healthy": True,
+            "recommended_stage": "pilot_candidate",
+            "beats_balanced_refreshed": True,
+            "beats_pair_tactical_refreshed": True,
+            "val_total_return": 0.06537,
+            "val_sharpe": 3.2857,
+            "oos_total_return": 0.006868,
+            "oos_sharpe": 3.2370,
+            "oos_max_drawdown": 0.002573,
+        },
+    )
+
+    assert decision.mode == "hybrid_guarded_mode"
+    assert decision.allocation == {"hybrid_online_portfolio": 1.0}
+    assert any("performance-first override" in item for item in decision.rationale)
+
+
+def test_recommend_operating_mode_requires_decisive_oos_edge_for_performance_first_override() -> None:
+    decision = MODULE.recommend_operating_mode(
+        current_judgement={
+            "favored_group": "mixed",
+            "confidence": 0.0,
+            "feature_snapshot": {
+                "btc_above_ma192": True,
+                "btc_above_ma336": True,
+                "btc_trend_gap_192": 0.0236,
+                "btc_trend_gap_336": 0.0288,
+                "btc_trend_accel": 0.01,
+                "breadth_ma96": 1.0,
+                "breadth_ma192": 1.0,
+                "breadth_delta": 0.05,
+                "basket_vol_ratio": 0.46,
+            },
+        },
+        soft_current_state={
+            "effective_incumbent_exposure": 0.95,
+            "effective_autoresearch_exposure": 0.05,
+            "_allocator_health": {"healthy": True, "oos_total_return": 0.0009, "oos_sharpe": 0.74},
+        },
+        hard_current_state={
+            "state": "blend_85_15",
+            "raw_target_state": "incumbent",
+            "_allocator_health": {"healthy": True, "oos_total_return": 0.0020, "oos_sharpe": 1.31},
+        },
+        operating_plan_payload=_base_operating_plan(),
+        pair_liquidity_state="normal",
+        balanced_health={
+            "healthy": True,
+            "val_total_return": 0.08308,
+            "val_sharpe": 4.1120,
+            "oos_total_return": 0.0040,
+            "oos_sharpe": 1.5,
+            "oos_max_drawdown": 0.005162,
+        },
+        hybrid_health={
+            "healthy": True,
+            "recommended_stage": "pilot_candidate",
+            "beats_balanced_refreshed": True,
+            "beats_pair_tactical_refreshed": True,
+            "val_total_return": 0.06537,
+            "val_sharpe": 3.2857,
+            "oos_total_return": 0.006868,
+            "oos_sharpe": 3.2370,
+            "oos_max_drawdown": 0.002573,
+        },
+    )
+
+    assert decision.mode == "balanced_overlay_mode"
+    assert decision.allocation == {"soft_three_way_regime": 0.8, "pair_fast_exit": 0.2}
+
+
 def test_recommend_operating_mode_keeps_balanced_overlay_when_incumbent_is_healthy_and_hybrid_is_only_a_challenger() -> None:
     decision = MODULE.recommend_operating_mode(
         current_judgement={

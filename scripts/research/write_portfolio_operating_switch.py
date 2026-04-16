@@ -82,6 +82,10 @@ HYBRID_PROMOTION_MAX_VAL_RETURN_GIVEBACK = 0.0100
 HYBRID_PROMOTION_MAX_VAL_SHARPE_GIVEBACK = 0.35
 HYBRID_PROMOTION_MAX_DRAWDOWN_RATIO = 0.80
 HYBRID_PROMOTION_MIN_DRAWDOWN_IMPROVEMENT = 0.0010
+HYBRID_PROMOTION_STRONG_OOS_RETURN_EDGE = 0.0040
+HYBRID_PROMOTION_STRONG_OOS_SHARPE_EDGE = 2.0
+HYBRID_PROMOTION_STRONG_VAL_TOTAL_RETURN = 0.0500
+HYBRID_PROMOTION_STRONG_VAL_SHARPE = 3.0
 
 _MARKET_SPEC = importlib.util.spec_from_file_location(
     "run_group_market_regime_judgement",
@@ -631,12 +635,28 @@ def _hybrid_balanced_promotion_signal(
         oos_return_edge >= HYBRID_PROMOTION_MIN_OOS_RETURN_EDGE
         and oos_sharpe_edge >= HYBRID_PROMOTION_MIN_OOS_SHARPE_EDGE
     )
+    profit_first_ok = bool(
+        hybrid.get("healthy")
+        and hybrid.get("beats_balanced_refreshed")
+        and hybrid.get("beats_pair_tactical_refreshed")
+        and str(hybrid.get("recommended_stage") or "").strip().lower() == "pilot_candidate"
+        and oos_return_edge >= HYBRID_PROMOTION_STRONG_OOS_RETURN_EDGE
+        and oos_sharpe_edge >= HYBRID_PROMOTION_STRONG_OOS_SHARPE_EDGE
+        and _safe_float(hybrid.get("val_total_return"), 0.0) >= HYBRID_PROMOTION_STRONG_VAL_TOTAL_RETURN
+        and _safe_float(hybrid.get("val_sharpe"), 0.0) >= HYBRID_PROMOTION_STRONG_VAL_SHARPE
+        and drawdown_ok
+    )
     promoted = bool(
         hybrid.get("healthy")
-        and (hybrid.get("beats_balanced_refreshed") or oos_ok)
-        and oos_ok
         and drawdown_ok
-        and val_ok
+        and (
+            (
+                (hybrid.get("beats_balanced_refreshed") or oos_ok)
+                and oos_ok
+                and val_ok
+            )
+            or profit_first_ok
+        )
     )
     return {
         "promoted": promoted,
@@ -649,6 +669,7 @@ def _hybrid_balanced_promotion_signal(
         "drawdown_ok": drawdown_ok,
         "val_ok": val_ok,
         "oos_ok": oos_ok,
+        "profit_first_ok": profit_first_ok,
     }
 
 
@@ -812,14 +833,25 @@ def recommend_operating_mode(
             and pair_liquidity_state != "weak"
         ):
             mode = "hybrid_guarded_mode"
-            rationale.append(
-                "Mixed/calm regime and the guarded hybrid materially outperforms balanced "
-                f"(Δreturn={_safe_float(hybrid_promotion_signal.get('oos_return_edge'), 0.0):+.4%}, "
-                f"Δsharpe={_safe_float(hybrid_promotion_signal.get('oos_sharpe_edge'), 0.0):+.4f}, "
-                f"maxDD {_safe_float(hybrid_promotion_signal.get('hybrid_oos_max_drawdown'), 0.0):.4%} "
-                f"vs {_safe_float(hybrid_promotion_signal.get('balanced_oos_max_drawdown'), 0.0):.4%}) "
-                "-> promote hybrid guarded mode."
-            )
+            if bool(hybrid_promotion_signal.get("profit_first_ok")):
+                rationale.append(
+                    "Mixed/calm regime and the guarded hybrid clears the performance-first override "
+                    f"(Δreturn={_safe_float(hybrid_promotion_signal.get('oos_return_edge'), 0.0):+.4%}, "
+                    f"Δsharpe={_safe_float(hybrid_promotion_signal.get('oos_sharpe_edge'), 0.0):+.4f}, "
+                    f"val={_safe_float(hybrid.get('val_total_return'), 0.0):+.4%}/{_safe_float(hybrid.get('val_sharpe'), 0.0):.4f}, "
+                    f"maxDD {_safe_float(hybrid_promotion_signal.get('hybrid_oos_max_drawdown'), 0.0):.4%} "
+                    f"vs {_safe_float(hybrid_promotion_signal.get('balanced_oos_max_drawdown'), 0.0):.4%}) "
+                    "-> promote hybrid guarded mode."
+                )
+            else:
+                rationale.append(
+                    "Mixed/calm regime and the guarded hybrid materially outperforms balanced "
+                    f"(Δreturn={_safe_float(hybrid_promotion_signal.get('oos_return_edge'), 0.0):+.4%}, "
+                    f"Δsharpe={_safe_float(hybrid_promotion_signal.get('oos_sharpe_edge'), 0.0):+.4f}, "
+                    f"maxDD {_safe_float(hybrid_promotion_signal.get('hybrid_oos_max_drawdown'), 0.0):.4%} "
+                    f"vs {_safe_float(hybrid_promotion_signal.get('balanced_oos_max_drawdown'), 0.0):.4%}) "
+                    "-> promote hybrid guarded mode."
+                )
         elif overlay_health["healthy"]:
             mode = "balanced_overlay_mode"
             rationale.append("Mixed regime but calm enough for a small overlay -> balanced overlay mode.")
