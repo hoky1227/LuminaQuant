@@ -2,6 +2,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pandas as pd
+
 MODULE_PATH = (
     Path(__file__).resolve().parents[2]
     / "scripts"
@@ -210,3 +212,33 @@ def test_build_replay_report_prefers_hybrid_profile_when_override_is_decisive(mo
     assert current["last_mode"] == "hybrid_guarded_mode"
     assert current["mode_counts"]["hybrid_guarded_mode"] >= 1
     assert current["oos_metrics"]["total_return"] > 0.0
+
+
+def test_market_judgements_by_day_normalizes_timestamp_keys(monkeypatch) -> None:
+    monkeypatch.setattr(
+        MODULE._MARKET,
+        "_load_symbol_close_30m_from_feature_points",
+        lambda *args, **kwargs: (pd.DataFrame({"x": [1]}), {}),
+    )
+    monkeypatch.setattr(
+        MODULE._MARKET,
+        "_daily_market_feature_frame",
+        lambda frames: pd.DataFrame({"date": [pd.Timestamp("2026-03-01", tz="UTC")]}),
+    )
+    monkeypatch.setattr(
+        MODULE._MARKET,
+        "_current_judgement",
+        lambda **kwargs: {
+            "date": "2026-03-01 00:00:00+00:00",
+            "favored_group": "mixed",
+            "confidence": 0.0,
+            "feature_snapshot": {},
+        },
+    )
+
+    judgements = MODULE._market_judgements_by_day(
+        market_payload={"selected_rules": [{"rule_id": "x"}], "symbol_universe": ["BTC/USDT"]},
+        replay_days=["2026-03-01"],
+    )
+
+    assert "2026-03-01" in judgements

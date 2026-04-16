@@ -128,7 +128,10 @@ def _parse_day(value: str) -> date:
     token = str(value).strip()
     if not token:
         raise ValueError("missing day token")
-    token = token.split("T", 1)[0]
+    if "T" in token:
+        token = token.split("T", 1)[0]
+    elif " " in token:
+        token = token.split(" ", 1)[0]
     return date.fromisoformat(token)
 
 
@@ -265,7 +268,10 @@ def _market_judgements_by_day(
     judgements: dict[str, dict[str, Any]] = {}
     for _idx, row in feature_frame.sort_values("date").iterrows():
         judgement = dict(_MARKET._current_judgement(latest_row=row, selected_rules=selected_rules))
-        judgements[str(judgement.get("date") or "").split("T", 1)[0]] = judgement
+        raw_day = str(judgement.get("date") or "").strip()
+        if not raw_day:
+            continue
+        judgements[_parse_day(raw_day).isoformat()] = judgement
     return judgements
 
 
