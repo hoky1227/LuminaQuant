@@ -206,6 +206,7 @@ def test_build_replay_report_prefers_hybrid_profile_when_override_is_decisive(mo
 
     current = report["current_profile_result"]
     assert report["current_switch_mode"] == "hybrid_guarded_mode"
+    assert report["coverage_summary"]["market_judgement_missing_days"] == 0
     assert current["last_mode"] == "hybrid_guarded_mode"
     assert current["mode_counts"]["hybrid_guarded_mode"] >= 1
     assert current["oos_metrics"]["total_return"] > 0.0

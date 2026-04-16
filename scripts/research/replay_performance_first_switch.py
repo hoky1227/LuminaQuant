@@ -398,6 +398,21 @@ def _build_day_contexts(
     return day_contexts
 
 
+def _coverage_summary(day_contexts: list[dict[str, Any]]) -> dict[str, Any]:
+    total_days = len(day_contexts)
+    market_days = sum(1 for item in day_contexts if dict(item.get("current_judgement") or {}).get("date"))
+    liquidity_counts: dict[str, int] = {}
+    for item in day_contexts:
+        state = str(item.get("pair_liquidity_state") or "missing")
+        liquidity_counts[state] = liquidity_counts.get(state, 0) + 1
+    return {
+        "replay_days": total_days,
+        "market_judgement_days": market_days,
+        "market_judgement_missing_days": total_days - market_days,
+        "pair_liquidity_counts": liquidity_counts,
+    }
+
+
 def build_replay_report(
     *,
     switch_payload: Mapping[str, Any],
@@ -460,6 +475,7 @@ def build_replay_report(
         hybrid_val_metrics=hybrid_val,
         pair_cap_respected=pair_cap_respected,
     )
+    coverage = _coverage_summary(day_contexts)
 
     profiles = [
         ThresholdProfile(
@@ -503,6 +519,7 @@ def build_replay_report(
         "replay_end": replay_days[-1],
         "current_switch_mode": str(dict(switch_payload.get("recommended_mode") or {}).get("mode") or ""),
         "current_market_state": dict(switch_payload.get("current_market_state") or {}),
+        "coverage_summary": coverage,
         "current_profile": asdict(current_profile),
         "current_profile_result": current_result,
         "top_profiles": results[:10],
@@ -517,6 +534,7 @@ def build_replay_report(
 
 def _build_markdown(report: Mapping[str, Any]) -> str:
     current_state = dict(report.get("current_market_state") or {})
+    coverage = dict(report.get("coverage_summary") or {})
     current_result = dict(report.get("current_profile_result") or {})
     current_metrics = dict(current_result.get("oos_metrics") or {})
     top_profiles = list(report.get("top_profiles") or [])
@@ -527,6 +545,7 @@ def _build_markdown(report: Mapping[str, Any]) -> str:
         f"- replay_window: `{report.get('replay_start')}` ~ `{report.get('replay_end')}`",
         f"- replay_day_count: `{report.get('replay_day_count')}`",
         f"- current_market_state: favored_group=`{current_state.get('favored_group')}`, confidence=`{_safe_float(current_state.get('confidence'), 0.0):.4f}`, trend=`{current_state.get('trend_state')}`, breadth=`{current_state.get('breadth_state')}`, volatility=`{current_state.get('volatility_state')}`, pair_liquidity=`{current_state.get('pair_liquidity_state')}`",
+        f"- coverage_summary: market_judgement_days=`{coverage.get('market_judgement_days')}` / `{coverage.get('replay_days')}`, pair_liquidity_counts=`{json.dumps(coverage.get('pair_liquidity_counts') or {}, sort_keys=True)}`",
         "",
         "## Current profile replay",
         f"- profile: `{json.dumps(report.get('current_profile') or {}, sort_keys=True)}`",
