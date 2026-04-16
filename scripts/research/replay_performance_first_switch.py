@@ -12,9 +12,10 @@ import argparse
 import importlib.util
 import json
 import sys
+from collections.abc import Mapping
 from bisect import bisect_right
 from dataclasses import asdict, dataclass
-from datetime import UTC, date, datetime
+from datetime import date
 from itertools import product
 from pathlib import Path
 from typing import Any
@@ -433,7 +434,7 @@ def build_replay_report(
     val_return_grid: list[float],
     val_sharpe_grid: list[float],
 ) -> dict[str, Any]:
-    hybrid_ref = dict((dict(hybrid_payload.get("scenarios") or {}).get("refreshed_latest_tail") or {}))
+    hybrid_ref = dict(dict(hybrid_payload.get("scenarios") or {}).get("refreshed_latest_tail") or {})
     replay_days = [
         str(day)
         for day, split in zip(
@@ -467,7 +468,7 @@ def build_replay_report(
         "risk_off_mode": {},
     }
     balanced_val = dict((balanced_payload.get("portfolio_metrics") or {}).get("val") or {})
-    hybrid_val = dict((dict(hybrid_ref.get("split_metrics") or {}).get("val") or {}))
+    hybrid_val = dict(dict(hybrid_ref.get("split_metrics") or {}).get("val") or {})
     pair_cap_respected = bool(dict(hybrid_payload.get("readiness") or {}).get("pair_cap_respected"))
     day_contexts = _build_day_contexts(
         replay_days=replay_days,
