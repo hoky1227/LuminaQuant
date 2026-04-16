@@ -57,6 +57,8 @@ PAIR_PATH = (
 )
 HYBRID_PATH = GROUP_ROOT / "portfolio_hybrid_online_current" / "hybrid_online_portfolio_latest.json"
 OUTPUT_DIR = GROUP_ROOT / "current_switch_validation_current" / "performance_first_switch_replay_current"
+REPLAY_COVERAGE_GAP_MAX_DAYS = 21
+REPLAY_STALE_GAP_MIN_DAYS = 14
 
 _SWITCH_SPEC = importlib.util.spec_from_file_location(
     "write_portfolio_operating_switch",
@@ -139,6 +141,62 @@ def _parse_day(value: str) -> date:
 def _state_series(states: list[dict[str, Any]]) -> tuple[list[date], list[dict[str, Any]]]:
     keyed = sorted(((_parse_day(item["date"]), dict(item)) for item in list(states or [])), key=lambda item: item[0])
     return [day for day, _ in keyed], [item for _, item in keyed]
+
+
+def _raw_coverage_index(*, raw_aggtrades_root: Path, symbols: list[str]) -> dict[str, list[date]]:
+    coverage: dict[str, list[date]] = {}
+    for symbol in symbols:
+        symbol_root = raw_aggtrades_root / _SWITCH._symbol_token(symbol)
+        dates = sorted(
+            date.fromisoformat(path.name.split("=", 1)[1])
+            for path in symbol_root.glob("date=*")
+            if path.is_dir()
+        )
+        coverage[str(symbol)] = dates
+    return coverage
+
+
+def _adjust_pair_liquidity_state_for_coverage(
+    *,
+    signals: list[_SWITCH.SymbolVolumeSignal],
+    as_of_date: date,
+    coverage_index: Mapping[str, list[date]],
+) -> tuple[str, list[str]]:
+    adjusted_states: list[str] = []
+    coverage_gap_symbols: list[str] = []
+    for signal in signals:
+        symbol = str(signal.symbol)
+        raw_dates = list(coverage_index.get(symbol) or [])
+        next_available = None
+        if raw_dates:
+            idx = bisect_right(raw_dates, as_of_date)
+            if idx < len(raw_dates):
+                next_available = raw_dates[idx]
+        latest_available = None
+        if signal.latest_available_date:
+            latest_available = _parse_day(signal.latest_available_date)
+        stale_gap_days = (as_of_date - latest_available).days if latest_available is not None else None
+        coverage_gap = bool(
+            signal.state in {"stale", "missing"}
+            and next_available is not None
+            and 0 <= (next_available - as_of_date).days <= REPLAY_COVERAGE_GAP_MAX_DAYS
+            and (stale_gap_days is None or stale_gap_days >= REPLAY_STALE_GAP_MIN_DAYS)
+        )
+        if coverage_gap:
+            adjusted_states.append("coverage_gap")
+            coverage_gap_symbols.append(symbol)
+        else:
+            adjusted_states.append(signal.state)
+
+    if any(state == "weak" for state in adjusted_states):
+        return "weak", coverage_gap_symbols
+    if all(state == "strong" for state in adjusted_states):
+        return "strong", coverage_gap_symbols
+    if any(state in {"coverage_gap", "normal", "strong"} for state in adjusted_states):
+        return "normal", coverage_gap_symbols
+    if all(state == "missing" for state in adjusted_states):
+        return "missing", coverage_gap_symbols
+    return "weak", coverage_gap_symbols
 
 
 def _carry_forward(days: list[date], items: list[dict[str, Any]], target_day: date) -> dict[str, Any]:
@@ -351,6 +409,8 @@ def _build_day_contexts(
     balanced_val_metrics: Mapping[str, Any],
     hybrid_val_metrics: Mapping[str, Any],
     pair_cap_respected: bool,
+    pair_liquidity_policy: str,
+    coverage_index: Mapping[str, list[date]] | None = None,
 ) -> list[dict[str, Any]]:
     day_contexts: list[dict[str, Any]] = []
     for day in replay_days:
@@ -364,6 +424,17 @@ def _build_day_contexts(
             )
             for symbol in _SWITCH.DEFAULT_PAIR_SYMBOLS
         ]
+        strict_pair_liquidity_state = _SWITCH._pair_liquidity_state(pair_signals)
+        adjusted_pair_liquidity_state, coverage_gap_symbols = _adjust_pair_liquidity_state_for_coverage(
+            signals=pair_signals,
+            as_of_date=day_date,
+            coverage_index=coverage_index or {},
+        )
+        pair_liquidity_state = (
+            adjusted_pair_liquidity_state
+            if str(pair_liquidity_policy).strip().lower() == "coverage_adjusted"
+            else strict_pair_liquidity_state
+        )
         soft_state = _carry_forward(soft_days, soft_states, day_date)
         hard_state = _carry_forward(hard_days, hard_states, day_date)
         if "_allocator_health" not in soft_state:
@@ -384,7 +455,10 @@ def _build_day_contexts(
                 "current_judgement": dict(judgement_by_day.get(day) or {}),
                 "soft_state": soft_state,
                 "hard_state": hard_state,
-                "pair_liquidity_state": _SWITCH._pair_liquidity_state(pair_signals),
+                "pair_liquidity_state": pair_liquidity_state,
+                "strict_pair_liquidity_state": strict_pair_liquidity_state,
+                "adjusted_pair_liquidity_state": adjusted_pair_liquidity_state,
+                "coverage_gap_symbols": coverage_gap_symbols,
                 "balanced_health": _balanced_health_for_day(
                     oos_days=replay_days,
                     current_day=day,
@@ -409,14 +483,22 @@ def _coverage_summary(day_contexts: list[dict[str, Any]]) -> dict[str, Any]:
     total_days = len(day_contexts)
     market_days = sum(1 for item in day_contexts if dict(item.get("current_judgement") or {}).get("date"))
     liquidity_counts: dict[str, int] = {}
+    strict_liquidity_counts: dict[str, int] = {}
+    coverage_gap_day_count = 0
     for item in day_contexts:
         state = str(item.get("pair_liquidity_state") or "missing")
         liquidity_counts[state] = liquidity_counts.get(state, 0) + 1
+        strict_state = str(item.get("strict_pair_liquidity_state") or "missing")
+        strict_liquidity_counts[strict_state] = strict_liquidity_counts.get(strict_state, 0) + 1
+        if list(item.get("coverage_gap_symbols") or []):
+            coverage_gap_day_count += 1
     return {
         "replay_days": total_days,
         "market_judgement_days": market_days,
         "market_judgement_missing_days": total_days - market_days,
         "pair_liquidity_counts": liquidity_counts,
+        "strict_pair_liquidity_counts": strict_liquidity_counts,
+        "coverage_gap_day_count": coverage_gap_day_count,
     }
 
 
@@ -470,7 +552,11 @@ def build_replay_report(
     balanced_val = dict((balanced_payload.get("portfolio_metrics") or {}).get("val") or {})
     hybrid_val = dict(dict(hybrid_ref.get("split_metrics") or {}).get("val") or {})
     pair_cap_respected = bool(dict(hybrid_payload.get("readiness") or {}).get("pair_cap_respected"))
-    day_contexts = _build_day_contexts(
+    coverage_index = _raw_coverage_index(
+        raw_aggtrades_root=_SWITCH.DEFAULT_RAW_AGGTRADES_ROOT,
+        symbols=list(_SWITCH.DEFAULT_PAIR_SYMBOLS),
+    )
+    strict_day_contexts = _build_day_contexts(
         replay_days=replay_days,
         judgement_by_day=judgement_by_day,
         soft_days=soft_days,
@@ -481,8 +567,24 @@ def build_replay_report(
         balanced_val_metrics=balanced_val,
         hybrid_val_metrics=hybrid_val,
         pair_cap_respected=pair_cap_respected,
+        pair_liquidity_policy="strict",
+        coverage_index=coverage_index,
     )
-    coverage = _coverage_summary(day_contexts)
+    adjusted_day_contexts = _build_day_contexts(
+        replay_days=replay_days,
+        judgement_by_day=judgement_by_day,
+        soft_days=soft_days,
+        soft_states=soft_states,
+        hard_days=hard_days,
+        hard_states=hard_states,
+        mode_maps=mode_maps,
+        balanced_val_metrics=balanced_val,
+        hybrid_val_metrics=hybrid_val,
+        pair_cap_respected=pair_cap_respected,
+        pair_liquidity_policy="coverage_adjusted",
+        coverage_index=coverage_index,
+    )
+    coverage = _coverage_summary(adjusted_day_contexts)
 
     profiles = [
         ThresholdProfile(
@@ -505,7 +607,7 @@ def build_replay_report(
     results = [
         _replay_profile(
             profile=profile,
-            day_contexts=day_contexts,
+            day_contexts=adjusted_day_contexts,
             mode_maps=mode_maps,
         )
         for profile in profiles
@@ -518,16 +620,23 @@ def build_replay_report(
         reverse=True,
     )
     current_result = next(item for item in results if item["profile"] == asdict(current_profile))
+    strict_current_result = _replay_profile(
+        profile=current_profile,
+        day_contexts=strict_day_contexts,
+        mode_maps=mode_maps,
+    )
     return {
         "artifact_kind": "performance_first_switch_replay",
         "generated_at": _SWITCH._utc_now_iso(),
         "replay_day_count": len(replay_days),
         "replay_start": replay_days[0],
         "replay_end": replay_days[-1],
+        "pair_liquidity_policy": "coverage_adjusted",
         "current_switch_mode": str(dict(switch_payload.get("recommended_mode") or {}).get("mode") or ""),
         "current_market_state": dict(switch_payload.get("current_market_state") or {}),
         "coverage_summary": coverage,
         "current_profile": asdict(current_profile),
+        "strict_current_profile_result": strict_current_result,
         "current_profile_result": current_result,
         "top_profiles": results[:10],
         "grid": {
@@ -542,6 +651,8 @@ def build_replay_report(
 def _build_markdown(report: Mapping[str, Any]) -> str:
     current_state = dict(report.get("current_market_state") or {})
     coverage = dict(report.get("coverage_summary") or {})
+    strict_current = dict(report.get("strict_current_profile_result") or {})
+    strict_metrics = dict(strict_current.get("oos_metrics") or {})
     current_result = dict(report.get("current_profile_result") or {})
     current_metrics = dict(current_result.get("oos_metrics") or {})
     top_profiles = list(report.get("top_profiles") or [])
@@ -551,10 +662,16 @@ def _build_markdown(report: Mapping[str, Any]) -> str:
         f"- generated_at: `{report.get('generated_at')}`",
         f"- replay_window: `{report.get('replay_start')}` ~ `{report.get('replay_end')}`",
         f"- replay_day_count: `{report.get('replay_day_count')}`",
+        f"- pair_liquidity_policy: `{report.get('pair_liquidity_policy')}`",
         f"- current_market_state: favored_group=`{current_state.get('favored_group')}`, confidence=`{_safe_float(current_state.get('confidence'), 0.0):.4f}`, trend=`{current_state.get('trend_state')}`, breadth=`{current_state.get('breadth_state')}`, volatility=`{current_state.get('volatility_state')}`, pair_liquidity=`{current_state.get('pair_liquidity_state')}`",
-        f"- coverage_summary: market_judgement_days=`{coverage.get('market_judgement_days')}` / `{coverage.get('replay_days')}`, pair_liquidity_counts=`{json.dumps(coverage.get('pair_liquidity_counts') or {}, sort_keys=True)}`",
+        f"- coverage_summary: market_judgement_days=`{coverage.get('market_judgement_days')}` / `{coverage.get('replay_days')}`, adjusted_pair_liquidity_counts=`{json.dumps(coverage.get('pair_liquidity_counts') or {}, sort_keys=True)}`, strict_pair_liquidity_counts=`{json.dumps(coverage.get('strict_pair_liquidity_counts') or {}, sort_keys=True)}`, coverage_gap_day_count=`{coverage.get('coverage_gap_day_count')}`",
         "",
-        "## Current profile replay",
+        "## Current profile replay (strict baseline)",
+        f"- oos_return / sharpe / max_dd: `{_safe_float(strict_metrics.get('total_return'), 0.0):+.4%}` / `{_safe_float(strict_metrics.get('sharpe'), 0.0):.4f}` / `{_safe_float(strict_metrics.get('max_drawdown'), 0.0):.4%}`",
+        f"- mode_counts: `{json.dumps(strict_current.get('mode_counts') or {}, sort_keys=True)}`",
+        f"- last_mode: `{strict_current.get('last_mode')}`",
+        "",
+        "## Current profile replay (coverage-adjusted)",
         f"- profile: `{json.dumps(report.get('current_profile') or {}, sort_keys=True)}`",
         f"- oos_return / sharpe / max_dd: `{_safe_float(current_metrics.get('total_return'), 0.0):+.4%}` / `{_safe_float(current_metrics.get('sharpe'), 0.0):.4f}` / `{_safe_float(current_metrics.get('max_drawdown'), 0.0):.4%}`",
         f"- mode_counts: `{json.dumps(current_result.get('mode_counts') or {}, sort_keys=True)}`",

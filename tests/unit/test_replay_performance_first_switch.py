@@ -209,6 +209,7 @@ def test_build_replay_report_prefers_hybrid_profile_when_override_is_decisive(mo
     current = report["current_profile_result"]
     assert report["current_switch_mode"] == "hybrid_guarded_mode"
     assert report["coverage_summary"]["market_judgement_missing_days"] == 0
+    assert "strict_current_profile_result" in report
     assert current["last_mode"] == "hybrid_guarded_mode"
     assert current["mode_counts"]["hybrid_guarded_mode"] >= 1
     assert current["oos_metrics"]["total_return"] > 0.0
@@ -242,3 +243,42 @@ def test_market_judgements_by_day_normalizes_timestamp_keys(monkeypatch) -> None
     )
 
     assert "2026-03-01" in judgements
+
+
+def test_adjust_pair_liquidity_state_for_coverage_neutralizes_future_coverage_gap() -> None:
+    signals = [
+        MODULE._SWITCH.SymbolVolumeSignal(
+            symbol="BNB/USDT",
+            as_of_date="2026-03-01",
+            latest_available_date="2025-01-01",
+            stale_days=424,
+            latest_dollar_volume=1.0,
+            lookback_mean_dollar_volume=1.0,
+            volume_ratio=1.0,
+            comparison_mode="full_day",
+            state="stale",
+        ),
+        MODULE._SWITCH.SymbolVolumeSignal(
+            symbol="TRX/USDT",
+            as_of_date="2026-03-01",
+            latest_available_date="2025-01-01",
+            stale_days=424,
+            latest_dollar_volume=1.0,
+            lookback_mean_dollar_volume=1.0,
+            volume_ratio=1.0,
+            comparison_mode="full_day",
+            state="stale",
+        ),
+    ]
+
+    state, symbols = MODULE._adjust_pair_liquidity_state_for_coverage(
+        signals=signals,
+        as_of_date=MODULE.date(2026, 3, 1),
+        coverage_index={
+            "BNB/USDT": [MODULE.date(2025, 1, 1), MODULE.date(2026, 3, 19)],
+            "TRX/USDT": [MODULE.date(2025, 1, 1), MODULE.date(2026, 3, 19)],
+        },
+    )
+
+    assert state == "normal"
+    assert symbols == ["BNB/USDT", "TRX/USDT"]
