@@ -1,7 +1,7 @@
 import importlib.util
 import json
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import polars as pl
@@ -401,6 +401,113 @@ def test_recommend_operating_mode_prefers_hybrid_guarded_when_legacy_sleeves_are
     assert decision.allocation == {"hybrid_online_portfolio": 1.0}
 
 
+def test_recommend_operating_mode_promotes_hybrid_guarded_in_mixed_calm_when_it_materially_beats_balanced() -> None:
+    decision = MODULE.recommend_operating_mode(
+        current_judgement={
+            "favored_group": "mixed",
+            "confidence": 0.0,
+            "feature_snapshot": {
+                "btc_above_ma192": True,
+                "btc_above_ma336": True,
+                "btc_trend_gap_192": 0.02,
+                "btc_trend_gap_336": 0.03,
+                "btc_trend_accel": 0.01,
+                "breadth_ma96": 1.0,
+                "breadth_ma192": 1.0,
+                "breadth_delta": 0.05,
+                "basket_vol_ratio": 0.45,
+            },
+        },
+        soft_current_state={
+            "effective_incumbent_exposure": 0.95,
+            "effective_autoresearch_exposure": 0.05,
+            "_allocator_health": {"healthy": True, "oos_total_return": 0.0009, "oos_sharpe": 0.74},
+        },
+        hard_current_state={
+            "state": "blend_85_15",
+            "raw_target_state": "incumbent",
+            "_allocator_health": {"healthy": True, "oos_total_return": 0.0020, "oos_sharpe": 1.31},
+        },
+        operating_plan_payload=_base_operating_plan(),
+        pair_liquidity_state="normal",
+        balanced_health={
+            "healthy": True,
+            "val_total_return": 0.0841,
+            "val_sharpe": 4.18,
+            "oos_total_return": 0.00215,
+            "oos_sharpe": 0.70,
+            "oos_max_drawdown": 0.00629,
+        },
+        hybrid_health={
+            "healthy": True,
+            "recommended_stage": "guarded_candidate",
+            "beats_balanced_refreshed": True,
+            "oos_total_return": 0.00482,
+            "oos_sharpe": 3.23,
+            "oos_max_drawdown": 0.00177,
+            "val_total_return": 0.07826,
+            "val_sharpe": 3.99,
+        },
+    )
+
+    assert decision.mode == "hybrid_guarded_mode"
+    assert decision.allocation == {"hybrid_online_portfolio": 1.0}
+    assert any("materially outperforms balanced" in item for item in decision.rationale)
+
+
+def test_recommend_operating_mode_keeps_balanced_overlay_when_incumbent_is_healthy_and_hybrid_is_only_a_challenger() -> None:
+    decision = MODULE.recommend_operating_mode(
+        current_judgement={
+            "favored_group": "incumbent",
+            "confidence": 0.82,
+            "feature_snapshot": {
+                "btc_above_ma192": True,
+                "btc_above_ma336": True,
+                "btc_trend_gap_192": 0.03,
+                "btc_trend_gap_336": 0.02,
+                "btc_trend_accel": 0.01,
+                "breadth_ma96": 0.90,
+                "breadth_ma192": 0.85,
+                "breadth_delta": 0.10,
+                "basket_vol_ratio": 0.60,
+            },
+        },
+        soft_current_state={
+            "effective_incumbent_exposure": 0.85,
+            "effective_autoresearch_exposure": 0.15,
+            "_allocator_health": {"healthy": True, "oos_total_return": 0.01, "oos_sharpe": 0.8},
+        },
+        hard_current_state={
+            "state": "incumbent",
+            "raw_target_state": "incumbent",
+            "_allocator_health": {"healthy": True, "oos_total_return": 0.015, "oos_sharpe": 1.1},
+        },
+        operating_plan_payload=_base_operating_plan(),
+        pair_liquidity_state="normal",
+        balanced_health={
+            "healthy": True,
+            "val_total_return": 0.05,
+            "val_sharpe": 2.0,
+            "oos_total_return": 0.02,
+            "oos_sharpe": 1.0,
+            "oos_max_drawdown": 0.01,
+        },
+        hybrid_health={
+            "healthy": True,
+            "recommended_stage": "guarded_candidate",
+            "beats_balanced_refreshed": True,
+            "val_total_return": 0.03,
+            "val_sharpe": 1.7,
+            "oos_total_return": 0.0205,
+            "oos_sharpe": 1.3,
+            "oos_max_drawdown": 0.0095,
+        },
+    )
+
+    assert decision.mode == "balanced_overlay_mode"
+    assert decision.allocation == {"soft_three_way_regime": 0.8, "pair_fast_exit": 0.2}
+
+
 def test_build_operating_switch_payload_includes_market_states() -> None:
     payload = MODULE.build_operating_switch_payload(
         market_judgement_payload={
@@ -445,3 +552,171 @@ def test_build_operating_switch_payload_includes_market_states() -> None:
     assert payload["current_market_state"]["volatility_state"] == "calm"
     assert payload["recommended_mode"]["mode"] == "balanced_overlay_mode"
     assert payload["recommended_mode"]["allocation"] == {"soft_three_way_regime": 0.8, "pair_fast_exit": 0.2}
+
+
+def test_build_operating_switch_payload_can_freeze_saved_market_judgement() -> None:
+    original_loader = MODULE._load_latest_market_judgement
+    MODULE._load_latest_market_judgement = lambda **_: {
+        "date": "2026-04-14T00:00:00+00:00",
+        "favored_group": "autoresearch",
+        "confidence": 1.0,
+        "feature_snapshot": {
+            "btc_above_ma192": True,
+            "btc_above_ma336": True,
+            "btc_trend_gap_192": 0.04,
+            "btc_trend_gap_336": 0.03,
+            "btc_trend_accel": 0.01,
+            "breadth_ma96": 0.8,
+            "breadth_ma192": 0.8,
+            "breadth_delta": 0.1,
+            "basket_vol_ratio": 0.6,
+        },
+    }
+    try:
+        payload = MODULE.build_operating_switch_payload(
+            market_judgement_payload={
+                "_path": "/tmp/market.json",
+                "current_judgement": {
+                    "date": "2026-03-07T00:00:00+00:00",
+                    "favored_group": "mixed",
+                    "confidence": 0.0,
+                    "feature_snapshot": {
+                        "btc_above_ma192": True,
+                        "btc_above_ma336": True,
+                        "btc_trend_gap_192": 0.02,
+                        "btc_trend_gap_336": 0.03,
+                        "btc_trend_accel": 0.01,
+                        "breadth_ma96": 1.0,
+                        "breadth_ma192": 1.0,
+                        "breadth_delta": 0.1,
+                        "basket_vol_ratio": 0.45,
+                    },
+                },
+            },
+            soft_allocator_payload={
+                "_path": "/tmp/soft.json",
+                "current_state": {
+                    "effective_incumbent_exposure": 0.95,
+                    "effective_autoresearch_exposure": 0.05,
+                    "_allocator_health": {"healthy": True, "oos_total_return": 0.0009, "oos_sharpe": 0.74},
+                },
+            },
+            three_way_allocator_payload={
+                "_path": "/tmp/hard.json",
+                "current_state": {
+                    "state": "blend_85_15",
+                    "raw_target_state": "incumbent",
+                    "_allocator_health": {"healthy": True, "oos_total_return": 0.0020, "oos_sharpe": 1.31},
+                },
+            },
+            operating_plan_payload={"_path": "/tmp/plan.json", **_base_operating_plan()},
+            pair_volume_signals=[
+                MODULE.SymbolVolumeSignal(
+                    symbol="BNB/USDT",
+                    as_of_date="2026-03-07",
+                    latest_available_date="2026-03-07",
+                    stale_days=0,
+                    latest_dollar_volume=1000.0,
+                    lookback_mean_dollar_volume=800.0,
+                    volume_ratio=1.25,
+                    comparison_mode="full_day",
+                    state="strong",
+                )
+            ],
+            feature_lookback_days=21,
+            market_judgement_mode="saved",
+            balanced_strategy_payload={
+                "portfolio_metrics": {
+                    "val": {"total_return": 0.0841, "sharpe": 4.18},
+                    "oos": {"total_return": 0.00215, "sharpe": 0.70, "max_drawdown": 0.00629},
+                }
+            },
+            hybrid_portfolio_payload={
+                "readiness": {
+                    "beats_cash_refreshed": True,
+                    "beats_balanced_refreshed": True,
+                    "beats_pair_tactical_refreshed": False,
+                    "pair_cap_respected": True,
+                    "max_rss_under_8gib": True,
+                    "recommended_stage": "guarded_candidate",
+                },
+                "scenarios": {
+                    "refreshed_latest_tail": {
+                        "split_metrics": {
+                            "val": {"total_return": 0.07826, "sharpe": 3.99},
+                            "oos": {"total_return": 0.00482, "sharpe": 3.23, "max_drawdown": 0.00177},
+                        }
+                    }
+                },
+            },
+        )
+    finally:
+        MODULE._load_latest_market_judgement = original_loader
+
+    assert payload["input_paths"]["market_judgement_mode"] == "saved"
+    assert payload["current_market_state"]["favored_group"] == "mixed"
+    assert payload["recommended_mode"]["mode"] == "hybrid_guarded_mode"
+
+
+def test_reboot_validation_profile_uses_reboot_paths_with_latest_market_mode() -> None:
+    defaults = MODULE._profile_defaults("reboot_validation")
+
+    assert defaults["market_judgement_mode"] == "latest"
+    assert "current_switch_validation_current" in str(defaults["market_judgement_path"])
+    assert "refreshed_operating_switch_current" in str(defaults["output_dir"])
+
+
+def test_build_operating_switch_payload_passes_as_of_override_to_latest_loader() -> None:
+    original_loader = MODULE._load_latest_market_judgement
+    seen: dict[str, object] = {}
+
+    def _fake_latest_loader(**kwargs):
+        seen["as_of_date"] = kwargs.get("as_of_date")
+        return {
+            "date": "2026-04-14T00:00:00+00:00",
+            "favored_group": "mixed",
+            "confidence": 0.0,
+            "feature_snapshot": {
+                "btc_above_ma192": True,
+                "btc_above_ma336": True,
+                "btc_trend_gap_192": 0.02,
+                "btc_trend_gap_336": 0.03,
+                "btc_trend_accel": 0.01,
+                "breadth_ma96": 1.0,
+                "breadth_ma192": 1.0,
+                "breadth_delta": 0.1,
+                "basket_vol_ratio": 0.45,
+            },
+        }
+
+    MODULE._load_latest_market_judgement = _fake_latest_loader
+    try:
+        payload = MODULE.build_operating_switch_payload(
+            market_judgement_payload={
+                "_path": "/tmp/market.json",
+                "current_judgement": {"date": "2026-03-07T00:00:00+00:00", "favored_group": "incumbent", "confidence": 1.0},
+            },
+            soft_allocator_payload={"_path": "/tmp/soft.json", "current_state": {"effective_incumbent_exposure": 0.95, "effective_autoresearch_exposure": 0.05}},
+            three_way_allocator_payload={"_path": "/tmp/hard.json", "current_state": {"state": "blend_85_15", "raw_target_state": "incumbent"}},
+            operating_plan_payload={"_path": "/tmp/plan.json", **_base_operating_plan()},
+            pair_volume_signals=[
+                MODULE.SymbolVolumeSignal(
+                    symbol="BNB/USDT",
+                    as_of_date="2026-04-14",
+                    latest_available_date="2026-04-14",
+                    stale_days=0,
+                    latest_dollar_volume=1000.0,
+                    lookback_mean_dollar_volume=800.0,
+                    volume_ratio=1.25,
+                    comparison_mode="full_day",
+                    state="strong",
+                )
+            ],
+            feature_lookback_days=21,
+            as_of_date_override=date(2026, 4, 14),
+        )
+    finally:
+        MODULE._load_latest_market_judgement = original_loader
+
+    assert seen["as_of_date"] == date(2026, 4, 14)
+    assert payload["input_paths"]["as_of_date_override"] == "2026-04-14"
