@@ -5,6 +5,19 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+DEFAULT_LIVE_DECISION_PATH = Path(
+    "var/reports/exact_window_backtests/followup_status/portfolio_live_readiness_decision_latest.json"
+)
+SUPPORTED_LIVE_PORTFOLIO_MODES = frozenset(
+    {
+        "hybrid_guarded_mode",
+        "balanced_overlay_mode",
+        "core_mode",
+        "pair_tactical_mode",
+        "risk_off_mode",
+    }
+)
+
 
 def resolve_selection_file(selection_file: str = "") -> Path | None:
     token = str(selection_file or "").strip()
@@ -25,11 +38,38 @@ def resolve_selection_file(selection_file: str = "") -> Path | None:
     return files[-1]
 
 
+def resolve_live_decision_file(decision_file: str = "") -> Path | None:
+    token = str(decision_file or "").strip()
+    if token:
+        path = Path(token).expanduser()
+        if not path.is_absolute():
+            path = Path.cwd() / path
+        if not path.exists():
+            raise FileNotFoundError(f"Live decision file not found: {path}")
+        return path
+    path = DEFAULT_LIVE_DECISION_PATH
+    if path.exists():
+        return path.resolve()
+    return None
+
+
+def supports_live_portfolio_mode(reference: str) -> bool:
+    return str(reference or "").strip() in SUPPORTED_LIVE_PORTFOLIO_MODES
+
+
 def load_selection_payload(path: Path) -> dict:
     with path.open(encoding="utf-8") as fp:
         payload = json.load(fp)
     if not isinstance(payload, dict):
         raise ValueError(f"Invalid selection payload shape: {path}")
+    return payload
+
+
+def load_live_decision_payload(path: Path) -> dict:
+    with path.open(encoding="utf-8") as fp:
+        payload = json.load(fp)
+    if not isinstance(payload, dict):
+        raise ValueError(f"Invalid live decision payload shape: {path}")
     return payload
 
 
@@ -56,6 +96,44 @@ def infer_strategy_class_name(candidate_name: str) -> str | None:
     if token.startswith("moving"):
         return "MovingAverageCrossStrategy"
     return None
+
+
+def extract_live_decision_config(payload: dict) -> dict:
+    decision = str(payload.get("decision") or "").strip().lower()
+    reference = str(
+        payload.get("selected_mode")
+        or payload.get("candidate_mode")
+        or payload.get("candidate_key")
+        or ""
+    ).strip()
+    strategy_name = infer_strategy_class_name(reference)
+    if decision == "keep_incumbent":
+        return {
+            "decision": decision,
+            "reference": reference,
+            "target_kind": "incumbent_fallback",
+            "strategy_name": strategy_name,
+        }
+    if strategy_name:
+        return {
+            "decision": decision,
+            "reference": reference,
+            "target_kind": "strategy_class",
+            "strategy_name": strategy_name,
+        }
+    if reference:
+        return {
+            "decision": decision,
+            "reference": reference,
+            "target_kind": "portfolio_mode",
+            "strategy_name": None,
+        }
+    return {
+        "decision": decision,
+        "reference": reference,
+        "target_kind": "unknown",
+        "strategy_name": None,
+    }
 
 
 def extract_selection_config(payload: dict) -> dict:

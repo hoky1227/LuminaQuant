@@ -668,6 +668,8 @@ class LiveExecutionHandler(ExecutionHandler):
                 "fill_price": float(fill_price),
                 "realized_slippage_bps": realized_slippage_bps,
                 "submit_to_fill_ms": submit_to_fill_ms,
+                "signal_metadata": dict(getattr(event, "metadata", None) or {}),
+                "component_id": str(dict(getattr(event, "metadata", None) or {}).get("component_id") or "").strip() or None,
             },
         )
         self.events.put(fill_event)

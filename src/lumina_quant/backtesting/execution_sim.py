@@ -430,7 +430,11 @@ class SimulatedExecutionHandler(ExecutionHandler):
                     client_order_id=order.get("client_order_id"),
                     position_side=order.get("position_side"),
                     status="FILLED",
-                    metadata={"reduce_only": order.get("reduce_only", False)},
+                    metadata={
+                        "reduce_only": order.get("reduce_only", False),
+                        "signal_metadata": dict(order.get("metadata") or {}),
+                        "component_id": str(dict(order.get("metadata") or {}).get("component_id") or "").strip() or None,
+                    },
                 )
                 self.events.put(fill_event)
 

@@ -11,12 +11,17 @@ from lumina_quant.cli._strategy_registry_fallback import (
 from lumina_quant.config import LiveConfig
 from lumina_quant.core.market_window_contract import MarketWindowContractError
 from lumina_quant.live_selection import (
+    extract_live_decision_config,
     extract_selection_config,
     infer_strategy_class_name,
+    load_live_decision_payload,
     load_selection_payload,
+    resolve_live_decision_file,
     resolve_selection_file,
+    supports_live_portfolio_mode,
 )
 from lumina_quant.system_assembly import build_live_runtime_contract
+from lumina_quant.strategies.artifact_portfolio_mode import ArtifactPortfolioModeStrategy, resolve_portfolio_mode_definition
 
 DEFAULT_LIVE_STRATEGY_NAME = "MovingAverageCrossStrategy"
 DEFAULT_WS_STRATEGY_NAME = "RsiStrategy"
@@ -103,6 +108,14 @@ def main(argv: list[str] | None = None) -> int:
         help="Strategy class override. If omitted, live selection artifact is used when available.",
     )
     parser.add_argument(
+        "--decision-file",
+        default="",
+        help=(
+            "Optional live decision JSON path. If omitted, the latest followup-status "
+            "live-readiness decision is used when available."
+        ),
+    )
+    parser.add_argument(
         "--selection-file",
         default="",
         help=(
@@ -149,47 +162,79 @@ def main(argv: list[str] | None = None) -> int:
         default_name=default_strategy_registry_name,
     )
     strategy_name = strategy_cls.__name__
+    manual_strategy = str(args.strategy or "").strip()
+    decision_path = None
+    decision_cfg = None
     selection_path = None
     selection_cfg = None
     LiveDataFatalError = RuntimeError
     trader = None
 
-    if not bool(args.no_selection):
-        selection_path = resolve_selection_file(args.selection_file)
-        if selection_path is not None:
-            selection_payload = load_selection_payload(selection_path)
-            selection_cfg = extract_selection_config(selection_payload)
-            candidate_name = str(selection_cfg.get("candidate_name") or "").strip()
-            inferred_name = infer_strategy_class_name(candidate_name)
-            if inferred_name and inferred_name in strategy_map:
-                strategy_cls = strategy_map[inferred_name]
-                strategy_name = inferred_name
-            selected_symbols = list(selection_cfg.get("symbols") or [])
-            if selected_symbols:
-                symbol_list = selected_symbols
-            selected_timeframe = selection_cfg.get("strategy_timeframe")
-            if selected_timeframe:
-                resolved_timeframe = str(selected_timeframe)
-            selected_params = selection_cfg.get("params")
-            if isinstance(selected_params, dict):
-                strategy_params = dict(selected_params)
+    try:
+        if not bool(args.no_selection):
+            decision_path = resolve_live_decision_file(args.decision_file)
+        if decision_path is not None and not manual_strategy:
+            decision_payload = load_live_decision_payload(decision_path)
+            decision_cfg = extract_live_decision_config(decision_payload)
+            target_kind = str(decision_cfg.get("target_kind") or "")
+            if target_kind == "strategy_class":
+                inferred_name = str(decision_cfg.get("strategy_name") or "").strip()
+                if inferred_name and inferred_name in strategy_map:
+                    strategy_cls = strategy_map[inferred_name]
+                    strategy_name = inferred_name
+            elif target_kind == "portfolio_mode":
+                reference = str(decision_cfg.get("reference") or "").strip() or "unknown_portfolio_mode"
+                if not supports_live_portfolio_mode(reference):
+                    raise ValueError(
+                        "Live decision points to unsupported portfolio mode "
+                        f"'{reference}'. Pass an explicit --strategy override or extend the portfolio-mode runtime."
+                    )
+                mode_definition = resolve_portfolio_mode_definition(reference)
+                strategy_cls = ArtifactPortfolioModeStrategy
+                strategy_name = f"ArtifactPortfolioModeStrategy[{reference}]"
+                strategy_params = {"portfolio_mode": reference}
+                symbol_list = list(mode_definition.symbols)
 
-    manual_strategy = str(args.strategy or "").strip()
-    if manual_strategy:
-        if manual_strategy not in strategy_map:
-            raise ValueError(f"Unknown strategy override: {manual_strategy}")
-        strategy_cls = strategy_map[manual_strategy]
-        strategy_name = manual_strategy
-        if selection_cfg is not None:
-            inferred_name = infer_strategy_class_name(
-                str(selection_cfg.get("candidate_name") or "")
-            )
-            if inferred_name != manual_strategy:
-                strategy_params = {}
-                print(
-                    "[WARN] --strategy overrides selection strategy. "
-                    "Selection params were ignored to avoid mismatch."
+        if not bool(args.no_selection) and (
+            decision_cfg is None or str(decision_cfg.get("target_kind") or "") == "incumbent_fallback"
+        ):
+            selection_path = resolve_selection_file(args.selection_file)
+            if selection_path is not None:
+                selection_payload = load_selection_payload(selection_path)
+                selection_cfg = extract_selection_config(selection_payload)
+                candidate_name = str(selection_cfg.get("candidate_name") or "").strip()
+                inferred_name = infer_strategy_class_name(candidate_name)
+                if inferred_name and inferred_name in strategy_map:
+                    strategy_cls = strategy_map[inferred_name]
+                    strategy_name = inferred_name
+                selected_symbols = list(selection_cfg.get("symbols") or [])
+                if selected_symbols:
+                    symbol_list = selected_symbols
+                selected_timeframe = selection_cfg.get("strategy_timeframe")
+                if selected_timeframe:
+                    resolved_timeframe = str(selected_timeframe)
+                selected_params = selection_cfg.get("params")
+                if isinstance(selected_params, dict):
+                    strategy_params = dict(selected_params)
+
+        if manual_strategy:
+            if manual_strategy not in strategy_map:
+                raise ValueError(f"Unknown strategy override: {manual_strategy}")
+            strategy_cls = strategy_map[manual_strategy]
+            strategy_name = manual_strategy
+            if selection_cfg is not None:
+                inferred_name = infer_strategy_class_name(
+                    str(selection_cfg.get("candidate_name") or "")
                 )
+                if inferred_name != manual_strategy:
+                    strategy_params = {}
+                    print(
+                        "[WARN] --strategy overrides selection strategy. "
+                        "Selection params were ignored to avoid mismatch."
+                    )
+    except Exception as exc:
+        print(f"\nCritical Error: {exc}")
+        return 1
 
     LiveConfig.SYMBOLS = list(symbol_list)
     LiveConfig.TIMEFRAME = str(resolved_timeframe)
@@ -217,6 +262,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Selection File: {selection_path}")
         if selection_cfg is not None:
             print(f"Selection Candidate: {selection_cfg.get('candidate_name')}")
+    if decision_path is not None:
+        print(f"Decision File: {decision_path}")
+        if decision_cfg is not None:
+            print(f"Decision Target: {decision_cfg.get('reference') or decision_cfg.get('decision')}")
 
     print(f"Trading Symbols: {symbol_list}")
     print(f"Strategy Timeframe: {LiveConfig.TIMEFRAME}")

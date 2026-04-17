@@ -55,6 +55,7 @@ def test_start_live_session_dry_run_prints_preparation_and_launch_steps() -> Non
     assert "uv run python scripts/init_postgres_schema.py" in result.stdout
     assert "uv run python scripts/research/refresh_final_portfolio_validation_data.py" in result.stdout
     assert "uv run python scripts/ops/live_readiness_preflight.py" in result.stdout
+    assert "uv run python scripts/research/write_portfolio_live_readiness_decision.py" in result.stdout
     assert "uv run lq live --transport poll" in result.stdout
     assert "--stop-file /tmp/lq-paper.stop" in result.stdout
 

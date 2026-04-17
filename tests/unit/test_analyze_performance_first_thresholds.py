@@ -59,6 +59,10 @@ def test_build_report_captures_frontier_maxima_for_current_hybrid_case() -> None
     )
 
     assert report["switch_mode"] == "hybrid_guarded_mode"
+    assert report["current_thresholds"]["min_oos_return_edge"] == 0.005
+    assert report["current_thresholds"]["min_oos_sharpe_edge"] == 2.5
+    assert report["current_thresholds"]["min_val_return"] == 0.06
+    assert report["current_thresholds"]["min_val_sharpe"] == 3.0
     assert report["frontier"]["passing_count"] == 300
     assert report["frontier"]["frontier_maxima"]["max_return_edge_threshold_that_still_promotes"] == 0.005
     assert report["frontier"]["frontier_maxima"]["max_sharpe_edge_threshold_that_still_promotes"] == 2.5

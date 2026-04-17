@@ -34,6 +34,25 @@ class PortfolioSizingService:
         target_allocation: float,
         max_order_value: float,
     ) -> float:
+        metadata = dict(getattr(signal, "metadata", None) or {})
+        override_target_allocation = metadata.get("target_allocation")
+        if override_target_allocation is None and metadata.get("target_allocation_scale") is not None:
+            override_target_allocation = float(target_allocation) * float(
+                metadata.get("target_allocation_scale")
+            )
+        if override_target_allocation is not None:
+            target_allocation = max(0.0, float(override_target_allocation))
+
+        override_max_symbol_exposure = metadata.get("max_symbol_exposure_pct")
+        if override_max_symbol_exposure is not None:
+            max_symbol_exposure_pct = max(0.0, float(override_max_symbol_exposure))
+
+        override_max_order_value = metadata.get("max_order_value")
+        if override_max_order_value is None and metadata.get("max_order_value_scale") is not None:
+            override_max_order_value = float(max_order_value) * float(metadata.get("max_order_value_scale"))
+        if override_max_order_value is not None:
+            max_order_value = max(0.0, float(override_max_order_value))
+
         risk_amount = max(float(equity) * float(risk_per_trade), 0.0)
         if risk_amount <= 0:
             return 0.0

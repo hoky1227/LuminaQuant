@@ -234,6 +234,7 @@ def test_selection_overrides_are_applied_before_live_config_validation(monkeypat
             transport="poll",
         ),
     )
+    monkeypatch.setattr(live_cli, "resolve_live_decision_file", lambda _path="": None)
     monkeypatch.setattr(live_cli, "resolve_selection_file", lambda _path="": "fake-selection.json")
     monkeypatch.setattr(live_cli, "load_selection_payload", lambda _path: {"ok": True})
     monkeypatch.setattr(
@@ -251,6 +252,215 @@ def test_selection_overrides_are_applied_before_live_config_validation(monkeypat
     assert validate_calls == [(["ETH/USDT", "SOL/USDT"], "5m")]
     assert observed["kwargs"]["symbol_list"] == ["ETH/USDT", "SOL/USDT"]
     assert observed["kwargs"]["strategy_params"] == {"fast": 3}
+
+
+def test_live_cli_fails_closed_when_decision_points_to_unsupported_portfolio_mode(monkeypatch, capsys):
+    class _LiveConfig:
+        SYMBOLS = ["BTC/USDT"]
+        IS_TESTNET = True
+        EXCHANGE = {"driver": "binance_futures", "name": "binance", "market_type": "future"}
+        TIMEFRAME = "1m"
+        MARKET_DATA_SOURCE = "committed"
+        ORDER_STATE_SOURCE = "polling"
+        MATERIALIZED_STALENESS_THRESHOLD_SECONDS = 45
+        MATERIALIZED_STALENESS_ALERT_COOLDOWN_SECONDS = 60
+
+        @classmethod
+        def validate(cls):
+            return None
+
+    class _Strategy:
+        __name__ = "MovingAverageCrossStrategy"
+
+    monkeypatch.setattr(live_cli, "LiveConfig", _LiveConfig)
+    monkeypatch.setattr(
+        live_cli,
+        "_strategy_helpers",
+        lambda: (
+            "MovingAverageCrossStrategy",
+            lambda include_opt_in=True: {"MovingAverageCrossStrategy": _Strategy},
+            lambda *_args, **_kwargs: _Strategy,
+        ),
+    )
+    monkeypatch.setattr(live_cli, "resolve_live_decision_file", lambda _path="": "decision.json")
+    monkeypatch.setattr(live_cli, "load_live_decision_payload", lambda _path: {"decision": "selected_live_mode"})
+    monkeypatch.setattr(
+        live_cli,
+        "extract_live_decision_config",
+        lambda _payload: {
+            "decision": "selected_live_mode",
+            "reference": "unsupported_portfolio_mode",
+            "target_kind": "portfolio_mode",
+            "strategy_name": None,
+        },
+    )
+    monkeypatch.setattr(
+        live_cli,
+        "build_live_runtime_contract",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("runtime should not build")),
+    )
+
+    assert live_cli.main([]) == 1
+    captured = capsys.readouterr().out
+    assert "portfolio mode" in captured
+    assert "unsupported_portfolio_mode" in captured
+
+
+def test_live_cli_uses_supported_portfolio_mode_strategy(monkeypatch):
+    observed: dict[str, object] = {}
+
+    class _LiveConfig:
+        SYMBOLS = ["BTC/USDT"]
+        IS_TESTNET = True
+        EXCHANGE = {"driver": "binance_futures", "name": "binance", "market_type": "future"}
+        TIMEFRAME = "1m"
+        MARKET_DATA_SOURCE = "committed"
+        ORDER_STATE_SOURCE = "polling"
+        MATERIALIZED_STALENESS_THRESHOLD_SECONDS = 45
+        MATERIALIZED_STALENESS_ALERT_COOLDOWN_SECONDS = 60
+
+        @classmethod
+        def validate(cls):
+            return None
+
+    class _FallbackStrategy:
+        __name__ = "MovingAverageCrossStrategy"
+
+    class _PortfolioModeStrategy:
+        __name__ = "ArtifactPortfolioModeStrategy"
+
+    class _Trader:
+        def __init__(self, *args, **kwargs):
+            _ = args
+            observed["kwargs"] = kwargs
+            self.data_handler = SimpleNamespace(consume_fatal_error=lambda: None)
+
+        @staticmethod
+        def run():
+            return None
+
+    monkeypatch.setattr(live_cli, "LiveConfig", _LiveConfig)
+    monkeypatch.setattr(
+        live_cli,
+        "_strategy_helpers",
+        lambda: (
+            "MovingAverageCrossStrategy",
+            lambda include_opt_in=True: {"MovingAverageCrossStrategy": _FallbackStrategy},
+            lambda *_args, **_kwargs: _FallbackStrategy,
+        ),
+    )
+    monkeypatch.setattr(live_cli, "resolve_live_decision_file", lambda _path="": "decision.json")
+    monkeypatch.setattr(live_cli, "load_live_decision_payload", lambda _path: {"decision": "selected_live_mode"})
+    monkeypatch.setattr(
+        live_cli,
+        "extract_live_decision_config",
+        lambda _payload: {
+            "decision": "selected_live_mode",
+            "reference": "hybrid_guarded_mode",
+            "target_kind": "portfolio_mode",
+            "strategy_name": None,
+        },
+    )
+    monkeypatch.setattr(
+        live_cli,
+        "resolve_portfolio_mode_definition",
+        lambda _reference: SimpleNamespace(symbols=["BNB/USDT", "TRX/USDT", "BTC/USDT"]),
+    )
+    monkeypatch.setattr(live_cli, "ArtifactPortfolioModeStrategy", _PortfolioModeStrategy)
+    monkeypatch.setattr(
+        live_cli,
+        "build_live_runtime_contract",
+        lambda **_kwargs: SimpleNamespace(
+            engine_cls=_Trader,
+            data_handler_cls=object,
+            execution_handler_cls=object,
+            portfolio_cls=object,
+            fatal_error_cls=RuntimeError,
+            transport="poll",
+        ),
+    )
+
+    assert live_cli.main([]) == 0
+    assert observed["kwargs"]["strategy_name"] == "ArtifactPortfolioModeStrategy[hybrid_guarded_mode]"
+    assert observed["kwargs"]["strategy_params"] == {"portfolio_mode": "hybrid_guarded_mode"}
+    assert observed["kwargs"]["symbol_list"] == ["BNB/USDT", "TRX/USDT", "BTC/USDT"]
+
+
+def test_live_cli_uses_decision_strategy_target_without_falling_back_to_stale_selection(monkeypatch):
+    observed: dict[str, object] = {}
+
+    class _LiveConfig:
+        SYMBOLS = ["BTC/USDT"]
+        IS_TESTNET = True
+        EXCHANGE = {"driver": "binance_futures", "name": "binance", "market_type": "future"}
+        TIMEFRAME = "1m"
+        MARKET_DATA_SOURCE = "committed"
+        ORDER_STATE_SOURCE = "polling"
+        MATERIALIZED_STALENESS_THRESHOLD_SECONDS = 45
+        MATERIALIZED_STALENESS_ALERT_COOLDOWN_SECONDS = 60
+
+        @classmethod
+        def validate(cls):
+            return None
+
+    class _Moving:
+        __name__ = "MovingAverageCrossStrategy"
+
+    class _Rsi:
+        __name__ = "RsiStrategy"
+
+    class _Trader:
+        def __init__(self, *args, **kwargs):
+            _ = args
+            observed["kwargs"] = kwargs
+            self.data_handler = SimpleNamespace(consume_fatal_error=lambda: None)
+
+        @staticmethod
+        def run():
+            return None
+
+    monkeypatch.setattr(live_cli, "LiveConfig", _LiveConfig)
+    monkeypatch.setattr(
+        live_cli,
+        "_strategy_helpers",
+        lambda: (
+            "MovingAverageCrossStrategy",
+            lambda include_opt_in=True: {"MovingAverageCrossStrategy": _Moving, "RsiStrategy": _Rsi},
+            lambda name, **_kwargs: {"MovingAverageCrossStrategy": _Moving, "RsiStrategy": _Rsi}[name],
+        ),
+    )
+    monkeypatch.setattr(live_cli, "resolve_live_decision_file", lambda _path="": "decision.json")
+    monkeypatch.setattr(live_cli, "load_live_decision_payload", lambda _path: {"decision": "selected_live_mode"})
+    monkeypatch.setattr(
+        live_cli,
+        "extract_live_decision_config",
+        lambda _payload: {
+            "decision": "selected_live_mode",
+            "reference": "RsiStrategy",
+            "target_kind": "strategy_class",
+            "strategy_name": "RsiStrategy",
+        },
+    )
+    monkeypatch.setattr(
+        live_cli,
+        "resolve_selection_file",
+        lambda _path="": (_ for _ in ()).throw(AssertionError("stale selection should not be consulted")),
+    )
+    monkeypatch.setattr(
+        live_cli,
+        "build_live_runtime_contract",
+        lambda **_kwargs: SimpleNamespace(
+            engine_cls=_Trader,
+            data_handler_cls=object,
+            execution_handler_cls=object,
+            portfolio_cls=object,
+            fatal_error_cls=RuntimeError,
+            transport="poll",
+        ),
+    )
+
+    assert live_cli.main([]) == 0
+    assert observed["kwargs"]["strategy_name"] == "RsiStrategy"
 
 
 def test_strategy_helper_resolver_accepts_default_name_keyword():

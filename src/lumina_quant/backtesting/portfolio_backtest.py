@@ -76,6 +76,7 @@ class Portfolio:
         self._metric_benchmarks = [0.0] if self.track_metrics else []
         self._equity_points = deque(maxlen=20_000)
         self.trading_frozen = False
+        self.component_positions = {}
 
         # Initialize first record
         self.update_initial_record()
@@ -121,6 +122,7 @@ class Portfolio:
             "trade_count": self.trade_count,
             "trading_frozen": bool(self.trading_frozen),
             "equity_points": list(self._equity_points),
+            "component_positions": self.component_positions,
         }
 
     def set_state(self, state):
@@ -146,6 +148,24 @@ class Portfolio:
             self.trading_frozen = bool(state["trading_frozen"])
         if "equity_points" in state and isinstance(state["equity_points"], list):
             self._equity_points = deque(state["equity_points"], maxlen=20_000)
+        if "component_positions" in state and isinstance(state["component_positions"], dict):
+            self.component_positions = {
+                str(component): {
+                    str(symbol): float(quantity)
+                    for symbol, quantity in dict(symbols or {}).items()
+                }
+                for component, symbols in dict(state["component_positions"]).items()
+            }
+
+    @staticmethod
+    def _component_id_from_metadata(metadata) -> str | None:
+        raw = dict(metadata or {})
+        direct = str(raw.get("component_id") or "").strip()
+        if direct:
+            return direct
+        signal_meta = dict(raw.get("signal_metadata") or {})
+        nested = str(signal_meta.get("component_id") or "").strip()
+        return nested or None
 
     def update_timeindex(self, event):
         """Updates the positions from the current locations to the
@@ -277,6 +297,20 @@ class Portfolio:
         new_qty = old_qty + fill_qty
         self.current_positions[fill.symbol] = new_qty
 
+        component_id = self._component_id_from_metadata(getattr(fill, "metadata", None))
+        if component_id:
+            component_rows = dict(self.component_positions.get(component_id) or {})
+            old_component_qty = float(component_rows.get(fill.symbol, 0.0))
+            new_component_qty = old_component_qty + fill_qty
+            if abs(new_component_qty) <= 1e-12:
+                component_rows.pop(fill.symbol, None)
+            else:
+                component_rows[fill.symbol] = new_component_qty
+            if component_rows:
+                self.component_positions[component_id] = component_rows
+            else:
+                self.component_positions.pop(component_id, None)
+
         # Maintain entry price for liquidation model.
         fill_price = None
         if fill.fill_cost is not None and fill.quantity:
@@ -354,6 +388,7 @@ class Portfolio:
                         "fill_cost": event.fill_cost,
                         "commission": event.commission,
                         "price": event.fill_cost / event.quantity if event.quantity > 0 else 0.0,
+                        "component_id": self._component_id_from_metadata(getattr(event, "metadata", None)),
                     }
                 )
 
@@ -746,7 +781,11 @@ class Portfolio:
                 metadata=signal.metadata,
             )
         elif direction == "EXIT":
-            cur_qty = self.current_positions[symbol]
+            component_id = self._component_id_from_metadata(signal.metadata)
+            if component_id:
+                cur_qty = float(dict(self.component_positions.get(component_id) or {}).get(symbol, 0.0))
+            else:
+                cur_qty = self.current_positions[symbol]
             if cur_qty != 0:
                 order = OrderEvent(
                     symbol=symbol,

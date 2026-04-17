@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from lumina_quant.configuration.loader import load_runtime_config, load_yaml_config
+from lumina_quant.live_selection import infer_strategy_class_name, supports_live_portfolio_mode
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_CONFIG_PATH = Path("config.yaml")
@@ -106,6 +107,33 @@ def real_mode_explicitly_enabled(*, mode: str, require_real_enable_flag: bool, e
     return _env_truthy("LUMINA_ENABLE_LIVE_REAL", env)
 
 
+def _decision_allows_live_start(decision: Mapping[str, Any]) -> tuple[bool, bool, bool, str]:
+    decision_value = str(decision.get("decision", "") or "").strip().lower()
+    decision_keep = decision_value == "keep_incumbent"
+    selected_reference = str(
+        decision.get("selected_mode")
+        or decision.get("candidate_mode")
+        or decision.get("candidate_key")
+        or ""
+    ).strip()
+    decision_promote = decision_value in {"promote_candidate", "selected_live_mode"} and bool(selected_reference)
+    decision_allowed = bool(decision_keep or decision_promote)
+    return decision_allowed, decision_keep, decision_promote, selected_reference
+
+
+def _decision_runtime_compatible(
+    *,
+    decision_allowed: bool,
+    decision_keep: bool,
+    selected_reference: str,
+) -> bool:
+    if not decision_allowed:
+        return False
+    if decision_keep:
+        return True
+    return bool(infer_strategy_class_name(selected_reference) or supports_live_portfolio_mode(selected_reference))
+
+
 def _build_live_readiness_verdict(
     *,
     config_path: Path,
@@ -135,7 +163,12 @@ def _build_live_readiness_verdict(
         require_real_enable_flag=require_real_flag,
         env=env,
     )
-    decision_keep = str(decision.get("decision", "") or "").strip().lower() == "keep_incumbent"
+    decision_allowed, decision_keep, decision_promote, decision_reference = _decision_allows_live_start(decision)
+    decision_runtime_compatible = _decision_runtime_compatible(
+        decision_allowed=decision_allowed,
+        decision_keep=decision_keep,
+        selected_reference=decision_reference,
+    )
 
     postgres_dsn_env_name = str(
         runtime_storage.get("postgres_dsn_env", "")
@@ -160,7 +193,8 @@ def _build_live_readiness_verdict(
         and refresh_completed
         and decision_completed
         and not refresh_is_stale
-        and decision_keep
+        and decision_allowed
+        and decision_runtime_compatible
         and postgres_dsn_present
     )
     ready_for_real = bool(
@@ -171,7 +205,8 @@ def _build_live_readiness_verdict(
         and refresh_completed
         and decision_completed
         and not refresh_is_stale
-        and decision_keep
+        and decision_allowed
+        and decision_runtime_compatible
         and postgres_dsn_present
     )
 
@@ -204,7 +239,12 @@ def _build_live_readiness_verdict(
             "require_real_enable_flag": require_real_flag,
             "real_enable_env": real_enable_env,
             "postgres_dsn_present": postgres_dsn_present,
+            "decision_value": str(decision.get("decision", "") or "").strip().lower(),
             "decision_keep_incumbent": decision_keep,
+            "decision_promote_candidate": decision_promote,
+            "decision_reference": decision_reference,
+            "decision_allows_live_start": decision_allowed,
+            "decision_runtime_compatible": decision_runtime_compatible,
             "refresh_completed": refresh_completed,
             "decision_completed": decision_completed,
             "refresh_is_stale": refresh_is_stale,

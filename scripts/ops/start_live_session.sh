@@ -29,6 +29,7 @@ Options:
   --skip-init-schema         Skip Postgres schema initialization
   --skip-refresh             Skip refresh_final_portfolio_validation_data.py
   --skip-validate            Skip validate_saved_incumbent_portfolio.py
+  --skip-live-decision       Skip write_portfolio_live_readiness_decision.py
   --skip-preflight           Skip live_readiness_preflight.py
   --preflight-stale-minutes N  Freshness threshold for preflight (default: 30)
   --dry-run                  Print actions without executing them
@@ -69,6 +70,7 @@ USE_ENV_FILE=1
 INIT_SCHEMA=1
 RUN_REFRESH=1
 RUN_VALIDATE=1
+RUN_LIVE_DECISION=1
 RUN_PREFLIGHT=1
 PREFLIGHT_STALE_MINUTES=30
 SELECTION_FILE=""
@@ -147,6 +149,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-validate)
       RUN_VALIDATE=0
+      shift
+      ;;
+    --skip-live-decision)
+      RUN_LIVE_DECISION=0
       shift
       ;;
     --skip-preflight)
@@ -240,6 +246,7 @@ Stop file: $STOP_FILE
 Selection mode: $([[ "$USE_SELECTION" == "1" ]] && echo "enabled" || echo "disabled")
 Refresh: $RUN_REFRESH
 Validate: $RUN_VALIDATE
+Live decision: $RUN_LIVE_DECISION
 Preflight: $RUN_PREFLIGHT
 Init schema: $INIT_SCHEMA
 EOF
@@ -255,6 +262,10 @@ fi
 
 if [[ "$RUN_VALIDATE" == "1" ]]; then
   run_cmd uv run python scripts/research/validate_saved_incumbent_portfolio.py
+fi
+
+if [[ "$RUN_LIVE_DECISION" == "1" ]]; then
+  run_cmd uv run python scripts/research/write_portfolio_live_readiness_decision.py
 fi
 
 if [[ "$RUN_PREFLIGHT" == "1" ]]; then
