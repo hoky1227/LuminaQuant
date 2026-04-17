@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -83,3 +84,141 @@ def test_portfolio_mode_strategy_forwards_component_weighted_signals(monkeypatch
     assert signal.metadata["target_allocation_scale"] == 0.3
     assert signal.client_order_id.startswith("LQPM-") or signal.client_order_id.startswith("comp-a-")
 
+
+def test_resolve_portfolio_mode_definition_supports_recursive_allocator_sleeves(monkeypatch, tmp_path: Path) -> None:
+    def _write(path: Path, payload: dict) -> Path:
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        return path
+
+    incumbent_path = _write(
+        tmp_path / "incumbent.json",
+        {
+            "weights": [
+                {
+                    "candidate_id": "leaf_a",
+                    "name": "leaf_a",
+                    "strategy_class": "MovingAverageCrossStrategy",
+                    "symbols": ["BTC/USDT"],
+                    "weight": 0.6,
+                },
+                {
+                    "candidate_id": "leaf_b",
+                    "name": "leaf_b",
+                    "strategy_class": "RsiStrategy",
+                    "symbols": ["ETH/USDT"],
+                    "weight": 0.4,
+                },
+            ]
+        },
+    )
+    autoresearch_path = _write(
+        tmp_path / "autoresearch.json",
+        {
+            "weights": [
+                {
+                    "candidate_id": "leaf_c",
+                    "name": "leaf_c",
+                    "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+                    "symbols": ["SOL/USDT"],
+                    "weight": 1.0,
+                }
+            ]
+        },
+    )
+    blend_path = _write(
+        tmp_path / "blend.json",
+        {
+            "weights": [
+                {"candidate_id": "incumbent_only", "name": "incumbent_only", "weight": 0.7},
+                {"candidate_id": "autoresearch_55_45", "name": "autoresearch_55_45", "weight": 0.3},
+            ]
+        },
+    )
+    soft_path = _write(
+        tmp_path / "soft.json",
+        {
+            "current_state": {
+                "weights": {
+                    "incumbent": 0.5,
+                    "blend_85_15": 0.5,
+                    "autoresearch_55_45": 0.0,
+                }
+            }
+        },
+    )
+    three_way_path = _write(
+        tmp_path / "three.json",
+        {
+            "current_state": {
+                "weights": {
+                    "incumbent": 0.0,
+                    "blend_85_15": 1.0,
+                    "autoresearch_55_45": 0.0,
+                }
+            }
+        },
+    )
+    pair_path = _write(
+        tmp_path / "pair.json",
+        {
+            "candidate_id": "leaf_pair",
+            "name": "leaf_pair",
+            "strategy_class": "PairSpreadZScoreStrategy",
+            "symbols": ["BNB/USDT", "TRX/USDT"],
+        },
+    )
+    hybrid_path = _write(
+        tmp_path / "hybrid.json",
+        {
+            "scenarios": {
+                "refreshed_latest_tail": {
+                    "final_allocation": {
+                        "weights": {
+                            "soft_three_way_regime": 0.4,
+                            "balanced_overlay_80_20": 0.3,
+                            "pair_tactical_mode": 0.1,
+                        },
+                        "cash_weight": 0.2,
+                    }
+                }
+            }
+        },
+    )
+
+    monkeypatch.setattr(MODULE, "REFRESHED_INCUMBENT_PATH", incumbent_path)
+    monkeypatch.setattr(MODULE, "REFRESHED_AUTORESEARCH_55_45_PATH", autoresearch_path)
+    monkeypatch.setattr(MODULE, "REFRESHED_BLEND_PATH", blend_path)
+    monkeypatch.setattr(MODULE, "SOFT_THREE_WAY_ALLOCATOR_PATH", soft_path)
+    monkeypatch.setattr(MODULE, "THREE_WAY_ALLOCATOR_PATH", three_way_path)
+    monkeypatch.setattr(MODULE, "PAIR_TACTICAL_PATH", pair_path)
+    monkeypatch.setattr(MODULE, "HYBRID_PATH", hybrid_path)
+
+    defensive = MODULE.resolve_portfolio_mode_definition("defensive_overlay_mode")
+    aggressive = MODULE.resolve_portfolio_mode_definition("aggressive_realized_mode")
+    hybrid = MODULE.resolve_portfolio_mode_definition("hybrid_guarded_mode")
+    risk_off = MODULE.resolve_portfolio_mode_definition("risk_off_mode")
+
+    defensive_weights = {item.component_id: round(item.weight, 6) for item in defensive.components}
+    aggressive_weights = {item.component_id: round(item.weight, 6) for item in aggressive.components}
+    hybrid_weights = {item.component_id: round(item.weight, 6) for item in hybrid.components}
+
+    assert defensive_weights == {
+        "leaf_a": 0.357,
+        "leaf_b": 0.238,
+        "leaf_c": 0.105,
+        "leaf_pair": 0.3,
+    }
+    assert aggressive_weights == {
+        "leaf_a": 0.42,
+        "leaf_b": 0.28,
+        "leaf_c": 0.3,
+    }
+    assert hybrid_weights == {
+        "leaf_a": 0.3264,
+        "leaf_b": 0.2176,
+        "leaf_c": 0.096,
+        "leaf_pair": 0.16,
+    }
+    assert hybrid.cash_weight == 0.2
+    assert risk_off.cash_weight == 1.0
+    assert risk_off.symbols == ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "TRX/USDT"]

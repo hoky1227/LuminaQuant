@@ -13,13 +13,22 @@ from lumina_quant.strategy import Strategy
 from lumina_quant.strategies import resolve_strategy_class
 
 GROUP_ROOT = FOLLOWUP_ROOT / "portfolio_incumbent_autoresearch_grouped"
+REFRESH_ROOT = GROUP_ROOT / "current_switch_validation_current"
 HYBRID_PATH = GROUP_ROOT / "portfolio_hybrid_online_current" / "hybrid_online_portfolio_latest.json"
-GROUPED_SOFT_PATH = GROUP_ROOT / "grouped_incumbent_autoresearch_portfolio_latest.json"
-PAIR_TACTICAL_PATH = (
-    GROUP_ROOT / "current_switch_validation_current" / "refreshed_pair_fast_exit_candidate_latest.json"
+REFRESHED_INCUMBENT_PATH = REFRESH_ROOT / "refreshed_current_one_shot_incumbent_portfolio_latest.json"
+REFRESHED_BLEND_PATH = REFRESH_ROOT / "refreshed_grouped_static_blend_latest.json"
+REFRESHED_AUTORESEARCH_55_45_PATH = (
+    REFRESH_ROOT / "refreshed_autoresearch_pair_55_45_portfolio_latest.json"
 )
-INCUMBENT_BUNDLE_PATH = FOLLOWUP_ROOT / "portfolio_one_shot_incumbent_bundle_latest.json"
-AUTORESEARCH_OPT_PATH = FOLLOWUP_ROOT / "autoresearch_candidate_portfolio_opt" / "portfolio_optimization_latest.json"
+SOFT_THREE_WAY_ALLOCATOR_PATH = (
+    REFRESH_ROOT / "refreshed_soft_three_way_allocator_current" / "soft_three_way_market_regime_allocator_latest.json"
+)
+THREE_WAY_ALLOCATOR_PATH = (
+    REFRESH_ROOT / "refreshed_three_way_allocator_current" / "three_way_market_regime_allocator_latest.json"
+)
+PAIR_TACTICAL_PATH = (
+    REFRESH_ROOT / "refreshed_pair_fast_exit_candidate_latest.json"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,12 +48,17 @@ class PortfolioModeDefinition:
     components: tuple[PortfolioModeComponent, ...]
     cash_weight: float
     source_artifacts: dict[str, str]
+    watch_symbols: tuple[str, ...] = ()
 
     @property
     def symbols(self) -> list[str]:
         ordered: list[str] = []
         for component in self.components:
             for symbol in component.symbols:
+                if symbol not in ordered:
+                    ordered.append(symbol)
+        if not ordered:
+            for symbol in self.watch_symbols:
                 if symbol not in ordered:
                     ordered.append(symbol)
         return ordered
@@ -86,33 +100,13 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return float(default)
 
 
-def _incumbent_component_lookup() -> dict[str, dict[str, Any]]:
-    payload = _read_json(INCUMBENT_BUNDLE_PATH)
-    rows = []
-    rows.extend([dict(item) for item in list(payload.get("selected_team") or []) if isinstance(item, dict)])
-    rows.extend([dict(item) for item in list(payload.get("candidates") or []) if isinstance(item, dict)])
-    return {
-        str(row.get("candidate_id") or row.get("name")): row
-        for row in rows
-        if str(row.get("candidate_id") or row.get("name")).strip()
-    }
-
-
-def _autoresearch_component_lookup() -> dict[str, dict[str, Any]]:
-    if not AUTORESEARCH_OPT_PATH.exists():
-        return {}
-    payload = _read_json(AUTORESEARCH_OPT_PATH)
-    return {
-        str(row.get("candidate_id") or row.get("name")): dict(row)
-        for row in list(payload.get("weights") or [])
-        if isinstance(row, dict) and str(row.get("candidate_id") or row.get("name")).strip()
-    }
-
-
-def _portfolio_candidate_lookup() -> dict[str, dict[str, Any]]:
-    merged = _incumbent_component_lookup()
-    merged.update(_autoresearch_component_lookup())
-    return merged
+def _ordered_unique(items: list[str]) -> tuple[str, ...]:
+    ordered: list[str] = []
+    for item in items:
+        token = str(item).strip()
+        if token and token not in ordered:
+            ordered.append(token)
+    return tuple(ordered)
 
 
 def _component_from_row(
@@ -136,35 +130,126 @@ def _component_from_row(
     )
 
 
-def _soft_sleeve_definition() -> tuple[list[PortfolioModeComponent], float]:
-    payload = _read_json(GROUPED_SOFT_PATH)
-    exposures = [dict(item) for item in list(payload.get("final_component_exposure") or []) if isinstance(item, dict)]
-    candidate_lookup = _portfolio_candidate_lookup()
-    components: list[PortfolioModeComponent] = []
-    invested_total = 0.0
-    for exposure in exposures:
-        weight = _safe_float(exposure.get("weight"), 0.0)
-        if weight <= 0.0:
-            continue
-        candidate_id = str(exposure.get("candidate_id") or exposure.get("source_candidate_id") or exposure.get("name") or "")
-        row = candidate_lookup.get(candidate_id)
-        if row is None:
-            raise ValueError(f"missing candidate artifact for grouped soft sleeve component: {candidate_id}")
-        components.append(
-            _component_from_row(
-                row,
-                weight=weight,
-                source=f"grouped_soft:{candidate_id}",
-            )
-        )
-        invested_total += weight
-    cash_weight = max(0.0, 1.0 - invested_total)
-    return components, cash_weight
-
-
 def _pair_component(weight: float) -> PortfolioModeComponent:
     row = _read_json(PAIR_TACTICAL_PATH)
     return _component_from_row(row, weight=weight, source="pair_tactical")
+
+
+def _portfolio_weight_rows(path: Path) -> list[dict[str, Any]]:
+    payload = _read_json(path)
+    return [dict(item) for item in list(payload.get("weights") or []) if isinstance(item, dict)]
+
+
+def _state_weight_rows(path: Path) -> list[dict[str, Any]]:
+    payload = _read_json(path)
+    state_weights = dict(dict(payload.get("current_state") or {}).get("weights") or {})
+    out: list[dict[str, Any]] = []
+    for name, weight in state_weights.items():
+        out.append(
+            {
+                "candidate_id": str(name),
+                "name": str(name),
+                "weight": _safe_float(weight, 0.0),
+            }
+        )
+    return out
+
+
+def _alias_rows(token: str) -> list[dict[str, Any]] | None:
+    portfolio_paths = {
+        "incumbent": REFRESHED_INCUMBENT_PATH,
+        "incumbent_only": REFRESHED_INCUMBENT_PATH,
+        "autoresearch_55_45": REFRESHED_AUTORESEARCH_55_45_PATH,
+        "blend_85_15": REFRESHED_BLEND_PATH,
+    }
+    state_paths = {
+        "soft_three_way_regime": SOFT_THREE_WAY_ALLOCATOR_PATH,
+        "three_way_regime": THREE_WAY_ALLOCATOR_PATH,
+    }
+    synthetic_rows = {
+        "balanced_overlay_80_20": [
+            {"candidate_id": "soft_three_way_regime", "name": "soft_three_way_regime", "weight": 0.8},
+            {"candidate_id": "pair_fast_exit", "name": "pair_fast_exit", "weight": 0.2},
+        ],
+        "pair_tactical_mode": [
+            {"candidate_id": "pair_fast_exit", "name": "pair_fast_exit", "weight": 1.0},
+        ],
+        "pair_fast_exit": [
+            {"candidate_id": "pair_fast_exit_leaf", "name": "pair_fast_exit_leaf", "weight": 1.0},
+        ],
+    }
+    if token in portfolio_paths:
+        return _portfolio_weight_rows(portfolio_paths[token])
+    if token in state_paths:
+        return _state_weight_rows(state_paths[token])
+    if token in synthetic_rows:
+        return [dict(item) for item in synthetic_rows[token]]
+    return None
+
+
+def _watch_symbols() -> tuple[str, ...]:
+    symbols: list[str] = []
+    for path in (REFRESHED_INCUMBENT_PATH, REFRESHED_AUTORESEARCH_55_45_PATH, PAIR_TACTICAL_PATH):
+        payload = _read_json(path)
+        rows = [payload] if isinstance(payload.get("strategy_class"), str) else list(payload.get("weights") or [])
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            for symbol in list(row.get("symbols") or []):
+                token = str(symbol).strip()
+                if token and token not in symbols:
+                    symbols.append(token)
+    return tuple(symbols)
+
+
+def _expand_reference(
+    token: str,
+    *,
+    weight_scale: float,
+    source: str,
+    stack: tuple[str, ...] = (),
+) -> tuple[list[PortfolioModeComponent], float]:
+    token = str(token or "").strip()
+    if not token or weight_scale <= 0.0:
+        return [], 0.0
+    if token in stack:
+        raise ValueError(f"cyclic artifact portfolio reference: {' -> '.join([*stack, token])}")
+    if token in {"cash", "risk_off_cash"}:
+        return [], float(weight_scale)
+    if token in {"pair_fast_exit_leaf"}:
+        return [_pair_component(float(weight_scale))], 0.0
+
+    rows = _alias_rows(token)
+    if rows is None:
+        raise ValueError(f"unsupported artifact portfolio reference: {token}")
+
+    components: list[PortfolioModeComponent] = []
+    cash_weight = 0.0
+    next_stack = (*stack, token)
+    for row in rows:
+        row_weight = _safe_float(row.get("weight"), 0.0)
+        if row_weight <= 0.0:
+            continue
+        scaled_weight = float(weight_scale) * row_weight
+        if str(row.get("strategy_class") or "").strip():
+            components.append(
+                _component_from_row(
+                    row,
+                    weight=scaled_weight,
+                    source=f"{source}:{token}",
+                )
+            )
+            continue
+        child_token = str(row.get("candidate_id") or row.get("name") or "").strip()
+        child_components, child_cash = _expand_reference(
+            child_token,
+            weight_scale=scaled_weight,
+            source=f"{source}:{token}",
+            stack=next_stack,
+        )
+        components.extend(child_components)
+        cash_weight += child_cash
+    return components, cash_weight
 
 
 def _merge_components(components: list[PortfolioModeComponent]) -> list[PortfolioModeComponent]:
@@ -191,116 +276,58 @@ def resolve_portfolio_mode_definition(portfolio_mode: str) -> PortfolioModeDefin
     if not token:
         raise ValueError("portfolio_mode is required")
 
-    soft_components, soft_cash = _soft_sleeve_definition()
-    pair_component = _pair_component(1.0)
     source_artifacts = {
         "hybrid_path": str(HYBRID_PATH.resolve()),
-        "grouped_soft_path": str(GROUPED_SOFT_PATH.resolve()),
+        "refreshed_incumbent_path": str(REFRESHED_INCUMBENT_PATH.resolve()),
+        "refreshed_blend_path": str(REFRESHED_BLEND_PATH.resolve()),
+        "refreshed_autoresearch_55_45_path": str(REFRESHED_AUTORESEARCH_55_45_PATH.resolve()),
+        "soft_three_way_allocator_path": str(SOFT_THREE_WAY_ALLOCATOR_PATH.resolve()),
+        "three_way_allocator_path": str(THREE_WAY_ALLOCATOR_PATH.resolve()),
         "pair_tactical_path": str(PAIR_TACTICAL_PATH.resolve()),
-        "incumbent_bundle_path": str(INCUMBENT_BUNDLE_PATH.resolve()),
     }
 
     components: list[PortfolioModeComponent] = []
     cash_weight = 0.0
+    watch_symbols: tuple[str, ...] = ()
 
     if token == "risk_off_mode":
         cash_weight = 1.0
+        watch_symbols = _watch_symbols()
     elif token == "pair_tactical_mode":
-        components.append(_pair_component(1.0))
+        components, cash_weight = _expand_reference("pair_tactical_mode", weight_scale=1.0, source=token)
     elif token == "core_mode":
-        components.extend(soft_components)
-        cash_weight = soft_cash
+        components, cash_weight = _expand_reference("soft_three_way_regime", weight_scale=1.0, source=token)
     elif token == "balanced_overlay_mode":
-        components.extend(
-            PortfolioModeComponent(
-                component_id=item.component_id,
-                label=item.label,
-                strategy_class=item.strategy_class,
-                symbols=item.symbols,
-                params=dict(item.params),
-                weight=float(item.weight * 0.8),
-                source=f"{item.source}:balanced80",
-            )
-            for item in soft_components
-        )
-        components.append(
-            PortfolioModeComponent(
-                component_id=pair_component.component_id,
-                label=pair_component.label,
-                strategy_class=pair_component.strategy_class,
-                symbols=pair_component.symbols,
-                params=dict(pair_component.params),
-                weight=0.2,
-                source="pair_tactical:balanced20",
-            )
-        )
-        cash_weight = soft_cash * 0.8
+        components, cash_weight = _expand_reference("balanced_overlay_80_20", weight_scale=1.0, source=token)
+    elif token == "defensive_overlay_mode":
+        soft_components, soft_cash = _expand_reference("soft_three_way_regime", weight_scale=0.7, source=token)
+        pair_components, pair_cash = _expand_reference("pair_tactical_mode", weight_scale=0.3, source=token)
+        components.extend(soft_components)
+        components.extend(pair_components)
+        cash_weight = soft_cash + pair_cash
+    elif token == "aggressive_realized_mode":
+        components, cash_weight = _expand_reference("three_way_regime", weight_scale=1.0, source=token)
     elif token == "hybrid_guarded_mode":
         hybrid_payload = _read_json(HYBRID_PATH)
         final_allocation = dict(
             dict((hybrid_payload.get("scenarios") or {}).get("refreshed_latest_tail") or {}).get("final_allocation")
             or {}
         )
-        sleeve_weights = {str(key): _safe_float(value, 0.0) for key, value in dict(final_allocation.get("weights") or {}).items()}
+        sleeve_weights = {
+            str(key): _safe_float(value, 0.0)
+            for key, value in dict(final_allocation.get("weights") or {}).items()
+        }
         cash_weight = _safe_float(final_allocation.get("cash_weight"), 0.0)
         for sleeve_name, sleeve_weight in sleeve_weights.items():
             if sleeve_weight <= 0.0:
                 continue
-            if sleeve_name == "balanced_overlay_80_20":
-                components.extend(
-                    PortfolioModeComponent(
-                        component_id=item.component_id,
-                        label=item.label,
-                        strategy_class=item.strategy_class,
-                        symbols=item.symbols,
-                        params=dict(item.params),
-                        weight=float(item.weight * 0.8 * sleeve_weight),
-                        source=f"{item.source}:hybrid-balanced",
-                    )
-                    for item in soft_components
-                )
-                components.append(
-                    PortfolioModeComponent(
-                        component_id=pair_component.component_id,
-                        label=pair_component.label,
-                        strategy_class=pair_component.strategy_class,
-                        symbols=pair_component.symbols,
-                        params=dict(pair_component.params),
-                        weight=float(0.2 * sleeve_weight),
-                        source="pair_tactical:hybrid-balanced",
-                    )
-                )
-                cash_weight += soft_cash * 0.8 * sleeve_weight
-            elif sleeve_name == "soft_three_way_regime":
-                components.extend(
-                    PortfolioModeComponent(
-                        component_id=item.component_id,
-                        label=item.label,
-                        strategy_class=item.strategy_class,
-                        symbols=item.symbols,
-                        params=dict(item.params),
-                        weight=float(item.weight * sleeve_weight),
-                        source=f"{item.source}:hybrid-soft",
-                    )
-                    for item in soft_components
-                )
-                cash_weight += soft_cash * sleeve_weight
-            elif sleeve_name == "pair_tactical_mode":
-                components.append(
-                    PortfolioModeComponent(
-                        component_id=pair_component.component_id,
-                        label=pair_component.label,
-                        strategy_class=pair_component.strategy_class,
-                        symbols=pair_component.symbols,
-                        params=dict(pair_component.params),
-                        weight=float(sleeve_weight),
-                        source="pair_tactical:hybrid-direct",
-                    )
-                )
-            elif sleeve_name == "risk_off_cash":
-                cash_weight += sleeve_weight
-            else:
-                raise ValueError(f"unsupported hybrid sleeve in artifact-driven live mode: {sleeve_name}")
+            sleeve_components, sleeve_cash = _expand_reference(
+                sleeve_name,
+                weight_scale=sleeve_weight,
+                source=token,
+            )
+            components.extend(sleeve_components)
+            cash_weight += sleeve_cash
     else:
         raise ValueError(f"unsupported live portfolio mode: {token}")
 
@@ -310,13 +337,16 @@ def resolve_portfolio_mode_definition(portfolio_mode: str) -> PortfolioModeDefin
         components=merged,
         cash_weight=float(max(0.0, min(1.0, cash_weight))),
         source_artifacts=source_artifacts,
+        watch_symbols=watch_symbols,
     )
 
 
 def supported_portfolio_modes() -> set[str]:
     return {
+        "aggressive_realized_mode",
         "hybrid_guarded_mode",
         "balanced_overlay_mode",
+        "defensive_overlay_mode",
         "core_mode",
         "pair_tactical_mode",
         "risk_off_mode",

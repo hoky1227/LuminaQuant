@@ -10,8 +10,10 @@ DEFAULT_LIVE_DECISION_PATH = Path(
 )
 SUPPORTED_LIVE_PORTFOLIO_MODES = frozenset(
     {
+        "aggressive_realized_mode",
         "hybrid_guarded_mode",
         "balanced_overlay_mode",
+        "defensive_overlay_mode",
         "core_mode",
         "pair_tactical_mode",
         "risk_off_mode",
