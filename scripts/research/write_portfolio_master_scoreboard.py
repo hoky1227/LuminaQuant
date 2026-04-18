@@ -93,6 +93,25 @@ def _comparison_row_map(hybrid_payload: dict[str, Any]) -> dict[str, dict[str, f
     return out
 
 
+def _scoreboard_row(
+    *,
+    name: str,
+    status: str,
+    comparison_rows: dict[str, dict[str, float]],
+    source_metrics: dict[str, dict[str, Any]],
+    comparison_name: str | None = None,
+    source_name: str | None = None,
+) -> dict[str, Any]:
+    resolved_comparison = str(comparison_name or name)
+    resolved_source = str(source_name or resolved_comparison)
+    metrics = comparison_rows.get(resolved_comparison) or _mode_metrics(source_metrics.get(resolved_source))
+    return {
+        "name": name,
+        **metrics,
+        "status": status,
+    }
+
+
 def _scoreboard_rows(
     *,
     switch_payload: dict[str, Any],
@@ -112,47 +131,53 @@ def _scoreboard_rows(
         dict((dict((hybrid_payload.get("scenarios") or {}).get("refreshed_latest_tail") or {}).get("split_metrics") or {}).get("oos") or {})
     )
     rows = [
-        {
-            "name": "pair_tactical_mode",
-            **(comparison_rows.get("pair_tactical_mode") or _mode_metrics(source_metrics.get("pair_tactical_mode"))),
-            "status": "tactical_only",
-        },
+        _scoreboard_row(
+            name="pair_tactical_mode",
+            status="tactical_only",
+            comparison_rows=comparison_rows,
+            source_metrics=source_metrics,
+        ),
         {
             "name": "hybrid_guarded_mode",
             **_mode_metrics(hybrid_oos),
             "status": "switch_default" if switch_mode == "hybrid_guarded_mode" else "guarded_challenger",
         },
-        {
-            "name": "balanced_overlay_mode",
-            **(
-                comparison_rows.get("balanced_overlay_80_20")
-                or _mode_metrics(source_metrics.get("balanced_overlay_80_20"))
-            ),
-            "status": "switch_default" if switch_mode == "balanced_overlay_mode" else "small_overlay_backup",
-        },
-        {
-            "name": "aggressive_realized_mode",
-            **(comparison_rows.get("three_way_regime") or _mode_metrics(source_metrics.get("three_way_regime"))),
-            "status": "high_beta_alt",
-        },
-        {
-            "name": "core_mode",
-            **(
-                comparison_rows.get("soft_three_way_regime")
-                or _mode_metrics(source_metrics.get("soft_three_way_regime"))
-            ),
-            "status": "defensive_active_backup",
-        },
-        {
-            "name": "static_blend_76_24",
-            **comparison_rows.get("static_blend_76_24", {}),
-            "status": "benchmark_static_blend",
-        },
-        {
-            "name": "incumbent_only",
-            **comparison_rows.get("incumbent_only", {}),
-            "status": "benchmark_incumbent",
-        },
+        _scoreboard_row(
+            name="balanced_overlay_mode",
+            comparison_name="balanced_overlay_80_20",
+            source_name="balanced_overlay_80_20",
+            status="switch_default" if switch_mode == "balanced_overlay_mode" else "small_overlay_backup",
+            comparison_rows=comparison_rows,
+            source_metrics=source_metrics,
+        ),
+        _scoreboard_row(
+            name="aggressive_realized_mode",
+            comparison_name="three_way_regime",
+            source_name="three_way_regime",
+            status="high_beta_alt",
+            comparison_rows=comparison_rows,
+            source_metrics=source_metrics,
+        ),
+        _scoreboard_row(
+            name="core_mode",
+            comparison_name="soft_three_way_regime",
+            source_name="soft_three_way_regime",
+            status="defensive_active_backup",
+            comparison_rows=comparison_rows,
+            source_metrics=source_metrics,
+        ),
+        _scoreboard_row(
+            name="static_blend_76_24",
+            status="benchmark_static_blend",
+            comparison_rows=comparison_rows,
+            source_metrics=source_metrics,
+        ),
+        _scoreboard_row(
+            name="incumbent_only",
+            status="benchmark_incumbent",
+            comparison_rows=comparison_rows,
+            source_metrics=source_metrics,
+        ),
         {
             "name": "risk_off_cash",
             "oos_total_return": 0.0,
@@ -237,6 +262,10 @@ def build_master_scoreboard(
             else "The switch still prefers a smaller overlay default, so hybrid remains the strongest diversified / guarded challenger."
         ),
     }
+    benchmark_reference_rows = [
+        _find_row(scoreboard_rows, "static_blend_76_24"),
+        _find_row(scoreboard_rows, "incumbent_only"),
+    ]
 
     pair_row = _find_row(scoreboard_rows, "pair_tactical_mode")
     tactical_override = {
@@ -282,6 +311,7 @@ def build_master_scoreboard(
         },
         "hybrid_challenger": hybrid_challenger,
         "hybrid_readiness": dict(hybrid_payload.get("readiness") or {}),
+        "benchmark_reference_rows": benchmark_reference_rows,
         "tactical_override": tactical_override,
         "refreshed_live_scoreboard": scoreboard_rows,
         "final_recommendation": {
@@ -342,6 +372,7 @@ def build_onepager_payload(scoreboard: dict[str, Any]) -> dict[str, Any]:
         "default_live_mode": default_mode,
         "fallback_mode": dict(scoreboard.get("fallback_mode") or {}),
         "hybrid_challenger": hybrid_challenger,
+        "benchmark_reference_rows": list(scoreboard.get("benchmark_reference_rows") or []),
         "tactical_override": dict(scoreboard.get("tactical_override") or {}),
         "summary": str(dict(scoreboard.get("final_recommendation") or {}).get("summary") or ""),
     }
@@ -360,6 +391,7 @@ def _build_master_markdown(scoreboard: dict[str, Any]) -> str:
     policy = dict(scoreboard.get("online_policy") or {})
     rec = dict(scoreboard.get("switch_recommended_mode") or {})
     state = dict(scoreboard.get("market_state") or {})
+    benchmark_rows = list(scoreboard.get("benchmark_reference_rows") or [])
     lines = [
         "# Portfolio master scoreboard",
         "",
@@ -408,6 +440,17 @@ def _build_master_markdown(scoreboard: dict[str, Any]) -> str:
             ),
             "4. Hybrid remains positive across train/val/oos and now carries the strongest diversified / guarded evidence in the reboot lane.",
             "",
+            "## Benchmark anchors",
+            "",
+        ]
+    )
+    for row in benchmark_rows:
+        lines.append(
+            f"- `{row['name']}` -> return `{_fmt_pct(row.get('oos_total_return'))}`, sharpe `{_fmt_num(row.get('sharpe'))}`, maxDD `{abs(_safe_float(row.get('max_drawdown'), 0.0)):.4%}`"
+        )
+    lines.extend(
+        [
+            "",
             "## Operational conclusion",
             f"- **default live mode:** `{default_mode}`",
             "- **fallback:** `risk_off_cash`",
@@ -426,6 +469,7 @@ def _build_onepager_markdown(onepager: dict[str, Any]) -> str:
     default_mode = dict(onepager.get("default_live_mode") or {})
     fallback = dict(onepager.get("fallback_mode") or {})
     hybrid = dict(onepager.get("hybrid_challenger") or {})
+    benchmark_rows = list(onepager.get("benchmark_reference_rows") or [])
     tactical = dict(onepager.get("tactical_override") or {})
     market = dict(onepager.get("market_state") or {})
     split = dict(onepager.get("split_windows") or {})
@@ -472,6 +516,13 @@ def _build_onepager_markdown(onepager: dict[str, Any]) -> str:
             if default_mode.get("mode") == "hybrid_guarded_mode"
             else "- best diversified / guarded challenger: `hybrid_guarded_mode`"
         ),
+    ]
+    for row in benchmark_rows:
+        lines.append(
+            f"- benchmark anchor `{row.get('name')}`: return `{_fmt_pct(row.get('oos_total_return'))}`, sharpe `{_fmt_num(row.get('sharpe'))}`, maxDD `{abs(_safe_float(row.get('max_drawdown'), 0.0)):.4%}`"
+        )
+    lines.extend(
+        [
         "",
         (
             "> 현재 live default는 tuned mixed/calm superiority gate를 통과한 hybrid guarded입니다.  \n"
@@ -488,7 +539,8 @@ def _build_onepager_markdown(onepager: dict[str, Any]) -> str:
         f"- breadth_state: `{market.get('breadth_state')}`",
         f"- volatility_state: `{market.get('volatility_state')}`",
         f"- pair_liquidity_state: `{market.get('pair_liquidity_state')}`",
-    ]
+        ]
+    )
     return "\n".join(lines) + "\n"
 
 
