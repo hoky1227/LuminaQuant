@@ -756,7 +756,6 @@ def validation_objective(metrics: Mapping[str, Any]) -> float:
 
 def _strict_liquidation_evidence_count(candidate_payload: Mapping[str, Any]) -> int:
     """Return the strongest liquidation-count evidence attached to a candidate payload."""
-
     totals: list[int] = []
 
     def _append_scalar(value: Any) -> None:
