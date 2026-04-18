@@ -254,12 +254,15 @@ def test_candidate_library_includes_article_inspired_carry_trend_factor_rotation
     ]
 
     assert {row.timeframe for row in factor_rows} == {"1h", "4h"}
-    assert len(factor_rows) == 4
+    assert len(factor_rows) == 6
     assert all(row.family == "cross_sectional" for row in factor_rows)
     assert all(row.symbols == ("BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "TRX/USDT") for row in factor_rows)
     assert all("carry_trend_factor_rotation_" in row.name for row in factor_rows)
     assert all("article_family:carry-trend-factor-rotation" in row.tags for row in factor_rows)
     assert all(row.metadata.get("article_reference") == "quant-company-profit-mechanisms" for row in factor_rows)
+    production_ready = [row for row in factor_rows if row.metadata.get("production_ready") is True]
+    assert {row.timeframe for row in production_ready} == {"1h", "4h"}
+    assert all(bool(row.params["allow_short"]) is False for row in production_ready)
 
 
 def test_candidate_library_includes_last_day_liquidity_regime_family():
