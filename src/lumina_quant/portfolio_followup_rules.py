@@ -19,6 +19,8 @@ ROBUST_PROMOTION_GATES = {
     "oos_total_return_delta_min_exclusive": 0.0,
     "oos_monthly_mean_min": 0.02,
     "oos_sharpe_relief_min": 0.50,
+    "candidate_split_max_drawdown_max_inclusive": 0.20,
+    "strict_liquidation_count_max_inclusive": 0,
 }
 
 VALIDATION_OBJECTIVE_FORMULA = (
@@ -752,6 +754,49 @@ def validation_objective(metrics: Mapping[str, Any]) -> float:
     )
 
 
+def _strict_liquidation_evidence_count(candidate_payload: Mapping[str, Any]) -> int:
+    """Return the strongest liquidation-count evidence attached to a candidate payload."""
+
+    totals: list[int] = []
+
+    def _append_scalar(value: Any) -> None:
+        numeric = int(max(0.0, safe_float(value, 0.0)))
+        if numeric > 0:
+            totals.append(numeric)
+
+    def _scan(container: Mapping[str, Any]) -> None:
+        for key in ("candidate_level_liquidation_count", "liquidation_count"):
+            _append_scalar(container.get(key))
+
+        counts = container.get("liquidation_counts")
+        if isinstance(counts, Mapping):
+            total = sum(int(max(0.0, safe_float(value, 0.0))) for value in counts.values())
+            if total > 0:
+                totals.append(int(total))
+
+        validation = container.get("state_leverage_validation")
+        if isinstance(validation, Mapping):
+            nested_counts = validation.get("liquidation_counts")
+            if isinstance(nested_counts, Mapping):
+                total = sum(
+                    int(max(0.0, safe_float(value, 0.0))) for value in nested_counts.values()
+                )
+                if total > 0:
+                    totals.append(int(total))
+
+    _scan(candidate_payload)
+
+    strict_validation = candidate_payload.get("strict_validation")
+    if isinstance(strict_validation, Mapping):
+        _scan(strict_validation)
+
+    metadata = candidate_payload.get("metadata")
+    if isinstance(metadata, Mapping):
+        _scan(metadata)
+
+    return max(totals) if totals else 0
+
+
 def evaluate_robustness_gates(
     candidate_payload: Mapping[str, Any],
     incumbent_payload: Mapping[str, Any],
@@ -773,6 +818,10 @@ def evaluate_robustness_gates(
     oos_sharpe_delta = safe_float(candidate_oos.get("sharpe"), 0.0) - safe_float(
         incumbent_oos.get("sharpe"), 0.0
     )
+    max_drawdown_cap = float(
+        ROBUST_PROMOTION_GATES["candidate_split_max_drawdown_max_inclusive"]
+    )
+    strict_liquidation_count = _strict_liquidation_evidence_count(candidate_payload)
 
     monthly_rows = extract_oos_monthly_returns(candidate_payload)
     oos_monthly_mean = mean_monthly_return(monthly_rows)
@@ -793,6 +842,18 @@ def evaluate_robustness_gates(
         ) > ROBUST_PROMOTION_GATES["val_total_return_min_exclusive"],
         "train_sharpe": safe_float(candidate_train.get("sharpe"), 0.0)
         >= ROBUST_PROMOTION_GATES["train_sharpe_min"],
+        "train_max_drawdown": safe_float(
+            candidate_train.get("max_drawdown", candidate_train.get("mdd")), 0.0
+        )
+        <= max_drawdown_cap,
+        "val_max_drawdown": safe_float(
+            candidate_val.get("max_drawdown", candidate_val.get("mdd")), 0.0
+        )
+        <= max_drawdown_cap,
+        "oos_max_drawdown": safe_float(
+            candidate_oos.get("max_drawdown", candidate_oos.get("mdd")), 0.0
+        )
+        <= max_drawdown_cap,
         "oos_total_return_delta": oos_total_return_delta
         > ROBUST_PROMOTION_GATES["oos_total_return_delta_min_exclusive"],
         "oos_monthly_mean": oos_monthly_mean >= ROBUST_PROMOTION_GATES["oos_monthly_mean_min"],
@@ -805,6 +866,8 @@ def evaluate_robustness_gates(
             >= safe_float(incumbent_oos.get("sharpe"), 0.0)
             + ROBUST_PROMOTION_GATES["oos_sharpe_relief_min"]
         ),
+        "strict_liquidation_count": strict_liquidation_count
+        <= ROBUST_PROMOTION_GATES["strict_liquidation_count_max_inclusive"],
     }
 
     rejection_reasons: list[str] = []
@@ -816,12 +879,20 @@ def evaluate_robustness_gates(
         rejection_reasons.append("val_total_return_non_positive")
     if not checks["train_sharpe"]:
         rejection_reasons.append("train_sharpe_below_floor")
+    if not checks["train_max_drawdown"]:
+        rejection_reasons.append("train_max_drawdown_above_cap")
+    if not checks["val_max_drawdown"]:
+        rejection_reasons.append("val_max_drawdown_above_cap")
+    if not checks["oos_max_drawdown"]:
+        rejection_reasons.append("oos_max_drawdown_above_cap")
     if not checks["oos_total_return_delta"]:
         rejection_reasons.append("oos_total_return_not_above_incumbent")
     if not checks["oos_monthly_mean"]:
         rejection_reasons.append("oos_monthly_mean_below_floor")
     if not checks["drawdown_or_sharpe_relief"]:
         rejection_reasons.append("oos_drawdown_worse_without_sharpe_relief")
+    if not checks["strict_liquidation_count"]:
+        rejection_reasons.append("strict_liquidation_count_positive")
 
     return {
         "promotable": not rejection_reasons,
@@ -832,6 +903,7 @@ def evaluate_robustness_gates(
         "oos_total_return_delta": oos_total_return_delta,
         "oos_max_drawdown_delta": oos_max_drawdown_delta,
         "oos_sharpe_delta": oos_sharpe_delta,
+        "strict_liquidation_count": strict_liquidation_count,
     }
 
 

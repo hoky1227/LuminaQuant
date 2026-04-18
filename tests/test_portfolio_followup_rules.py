@@ -13,10 +13,31 @@ from lumina_quant.portfolio_followup_rules import (
 )
 
 
-def _payload(*, train_total_return: float, val_total_return: float, oos_total_return: float, train_sharpe: float, oos_sharpe: float, oos_max_drawdown: float, monthly: list[float], train_trade_count: float = 12.0) -> dict[str, object]:
+def _payload(
+    *,
+    train_total_return: float,
+    val_total_return: float,
+    oos_total_return: float,
+    train_sharpe: float,
+    oos_sharpe: float,
+    oos_max_drawdown: float,
+    monthly: list[float],
+    train_trade_count: float = 12.0,
+    train_max_drawdown: float = 0.05,
+    val_max_drawdown: float = 0.05,
+) -> dict[str, object]:
     return {
-        "train": {"total_return": train_total_return, "sharpe": train_sharpe, "trade_count": train_trade_count},
-        "val": {"total_return": val_total_return, "sharpe": 1.0},
+        "train": {
+            "total_return": train_total_return,
+            "sharpe": train_sharpe,
+            "trade_count": train_trade_count,
+            "max_drawdown": train_max_drawdown,
+        },
+        "val": {
+            "total_return": val_total_return,
+            "sharpe": 1.0,
+            "max_drawdown": val_max_drawdown,
+        },
         "oos": {
             "total_return": oos_total_return,
             "sharpe": oos_sharpe,
@@ -140,6 +161,67 @@ def test_evaluate_robustness_gates_rejects_no_trade_train_candidate() -> None:
 
     assert result["promotable"] is False
     assert "train_no_trade" in result["rejection_reasons"]
+
+
+def test_evaluate_robustness_gates_rejects_candidate_split_drawdown_above_cap() -> None:
+    incumbent = _payload(
+        train_total_return=0.02,
+        val_total_return=0.03,
+        oos_total_return=0.05,
+        train_sharpe=0.4,
+        oos_sharpe=1.5,
+        oos_max_drawdown=0.07,
+        monthly=[0.02, 0.02, 0.02],
+    )
+    candidate = _payload(
+        train_total_return=0.03,
+        val_total_return=0.04,
+        oos_total_return=0.08,
+        train_sharpe=0.7,
+        oos_sharpe=2.1,
+        oos_max_drawdown=0.21,
+        monthly=[0.03, 0.03, 0.03],
+    )
+
+    result = evaluate_robustness_gates(candidate, incumbent)
+
+    assert result["promotable"] is False
+    assert "oos_max_drawdown_above_cap" in result["rejection_reasons"]
+
+
+def test_evaluate_robustness_gates_rejects_positive_strict_liquidation_evidence() -> None:
+    incumbent = _payload(
+        train_total_return=0.02,
+        val_total_return=0.03,
+        oos_total_return=0.05,
+        train_sharpe=0.4,
+        oos_sharpe=1.5,
+        oos_max_drawdown=0.07,
+        monthly=[0.02, 0.02, 0.02],
+    )
+    candidate = _payload(
+        train_total_return=0.03,
+        val_total_return=0.04,
+        oos_total_return=0.08,
+        train_sharpe=0.8,
+        oos_sharpe=2.2,
+        oos_max_drawdown=0.04,
+        monthly=[0.03, 0.03, 0.03],
+    )
+    candidate["strict_validation"] = {
+        "state_leverage_validation": {
+            "liquidation_counts": {
+                "blend_85_15": 1,
+                "incumbent": 0,
+            }
+        }
+    }
+
+    result = evaluate_robustness_gates(candidate, incumbent)
+
+    assert result["promotable"] is False
+    assert result["strict_liquidation_count"] == 1
+    assert "strict_liquidation_count_positive" in result["rejection_reasons"]
 
 
 
