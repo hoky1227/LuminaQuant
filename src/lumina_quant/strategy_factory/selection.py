@@ -170,12 +170,10 @@ def candidate_mix_type(candidate: dict[str, Any]) -> str:
 
 def _allowlisted_portfolio_native_multi_asset_candidate(candidate: dict[str, Any]) -> bool:
     """Allow a narrow class of vetted multi-asset rows into the default shortlist.
-
     The repo's default shortlist policy is intentionally single-asset-first, but a
     few portfolio-native candidates are valuable enough to keep even when generic
     multi-asset rows remain disabled. Keep this allowlist narrow and explicit.
     """
-
     if candidate_mix_type(candidate) != "multi":
         return False
 
@@ -413,7 +411,7 @@ def select_diversified_shortlist(
     single_min_return: float | None = None,
     single_min_sharpe: float | None = None,
     single_min_trades: int | None = None,
-    allow_multi_asset: bool = True,
+    allow_multi_asset: bool = False,
     include_weights: bool = False,
     weight_temperature: float = 0.35,
     max_weight: float = 0.35,

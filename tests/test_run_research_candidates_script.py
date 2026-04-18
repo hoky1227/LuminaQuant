@@ -188,6 +188,7 @@ def test_shortlist_selection_config_nested_scope_and_cli_precedence():
     assert resolved["max_per_timeframe"] == 5
     assert float(resolved["weight_temperature"]) == 0.2
     assert float(resolved["max_weight"]) == 0.5
+    assert resolved["allow_multi_asset"] is False
 
 
 def test_shortlist_robust_score_params_cross_corr_penalty_and_override_precedence():

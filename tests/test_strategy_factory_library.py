@@ -711,12 +711,15 @@ def test_shortlist_filters_weak_single_and_assigns_weights():
             "params": {"entry_z": 2.0},
         },
         {
-            "name": "topcap_tsmom_1h_candidate",
+            "name": "carry_trend_factor_rotation_1h_guarded",
+            "strategy_class": "CarryTrendFactorRotationStrategy",
+            "family": "cross_sectional",
             "strategy_timeframe": "1h",
             "symbols": ["BTC/USDT", "ETH/USDT", "BNB/USDT"],
+            "tags": ["cross_sectional", "carry", "momentum", "defensive", "crypto"],
             "hurdle_fields": {"oos": {"pass": True, "score": 4.2}},
             "oos": {"return": 0.09, "sharpe": 1.1, "mdd": 0.06, "trades": 24},
-            "params": {"lookback_bars": 16},
+            "params": {"carry_half_life": 8},
         },
     ]
 
@@ -739,6 +742,40 @@ def test_shortlist_filters_weak_single_and_assigns_weights():
     assert all(float(row.get("portfolio_weight", 0.0)) > 0.0 for row in shortlist)
     total_weight = sum(float(row.get("portfolio_weight", 0.0)) for row in shortlist)
     assert abs(total_weight - 1.0) < 1e-9
+
+
+def test_shortlist_default_blocks_generic_multi_asset_but_keeps_allowlisted_factor_rotation():
+    candidates = [
+        {
+            "name": "carry_trend_factor_rotation_1h_guarded",
+            "strategy_class": "CarryTrendFactorRotationStrategy",
+            "family": "cross_sectional",
+            "strategy_timeframe": "1h",
+            "symbols": ["BTC/USDT", "ETH/USDT", "BNB/USDT"],
+            "tags": ["cross_sectional", "carry", "momentum", "defensive", "crypto"],
+            "hurdle_fields": {"oos": {"pass": True, "score": 4.2}},
+            "oos": {"return": 0.09, "sharpe": 1.1, "mdd": 0.06, "trades": 24},
+        },
+        {
+            "name": "topcap_tsmom_1h_candidate",
+            "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+            "family": "trend",
+            "strategy_timeframe": "1h",
+            "symbols": ["BTC/USDT", "ETH/USDT", "BNB/USDT"],
+            "hurdle_fields": {"oos": {"pass": True, "score": 6.0}},
+            "oos": {"return": 0.12, "sharpe": 1.5, "mdd": 0.05, "trades": 30},
+        },
+    ]
+
+    shortlist = select_diversified_shortlist(
+        candidates,
+        mode="oos",
+        max_total=5,
+        max_per_family=5,
+        max_per_timeframe=5,
+    )
+
+    assert {row["name"] for row in shortlist} == {"carry_trend_factor_rotation_1h_guarded"}
 
 
 def test_build_single_asset_portfolio_sets_from_shortlist():

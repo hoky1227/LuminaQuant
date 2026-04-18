@@ -25,7 +25,7 @@ DEFAULT_SHORTLIST_SELECTION_CONFIG: dict[str, Any] = {
     "single_min_return": 0.0,
     "single_min_sharpe": 0.0,
     "single_min_trades": 5,
-    "allow_multi_asset": True,
+    "allow_multi_asset": False,
     "include_weights": True,
     "weight_temperature": 0.35,
     "max_weight": 0.35,
