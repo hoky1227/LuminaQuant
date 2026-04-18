@@ -877,24 +877,21 @@ def main() -> int:
             max_asset=configured_caps["max_asset"],
             max_metals=configured_caps["max_metals"],
         )
+        weight_shares = {key: float(value) for key, value in weights.items()}
 
         target_vol_floor = max(0.0, _safe_float(vol_targeting_params.get("target_vol_floor"), 0.01))
         vol_scale_cap = max(0.0, _safe_float(vol_targeting_params.get("vol_scale_cap"), 2.0))
         vol_scale_epsilon = max(0.0, _safe_float(vol_targeting_params.get("vol_scale_epsilon"), 1e-12))
-        portfolio_fit = _build_portfolio_returns(weights, rows, split=fit_split)
+        portfolio_fit = _build_portfolio_returns(weight_shares, rows, split=fit_split)
         fit_vol = _safe_float(np.std(portfolio_fit, ddof=1), 0.0)
         target_vol = max(target_vol_floor, float(args.target_vol))
         vol_scale = 1.0 if fit_vol <= vol_scale_epsilon else min(
             vol_scale_cap,
             target_vol / max(vol_scale_epsilon, fit_vol),
         )
-        for key in weights:
-            weights[key] *= vol_scale
-
-        total = float(sum(weights.values()))
-        if total > 0:
-            for key in weights:
-                weights[key] /= total
+        weights = {key: float(weight_shares[key] * vol_scale) for key in weight_shares}
+        gross_exposure = float(sum(weights.values()))
+        cash_weight = max(0.0, 1.0 - gross_exposure)
 
         portfolio_train_stream = _build_portfolio_stream(weights, rows, split="train")
         portfolio_val_stream = _build_portfolio_stream(weights, rows, split="val")
@@ -966,6 +963,7 @@ def main() -> int:
                     "symbols": list(row.get("symbols") or []),
                     "timeframe": row.get("strategy_timeframe") or row.get("timeframe"),
                     "weight": float(weight),
+                    "weight_share": float(weight_shares.get(cid, 0.0)),
                     "fit_split": fit_split,
                     "fit_sharpe": _safe_float(fit_row_metrics.get("sharpe"), 0.0),
                     "fit_return": _safe_float(fit_row_metrics.get("return"), 0.0),
@@ -990,6 +988,8 @@ def main() -> int:
             },
             "cluster_count": len(clusters),
             "clusters": clusters,
+            "gross_exposure": gross_exposure,
+            "cash_weight": cash_weight,
             "constraints": {
                 "max_strategy": float(effective_caps.get("max_strategy", configured_caps["max_strategy"])),
                 "max_family": float(effective_caps.get("max_family", configured_caps["max_family"])),
@@ -1009,6 +1009,9 @@ def main() -> int:
                     "target_vol_floor": float(target_vol_floor),
                     "vol_scale_cap": float(vol_scale_cap),
                     "vol_scale_epsilon": float(vol_scale_epsilon),
+                    "target_vol": float(target_vol),
+                    "fit_vol": float(fit_vol),
+                    "vol_scale": float(vol_scale),
                 },
                 "sensitivity": {
                     "cost_stress_x2_multiplier": float(cost_stress_x2_multiplier),
@@ -1054,6 +1057,8 @@ def main() -> int:
             f"- Fit split: `{fit_split}`",
             f"- Report split: `{report_split}`",
             f"- Clusters: {len(clusters)}",
+            f"- Gross exposure: `{gross_exposure:.2%}`",
+            f"- Cash weight: `{cash_weight:.2%}`",
             "",
             "## Sleeve budgets",
             "",
