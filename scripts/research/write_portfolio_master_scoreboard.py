@@ -167,6 +167,13 @@ def _scoreboard_rows(
             source_metrics=source_metrics,
         ),
         _scoreboard_row(
+            name="production_guarded_mode",
+            comparison_name="production_guarded_portfolio",
+            status="switch_default" if switch_mode == "production_guarded_mode" else "production_candidate",
+            comparison_rows=comparison_rows,
+            source_metrics=source_metrics,
+        ),
+        _scoreboard_row(
             name="static_blend_76_24",
             status="benchmark_static_blend",
             comparison_rows=comparison_rows,

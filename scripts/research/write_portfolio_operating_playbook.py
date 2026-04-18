@@ -24,6 +24,9 @@ DEFAULT_BEARISH_SCAN = (
 DEFAULT_HYBRID_PORTFOLIO = (
     GROUP_ROOT / "portfolio_hybrid_online_current" / "hybrid_online_portfolio_latest.json"
 )
+DEFAULT_PRODUCTION_GUARDED = (
+    GROUP_ROOT / "portfolio_production_guarded_current" / "production_guarded_portfolio_latest.json"
+)
 DEFAULT_OUTPUT_DIR = GROUP_ROOT / "portfolio_candidate_overlay_review_current"
 
 
@@ -80,6 +83,22 @@ def _hybrid_mode_entry(hybrid_payload: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
+def _production_guarded_mode_entry(production_payload: dict[str, Any] | None) -> dict[str, Any]:
+    payload = dict(production_payload or {})
+    metrics = _normalize_mode_metrics(dict((payload.get("portfolio_metrics") or {}).get("oos") or {}))
+    readiness = {
+        "active_exposure": _safe_float(payload.get("active_exposure"), 0.0),
+        "cash_weight": _safe_float(payload.get("cash_weight"), 0.0),
+        "carry_candidate_included": bool(payload.get("carry_candidate_included")),
+    }
+    return {
+        "allocation": {"production_guarded_portfolio": 1.0},
+        "why": "Drawdown-aware saved-stream production candidate blended from hybrid/static/incumbent sleeves.",
+        "metrics": metrics,
+        "readiness": readiness,
+    }
+
+
 def _hybrid_source_sleeve_metrics(
     hybrid_payload: dict[str, Any] | None,
     *,
@@ -94,7 +113,7 @@ def _hybrid_source_sleeve_metrics(
     }
 
 
-def build_playbook(*, base_plan: dict[str, Any], switch_validation: dict[str, Any], switch_recommendation: dict[str, Any], bearish_scan: dict[str, Any], hybrid_payload: dict[str, Any] | None = None) -> dict[str, Any]:
+def build_playbook(*, base_plan: dict[str, Any], switch_validation: dict[str, Any], switch_recommendation: dict[str, Any], bearish_scan: dict[str, Any], hybrid_payload: dict[str, Any] | None = None, production_guarded_payload: dict[str, Any] | None = None) -> dict[str, Any]:
     base_modes = dict(base_plan.get("deployment_modes") or {})
     refreshed_metrics = dict(switch_validation.get("refreshed_metrics") or {})
     hybrid_source_metrics = _hybrid_source_sleeve_metrics(hybrid_payload)
@@ -129,11 +148,13 @@ def build_playbook(*, base_plan: dict[str, Any], switch_validation: dict[str, An
         ),
     }
     hybrid_guarded_mode = _hybrid_mode_entry(hybrid_payload)
+    production_guarded_mode = _production_guarded_mode_entry(production_guarded_payload)
     refreshed_modes = {
         **base_modes,
         "risk_off_mode": risk_off_mode,
         "pair_tactical_mode": pair_tactical_mode,
         "hybrid_guarded_mode": hybrid_guarded_mode,
+        "production_guarded_mode": production_guarded_mode,
     }
     for key, item in list(refreshed_modes.items()):
         mode_item = dict(item or {})
@@ -167,6 +188,7 @@ def build_playbook(*, base_plan: dict[str, Any], switch_validation: dict[str, An
         "switch_recommendation_path": str(DEFAULT_SWITCH_RECOMMENDATION.resolve()),
         "bearish_scan_path": str(DEFAULT_BEARISH_SCAN.resolve()),
         "hybrid_portfolio_path": str(DEFAULT_HYBRID_PORTFOLIO.resolve()),
+        "production_guarded_path": str(DEFAULT_PRODUCTION_GUARDED.resolve()),
         "current_market_state": current_market_state,
         "recommended_mode": recommended_mode,
         "deployment_modes": refreshed_modes,
@@ -218,6 +240,7 @@ def build_playbook(*, base_plan: dict[str, Any], switch_validation: dict[str, An
             "Refresh final validation data before re-evaluating the switch.",
             "Read refreshed operating switch recommendation.",
             "If recommended mode is hybrid_guarded_mode, treat it as a guarded/pilot candidate rather than an unbounded full promotion.",
+            "If recommended mode is production_guarded_mode, treat it as a low-leverage production candidate and confirm it still beats balanced/hybrid under the latest refreshed split.",
             "If recommended mode is risk_off_mode, do not override into an active portfolio unless the operator accepts tactical risk.",
             "If forcing active exposure in a bearish regime, prefer pair_tactical_mode over hard three-way when directional allocators are unhealthy.",
             "Keep pair_fast_exit at or below 30% inside diversified portfolios unless new evidence justifies more.",
@@ -256,7 +279,7 @@ def write_playbook(payload: dict[str, Any], *, output_dir: Path) -> tuple[Path, 
         "",
         "## Deployment modes",
     ]
-    for key in ["risk_off_mode", "hybrid_guarded_mode", "core_mode", "balanced_overlay_mode", "defensive_overlay_mode", "aggressive_realized_mode", "pair_tactical_mode"]:
+    for key in ["risk_off_mode", "hybrid_guarded_mode", "production_guarded_mode", "core_mode", "balanced_overlay_mode", "defensive_overlay_mode", "aggressive_realized_mode", "pair_tactical_mode"]:
         if key not in modes:
             continue
         item = dict(modes.get(key) or {})
@@ -308,6 +331,7 @@ def main() -> None:
     parser.add_argument("--switch-recommendation", type=Path, default=DEFAULT_SWITCH_RECOMMENDATION)
     parser.add_argument("--bearish-scan", type=Path, default=DEFAULT_BEARISH_SCAN)
     parser.add_argument("--hybrid-portfolio", type=Path, default=DEFAULT_HYBRID_PORTFOLIO)
+    parser.add_argument("--production-guarded", type=Path, default=DEFAULT_PRODUCTION_GUARDED)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     args = parser.parse_args()
     payload = build_playbook(
@@ -316,6 +340,9 @@ def main() -> None:
         switch_recommendation=_read_json(Path(args.switch_recommendation).resolve()),
         bearish_scan=_read_json(Path(args.bearish_scan).resolve()),
         hybrid_payload=_read_json(Path(args.hybrid_portfolio).resolve()),
+        production_guarded_payload=_read_json(Path(args.production_guarded).resolve())
+        if Path(args.production_guarded).resolve().exists()
+        else None,
     )
     json_path, md_path = write_playbook(payload, output_dir=Path(args.output_dir).resolve())
     print(json_path)

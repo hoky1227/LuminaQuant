@@ -42,6 +42,12 @@ DEFAULT_GROUPED_STATIC_BLEND = (
     / "portfolio_incumbent_autoresearch_grouped"
     / "grouped_incumbent_autoresearch_static_blend_latest.json"
 )
+DEFAULT_PRODUCTION_GUARDED = (
+    FOLLOWUP_ROOT
+    / "portfolio_incumbent_autoresearch_grouped"
+    / "portfolio_production_guarded_current"
+    / "production_guarded_portfolio_latest.json"
+)
 DEFAULT_PORTFOLIO_SUPERIORITY_META = (
     FOLLOWUP_ROOT
     / "portfolio_superiority_meta_search_current"
@@ -486,6 +492,7 @@ def build_portfolio_max_performance_decision(
     grouped_allocator_path: Path | str | None = None,
     grouped_strict_validation_path: Path | str | None = DEFAULT_GROUPED_STRICT_VALIDATION,
     grouped_static_blend_path: Path | str | None = DEFAULT_GROUPED_STATIC_BLEND,
+    production_guarded_path: Path | str | None = None,
     portfolio_superiority_meta_path: Path | str | None = None,
     backbone_triplet_path: Path | str = DEFAULT_BACKBONE_TRIPLET,
     anchored_comparison_path: Path | str = DEFAULT_ANCHORED_COMPARISON,
@@ -717,6 +724,42 @@ def build_portfolio_max_performance_decision(
     elif grouped_static_blend is not None:
         missing_artifacts.append(str(grouped_static_blend.resolve()))
 
+    production_guarded = (
+        Path(production_guarded_path)
+        if production_guarded_path is not None
+        else None
+    )
+    if production_guarded is not None and production_guarded.exists():
+        production_guarded_payload = _load_json(production_guarded)
+        supporting_artifacts["portfolio_production_guarded"] = str(production_guarded.resolve())
+        entries.append(
+            _artifact_entry(
+                candidate_key="production_guarded_portfolio",
+                label="Production guarded portfolio challenger",
+                artifact_path=production_guarded,
+                payload=production_guarded_payload,
+                source_artifact_kind="portfolio_incumbent_autoresearch_grouped.production_guarded_portfolio",
+                selection_basis=str(
+                    production_guarded_payload.get("selection_basis")
+                    or "saved_sleeve_blend_with_drawdown_throttle"
+                ),
+                notes=[
+                    "Drawdown-aware production candidate blended from saved hybrid/static/incumbent sleeves.",
+                    (
+                        "Weights="
+                        f"{json.dumps({str((row or {}).get('candidate_id') or (row or {}).get('name')): _safe_float((row or {}).get('weight'), 0.0) for row in list(production_guarded_payload.get('weights') or []) if isinstance(row, dict)}, sort_keys=True)}"
+                    ),
+                    (
+                        "Exposure="
+                        f"{_safe_float(production_guarded_payload.get('active_exposure'), 0.0):.2%} "
+                        f"cash={_safe_float(production_guarded_payload.get('cash_weight'), 0.0):.2%}"
+                    ),
+                ],
+            )
+        )
+    elif production_guarded is not None:
+        missing_artifacts.append(str(production_guarded.resolve()))
+
     portfolio_superiority_meta = (
         Path(portfolio_superiority_meta_path)
         if portfolio_superiority_meta_path is not None
@@ -924,6 +967,7 @@ def write_portfolio_max_performance_decision(
     grouped_allocator_path: Path | str | None = None,
     grouped_strict_validation_path: Path | str | None = DEFAULT_GROUPED_STRICT_VALIDATION,
     grouped_static_blend_path: Path | str | None = DEFAULT_GROUPED_STATIC_BLEND,
+    production_guarded_path: Path | str | None = None,
     portfolio_superiority_meta_path: Path | str | None = None,
     backbone_triplet_path: Path | str = DEFAULT_BACKBONE_TRIPLET,
     anchored_comparison_path: Path | str = DEFAULT_ANCHORED_COMPARISON,
@@ -944,6 +988,7 @@ def write_portfolio_max_performance_decision(
         grouped_allocator_path=grouped_allocator_path,
         grouped_strict_validation_path=grouped_strict_validation_path,
         grouped_static_blend_path=grouped_static_blend_path,
+        production_guarded_path=production_guarded_path,
         portfolio_superiority_meta_path=portfolio_superiority_meta_path,
         backbone_triplet_path=backbone_triplet_path,
         anchored_comparison_path=anchored_comparison_path,
@@ -1006,6 +1051,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--grouped-allocator", default=str(DEFAULT_GROUPED_ALLOCATOR))
     parser.add_argument("--grouped-strict-validation", default=str(DEFAULT_GROUPED_STRICT_VALIDATION))
     parser.add_argument("--grouped-static-blend", default=str(DEFAULT_GROUPED_STATIC_BLEND))
+    parser.add_argument("--production-guarded", default=str(DEFAULT_PRODUCTION_GUARDED))
     parser.add_argument("--portfolio-superiority-meta", default=str(DEFAULT_PORTFOLIO_SUPERIORITY_META))
     parser.add_argument("--backbone-triplet", default=str(DEFAULT_BACKBONE_TRIPLET))
     parser.add_argument("--anchored-comparison", default=str(DEFAULT_ANCHORED_COMPARISON))
@@ -1026,6 +1072,7 @@ def main(argv: list[str] | None = None) -> int:
         grouped_allocator_path=Path(args.grouped_allocator).resolve(),
         grouped_strict_validation_path=Path(args.grouped_strict_validation).resolve(),
         grouped_static_blend_path=Path(args.grouped_static_blend).resolve(),
+        production_guarded_path=Path(args.production_guarded).resolve(),
         portfolio_superiority_meta_path=Path(args.portfolio_superiority_meta).resolve(),
         backbone_triplet_path=Path(args.backbone_triplet).resolve(),
         anchored_comparison_path=Path(args.anchored_comparison).resolve(),

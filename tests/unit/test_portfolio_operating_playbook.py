@@ -53,9 +53,20 @@ def test_build_playbook_includes_hybrid_guarded_mode() -> None:
             },
             "readiness": {"recommended_stage": "guarded_candidate", "beats_cash_refreshed": True},
         },
+        production_guarded_payload={
+            "active_exposure": 0.95,
+            "cash_weight": 0.05,
+            "carry_candidate_included": False,
+            "portfolio_metrics": {
+                "oos": {"total_return": 0.03, "sharpe": 1.8, "max_drawdown": 0.008},
+            },
+        },
     )
     hybrid = payload["deployment_modes"]["hybrid_guarded_mode"]
+    production = payload["deployment_modes"]["production_guarded_mode"]
     assert hybrid["allocation"] == {"hybrid_online_portfolio": 1.0}
+    assert production["allocation"] == {"production_guarded_portfolio": 1.0}
+    assert production["metrics"]["total_return"] == 0.03
     assert hybrid["metrics"]["total_return"] == 0.02
     assert payload["deployment_modes"]["core_mode"]["metrics"]["total_return"] == 0.03
     assert payload["deployment_modes"]["balanced_overlay_mode"]["metrics"]["total_return"] == 0.04

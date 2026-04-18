@@ -111,6 +111,12 @@ def test_build_master_scoreboard_promotes_hybrid_when_switch_does() -> None:
                 },
                 "comparison_rows": [
                     {
+                        "name": "production_guarded_portfolio",
+                        "total_return": 0.003654,
+                        "sharpe": 1.6080,
+                        "max_drawdown": 0.003184,
+                    },
+                    {
                         "name": "static_blend_76_24",
                         "total_return": 0.004307,
                         "sharpe": 3.0424,
@@ -142,6 +148,7 @@ def test_build_master_scoreboard_promotes_hybrid_when_switch_does() -> None:
     assert scoreboard["hybrid_challenger"]["why_not_default"].startswith("Promoted to the live default")
     assert scoreboard["refreshed_live_scoreboard"][1]["status"] == "switch_default"
     assert {row["name"] for row in scoreboard["refreshed_live_scoreboard"]} >= {
+        "production_guarded_mode",
         "static_blend_76_24",
         "incumbent_only",
     }
@@ -258,6 +265,12 @@ def test_build_master_scoreboard_keeps_benchmark_rows_from_source_sleeve_metrics
                 },
                 "comparison_rows": [
                     {
+                        "name": "production_guarded_portfolio",
+                        "total_return": 0.003654,
+                        "sharpe": 1.6080,
+                        "max_drawdown": 0.003184,
+                    },
+                    {
                         "name": "pair_tactical_mode",
                         "total_return": 0.013392,
                         "sharpe": 2.1124,
@@ -297,6 +310,7 @@ def test_build_master_scoreboard_keeps_benchmark_rows_from_source_sleeve_metrics
     onepager_markdown = MODULE._build_onepager_markdown(MODULE.build_onepager_payload(scoreboard))
 
     assert {row["name"] for row in scoreboard["refreshed_live_scoreboard"]} >= {
+        "production_guarded_mode",
         "static_blend_76_24",
         "incumbent_only",
     }

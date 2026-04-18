@@ -46,6 +46,9 @@ DEFAULT_BALANCED_STRATEGY_PATH = DEFAULT_GROUP_ROOT / "current_switch_validation
 DEFAULT_HYBRID_PORTFOLIO_PATH = (
     DEFAULT_GROUP_ROOT / "portfolio_hybrid_online_current" / "hybrid_online_portfolio_latest.json"
 )
+DEFAULT_PRODUCTION_GUARDED_PATH = (
+    DEFAULT_GROUP_ROOT / "portfolio_production_guarded_current" / "production_guarded_portfolio_latest.json"
+)
 DEFAULT_OUTPUT_DIR = DEFAULT_GROUP_ROOT / "portfolio_operating_switch_current"
 DEFAULT_MATERIALIZED_ROOT = ROOT / "data" / "market_parquet" / "market_data_materialized" / "binance"
 DEFAULT_RAW_AGGTRADES_ROOT = ROOT / "data" / "market_parquet" / "market_data_raw_aggtrades" / "binance"
@@ -89,6 +92,8 @@ HYBRID_PROMOTION_STRONG_OOS_RETURN_EDGE = 0.0050
 HYBRID_PROMOTION_STRONG_OOS_SHARPE_EDGE = 2.5
 HYBRID_PROMOTION_STRONG_VAL_TOTAL_RETURN = 0.0600
 HYBRID_PROMOTION_STRONG_VAL_SHARPE = 3.0
+PRODUCTION_PROMOTION_MIN_OOS_RETURN_EDGE = 0.0010
+PRODUCTION_PROMOTION_MIN_OOS_SHARPE_EDGE = 0.50
 
 _MARKET_SPEC = importlib.util.spec_from_file_location(
     "run_group_market_regime_judgement",
@@ -602,6 +607,34 @@ def _hybrid_portfolio_health(hybrid_payload: Mapping[str, Any] | None) -> dict[s
     }
 
 
+def _production_guarded_health(production_payload: Mapping[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(production_payload, Mapping):
+        return {
+            "val_total_return": 0.0,
+            "val_sharpe": 0.0,
+            "oos_total_return": 0.0,
+            "oos_sharpe": 0.0,
+            "oos_max_drawdown": 0.0,
+            "healthy": False,
+        }
+    metrics = dict(production_payload.get("portfolio_metrics") or {})
+    val = dict(metrics.get("val") or {})
+    oos = dict(metrics.get("oos") or {})
+    return {
+        "val_total_return": _safe_float(val.get("total_return", val.get("return")), 0.0),
+        "val_sharpe": _safe_float(val.get("sharpe"), 0.0),
+        "oos_total_return": _safe_float(oos.get("total_return", oos.get("return")), 0.0),
+        "oos_sharpe": _safe_float(oos.get("sharpe"), 0.0),
+        "oos_max_drawdown": _safe_float(oos.get("max_drawdown", oos.get("mdd")), 0.0),
+        "healthy": bool(
+            _safe_float(oos.get("total_return", oos.get("return")), 0.0) > 0.0
+            and _safe_float(oos.get("sharpe"), 0.0) > 0.0
+            and _safe_float(val.get("total_return", val.get("return")), 0.0) >= 0.0
+            and _safe_float(val.get("sharpe"), 0.0) > 0.0
+        ),
+    }
+
+
 def _hybrid_balanced_promotion_signal(
     *,
     hybrid_health: Mapping[str, Any] | None,
@@ -676,6 +709,37 @@ def _hybrid_balanced_promotion_signal(
     }
 
 
+def _production_balanced_promotion_signal(
+    *,
+    production_health: Mapping[str, Any] | None,
+    balanced_health: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    production = dict(production_health or {})
+    balanced = dict(balanced_health or {})
+    oos_return_edge = _safe_float(production.get("oos_total_return"), 0.0) - _safe_float(
+        balanced.get("oos_total_return"), 0.0
+    )
+    oos_sharpe_edge = _safe_float(production.get("oos_sharpe"), 0.0) - _safe_float(
+        balanced.get("oos_sharpe"), 0.0
+    )
+    drawdown_ok = _safe_float(production.get("oos_max_drawdown"), 0.0) <= _safe_float(
+        balanced.get("oos_max_drawdown"), 0.0
+    )
+    promoted = bool(
+        production.get("healthy")
+        and oos_return_edge >= PRODUCTION_PROMOTION_MIN_OOS_RETURN_EDGE
+        and oos_sharpe_edge >= PRODUCTION_PROMOTION_MIN_OOS_SHARPE_EDGE
+        and drawdown_ok
+    )
+    return {
+        "promoted": promoted,
+        "oos_return_edge": oos_return_edge,
+        "oos_sharpe_edge": oos_sharpe_edge,
+        "production_oos_max_drawdown": _safe_float(production.get("oos_max_drawdown"), 0.0),
+        "balanced_oos_max_drawdown": _safe_float(balanced.get("oos_max_drawdown"), 0.0),
+    }
+
+
 def recommend_operating_mode(
     *,
     current_judgement: Mapping[str, Any],
@@ -685,6 +749,7 @@ def recommend_operating_mode(
     pair_liquidity_state: str,
     balanced_health: Mapping[str, Any] | None = None,
     hybrid_health: Mapping[str, Any] | None = None,
+    production_health: Mapping[str, Any] | None = None,
 ) -> OperatingModeDecision:
     snapshot = dict(current_judgement.get("feature_snapshot") or {})
     favored_group = str(current_judgement.get("favored_group") or "mixed").strip().lower() or "mixed"
@@ -696,6 +761,7 @@ def recommend_operating_mode(
     soft_health = _allocator_health(soft_current_state if "split_metrics" in soft_current_state else {})
     hard_health = _allocator_health(hard_current_state if "split_metrics" in hard_current_state else {})
     hybrid = dict(hybrid_health or {})
+    production = dict(production_health or {})
     # If raw current_state only was passed, re-read health from payloads is not possible here.
     # Accept optional preattached health blocks.
     if not soft_health["healthy"] and isinstance(soft_current_state.get("_allocator_health"), Mapping):
@@ -739,9 +805,14 @@ def recommend_operating_mode(
         f"soft_health healthy={bool(soft_health.get('healthy'))} oos_return={_safe_float(soft_health.get('oos_total_return'), 0.0):+.4%} oos_sharpe={_safe_float(soft_health.get('oos_sharpe'), 0.0):.4f}",
         f"hard_health healthy={bool(hard_health.get('healthy'))} oos_return={_safe_float(hard_health.get('oos_total_return'), 0.0):+.4%} oos_sharpe={_safe_float(hard_health.get('oos_sharpe'), 0.0):.4f}",
         f"hybrid_health healthy={bool(hybrid.get('healthy'))} stage={hybrid.get('recommended_stage') or 'n/a'!s} beats_balanced={bool(hybrid.get('beats_balanced_refreshed'))} oos_return={_safe_float(hybrid.get('oos_total_return'), 0.0):+.4%} oos_sharpe={_safe_float(hybrid.get('oos_sharpe'), 0.0):.4f}",
+        f"production_health healthy={bool(production.get('healthy'))} oos_return={_safe_float(production.get('oos_total_return'), 0.0):+.4%} oos_sharpe={_safe_float(production.get('oos_sharpe'), 0.0):.4f}",
     ]
     hybrid_promotion_signal = _hybrid_balanced_promotion_signal(
         hybrid_health=hybrid,
+        balanced_health=overlay_health,
+    )
+    production_promotion_signal = _production_balanced_promotion_signal(
+        production_health=production,
         balanced_health=overlay_health,
     )
 
@@ -855,6 +926,18 @@ def recommend_operating_mode(
                     f"vs {_safe_float(hybrid_promotion_signal.get('balanced_oos_max_drawdown'), 0.0):.4%}) "
                     "-> promote hybrid guarded mode."
                 )
+        elif (
+            bool(production_promotion_signal.get("promoted"))
+            and trend_state != "bearish"
+            and pair_liquidity_state != "weak"
+        ):
+            mode = "production_guarded_mode"
+            rationale.append(
+                "Mixed regime and the production-guarded candidate beats balanced on OOS return/sharpe while reducing drawdown "
+                f"(Δreturn={_safe_float(production_promotion_signal.get('oos_return_edge'), 0.0):+.4%}, "
+                f"Δsharpe={_safe_float(production_promotion_signal.get('oos_sharpe_edge'), 0.0):+.4f}) "
+                "-> promote production guarded mode."
+            )
         elif overlay_health["healthy"]:
             mode = "balanced_overlay_mode"
             rationale.append("Mixed regime but calm enough for a small overlay -> balanced overlay mode.")
@@ -875,6 +958,7 @@ def recommend_operating_mode(
     default_mode_payloads = {
         "risk_off_mode": {"allocation": {"cash": 1.0}},
         "hybrid_guarded_mode": {"allocation": {"hybrid_online_portfolio": 1.0}},
+        "production_guarded_mode": {"allocation": {"production_guarded_portfolio": 1.0}},
     }
     allocation = dict((deployment_modes.get(mode) or default_mode_payloads.get(mode) or {}).get("allocation") or {})
     return OperatingModeDecision(mode=mode, allocation=allocation, rationale=rationale)
@@ -892,6 +976,7 @@ def build_operating_switch_payload(
     market_judgement_mode: str = "latest",
     balanced_strategy_payload: Mapping[str, Any] | None = None,
     hybrid_portfolio_payload: Mapping[str, Any] | None = None,
+    production_guarded_payload: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     saved_judgement = dict(market_judgement_payload.get("current_judgement") or {})
     normalized_market_judgement_mode = str(market_judgement_mode or "latest").strip().lower() or "latest"
@@ -930,6 +1015,7 @@ def build_operating_switch_payload(
             hybrid_source_metrics=hybrid_source_metrics,
         ),
         hybrid_health=_hybrid_portfolio_health(hybrid_portfolio_payload),
+        production_health=_production_guarded_health(production_guarded_payload),
     )
 
     return {
@@ -942,6 +1028,7 @@ def build_operating_switch_payload(
             "three_way_allocator": str(three_way_allocator_payload.get("_path") or ""),
             "operating_plan": str(operating_plan_payload.get("_path") or ""),
             "hybrid_portfolio": str((hybrid_portfolio_payload or {}).get("_path") or ""),
+            "production_guarded": str((production_guarded_payload or {}).get("_path") or ""),
             "market_judgement_mode": normalized_market_judgement_mode,
             "as_of_date_override": as_of_date_override.isoformat() if as_of_date_override is not None else "",
         },
@@ -962,6 +1049,7 @@ def build_operating_switch_payload(
             "soft_current_state": soft_current,
             "three_way_current_state": hard_current,
             "hybrid_portfolio_health": _hybrid_portfolio_health(hybrid_portfolio_payload),
+            "production_guarded_health": _production_guarded_health(production_guarded_payload),
         },
         "recommended_mode": decision.as_payload(),
         "available_modes": dict(operating_plan_payload.get("deployment_modes") or {}),
@@ -979,6 +1067,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--operating-plan-path", type=Path, default=None)
     parser.add_argument("--balanced-strategy-path", type=Path, default=None)
     parser.add_argument("--hybrid-portfolio-path", type=Path, default=None)
+    parser.add_argument("--production-guarded-path", type=Path, default=None)
     parser.add_argument("--materialized-root", type=Path, default=None)
     parser.add_argument("--raw-aggtrades-root", type=Path, default=None)
     parser.add_argument("--output-dir", type=Path, default=None)
@@ -1045,6 +1134,7 @@ def main() -> None:
     operating_plan_path = Path(args.operating_plan_path or defaults["operating_plan_path"]).resolve()
     balanced_strategy_path = Path(args.balanced_strategy_path or defaults["balanced_strategy_path"]).resolve()
     hybrid_portfolio_path = Path(args.hybrid_portfolio_path or defaults["hybrid_portfolio_path"]).resolve()
+    production_guarded_path = Path(args.production_guarded_path or DEFAULT_PRODUCTION_GUARDED_PATH).resolve()
     raw_aggtrades_root = Path(args.raw_aggtrades_root or defaults["raw_aggtrades_root"]).resolve()
     output_dir = Path(args.output_dir or defaults["output_dir"]).resolve()
     market_judgement_mode = str(args.market_judgement_mode or defaults["market_judgement_mode"])
@@ -1063,6 +1153,9 @@ def main() -> None:
     hybrid_portfolio = _read_json(hybrid_portfolio_path) if hybrid_portfolio_path.exists() else None
     if hybrid_portfolio is not None:
         hybrid_portfolio["_path"] = str(hybrid_portfolio_path)
+    production_guarded = _read_json(production_guarded_path) if production_guarded_path.exists() else None
+    if production_guarded is not None:
+        production_guarded["_path"] = str(production_guarded_path)
 
     if market_judgement_mode == "saved":
         latest_live_judgement = dict(market_judgement.get("current_judgement") or {})
@@ -1095,6 +1188,7 @@ def main() -> None:
         market_judgement_mode=market_judgement_mode,
         balanced_strategy_payload=balanced_strategy,
         hybrid_portfolio_payload=hybrid_portfolio,
+        production_guarded_payload=production_guarded,
     )
     payload["available_modes"] = dict(payload.get("available_modes") or {})
     payload["available_modes"].setdefault("risk_off_mode", {"allocation": {"cash": 1.0}})

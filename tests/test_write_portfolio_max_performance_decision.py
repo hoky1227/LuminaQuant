@@ -327,6 +327,55 @@ def _static_blend_payload(
     }
 
 
+def _production_guarded_payload(
+    *,
+    total_return: float,
+    sharpe: float,
+    sortino: float,
+    calmar: float,
+    max_drawdown: float,
+    volatility: float,
+) -> dict[str, object]:
+    return {
+        "artifact_kind": "production_guarded_portfolio",
+        "selection_basis": "saved_sleeve_blend_with_drawdown_throttle",
+        "active_exposure": 0.95,
+        "cash_weight": 0.05,
+        "portfolio_metrics": {
+            "train": {
+                "total_return": 0.03,
+                "sharpe": 0.8,
+                "sortino": 1.0,
+                "calmar": 1.5,
+                "max_drawdown": 0.06,
+                "volatility": 0.09,
+            },
+            "val": {
+                "total_return": 0.04,
+                "sharpe": 1.5,
+                "sortino": 2.1,
+                "calmar": 3.3,
+                "max_drawdown": 0.04,
+                "volatility": 0.08,
+            },
+            "oos": {
+                "total_return": total_return,
+                "sharpe": sharpe,
+                "sortino": sortino,
+                "calmar": calmar,
+                "max_drawdown": max_drawdown,
+                "volatility": volatility,
+            },
+        },
+        "weights": [
+            {"candidate_id": "hybrid_guarded_mode", "weight": 0.4},
+            {"candidate_id": "static_blend_76_24", "weight": 0.35},
+            {"candidate_id": "incumbent_only", "weight": 0.2},
+        ],
+        "oos_monthly_returns": _monthly_rows(max(total_return, 0.03), max(total_return, 0.03), max(total_return, 0.03)),
+    }
+
+
 def test_build_portfolio_max_performance_decision_retains_incumbent_when_no_challenger_clears_threshold(
     tmp_path: Path,
 ) -> None:
@@ -974,6 +1023,108 @@ def test_build_portfolio_max_performance_decision_can_promote_static_blend(
     )
     assert blend_entry["promotable"] is True
     assert payload["winner"]["candidate_key"] == "incumbent_autoresearch_static_blend"
+
+
+def test_build_portfolio_max_performance_decision_includes_production_guarded_candidate(
+    tmp_path: Path,
+) -> None:
+    incumbent_bundle = tmp_path / "incumbent_bundle.json"
+    incumbent_portfolio = tmp_path / "incumbent_portfolio.json"
+    production_guarded = tmp_path / "production_guarded_portfolio_latest.json"
+
+    incumbent_bundle.write_text(json.dumps(_bundle_payload()), encoding="utf-8")
+    incumbent_portfolio.write_text(
+        json.dumps(
+            _portfolio_payload(
+                total_return=0.05,
+                sharpe=1.50,
+                sortino=2.00,
+                calmar=4.00,
+                max_drawdown=0.07,
+                volatility=0.14,
+            )
+        ),
+        encoding="utf-8",
+    )
+    production_guarded.write_text(
+        json.dumps(
+            _production_guarded_payload(
+                total_return=0.06,
+                sharpe=1.8,
+                sortino=2.4,
+                calmar=4.8,
+                max_drawdown=0.05,
+                volatility=0.11,
+            )
+        ),
+        encoding="utf-8",
+    )
+
+    payload = _call_build_decision(
+        incumbent_bundle_path=incumbent_bundle,
+        incumbent_portfolio_path=incumbent_portfolio,
+        tuned_comparison_path=tmp_path / "missing_tuned.json",
+        dynamic_comparison_path=tmp_path / "missing_dynamic.json",
+        overlay_comparison_path=tmp_path / "missing_overlay.json",
+        backbone_triplet_path=tmp_path / "missing_triplet.json",
+        production_guarded_path=production_guarded,
+    )
+
+    guarded_entry = next(
+        entry
+        for entry in payload["candidates"]
+        if entry["candidate_key"] == "production_guarded_portfolio"
+    )
+    assert guarded_entry["selection_basis"] == "saved_sleeve_blend_with_drawdown_throttle"
+    assert "Exposure=" in " ".join(guarded_entry["notes"])
+
+
+def test_build_portfolio_max_performance_decision_can_promote_production_guarded(
+    tmp_path: Path,
+) -> None:
+    incumbent_bundle = tmp_path / "incumbent_bundle.json"
+    incumbent_portfolio = tmp_path / "incumbent_portfolio.json"
+    production_guarded = tmp_path / "production_guarded_portfolio_latest.json"
+
+    incumbent_bundle.write_text(json.dumps(_bundle_payload()), encoding="utf-8")
+    incumbent_portfolio.write_text(
+        json.dumps(
+            _portfolio_payload(
+                total_return=0.05,
+                sharpe=1.50,
+                sortino=2.00,
+                calmar=4.00,
+                max_drawdown=0.07,
+                volatility=0.14,
+            )
+        ),
+        encoding="utf-8",
+    )
+    production_guarded.write_text(
+        json.dumps(
+            _production_guarded_payload(
+                total_return=0.075,
+                sharpe=2.05,
+                sortino=2.8,
+                calmar=5.6,
+                max_drawdown=0.05,
+                volatility=0.10,
+            )
+        ),
+        encoding="utf-8",
+    )
+
+    payload = _call_build_decision(
+        incumbent_bundle_path=incumbent_bundle,
+        incumbent_portfolio_path=incumbent_portfolio,
+        tuned_comparison_path=tmp_path / "missing_tuned.json",
+        dynamic_comparison_path=tmp_path / "missing_dynamic.json",
+        overlay_comparison_path=tmp_path / "missing_overlay.json",
+        backbone_triplet_path=tmp_path / "missing_triplet.json",
+        production_guarded_path=production_guarded,
+    )
+
+    assert payload["winner"]["candidate_key"] == "production_guarded_portfolio"
 
 
 def test_grouped_allocator_strict_gate_blocks_promotion_when_train_is_negative(

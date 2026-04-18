@@ -30,6 +30,7 @@ def _base_operating_plan() -> dict:
             "defensive_overlay_mode": {"allocation": {"soft_three_way_regime": 0.7, "pair_fast_exit": 0.3}},
             "aggressive_realized_mode": {"allocation": {"three_way_regime": 1.0}},
             "hybrid_guarded_mode": {"allocation": {"hybrid_online_portfolio": 1.0}},
+            "production_guarded_mode": {"allocation": {"production_guarded_portfolio": 1.0}},
         }
     }
 
@@ -453,6 +454,68 @@ def test_recommend_operating_mode_promotes_hybrid_guarded_in_mixed_calm_when_it_
     assert decision.mode == "hybrid_guarded_mode"
     assert decision.allocation == {"hybrid_online_portfolio": 1.0}
     assert any("materially outperforms balanced" in item for item in decision.rationale)
+
+
+def test_recommend_operating_mode_can_promote_production_guarded_in_mixed_calm() -> None:
+    decision = MODULE.recommend_operating_mode(
+        current_judgement={
+            "favored_group": "mixed",
+            "confidence": 0.0,
+            "feature_snapshot": {
+                "btc_above_ma192": True,
+                "btc_above_ma336": True,
+                "btc_trend_gap_192": 0.02,
+                "btc_trend_gap_336": 0.03,
+                "btc_trend_accel": 0.01,
+                "breadth_ma96": 1.0,
+                "breadth_ma192": 1.0,
+                "breadth_delta": 0.05,
+                "basket_vol_ratio": 0.45,
+            },
+        },
+        soft_current_state={
+            "effective_incumbent_exposure": 0.95,
+            "effective_autoresearch_exposure": 0.05,
+            "_allocator_health": {"healthy": True, "oos_total_return": 0.0009, "oos_sharpe": 0.74},
+        },
+        hard_current_state={
+            "state": "blend_85_15",
+            "raw_target_state": "incumbent",
+            "_allocator_health": {"healthy": True, "oos_total_return": 0.0020, "oos_sharpe": 1.31},
+        },
+        operating_plan_payload=_base_operating_plan(),
+        pair_liquidity_state="normal",
+        balanced_health={
+            "healthy": True,
+            "val_total_return": 0.03,
+            "val_sharpe": 1.0,
+            "oos_total_return": 0.00109,
+            "oos_sharpe": 0.4828,
+            "oos_max_drawdown": 0.005162,
+        },
+        hybrid_health={
+            "healthy": False,
+            "recommended_stage": "do_not_integrate",
+            "beats_balanced_refreshed": False,
+            "oos_total_return": -0.001,
+            "oos_sharpe": -0.2,
+            "oos_max_drawdown": 0.006,
+            "val_total_return": -0.002,
+            "val_sharpe": -0.5,
+        },
+        production_health={
+            "healthy": True,
+            "val_total_return": 0.04,
+            "val_sharpe": 1.5,
+            "oos_total_return": 0.00365,
+            "oos_sharpe": 1.61,
+            "oos_max_drawdown": 0.00318,
+        },
+    )
+
+    assert decision.mode == "production_guarded_mode"
+    assert decision.allocation == {"production_guarded_portfolio": 1.0}
+    assert any("production-guarded candidate beats balanced" in item for item in decision.rationale)
 
 
 def test_recommend_operating_mode_uses_performance_first_override_when_hybrid_oos_edge_is_decisive() -> None:
