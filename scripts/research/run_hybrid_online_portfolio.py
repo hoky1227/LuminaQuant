@@ -61,10 +61,11 @@ REFRESHED_INPUTS = {
     "incumbent_only": GROUP_ROOT / "current_switch_validation_current" / "refreshed_current_one_shot_incumbent_portfolio_latest.json",
     "balanced_overlay_80_20": GROUP_ROOT / "current_switch_validation_current" / "refreshed_balanced_overlay_strategy_latest.json",
     "pair_tactical_mode": GROUP_ROOT / "current_switch_validation_current" / "refreshed_pair_fast_exit_candidate_latest.json",
+    "production_guarded_portfolio": GROUP_ROOT / "portfolio_production_guarded_current" / "production_guarded_portfolio_latest.json",
 }
 OPERATING_SWITCH_PATH = GROUP_ROOT / "current_switch_validation_current" / "refreshed_operating_switch_current" / "portfolio_operating_switch_latest.json"
 
-ACTIVE_SLEEVES = ("balanced_overlay_80_20", "soft_three_way_regime", "pair_tactical_mode")
+ACTIVE_SLEEVES = ("balanced_overlay_80_20", "soft_three_way_regime", "pair_tactical_mode", "production_guarded_portfolio")
 BENCHMARK_SLEEVES = ("three_way_regime", "static_blend_76_24", "incumbent_only")
 PAIR_NAME = "pair_spread_1h_exec_tightstop_tp_fastexit_bnbusdt_trxusdt_2.5_0.75"
 
@@ -470,6 +471,23 @@ def _refreshed_rows(
             metadata={"strategy_class": "PairSpreadZScoreStrategy", "timeframe": "1h", "family": "market_neutral_pair", "symbols": list(pair_payload.get("symbols") or []), "source_payload_path": str(REFRESHED_INPUTS["pair_tactical_mode"].resolve())},
         )
     )
+    production_payload_path = Path(REFRESHED_INPUTS["production_guarded_portfolio"])
+    if production_payload_path.exists():
+        production_payload = _load_json(production_payload_path)
+        active.append(
+            _make_sleeve_row(
+                sleeve_name="production_guarded_portfolio",
+                source_payload=production_payload,
+                streams=_payload_daily_streams(production_payload, split_config=split_config),
+                metadata={
+                    "strategy_class": "ProductionGuardedPortfolio",
+                    "timeframe": "1d",
+                    "family": "portfolio_overlay",
+                    "max_weight_cap": 0.45,
+                    "source_payload_path": str(production_payload_path.resolve()),
+                },
+            )
+        )
     for sleeve_name in BENCHMARK_SLEEVES:
         payload = _load_json(REFRESHED_INPUTS[sleeve_name])
         benchmarks.append(
@@ -804,22 +822,36 @@ def write_hybrid_online_report(
         _safe_float((alloc.get("weights") or {}).get("pair_tactical_mode"), 0.0)
         for alloc in list(refreshed_result.get("allocations") or [])
     ]
+    hybrid_total_return = _safe_float(
+        refreshed_by_name["hybrid_online_portfolio"].get("total_return", refreshed_by_name["hybrid_online_portfolio"].get("return")),
+        0.0,
+    )
     readiness = {
         "beats_cash_refreshed": bool(
-            _safe_float(refreshed_by_name["hybrid_online_portfolio"].get("total_return", refreshed_by_name["hybrid_online_portfolio"].get("return")), 0.0)
+            hybrid_total_return
             > _safe_float(refreshed_by_name["risk_off_cash"].get("total_return", refreshed_by_name["risk_off_cash"].get("return")), 0.0)
         ),
         "beats_pair_tactical_refreshed": bool(
-            _safe_float(refreshed_by_name["hybrid_online_portfolio"].get("total_return", refreshed_by_name["hybrid_online_portfolio"].get("return")), 0.0)
+            hybrid_total_return
             > _safe_float(refreshed_by_name["pair_tactical_mode"].get("total_return", refreshed_by_name["pair_tactical_mode"].get("return")), 0.0)
         ),
         "beats_balanced_refreshed": bool(
-            _safe_float(refreshed_by_name["hybrid_online_portfolio"].get("total_return", refreshed_by_name["hybrid_online_portfolio"].get("return")), 0.0)
+            hybrid_total_return
             > _safe_float(refreshed_by_name["balanced_overlay_80_20"].get("total_return", refreshed_by_name["balanced_overlay_80_20"].get("return")), 0.0)
         ),
         "max_rss_under_8gib": bool(_safe_float(dict(memory_summary).get("peak_rss_bytes"), 0.0) < (8 * 1024 * 1024 * 1024)),
         "pair_cap_respected": bool(max(pair_alloc_weights or [0.0]) <= config.pair_weight_cap + 1e-9),
     }
+    if "production_guarded_portfolio" in refreshed_by_name:
+        readiness["beats_production_guarded_refreshed"] = bool(
+            hybrid_total_return
+            > _safe_float(
+                refreshed_by_name["production_guarded_portfolio"].get(
+                    "total_return", refreshed_by_name["production_guarded_portfolio"].get("return")
+                ),
+                0.0,
+            )
+        )
     if readiness["beats_cash_refreshed"] and readiness["max_rss_under_8gib"] and readiness["pair_cap_respected"]:
         readiness["recommended_stage"] = (
             "pilot_candidate" if readiness["beats_pair_tactical_refreshed"] else "guarded_candidate"
@@ -903,6 +935,11 @@ def write_hybrid_online_report(
         f"- beats_cash_refreshed: `{readiness['beats_cash_refreshed']}`",
         f"- beats_pair_tactical_refreshed: `{readiness['beats_pair_tactical_refreshed']}`",
         f"- beats_balanced_refreshed: `{readiness['beats_balanced_refreshed']}`",
+        *(
+            [f"- beats_production_guarded_refreshed: `{readiness['beats_production_guarded_refreshed']}`"]
+            if "beats_production_guarded_refreshed" in readiness
+            else []
+        ),
         f"- max_rss_under_8gib: `{readiness['max_rss_under_8gib']}`",
         f"- pair_cap_respected: `{readiness['pair_cap_respected']}`",
         f"- recommended_stage: `{readiness['recommended_stage']}`",

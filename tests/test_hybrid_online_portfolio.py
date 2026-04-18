@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -43,6 +44,18 @@ def _row(name: str, *, train: list[float], val: list[float], oos: list[float], o
             **(oos_extra or {}),
         },
         "metadata": {"source_payload_path": "synthetic"},
+    }
+
+
+def _portfolio_payload(name: str, *, train: list[float], val: list[float], oos: list[float]) -> dict[str, Any]:
+    row = _row(name, train=train, val=val, oos=oos)
+    return {
+        "portfolio_return_streams": row["return_streams"],
+        "portfolio_metrics": {
+            "train": row["train"],
+            "val": row["val"],
+            "oos": row["oos"],
+        },
     }
 
 
@@ -223,3 +236,48 @@ def test_disagreement_switching_variant_scales_down_active_weights_when_scores_a
     )
     sample = result["allocations"][6]
     assert sample["cash_weight"] > 0.0
+
+
+def test_refreshed_rows_includes_production_guarded_when_artifact_exists(tmp_path, monkeypatch) -> None:
+    soft = tmp_path / "soft.json"
+    balanced = tmp_path / "balanced.json"
+    pair = tmp_path / "pair.json"
+    three_way = tmp_path / "three_way.json"
+    static_blend = tmp_path / "static_blend.json"
+    incumbent = tmp_path / "incumbent.json"
+    production = tmp_path / "production.json"
+
+    soft.write_text(json.dumps(_portfolio_payload("soft", train=[0.01], val=[0.01], oos=[0.01])), encoding="utf-8")
+    balanced.write_text(json.dumps(_portfolio_payload("balanced", train=[0.008], val=[0.008], oos=[0.008])), encoding="utf-8")
+    three_way.write_text(json.dumps(_portfolio_payload("three_way", train=[0.012], val=[0.012], oos=[0.012])), encoding="utf-8")
+    static_blend.write_text(json.dumps(_portfolio_payload("static", train=[0.009], val=[0.009], oos=[0.009])), encoding="utf-8")
+    incumbent.write_text(json.dumps(_portfolio_payload("incumbent", train=[0.007], val=[0.007], oos=[0.007])), encoding="utf-8")
+    production.write_text(json.dumps(_portfolio_payload("production", train=[0.011], val=[0.011], oos=[0.011])), encoding="utf-8")
+    pair.write_text(
+        json.dumps(
+            _row(
+                "pair_tactical_mode",
+                train=[0.02],
+                val=[0.02],
+                oos=[0.02],
+                oos_extra={"trade_count": 20.0, "pbo": 0.0},
+            )
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setitem(MODULE.REFRESHED_INPUTS, "soft_three_way_regime", soft)
+    monkeypatch.setitem(MODULE.REFRESHED_INPUTS, "balanced_overlay_80_20", balanced)
+    monkeypatch.setitem(MODULE.REFRESHED_INPUTS, "pair_tactical_mode", pair)
+    monkeypatch.setitem(MODULE.REFRESHED_INPUTS, "three_way_regime", three_way)
+    monkeypatch.setitem(MODULE.REFRESHED_INPUTS, "static_blend_76_24", static_blend)
+    monkeypatch.setitem(MODULE.REFRESHED_INPUTS, "incumbent_only", incumbent)
+    monkeypatch.setitem(MODULE.REFRESHED_INPUTS, "production_guarded_portfolio", production)
+
+    active, benchmarks = MODULE._refreshed_rows(split_config=MODULE.HybridSplitConfig())
+
+    active_names = [row["name"] for row in active]
+    assert "production_guarded_portfolio" in active_names
+    production_row = next(row for row in active if row["name"] == "production_guarded_portfolio")
+    assert float(production_row["metadata"]["max_weight_cap"]) == 0.45
+    assert {row["name"] for row in benchmarks} >= {"three_way_regime", "static_blend_76_24", "incumbent_only"}
