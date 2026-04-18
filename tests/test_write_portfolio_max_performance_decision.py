@@ -771,6 +771,87 @@ def test_build_portfolio_max_performance_decision_includes_grouped_allocator_can
     assert payload["winner"]["candidate_key"] == "grouped_three_way_market_regime_allocator"
 
 
+def test_grouped_allocator_strict_liquidation_evidence_blocks_promotion(
+    tmp_path: Path,
+) -> None:
+    incumbent_bundle = tmp_path / "incumbent_bundle.json"
+    incumbent_portfolio = tmp_path / "incumbent_portfolio.json"
+    tuned = tmp_path / "portfolio_comparison_latest.json"
+    dynamic = tmp_path / "portfolio_dynamic_comparison_latest.json"
+    overlay = tmp_path / "portfolio_overlay_comparison_latest.json"
+    triplet = tmp_path / "portfolio_backbone_triplet_search_latest.json"
+    grouped_allocator = tmp_path / "three_way_market_regime_allocator_latest.json"
+    grouped_strict = tmp_path / "grouped_allocator_strict_validation_latest.json"
+
+    incumbent_bundle.write_text(json.dumps(_bundle_payload()), encoding="utf-8")
+    incumbent_portfolio.write_text(
+        json.dumps(
+            _portfolio_payload(
+                total_return=0.05,
+                sharpe=1.60,
+                sortino=2.10,
+                calmar=4.20,
+                max_drawdown=0.065,
+                volatility=0.13,
+            )
+        ),
+        encoding="utf-8",
+    )
+    tuned.write_text(json.dumps({"selection_basis": "validation_only"}), encoding="utf-8")
+    dynamic.write_text(json.dumps({"selection_basis": "validation_only"}), encoding="utf-8")
+    overlay.write_text(json.dumps({"selection_basis": "validation_only"}), encoding="utf-8")
+    triplet.write_text(json.dumps({"artifact_kind": "portfolio_backbone_triplet_search"}), encoding="utf-8")
+    grouped_allocator.write_text(
+        json.dumps(
+            _grouped_allocator_payload(
+                total_return=0.072,
+                sharpe=1.95,
+                sortino=2.80,
+                calmar=5.20,
+                max_drawdown=0.07,
+                volatility=0.12,
+            )
+        ),
+        encoding="utf-8",
+    )
+    grouped_strict.write_text(
+        json.dumps(
+            _grouped_strict_validation_payload(
+                train_total_return=0.03,
+                train_sharpe=1.0,
+                val_total_return=0.02,
+                val_sharpe=1.1,
+                oos_total_return=0.072,
+                oos_sharpe=1.95,
+                oos_max_drawdown=0.07,
+                liquidation_count=1,
+            )
+        ),
+        encoding="utf-8",
+    )
+
+    payload = MODULE.build_portfolio_max_performance_decision(
+        incumbent_bundle_path=incumbent_bundle,
+        incumbent_portfolio_path=incumbent_portfolio,
+        tuned_comparison_path=tuned,
+        dynamic_comparison_path=dynamic,
+        overlay_comparison_path=overlay,
+        grouped_allocator_path=grouped_allocator,
+        grouped_strict_validation_path=grouped_strict,
+        grouped_static_blend_path=None,
+        backbone_triplet_path=triplet,
+    )
+
+    grouped_entry = next(
+        entry
+        for entry in payload["candidates"]
+        if entry["candidate_key"] == "grouped_three_way_market_regime_allocator"
+    )
+    assert grouped_entry["promotable"] is False
+    assert "strict_liquidation_count_positive" in grouped_entry["rejection_reasons"]
+    assert payload["winner"]["candidate_key"] == "current_one_shot_incumbent"
+
+
 def test_build_portfolio_max_performance_decision_includes_static_blend_candidate(
     tmp_path: Path,
 ) -> None:
