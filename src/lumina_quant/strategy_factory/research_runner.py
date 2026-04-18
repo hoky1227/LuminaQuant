@@ -833,20 +833,48 @@ def _normal_cdf(value: float) -> float:
     return 0.5 * (1.0 + math.erf(float(value) / math.sqrt(2.0)))
 
 
+def _rolling_sample_std(values: np.ndarray, window: int) -> np.ndarray:
+    arr = np.asarray(values, dtype=float)
+    out = np.full(arr.shape, np.nan, dtype=float)
+    win = max(2, int(window))
+    if arr.size < win:
+        return out
+
+    clean = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
+    csum = np.concatenate(([0.0], np.cumsum(clean, dtype=float)))
+    csum2 = np.concatenate(([0.0], np.cumsum(clean * clean, dtype=float)))
+    end = np.arange(win, clean.size + 1, dtype=int)
+    start = end - win
+    sums = csum[end] - csum[start]
+    sums2 = csum2[end] - csum2[start]
+    var = np.maximum(0.0, (sums2 - ((sums * sums) / float(win))) / float(win - 1))
+    out[win - 1 :] = np.sqrt(var, dtype=float)
+    return out
+
+
 def _rolling_z(values: np.ndarray, window: int) -> np.ndarray:
     out = np.full(values.shape, np.nan, dtype=float)
     win = max(8, int(window))
     if values.size < win:
         return out
-    for idx in range(win, values.size + 1):
-        tail = values[idx - win : idx]
-        hist = tail[:-1]
-        latest = tail[-1]
-        std = _safe_std(hist)
-        if std <= 1e-12:
-            out[idx - 1] = 0.0
-        else:
-            out[idx - 1] = (float(latest) - _safe_mean(hist)) / std
+
+    hist_len = win - 1
+    clean = np.nan_to_num(np.asarray(values, dtype=float), nan=0.0, posinf=0.0, neginf=0.0)
+    csum = np.concatenate(([0.0], np.cumsum(clean, dtype=float)))
+    csum2 = np.concatenate(([0.0], np.cumsum(clean * clean, dtype=float)))
+    latest_idx = np.arange(hist_len, clean.size, dtype=int)
+    hist_start = latest_idx - hist_len
+    hist_end = latest_idx
+    sums = csum[hist_end] - csum[hist_start]
+    sums2 = csum2[hist_end] - csum2[hist_start]
+    mean = sums / float(hist_len)
+    var = np.maximum(0.0, (sums2 - ((sums * sums) / float(hist_len))) / float(hist_len - 1))
+    std = np.sqrt(var, dtype=float)
+    latest = clean[hist_len:]
+    result = np.zeros_like(latest, dtype=float)
+    valid = std > 1e-12
+    result[valid] = (latest[valid] - mean[valid]) / std[valid]
+    out[hist_len:] = result
     return out
 
 
@@ -870,23 +898,21 @@ def _vol_ratio_series(closes: np.ndarray, fast: int = 8, slow: int = 55) -> np.n
     s = max(f + 2, int(slow))
     if rets.size < s:
         return out
-    for idx in range(s, rets.size + 1):
-        fast_std = _safe_std(rets[idx - f : idx])
-        slow_std = _safe_std(rets[idx - s : idx])
-        out[idx - 1] = 0.0 if slow_std <= 1e-12 else fast_std / slow_std
+    fast_std = _rolling_sample_std(rets, f)
+    slow_std = _rolling_sample_std(rets, s)
+    valid = np.isfinite(slow_std) & (slow_std > 1e-12)
+    out[valid] = np.divide(fast_std[valid], slow_std[valid], dtype=float)
+    out[np.isfinite(slow_std) & (slow_std <= 1e-12)] = 0.0
     return out
 
 
 def _rolling_volatility_series(closes: np.ndarray, window: int) -> np.ndarray:
-    out = np.full(closes.shape, np.nan, dtype=float)
     win = max(8, int(window))
     if closes.size < win:
-        return out
+        return np.full(closes.shape, np.nan, dtype=float)
     log_close = np.log(np.clip(closes, 1e-12, np.inf))
     rets = np.diff(log_close, prepend=log_close[0])
-    for idx in range(win, rets.size + 1):
-        out[idx - 1] = _safe_std(rets[idx - win : idx])
-    return out
+    return _rolling_sample_std(rets, win)
 
 
 def _composite_trend_signal_strength(
@@ -5674,10 +5700,28 @@ def _load_candidate_signal_payload(
     *,
     cache: Mapping[tuple[str, str], SeriesBundle],
     feature_cache: Mapping[str, pl.DataFrame] | None,
+    aligned_cache: dict[tuple[Any, ...], Mapping[str, Any]] | None = None,
 ) -> _CandidateSignalPayload | None:
     symbols, timeframe = _candidate_symbols_and_timeframe(candidate)
     bundles = _candidate_bundle_list(symbols=symbols, timeframe=timeframe, cache=cache)
-    aligned = _align_bundles(bundles, feature_cache=feature_cache)
+    cache_key = (
+        timeframe,
+        tuple(symbols),
+        tuple(
+            (
+                bundle.symbol,
+                int(bundle.datetime.size),
+                int(np.asarray(bundle.datetime, dtype="datetime64[ms]")[0].astype(np.int64)) if bundle.datetime.size else -1,
+                int(np.asarray(bundle.datetime, dtype="datetime64[ms]")[-1].astype(np.int64)) if bundle.datetime.size else -1,
+            )
+            for bundle in bundles
+        ),
+    )
+    aligned = aligned_cache.get(cache_key) if aligned_cache is not None else None
+    if aligned is None:
+        aligned = _align_bundles(bundles, feature_cache=feature_cache)
+        if aligned_cache is not None and aligned is not None:
+            aligned_cache[cache_key] = aligned
     if aligned is None:
         return None
 
@@ -5810,6 +5854,7 @@ def _evaluate_candidate(
     *,
     cache: Mapping[tuple[str, str], SeriesBundle],
     feature_cache: Mapping[str, pl.DataFrame] | None,
+    aligned_cache: dict[tuple[Any, ...], Mapping[str, Any]] | None = None,
     benchmark_cache: Mapping[str, Mapping[str, np.ndarray] | np.ndarray],
     candidate_count: int,
     scoring_config: Mapping[str, Any] | None = None,
@@ -5819,6 +5864,7 @@ def _evaluate_candidate(
         candidate,
         cache=cache,
         feature_cache=feature_cache,
+        aligned_cache=aligned_cache,
     )
     if signal_payload is None:
         symbols, timeframe = _candidate_symbols_and_timeframe(candidate)
@@ -6421,6 +6467,7 @@ def _select_stage2_results(
     adapted: Sequence[dict[str, Any]],
     cache: Mapping[tuple[str, str], SeriesBundle],
     feature_cache: Mapping[str, pl.DataFrame] | None,
+    aligned_cache: dict[tuple[Any, ...], Mapping[str, Any]] | None,
     benchmark: Mapping[str, Mapping[str, np.ndarray] | np.ndarray],
     scoring: _ResearchRunScoringConfig,
     resolved_split: Mapping[str, Any],
@@ -6431,6 +6478,7 @@ def _select_stage2_results(
         adapted=adapted,
         cache=cache,
         feature_cache=feature_cache,
+        aligned_cache=aligned_cache,
         benchmark=benchmark,
         scoring=scoring,
         resolved_split=resolved_split,

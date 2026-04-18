@@ -25,6 +25,7 @@ def test_build_command_contains_exact_split_and_manifest(tmp_path: Path) -> None
         score_config=tmp_path / "score.json",
         symbols=["BTC/USDT", "ETH/USDT"],
         timeframes=["1h", "4h"],
+        base_timeframe="1m",
         train_start="2025-01-01",
         train_end="2025-12-31",
         validation_start="2026-01-01",
@@ -37,6 +38,8 @@ def test_build_command_contains_exact_split_and_manifest(tmp_path: Path) -> None
     assert "run_research_candidates.py" in command[1]
     assert "--manifest" in command
     assert str(tmp_path / "manifest.json") in command
+    assert "--base-timeframe" in command
+    assert "1m" in command
     assert "--validation-start" in command
     assert "2026-04-14" in command
 
@@ -45,3 +48,23 @@ def test_low_memory_env_contains_thread_caps() -> None:
     assert MODULE.LOW_MEMORY_ENV["POLARS_MAX_THREADS"] == "1"
     assert MODULE.LOW_MEMORY_ENV["LQ_BACKTEST_LOW_MEMORY"] == "1"
     assert MODULE.LOW_MEMORY_ENV["LQ_AUTO_COLLECT_DB"] == "0"
+
+
+def test_manifest_symbols_and_timeframes_are_derived_from_candidates(tmp_path: Path) -> None:
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        """
+        {
+          "candidates": [
+            {"name":"a","strategy_timeframe":"1h","symbols":["BTC/USDT","ETH/USDT"]},
+            {"name":"b","strategy_timeframe":"4h","symbols":["ETH/USDT","BNB/USDT"]}
+          ]
+        }
+        """,
+        encoding="utf-8",
+    )
+
+    symbols, timeframes = MODULE._manifest_symbols_and_timeframes(manifest)
+
+    assert symbols == ["BTC/USDT", "ETH/USDT", "BNB/USDT"]
+    assert timeframes == ["1h", "4h"]

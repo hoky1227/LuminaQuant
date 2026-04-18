@@ -101,6 +101,76 @@ def test_align_bundles_ignores_empty_feature_frames():
     assert "BTC/USDT:crowding_score" not in aligned
 
 
+def test_load_candidate_signal_payload_reuses_alignment_cache(monkeypatch):
+    bundle = _bundle("BTC/USDT")
+    cache = {("BTC/USDT", "1m"): bundle}
+    aligned_payload = {
+        "datetime": bundle.datetime,
+        "BTC/USDT:open": bundle.open,
+        "BTC/USDT:high": bundle.high,
+        "BTC/USDT:low": bundle.low,
+        "BTC/USDT:close": bundle.close,
+        "BTC/USDT:volume": bundle.volume,
+    }
+    calls = {"count": 0}
+
+    def _fake_align(bundles, *, feature_cache=None):
+        _ = (bundles, feature_cache)
+        calls["count"] += 1
+        return aligned_payload
+
+    def _fake_strategy_signal(candidate, *, aligned, symbols):
+        _ = (candidate, aligned, symbols)
+        length = len(bundle.datetime)
+        return (
+            np.zeros(length, dtype=float),
+            np.zeros(length, dtype=float),
+            np.zeros(length, dtype=float),
+            {},
+        )
+
+    monkeypatch.setattr(research_runner, "_align_bundles", _fake_align)
+    monkeypatch.setattr(research_runner, "_strategy_signal", _fake_strategy_signal)
+
+    candidate = {
+        "strategy_class": "MovingAverageCrossStrategy",
+        "strategy_timeframe": "1m",
+        "symbols": ["BTC/USDT"],
+    }
+    aligned_cache: dict[tuple[object, ...], object] = {}
+
+    first = research_runner._load_candidate_signal_payload(
+        candidate,
+        cache=cache,
+        feature_cache=None,
+        aligned_cache=aligned_cache,
+    )
+    second = research_runner._load_candidate_signal_payload(
+        candidate,
+        cache=cache,
+        feature_cache=None,
+        aligned_cache=aligned_cache,
+    )
+
+    assert first is not None and second is not None
+    assert calls["count"] == 1
+
+
+def test_rolling_z_matches_reference_loop():
+    values = np.asarray([0.0, 0.2, -0.1, 0.3, 0.1, -0.2, 0.25, 0.4, -0.15, 0.05], dtype=float)
+    window = 8
+    expected = np.full(values.shape, np.nan, dtype=float)
+    for idx in range(window, values.size + 1):
+        tail = values[idx - window : idx]
+        hist = tail[:-1]
+        latest = tail[-1]
+        std = research_runner._safe_std(hist)
+        expected[idx - 1] = 0.0 if std <= 1e-12 else (float(latest) - research_runner._safe_mean(hist)) / std
+
+    actual = research_runner._rolling_z(values, window)
+    np.testing.assert_allclose(actual[window - 1 :], expected[window - 1 :], rtol=1e-9, atol=1e-9)
+
+
 def test_common_bundle_datetime_returns_none_for_empty_input():
     assert research_runner._common_bundle_datetime([]) is None
 

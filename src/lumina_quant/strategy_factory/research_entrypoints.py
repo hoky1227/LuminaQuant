@@ -128,10 +128,12 @@ def _run_candidate_research_with_adapted_candidates(
         min_bundle_bars=max(1, int(min_bundle_bars)),
         market_data_settings=market_data_settings,
     )
+    aligned_cache: dict[tuple[Any, ...], Mapping[str, Any]] = {}
     stage2_results = runner._select_stage2_results(
         adapted=adapted,
         cache=cache,
         feature_cache=feature_cache,
+        aligned_cache=aligned_cache,
         benchmark=benchmark,
         scoring=scoring,
         resolved_split=resolved_split,
