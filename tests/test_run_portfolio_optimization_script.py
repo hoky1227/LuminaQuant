@@ -187,6 +187,9 @@ def test_run_portfolio_optimization_uses_score_config_weights_and_caps(tmp_path:
     assert float(vol_targeting.get("target_vol_floor", 0.0)) == 0.2
     assert float(vol_targeting.get("vol_scale_cap", 0.0)) == 1.25
     assert float(vol_targeting.get("vol_scale_epsilon", 0.0)) == 1e-9
+    assert float(vol_targeting.get("target_vol", 0.0)) == 0.2
+    assert float(vol_targeting.get("fit_vol", 0.0)) >= 0.0
+    assert float(vol_targeting.get("vol_scale", 0.0)) >= 0.0
 
     sensitivity_scoring = dict(scoring.get("sensitivity") or {})
     assert float(sensitivity_scoring.get("cost_stress_x2_multiplier", 0.0)) == 1.0
@@ -271,12 +274,14 @@ def test_run_portfolio_optimization_enforces_strategy_cap_when_feasible(tmp_path
     assert len(weights) == 10
 
     total_weight = sum(float(row.get("weight", 0.0)) for row in weights)
-    assert abs(total_weight - 1.0) < 1e-6
+    total_share = sum(float(row.get("weight_share", 0.0)) for row in weights)
+    assert abs(total_weight - float(payload.get("gross_exposure", 0.0))) < 1e-6
+    assert abs(total_share - 1.0) < 1e-6
 
     constraints = dict(payload.get("constraints") or {})
     max_strategy = float(constraints.get("max_strategy", 0.15))
     assert max_strategy <= 0.150001
-    assert all(float(row.get("weight", 0.0)) <= max_strategy + 1e-6 for row in weights)
+    assert all(float(row.get("weight_share", 0.0)) <= max_strategy + 1e-6 for row in weights)
 
 
 def test_run_portfolio_optimization_fits_on_validation_and_reports_oos(tmp_path: Path):
@@ -457,3 +462,84 @@ def test_run_portfolio_optimization_prefers_research_candidates_over_team_shortl
     assert payload.get("source_report") == str(research_path.resolve())
     weights = list(payload.get("weights") or [])
     assert [row.get("candidate_id") for row in weights] == ["fit_winner"]
+
+
+def test_run_portfolio_optimization_preserves_vol_target_gross_exposure(tmp_path: Path):
+    root = Path(__file__).resolve().parents[1]
+
+    candidate = {
+        "candidate_id": "c1",
+        "name": "sleeve_a",
+        "strategy_class": "CompositeTrendStrategy",
+        "family": "trend",
+        "strategy_timeframe": "1h",
+        "symbols": ["BTC/USDT"],
+        "oos": {"sharpe": 1.0, "return": 0.08, "deflated_sharpe": 0.5, "pbo": 0.1, "turnover": 0.2},
+        "pass": True,
+        "return_streams": {
+            "train": [{"t": float(i), "v": value} for i, value in enumerate([0.10, -0.10, 0.10, -0.10, 0.10, -0.10])],
+            "val": [{"t": float(i), "v": value} for i, value in enumerate([0.10, -0.10, 0.10, -0.10, 0.10, -0.10])],
+            "oos": [{"t": float(i), "v": value} for i, value in enumerate([0.10, -0.10, 0.10, -0.10, 0.10, -0.10])],
+        },
+        "metadata": {"cost_rate": 0.0005},
+    }
+
+    research_path = tmp_path / "candidate_research.json"
+    team_path = tmp_path / "team_report.json"
+    research_path.write_text(json.dumps({"schema_version": "v2", "candidates": [candidate]}), encoding="utf-8")
+    team_path.write_text(json.dumps({"selected_team": [candidate]}), encoding="utf-8")
+
+    script = root / "scripts" / "run_portfolio_optimization.py"
+
+    low_dir = tmp_path / "low_target"
+    high_dir = tmp_path / "high_target"
+    low_cmd = [
+        sys.executable,
+        str(script),
+        "--research-report",
+        str(research_path),
+        "--team-report",
+        str(team_path),
+        "--output-dir",
+        str(low_dir),
+        "--max-strategies",
+        "1",
+        "--target-vol",
+        "0.02",
+    ]
+    high_cmd = [
+        sys.executable,
+        str(script),
+        "--research-report",
+        str(research_path),
+        "--team-report",
+        str(team_path),
+        "--output-dir",
+        str(high_dir),
+        "--max-strategies",
+        "1",
+        "--target-vol",
+        "0.20",
+    ]
+
+    low_result = subprocess.run(low_cmd, cwd=str(root), check=False, capture_output=True, text=True)
+    assert low_result.returncode == 0, low_result.stderr
+    high_result = subprocess.run(high_cmd, cwd=str(root), check=False, capture_output=True, text=True)
+    assert high_result.returncode == 0, high_result.stderr
+
+    low_payload = json.loads((low_dir / "portfolio_optimization_latest.json").read_text(encoding="utf-8"))
+    high_payload = json.loads((high_dir / "portfolio_optimization_latest.json").read_text(encoding="utf-8"))
+
+    low_weight = float((low_payload.get("weights") or [{}])[0].get("weight", 0.0))
+    high_weight = float((high_payload.get("weights") or [{}])[0].get("weight", 0.0))
+    low_share = float((low_payload.get("weights") or [{}])[0].get("weight_share", 0.0))
+    high_share = float((high_payload.get("weights") or [{}])[0].get("weight_share", 0.0))
+
+    assert abs(low_share - 1.0) < 1e-9
+    assert abs(high_share - 1.0) < 1e-9
+    assert 0.0 < low_weight < 1.0
+    assert high_weight > 1.0
+    assert abs(low_weight - float(low_payload.get("gross_exposure", 0.0))) < 1e-9
+    assert abs(high_weight - float(high_payload.get("gross_exposure", 0.0))) < 1e-9
+    assert float((low_payload.get("scoring") or {}).get("vol_targeting", {}).get("vol_scale", 0.0)) < 1.0
+    assert float((high_payload.get("scoring") or {}).get("vol_targeting", {}).get("vol_scale", 0.0)) > 1.0

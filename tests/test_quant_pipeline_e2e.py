@@ -92,4 +92,6 @@ def test_quant_pipeline_end_to_end(tmp_path: Path, monkeypatch):
     assert weights
 
     total_weight = sum(float(row.get("weight", 0.0)) for row in weights)
-    assert abs(total_weight - 1.0) < 1e-6
+    total_share = sum(float(row.get("weight_share", 0.0)) for row in weights)
+    assert abs(total_weight - float(payload.get("gross_exposure", 0.0))) < 1e-6
+    assert abs(total_share - 1.0) < 1e-6
