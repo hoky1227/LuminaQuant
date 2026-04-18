@@ -79,12 +79,27 @@ def _mode_metrics(metrics: dict[str, Any] | None) -> dict[str, float]:
     }
 
 
+def _comparison_row_map(hybrid_payload: dict[str, Any]) -> dict[str, dict[str, float]]:
+    scenario = dict(dict((hybrid_payload.get("scenarios") or {}).get("refreshed_latest_tail") or {}))
+    rows = list(scenario.get("comparison_rows") or [])
+    out: dict[str, dict[str, float]] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("name") or "").strip()
+        if not name:
+            continue
+        out[name] = _mode_metrics(row)
+    return out
+
+
 def _scoreboard_rows(
     *,
     switch_payload: dict[str, Any],
     hybrid_payload: dict[str, Any],
 ) -> list[dict[str, Any]]:
     switch_mode = str(dict(switch_payload.get("recommended_mode") or {}).get("mode") or "")
+    comparison_rows = _comparison_row_map(hybrid_payload)
     source_metrics = dict(
         dict(
             dict((hybrid_payload.get("scenarios") or {}).get("refreshed_latest_tail") or {}).get(
@@ -99,7 +114,7 @@ def _scoreboard_rows(
     rows = [
         {
             "name": "pair_tactical_mode",
-            **_mode_metrics(source_metrics.get("pair_tactical_mode")),
+            **(comparison_rows.get("pair_tactical_mode") or _mode_metrics(source_metrics.get("pair_tactical_mode"))),
             "status": "tactical_only",
         },
         {
@@ -109,18 +124,34 @@ def _scoreboard_rows(
         },
         {
             "name": "balanced_overlay_mode",
-            **_mode_metrics(source_metrics.get("balanced_overlay_80_20")),
+            **(
+                comparison_rows.get("balanced_overlay_80_20")
+                or _mode_metrics(source_metrics.get("balanced_overlay_80_20"))
+            ),
             "status": "switch_default" if switch_mode == "balanced_overlay_mode" else "small_overlay_backup",
         },
         {
             "name": "aggressive_realized_mode",
-            **_mode_metrics(source_metrics.get("three_way_regime")),
+            **(comparison_rows.get("three_way_regime") or _mode_metrics(source_metrics.get("three_way_regime"))),
             "status": "high_beta_alt",
         },
         {
             "name": "core_mode",
-            **_mode_metrics(source_metrics.get("soft_three_way_regime")),
+            **(
+                comparison_rows.get("soft_three_way_regime")
+                or _mode_metrics(source_metrics.get("soft_three_way_regime"))
+            ),
             "status": "defensive_active_backup",
+        },
+        {
+            "name": "static_blend_76_24",
+            **comparison_rows.get("static_blend_76_24", {}),
+            "status": "benchmark_static_blend",
+        },
+        {
+            "name": "incumbent_only",
+            **comparison_rows.get("incumbent_only", {}),
+            "status": "benchmark_incumbent",
         },
         {
             "name": "risk_off_cash",
@@ -129,6 +160,13 @@ def _scoreboard_rows(
             "max_drawdown": 0.0,
             "status": "fallback",
         },
+    ]
+    rows = [
+        row
+        for row in rows
+        if row["name"] == "risk_off_cash" or any(
+            key in row for key in ("oos_total_return", "sharpe", "max_drawdown")
+        )
     ]
     return sorted(rows, key=lambda item: item["oos_total_return"], reverse=True)
 

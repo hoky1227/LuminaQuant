@@ -76,3 +76,45 @@ def test_apply_portfolio_weights_honors_risk_penalty_override():
         key=lambda item: float((item.get("oos") or {}).get("mdd", 0.0)),
     )
     assert float(by_mdd[0].get("portfolio_weight", 0.0)) > float(by_mdd[1].get("portfolio_weight", 0.0))
+
+
+def test_select_diversified_keeps_allowlisted_multi_asset_factor_rotation_by_default():
+    rows = [
+        {
+            "identity": "carry-trend-1",
+            "name": "carry_trend_factor_rotation_1h_guarded",
+            "strategy_class": "CarryTrendFactorRotationStrategy",
+            "family": "cross_sectional",
+            "strategy_timeframe": "1h",
+            "symbols": ["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT"],
+            "tags": ["cross_sectional", "carry", "momentum", "defensive", "crypto"],
+            "hurdle_fields": {"oos": {"pass": True, "score": 5.0}},
+            "oos": {"return": 0.08, "sharpe": 1.6, "mdd": 0.05, "trades": 24},
+        },
+        {
+            "identity": "generic-multi-1",
+            "name": "topcap_multi_generic",
+            "strategy_class": "TopCapTimeSeriesMomentumStrategy",
+            "family": "trend",
+            "strategy_timeframe": "1h",
+            "symbols": ["BTC/USDT", "ETH/USDT", "BNB/USDT"],
+            "hurdle_fields": {"oos": {"pass": True, "score": 6.0}},
+            "oos": {"return": 0.09, "sharpe": 1.8, "mdd": 0.04, "trades": 30},
+        },
+    ]
+
+    selected = MODULE._select_diversified(
+        rows,
+        mode="oos",
+        max_selected=10,
+        max_per_strategy=10,
+        max_per_timeframe=10,
+        max_per_symbol=10,
+        require_pass=True,
+        min_trades=0,
+        allow_multi_asset=False,
+    )
+
+    names = {str(row.get("name")) for row in selected}
+    assert "carry_trend_factor_rotation_1h_guarded" in names
+    assert "topcap_multi_generic" not in names

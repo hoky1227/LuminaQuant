@@ -168,6 +168,31 @@ def candidate_mix_type(candidate: dict[str, Any]) -> str:
     return "single"
 
 
+def _allowlisted_portfolio_native_multi_asset_candidate(candidate: dict[str, Any]) -> bool:
+    """Allow a narrow class of vetted multi-asset rows into the default shortlist.
+
+    The repo's default shortlist policy is intentionally single-asset-first, but a
+    few portfolio-native candidates are valuable enough to keep even when generic
+    multi-asset rows remain disabled. Keep this allowlist narrow and explicit.
+    """
+
+    if candidate_mix_type(candidate) != "multi":
+        return False
+
+    strategy_class = str(candidate.get("strategy_class") or "").strip()
+    family = str(candidate.get("family") or "").strip().lower()
+    tags = {str(item).strip().lower() for item in list(candidate.get("tags") or []) if str(item).strip()}
+
+    if strategy_class == "CarryTrendFactorRotationStrategy":
+        return True
+    return (
+        family == "cross_sectional"
+        and "cross_sectional" in tags
+        and "carry" in tags
+        and "momentum" in tags
+    )
+
+
 def _has_mode_metrics(candidate: dict[str, Any], *, mode: str) -> bool:
     mode_token = str(mode).strip().lower()
     key = "val" if mode_token == "live" else "oos"
@@ -417,7 +442,11 @@ def select_diversified_shortlist(
 
         if identity in seen_identities:
             continue
-        if not bool(allow_multi_asset) and mix_type == "multi":
+        if (
+            not bool(allow_multi_asset)
+            and mix_type == "multi"
+            and not _allowlisted_portfolio_native_multi_asset_candidate(row)
+        ):
             continue
         if mix_type == "single":
             if bool(drop_single_without_metrics) and not _has_mode_metrics(row, mode=mode):

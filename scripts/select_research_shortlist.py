@@ -145,6 +145,27 @@ def _flatten_reports(paths: list[str], *, mode: str) -> list[dict]:
     return rows
 
 
+def _allowlisted_portfolio_native_multi_asset_candidate(row: dict) -> bool:
+    """Allow vetted portfolio-native multi-asset rows without opening the floodgates."""
+
+    symbols = [str(symbol).strip().upper() for symbol in list(row.get("symbols") or [])]
+    if len(symbols) < 3:
+        return False
+
+    strategy_class = str(row.get("strategy_class") or "").strip()
+    family = str(row.get("family") or "").strip().lower()
+    tags = {str(item).strip().lower() for item in list(row.get("tags") or []) if str(item).strip()}
+
+    if strategy_class == "CarryTrendFactorRotationStrategy":
+        return True
+    return (
+        family == "cross_sectional"
+        and "cross_sectional" in tags
+        and "carry" in tags
+        and "momentum" in tags
+    )
+
+
 def _select_diversified(
     rows: list[dict],
     *,
@@ -193,7 +214,11 @@ def _select_diversified(
         symbols = [str(symbol).strip().upper() for symbol in list(row.get("symbols") or [])]
         is_single = len(symbols) <= 1
         is_multi_asset = len(symbols) >= 3
-        if not bool(allow_multi_asset) and is_multi_asset:
+        if (
+            not bool(allow_multi_asset)
+            and is_multi_asset
+            and not _allowlisted_portfolio_native_multi_asset_candidate(row)
+        ):
             continue
 
         metrics = row.get(mode) if isinstance(row.get(mode), dict) else {}

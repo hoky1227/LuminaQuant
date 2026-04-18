@@ -13,6 +13,7 @@ def test_build_shortlist_payload_applies_filters_weights_and_sets():
                 "strategy_timeframe": "1m",
                 "symbols": ["BTC/USDT"],
                 "hurdle_fields": {"oos": {"pass": True, "score": 1.0}},
+                "train": {"return": 0.0, "trades": 0},
                 "oos": {"return": 0.01, "sharpe": 1.0, "mdd": 0.06, "trades": 19},
                 "params": {"rsi_period": 14},
             },
@@ -21,6 +22,7 @@ def test_build_shortlist_payload_applies_filters_weights_and_sets():
                 "strategy_timeframe": "1m",
                 "symbols": ["BTC/USDT"],
                 "hurdle_fields": {"oos": {"pass": True, "score": 3.2}},
+                "train": {"return": 0.04, "trades": 24},
                 "oos": {"return": 0.07, "sharpe": 1.4, "mdd": 0.05, "trades": 28},
                 "params": {"rsi_period": 12},
             },
@@ -29,6 +31,7 @@ def test_build_shortlist_payload_applies_filters_weights_and_sets():
                 "strategy_timeframe": "5m",
                 "symbols": ["ETH/USDT"],
                 "hurdle_fields": {"oos": {"pass": True, "score": 2.9}},
+                "train": {"return": 0.03, "trades": 20},
                 "oos": {"return": 0.05, "sharpe": 1.2, "mdd": 0.04, "trades": 21},
                 "params": {"rsi_period": 16},
             },
@@ -37,6 +40,7 @@ def test_build_shortlist_payload_applies_filters_weights_and_sets():
                 "strategy_timeframe": "1m",
                 "symbols": ["BTC/USDT", "ETH/USDT"],
                 "hurdle_fields": {"oos": {"pass": True, "score": 3.4}},
+                "train": {"return": 0.05, "trades": 22},
                 "oos": {"return": 0.08, "sharpe": 1.5, "mdd": 0.05, "trades": 26},
                 "params": {"entry_z": 2.0},
             },
@@ -45,8 +49,21 @@ def test_build_shortlist_payload_applies_filters_weights_and_sets():
                 "strategy_timeframe": "1h",
                 "symbols": ["BTC/USDT", "ETH/USDT", "BNB/USDT"],
                 "hurdle_fields": {"oos": {"pass": True, "score": 3.1}},
+                "train": {"return": 0.02, "trades": 18},
                 "oos": {"return": 0.06, "sharpe": 1.1, "mdd": 0.07, "trades": 19},
                 "params": {"lookback_bars": 20},
+            },
+            {
+                "name": "carry_trend_factor_rotation_1h_guarded",
+                "strategy_class": "CarryTrendFactorRotationStrategy",
+                "family": "cross_sectional",
+                "strategy_timeframe": "1h",
+                "symbols": ["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT"],
+                "tags": ["cross_sectional", "carry", "momentum", "defensive", "crypto"],
+                "hurdle_fields": {"oos": {"pass": True, "score": 3.6}},
+                "train": {"return": 0.06, "trades": 20},
+                "oos": {"return": 0.09, "sharpe": 1.6, "mdd": 0.04, "trades": 22},
+                "params": {"lookback_bars": 20, "rebalance_bars": 8},
             },
         ]
     }
@@ -73,8 +90,9 @@ def test_build_shortlist_payload_applies_filters_weights_and_sets():
     )
 
     shortlist = list(payload.get("shortlist") or [])
-    assert len(shortlist) == 3
-    assert all(str(row.get("mix_type")) != "multi" for row in shortlist)
+    assert len(shortlist) == 4
+    assert "carry_trend_factor_rotation_1h_guarded" in {str(row.get("name")) for row in shortlist}
+    assert "topcap_multi" not in {str(row.get("name")) for row in shortlist}
     assert "weak_rsi_btc" not in {str(row.get("name")) for row in shortlist}
 
     total_weight = sum(float(row.get("portfolio_weight", 0.0)) for row in shortlist)

@@ -109,6 +109,20 @@ def test_build_master_scoreboard_promotes_hybrid_when_switch_does() -> None:
                         }
                     },
                 },
+                "comparison_rows": [
+                    {
+                        "name": "static_blend_76_24",
+                        "total_return": 0.004307,
+                        "sharpe": 3.0424,
+                        "max_drawdown": 0.005106,
+                    },
+                    {
+                        "name": "incumbent_only",
+                        "total_return": -0.003154,
+                        "sharpe": -2.5718,
+                        "max_drawdown": 0.007291,
+                    },
+                ],
             }
         },
     }
@@ -127,4 +141,8 @@ def test_build_master_scoreboard_promotes_hybrid_when_switch_does() -> None:
     assert scoreboard["current_default"]["mode"] == "hybrid_guarded_mode"
     assert scoreboard["hybrid_challenger"]["why_not_default"].startswith("Promoted to the live default")
     assert scoreboard["refreshed_live_scoreboard"][1]["status"] == "switch_default"
+    assert {row["name"] for row in scoreboard["refreshed_live_scoreboard"]} >= {
+        "static_blend_76_24",
+        "incumbent_only",
+    }
     assert onepager["default_live_mode"]["mode"] == "hybrid_guarded_mode"
