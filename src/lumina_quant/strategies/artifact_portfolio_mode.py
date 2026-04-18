@@ -137,7 +137,19 @@ def _pair_component(weight: float) -> PortfolioModeComponent:
 
 def _portfolio_weight_rows(path: Path) -> list[dict[str, Any]]:
     payload = _read_json(path)
-    return [dict(item) for item in list(payload.get("weights") or []) if isinstance(item, dict)]
+    rows = [dict(item) for item in list(payload.get("weights") or []) if isinstance(item, dict)]
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        normalized = dict(row)
+        if "weight_share" in normalized:
+            normalized["weight"] = _safe_float(normalized.get("weight_share"), 0.0)
+        else:
+            normalized["weight"] = _safe_float(normalized.get("weight"), 0.0)
+        out.append(normalized)
+    cash_weight = _safe_float(payload.get("cash_weight"), 0.0)
+    if cash_weight > 1e-12:
+        out.append({"candidate_id": "cash", "name": "cash", "weight": cash_weight})
+    return out
 
 
 def _state_weight_rows(path: Path) -> list[dict[str, Any]]:

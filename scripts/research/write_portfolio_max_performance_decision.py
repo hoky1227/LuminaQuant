@@ -486,13 +486,13 @@ def build_portfolio_max_performance_decision(
     grouped_allocator_path: Path | str | None = None,
     grouped_strict_validation_path: Path | str | None = DEFAULT_GROUPED_STRICT_VALIDATION,
     grouped_static_blend_path: Path | str | None = DEFAULT_GROUPED_STATIC_BLEND,
-    portfolio_superiority_meta_path: Path | str | None = DEFAULT_PORTFOLIO_SUPERIORITY_META,
+    portfolio_superiority_meta_path: Path | str | None = None,
     backbone_triplet_path: Path | str = DEFAULT_BACKBONE_TRIPLET,
     anchored_comparison_path: Path | str = DEFAULT_ANCHORED_COMPARISON,
     anchored_tuned_comparison_path: Path | str | None = None,
     portfolio_four_sleeve_comparison_path: Path | str | None = None,
     four_sleeve_comparison_path: Path | str | None = None,
-    meta_search_summary_paths: tuple[Path | str, ...] = DEFAULT_META_SEARCH_SUMMARIES,
+    meta_search_summary_paths: tuple[Path | str, ...] = (),
 ) -> dict[str, Any]:
     resolved_incumbent_bundle_path = _resolve_incumbent_bundle_path(Path(incumbent_bundle_path))
     resolved_incumbent_portfolio_path = _resolve_incumbent_portfolio_path(
@@ -924,13 +924,13 @@ def write_portfolio_max_performance_decision(
     grouped_allocator_path: Path | str | None = None,
     grouped_strict_validation_path: Path | str | None = DEFAULT_GROUPED_STRICT_VALIDATION,
     grouped_static_blend_path: Path | str | None = DEFAULT_GROUPED_STATIC_BLEND,
-    portfolio_superiority_meta_path: Path | str | None = DEFAULT_PORTFOLIO_SUPERIORITY_META,
+    portfolio_superiority_meta_path: Path | str | None = None,
     backbone_triplet_path: Path | str = DEFAULT_BACKBONE_TRIPLET,
     anchored_comparison_path: Path | str = DEFAULT_ANCHORED_COMPARISON,
     anchored_tuned_comparison_path: Path | str | None = None,
     portfolio_four_sleeve_comparison_path: Path | str | None = None,
     four_sleeve_comparison_path: Path | str | None = None,
-    meta_search_summary_paths: tuple[Path | str, ...] = DEFAULT_META_SEARCH_SUMMARIES,
+    meta_search_summary_paths: tuple[Path | str, ...] = (),
     output_json_path: Path | str = DEFAULT_OUTPUT_JSON,
     output_md_path: Path | str = DEFAULT_OUTPUT_MD,
 ) -> dict[str, Any]:
@@ -1029,6 +1029,7 @@ def main(argv: list[str] | None = None) -> int:
         portfolio_superiority_meta_path=Path(args.portfolio_superiority_meta).resolve(),
         backbone_triplet_path=Path(args.backbone_triplet).resolve(),
         anchored_comparison_path=Path(args.anchored_comparison).resolve(),
+        meta_search_summary_paths=DEFAULT_META_SEARCH_SUMMARIES,
         output_json_path=Path(args.output_json).resolve(),
         output_md_path=Path(args.output_md).resolve(),
     )

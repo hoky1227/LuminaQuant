@@ -99,16 +99,19 @@ def test_resolve_portfolio_mode_definition_supports_recursive_allocator_sleeves(
                     "name": "leaf_a",
                     "strategy_class": "MovingAverageCrossStrategy",
                     "symbols": ["BTC/USDT"],
-                    "weight": 0.6,
+                    "weight": 0.42,
+                    "weight_share": 0.6,
                 },
                 {
                     "candidate_id": "leaf_b",
                     "name": "leaf_b",
                     "strategy_class": "RsiStrategy",
                     "symbols": ["ETH/USDT"],
-                    "weight": 0.4,
+                    "weight": 0.28,
+                    "weight_share": 0.4,
                 },
-            ]
+            ],
+            "cash_weight": 0.3,
         },
     )
     autoresearch_path = _write(
@@ -213,12 +216,13 @@ def test_resolve_portfolio_mode_definition_supports_recursive_allocator_sleeves(
         "leaf_b": 0.28,
         "leaf_c": 0.3,
     }
+    assert aggressive.cash_weight == 0.21
     assert hybrid_weights == {
         "leaf_a": 0.3264,
         "leaf_b": 0.2176,
         "leaf_c": 0.096,
         "leaf_pair": 0.16,
     }
-    assert hybrid.cash_weight == 0.2
+    assert abs(hybrid.cash_weight - 0.3632) < 1e-12
     assert risk_off.cash_weight == 1.0
     assert risk_off.symbols == ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "TRX/USDT"]

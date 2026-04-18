@@ -114,6 +114,12 @@ def _weight_lookup_key(weight_row: dict[str, Any]) -> tuple[str, str]:
     )
 
 
+def _weight_share(weight_row: dict[str, Any]) -> float:
+    if "weight_share" in weight_row:
+        return _safe_float(weight_row.get("weight_share"), 0.0)
+    return _safe_float(weight_row.get("weight"), 0.0)
+
+
 def build_portfolio_one_shot_incumbent_bundle(
     *,
     current_bundle_path: Path | str = DEFAULT_CURRENT_BUNDLE,
@@ -140,6 +146,8 @@ def build_portfolio_one_shot_incumbent_bundle(
     selected_rows: list[dict[str, Any]] = []
     missing_keys: list[str] = []
     total_weight = 0.0
+    gross_exposure = _safe_float(portfolio_payload.get("gross_exposure"), 0.0)
+    cash_weight = _safe_float(portfolio_payload.get("cash_weight"), 0.0)
 
     for rank, weight_row in enumerate(weight_rows, start=1):
         candidate_id, name = _weight_lookup_key(weight_row)
@@ -149,21 +157,26 @@ def build_portfolio_one_shot_incumbent_bundle(
             missing_keys.append(lookup_key or f"rank-{rank}")
             continue
 
-        weight = _safe_float(weight_row.get("weight"), 0.0)
-        total_weight += weight
+        weight_share = _weight_share(weight_row)
+        gross_weight = _safe_float(weight_row.get("weight"), 0.0)
+        total_weight += weight_share
         raw_notes = source_row.get("notes")
         if isinstance(raw_notes, str):
             notes = [raw_notes] if raw_notes.strip() else []
         else:
             notes = [str(item) for item in list(raw_notes or []) if str(item).strip()]
-        notes.append(f"Included in the incumbent one-shot backbone at saved weight {weight:.2%}.")
+        notes.append(
+            "Included in the incumbent one-shot backbone at saved "
+            f"share {weight_share:.2%} and gross weight {gross_weight:.2%}."
+        )
 
         selected = dict(source_row)
         selected.setdefault("pass", True)
         selected["notes"] = notes
         selected["incumbent_rank"] = rank
-        selected["portfolio_weight"] = weight
-        selected["_portfolio_weight"] = weight
+        selected["portfolio_weight"] = weight_share
+        selected["_portfolio_weight"] = weight_share
+        selected["gross_weight"] = gross_weight
         selected["selection_basis"] = "incumbent_saved_one_shot_weights"
         selected["incumbent_weight_source"] = str(portfolio_path.resolve())
         if not selected.get("timeframe") and selected.get("strategy_timeframe"):
@@ -196,10 +209,14 @@ def build_portfolio_one_shot_incumbent_bundle(
         "selected_team": selected_rows,
         "portfolio_metrics": dict(portfolio_payload.get("portfolio_metrics") or {}),
         "portfolio_return_streams": dict(portfolio_payload.get("portfolio_return_streams") or {}),
+        "gross_exposure": gross_exposure,
+        "cash_weight": cash_weight,
         "incumbent_summary": {
             "component_count": len(selected_rows),
             "component_names": incumbent_names,
             "weight_total": total_weight,
+            "gross_exposure": gross_exposure,
+            "cash_weight": cash_weight,
         },
         "notes": [
             "Bundle is restricted to the currently saved one-shot incumbent sleeves only.",

@@ -46,6 +46,7 @@ def test_quant_pipeline_end_to_end(tmp_path: Path, monkeypatch):
         max_total=4,
         max_per_family=4,
         max_per_timeframe=4,
+        allow_multi_asset=True,
         include_weights=True,
     )
     assert shortlist

@@ -60,10 +60,12 @@ def test_build_portfolio_one_shot_incumbent_bundle_filters_to_saved_weights(tmp_
         json.dumps(
             {
                 "weights": [
-                    {"candidate_id": "a", "name": "alpha", "weight": 0.35},
-                    {"candidate_id": "c", "name": "gamma", "weight": 0.40},
-                    {"candidate_id": "b", "name": "beta", "weight": 0.25},
+                    {"candidate_id": "a", "name": "alpha", "weight": 0.28, "weight_share": 0.35},
+                    {"candidate_id": "c", "name": "gamma", "weight": 0.32, "weight_share": 0.40},
+                    {"candidate_id": "b", "name": "beta", "weight": 0.20, "weight_share": 0.25},
                 ],
+                "gross_exposure": 0.80,
+                "cash_weight": 0.20,
                 "portfolio_metrics": {
                     "oos": {
                         "total_return": 0.05,
@@ -90,7 +92,10 @@ def test_build_portfolio_one_shot_incumbent_bundle_filters_to_saved_weights(tmp_
     assert payload["split_contract"]["oos_start"] == "2026-02-01T00:00:00Z"
     assert [row["candidate_id"] for row in payload["candidates"]] == ["a", "c", "b"]
     assert [row["portfolio_weight"] for row in payload["candidates"]] == [0.35, 0.40, 0.25]
+    assert [row["gross_weight"] for row in payload["candidates"]] == [0.28, 0.32, 0.20]
     assert abs(payload["incumbent_summary"]["weight_total"] - 1.0) < 1e-12
+    assert abs(payload["incumbent_summary"]["gross_exposure"] - 0.80) < 1e-12
+    assert abs(payload["incumbent_summary"]["cash_weight"] - 0.20) < 1e-12
     assert payload["candidates"][0]["notes"][0] == "candidate note"
 
 
@@ -129,7 +134,9 @@ def test_write_portfolio_one_shot_incumbent_bundle_writes_latest_files(tmp_path:
     current_portfolio.write_text(
         json.dumps(
             {
-                "weights": [{"candidate_id": "a", "name": "alpha", "weight": 1.0}],
+                "weights": [{"candidate_id": "a", "name": "alpha", "weight": 0.7, "weight_share": 1.0}],
+                "gross_exposure": 0.7,
+                "cash_weight": 0.3,
                 "portfolio_metrics": {"oos": {"total_return": 0.01, "sharpe": 1.1}},
             }
         ),
@@ -147,4 +154,5 @@ def test_write_portfolio_one_shot_incumbent_bundle_writes_latest_files(tmp_path:
     assert Path(result["md_path"]).exists()
     written = json.loads(output_json.read_text(encoding="utf-8"))
     assert written["incumbent_summary"]["component_count"] == 1
+    assert abs(written["cash_weight"] - 0.3) < 1e-12
     assert "portfolio one-shot incumbent bundle" in output_md.read_text(encoding="utf-8")
