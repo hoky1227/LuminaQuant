@@ -601,6 +601,98 @@ def test_build_portfolio_max_performance_decision_promotes_clear_improver(tmp_pa
     assert overlay_entry["oos_total_return_delta"] > 0.0
 
 
+def test_build_portfolio_max_performance_decision_includes_extra_candidate_artifact(
+    tmp_path: Path,
+) -> None:
+    incumbent_bundle = tmp_path / "incumbent_bundle.json"
+    incumbent_portfolio = tmp_path / "incumbent_portfolio.json"
+    tuned = tmp_path / "portfolio_comparison_latest.json"
+    dynamic = tmp_path / "portfolio_dynamic_comparison_latest.json"
+    overlay = tmp_path / "portfolio_overlay_comparison_latest.json"
+    triplet = tmp_path / "portfolio_backbone_triplet_search_latest.json"
+    extra = tmp_path / "strict_autoresearch_1x_practical_shadow_latest.json"
+
+    incumbent_bundle.write_text(json.dumps(_bundle_payload()), encoding="utf-8")
+    incumbent_portfolio.write_text(
+        json.dumps(
+            _portfolio_payload(
+                total_return=0.0036,
+                sharpe=1.60,
+                sortino=2.10,
+                calmar=4.20,
+                max_drawdown=0.0032,
+                volatility=0.13,
+            )
+        ),
+        encoding="utf-8",
+    )
+    tuned.write_text(json.dumps({"selection_basis": "validation_only"}), encoding="utf-8")
+    dynamic.write_text(json.dumps({"selection_basis": "validation_only"}), encoding="utf-8")
+    overlay.write_text(json.dumps({"selection_basis": "validation_only"}), encoding="utf-8")
+    triplet.write_text(json.dumps({"artifact_kind": "portfolio_backbone_triplet_search"}), encoding="utf-8")
+    extra.write_text(
+        json.dumps(
+            {
+                "artifact_kind": "portfolio_superiority_retune_candidate",
+                "candidate_key": "strict_autoresearch_1x_practical_shadow",
+                "label": "Strict autoresearch practical challenger",
+                "selection_basis": "production_guarded_plus_strict_autoresearch_1x_practical_cap",
+                "portfolio_metrics": {
+                    "train": {
+                        "total_return": 0.0192,
+                        "sharpe": 0.34,
+                        "sortino": 0.59,
+                        "calmar": 0.35,
+                        "max_drawdown": 0.0542,
+                        "volatility": 0.0621,
+                    },
+                    "val": {
+                        "total_return": 0.0594,
+                        "sharpe": 3.97,
+                        "sortino": 11.98,
+                        "calmar": 46.48,
+                        "max_drawdown": 0.0092,
+                        "volatility": 0.0909,
+                    },
+                    "oos": {
+                        "total_return": 0.00526,
+                        "sharpe": 2.24,
+                        "sortino": 2.18,
+                        "calmar": 10.02,
+                        "max_drawdown": 0.00313,
+                        "volatility": 0.0138,
+                    },
+                },
+                "weights": [
+                    {"candidate_id": "production_guarded_portfolio", "weight": 0.8},
+                    {"candidate_id": "strict_autoresearch_1x", "weight": 0.2},
+                ],
+                "oos_monthly_returns": _monthly_rows(0.03, 0.03, 0.03),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = _call_build_decision(
+        incumbent_bundle_path=incumbent_bundle,
+        incumbent_portfolio_path=incumbent_portfolio,
+        tuned_comparison_path=tuned,
+        dynamic_comparison_path=dynamic,
+        overlay_comparison_path=overlay,
+        grouped_static_blend_path=None,
+        backbone_triplet_path=triplet,
+        extra_candidate_artifact_paths=(extra,),
+    )
+
+    extra_entry = next(
+        entry
+        for entry in payload["candidates"]
+        if entry["candidate_key"] == "strict_autoresearch_1x_practical_shadow"
+    )
+    assert extra_entry["promotable"] is True
+    assert payload["winner"]["candidate_key"] == "strict_autoresearch_1x_practical_shadow"
+
+
 def test_build_portfolio_max_performance_decision_requires_positive_return_even_with_drawdown_relief(
     tmp_path: Path,
 ) -> None:

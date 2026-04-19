@@ -29,6 +29,16 @@ THREE_WAY_ALLOCATOR_PATH = (
 PAIR_TACTICAL_PATH = (
     REFRESH_ROOT / "refreshed_pair_fast_exit_candidate_latest.json"
 )
+PRODUCTION_GUARDED_PATH = (
+    GROUP_ROOT / "portfolio_production_guarded_current" / "production_guarded_portfolio_latest.json"
+)
+STRICT_AUTORESEARCH_1X_PATH = (
+    GROUP_ROOT
+    / "strict_blend_76_24_leverage_sweep_rerun_current"
+    / "inc_1_auto_1"
+    / "strict_autoresearch_portfolio_current"
+    / "strict_autoresearch_portfolio_latest.json"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -173,6 +183,8 @@ def _alias_rows(token: str) -> list[dict[str, Any]] | None:
         "incumbent_only": REFRESHED_INCUMBENT_PATH,
         "autoresearch_55_45": REFRESHED_AUTORESEARCH_55_45_PATH,
         "blend_85_15": REFRESHED_BLEND_PATH,
+        "production_guarded_portfolio": PRODUCTION_GUARDED_PATH,
+        "strict_autoresearch_1x": STRICT_AUTORESEARCH_1X_PATH,
     }
     state_paths = {
         "soft_three_way_regime": SOFT_THREE_WAY_ALLOCATOR_PATH,
@@ -185,6 +197,10 @@ def _alias_rows(token: str) -> list[dict[str, Any]] | None:
         ],
         "pair_tactical_mode": [
             {"candidate_id": "pair_fast_exit", "name": "pair_fast_exit", "weight": 1.0},
+        ],
+        "strict_autoresearch_practical_mode": [
+            {"candidate_id": "production_guarded_portfolio", "name": "production_guarded_portfolio", "weight": 0.8},
+            {"candidate_id": "strict_autoresearch_1x", "name": "strict_autoresearch_1x", "weight": 0.2},
         ],
         "pair_fast_exit": [
             {"candidate_id": "pair_fast_exit_leaf", "name": "pair_fast_exit_leaf", "weight": 1.0},
@@ -296,6 +312,8 @@ def resolve_portfolio_mode_definition(portfolio_mode: str) -> PortfolioModeDefin
         "soft_three_way_allocator_path": str(SOFT_THREE_WAY_ALLOCATOR_PATH.resolve()),
         "three_way_allocator_path": str(THREE_WAY_ALLOCATOR_PATH.resolve()),
         "pair_tactical_path": str(PAIR_TACTICAL_PATH.resolve()),
+        "production_guarded_path": str(PRODUCTION_GUARDED_PATH.resolve()),
+        "strict_autoresearch_1x_path": str(STRICT_AUTORESEARCH_1X_PATH.resolve()),
     }
 
     components: list[PortfolioModeComponent] = []
@@ -340,6 +358,12 @@ def resolve_portfolio_mode_definition(portfolio_mode: str) -> PortfolioModeDefin
             )
             components.extend(sleeve_components)
             cash_weight += sleeve_cash
+    elif token == "strict_autoresearch_practical_mode":
+        components, cash_weight = _expand_reference(
+            "strict_autoresearch_practical_mode",
+            weight_scale=1.0,
+            source=token,
+        )
     else:
         raise ValueError(f"unsupported live portfolio mode: {token}")
 
@@ -361,6 +385,7 @@ def supported_portfolio_modes() -> set[str]:
         "defensive_overlay_mode",
         "core_mode",
         "pair_tactical_mode",
+        "strict_autoresearch_practical_mode",
         "risk_off_mode",
     }
 

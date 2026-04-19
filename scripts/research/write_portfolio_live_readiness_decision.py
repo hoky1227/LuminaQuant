@@ -25,6 +25,12 @@ DEFAULT_SWITCH_PATH = (
     / "portfolio_operating_switch_latest.json"
 )
 DEFAULT_MAX_PERF_PATH = FOLLOWUP_ROOT / "portfolio_max_performance_decision_latest.json"
+DEFAULT_REVIEW_PATH = (
+    FOLLOWUP_ROOT
+    / "portfolio_incumbent_autoresearch_grouped"
+    / "portfolio_superiority_retune_current"
+    / "strict_autoresearch_1x_practical_promotion_review_latest.json"
+)
 DEFAULT_OUTPUT_JSON = FOLLOWUP_ROOT / "portfolio_live_readiness_decision_latest.json"
 DEFAULT_OUTPUT_MD = FOLLOWUP_ROOT / "portfolio_live_readiness_decision_latest.md"
 
@@ -98,11 +104,53 @@ def _build_from_max_perf(max_perf_payload: dict[str, Any], *, max_perf_path: Pat
     }
 
 
+def _build_from_review(review_payload: dict[str, Any], *, review_path: Path) -> dict[str, Any]:
+    status = str(review_payload.get("status") or "").strip().lower()
+    recommendation = str(review_payload.get("recommendation") or "").strip()
+    review_target = str(review_payload.get("review_target") or "").strip()
+    candidate_key = Path(review_target).stem if review_target else ""
+    selected_mode = ""
+    if candidate_key == "strict_autoresearch_1x_practical_shadow_latest":
+        selected_mode = "strict_autoresearch_practical_mode"
+
+    if status == "promotion_ready_with_review":
+        decision = "promote_candidate"
+        reason = recommendation or f"Promote candidate {candidate_key} after manual review."
+    else:
+        decision = "keep_incumbent"
+        reason = recommendation or "Promotion review did not clear the candidate."
+        candidate_key = ""
+
+    return {
+        "artifact_kind": "portfolio_live_readiness_decision",
+        "generated_at": _utc_now_iso(),
+        "decision": decision,
+        "candidate_key": candidate_key,
+        "candidate_mode": selected_mode,
+        "selected_mode": selected_mode,
+        "selection_basis": str(
+            review_payload.get("selection_basis") or "portfolio_promotion_review"
+        ),
+        "decision_reason": reason,
+        "source_artifacts": {
+            "promotion_review_path": str(review_path.resolve()),
+        },
+        "review_status": status,
+        "current_live_default": str(review_payload.get("current_live_default") or ""),
+    }
+
+
 def build_live_readiness_decision(
     *,
+    review_path: Path = DEFAULT_REVIEW_PATH,
     switch_path: Path = DEFAULT_SWITCH_PATH,
     max_perf_path: Path = DEFAULT_MAX_PERF_PATH,
+    prefer_review: bool = False,
 ) -> dict[str, Any]:
+    resolved_review_path = Path(review_path).resolve()
+    if prefer_review and resolved_review_path.exists():
+        return _build_from_review(_read_json(resolved_review_path), review_path=resolved_review_path)
+
     resolved_switch_path = Path(switch_path).resolve()
     if resolved_switch_path.exists():
         return _build_from_switch(_read_json(resolved_switch_path), switch_path=resolved_switch_path)
@@ -111,9 +159,13 @@ def build_live_readiness_decision(
     if resolved_max_perf_path.exists():
         return _build_from_max_perf(_read_json(resolved_max_perf_path), max_perf_path=resolved_max_perf_path)
 
+    if resolved_review_path.exists():
+        return _build_from_review(_read_json(resolved_review_path), review_path=resolved_review_path)
+
     raise FileNotFoundError(
         "No live-readiness source artifact found. "
-        f"Missing switch path={resolved_switch_path} and max-performance path={resolved_max_perf_path}."
+        f"Missing review path={resolved_review_path}, switch path={resolved_switch_path}, "
+        f"and max-performance path={resolved_max_perf_path}."
     )
 
 
@@ -147,12 +199,19 @@ def _build_markdown(payload: dict[str, Any]) -> str:
 
 def write_live_readiness_decision(
     *,
+    review_path: Path = DEFAULT_REVIEW_PATH,
     switch_path: Path = DEFAULT_SWITCH_PATH,
     max_perf_path: Path = DEFAULT_MAX_PERF_PATH,
     output_json: Path = DEFAULT_OUTPUT_JSON,
     output_md: Path = DEFAULT_OUTPUT_MD,
+    prefer_review: bool = False,
 ) -> dict[str, str]:
-    payload = build_live_readiness_decision(switch_path=switch_path, max_perf_path=max_perf_path)
+    payload = build_live_readiness_decision(
+        review_path=review_path,
+        switch_path=switch_path,
+        max_perf_path=max_perf_path,
+        prefer_review=prefer_review,
+    )
     resolved_output_json = Path(output_json).resolve()
     resolved_output_md = Path(output_md).resolve()
     resolved_output_json.parent.mkdir(parents=True, exist_ok=True)
@@ -166,20 +225,24 @@ def write_live_readiness_decision(
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--review-path", type=Path, default=DEFAULT_REVIEW_PATH)
     parser.add_argument("--switch-path", type=Path, default=DEFAULT_SWITCH_PATH)
     parser.add_argument("--max-perf-path", type=Path, default=DEFAULT_MAX_PERF_PATH)
     parser.add_argument("--output-json", type=Path, default=DEFAULT_OUTPUT_JSON)
     parser.add_argument("--output-md", type=Path, default=DEFAULT_OUTPUT_MD)
+    parser.add_argument("--prefer-review", action="store_true")
     return parser
 
 
 def main() -> None:
     args = _build_parser().parse_args()
     result = write_live_readiness_decision(
+        review_path=Path(args.review_path),
         switch_path=Path(args.switch_path),
         max_perf_path=Path(args.max_perf_path),
         output_json=Path(args.output_json),
         output_md=Path(args.output_md),
+        prefer_review=bool(args.prefer_review),
     )
     print(result["json_path"])
     print(result["md_path"])

@@ -6,10 +6,11 @@ import hashlib
 import math
 import queue
 import random
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 
 import numpy as np
@@ -272,13 +273,17 @@ def _load_feature_cache(
     start_date: Any = None,
     end_date: Any = None,
     market_data_settings: Mapping[str, Any] | None = None,
+    progress_callback: Callable[[str, Mapping[str, Any]], None] | None = None,
 ) -> dict[str, pl.DataFrame]:
     defaults = _current_research_market_data_settings(market_data_settings)
     db_path = str(defaults["parquet_root"])
     exchange = str(defaults["exchange"])
     cache: dict[str, pl.DataFrame] = {}
 
-    for symbol in canonicalize_symbol_list(symbols):
+    normalized_symbols = canonicalize_symbol_list(symbols)
+    symbol_count = len(normalized_symbols)
+    for symbol_index, symbol in enumerate(normalized_symbols, start=1):
+        started_at = perf_counter()
         frame = _load_feature_frame(
             db_path=db_path,
             exchange=exchange,
@@ -286,7 +291,20 @@ def _load_feature_cache(
             start_date=start_date,
             end_date=end_date,
         )
-        cache[symbol] = _normalize_feature_frame(frame)
+        normalized_frame = _normalize_feature_frame(frame)
+        cache[symbol] = normalized_frame
+        if progress_callback is not None:
+            progress_callback(
+                "resource_feature_symbol_loaded",
+                {
+                    "symbol": symbol,
+                    "symbol_index": symbol_index,
+                    "symbol_count": symbol_count,
+                    "loaded_count": symbol_index,
+                    "row_count": int(normalized_frame.height),
+                    "elapsed_seconds": round(max(0.0, perf_counter() - started_at), 6),
+                },
+            )
 
     return cache
 
@@ -3646,6 +3664,117 @@ def _cross_sectional_score_map(values: Mapping[str, float]) -> dict[str, float]:
     return out
 
 
+def _cross_sectional_score_matrix(raw: np.ndarray, valid_mask: np.ndarray) -> np.ndarray:
+    scores = np.zeros_like(raw, dtype=float)
+    if raw.size == 0 or valid_mask.size == 0:
+        return scores
+
+    counts = valid_mask.sum(axis=0, dtype=np.int64)
+    usable = counts >= 2
+    if not np.any(usable):
+        return scores
+
+    masked = np.where(valid_mask, raw, 0.0)
+    means = np.zeros(raw.shape[1], dtype=float)
+    means[usable] = masked[:, usable].sum(axis=0, dtype=float) / counts[usable]
+    centered = np.where(valid_mask, raw - means[np.newaxis, :], 0.0)
+    variances = np.zeros(raw.shape[1], dtype=float)
+    variances[usable] = (centered[:, usable] ** 2).sum(axis=0, dtype=float) / counts[usable]
+    std = np.sqrt(variances, dtype=float)
+    usable = usable & np.isfinite(std) & (std > 1e-12)
+    if not np.any(usable):
+        return scores
+
+    scores[:, usable] = np.where(valid_mask[:, usable], centered[:, usable] / std[usable], 0.0)
+    scores[~np.isfinite(scores)] = 0.0
+    return scores
+
+
+def _carry_trend_factor_score_matrix(
+    *,
+    close_matrix: np.ndarray,
+    realized_vol_matrix: np.ndarray,
+    funding_z_matrix: np.ndarray,
+    basis_z_matrix: np.ndarray,
+    crowding_score_matrix: np.ndarray,
+    config: _CarryTrendFactorRotationConfig,
+) -> tuple[np.ndarray, np.ndarray]:
+    symbol_count, bar_count = close_matrix.shape
+    valid_mask = np.zeros((symbol_count, bar_count), dtype=bool)
+    if bar_count <= config.lookback_bars:
+        return np.zeros_like(close_matrix, dtype=float), valid_mask
+
+    momentum_raw = np.zeros_like(close_matrix, dtype=float)
+    latest = close_matrix[:, config.lookback_bars :]
+    base = close_matrix[:, : bar_count - config.lookback_bars]
+    momentum_core = np.divide(
+        latest,
+        base,
+        out=np.full_like(latest, np.nan, dtype=float),
+        where=np.isfinite(base) & (base > 0.0),
+    ) - 1.0
+    valid_core = (
+        np.isfinite(latest)
+        & np.isfinite(base)
+        & np.isfinite(momentum_core)
+        & (latest >= config.min_price)
+        & (base > 0.0)
+    )
+    valid_mask[:, config.lookback_bars :] = valid_core
+    momentum_raw[:, config.lookback_bars :] = np.where(valid_core, momentum_core, 0.0)
+
+    defensive_raw = np.nan_to_num(-realized_vol_matrix, nan=0.0, posinf=0.0, neginf=0.0)
+    carry_raw = -(
+        np.nan_to_num(funding_z_matrix, nan=0.0, posinf=0.0, neginf=0.0)
+        + (0.5 * np.nan_to_num(basis_z_matrix, nan=0.0, posinf=0.0, neginf=0.0))
+    )
+    crowding_raw = np.nan_to_num(-crowding_score_matrix, nan=0.0, posinf=0.0, neginf=0.0)
+
+    return (
+        (config.trend_weight * _cross_sectional_score_matrix(momentum_raw, valid_mask))
+        + (config.carry_weight * _cross_sectional_score_matrix(carry_raw, valid_mask))
+        + (config.defensive_weight * _cross_sectional_score_matrix(defensive_raw, valid_mask))
+        + (config.crowding_weight * _cross_sectional_score_matrix(crowding_raw, valid_mask)),
+        valid_mask,
+    )
+
+
+def _carry_trend_factor_target_indices(
+    *,
+    score_column: np.ndarray,
+    valid_indices: np.ndarray,
+    regime: str,
+    config: _CarryTrendFactorRotationConfig,
+) -> tuple[np.ndarray, np.ndarray]:
+    if valid_indices.size == 0:
+        return (
+            np.empty(0, dtype=np.int64),
+            np.empty(0, dtype=np.int64),
+        )
+
+    ordered = valid_indices[np.argsort(score_column[valid_indices], kind="stable")]
+    long_indices = ordered[score_column[ordered] >= config.signal_threshold]
+    short_indices = ordered[score_column[ordered] <= -config.signal_threshold]
+
+    if regime == "RISK_ON":
+        short_indices = np.empty(0, dtype=np.int64)
+    elif regime == "RISK_OFF":
+        long_indices = np.empty(0, dtype=np.int64)
+
+    if long_indices.size > 0 and config.max_longs > 0:
+        long_indices = long_indices[::-1][: config.max_longs]
+    else:
+        long_indices = np.empty(0, dtype=np.int64)
+
+    if not config.allow_short or config.max_shorts <= 0 or short_indices.size == 0:
+        return long_indices, np.empty(0, dtype=np.int64)
+
+    short_indices = short_indices[: config.max_shorts]
+    if long_indices.size == 0:
+        return long_indices, short_indices
+    return long_indices, short_indices[~np.isin(short_indices, long_indices, assume_unique=False)]
+
+
 @dataclass(frozen=True, slots=True)
 class _CarryTrendFactorRotationConfig:
     lookback_bars: int
@@ -3794,21 +3923,23 @@ def _apply_carry_trend_factor_rotation_strategy(
     meta: dict[str, Any],
 ) -> None:
     config = _resolve_carry_trend_factor_rotation_config(params, symbols)
-    close_by_symbol = {
-        symbol: np.asarray(aligned[f"{symbol}:close"], dtype=float)
-        for symbol in symbols
-    }
-    btc_close = close_by_symbol[config.btc_symbol]
-    position_state = np.zeros(len(symbols), dtype=float)
-    entry_price = np.full(len(symbols), np.nan, dtype=float)
-    realized_vol_by_symbol = {
-        symbol: _rolling_realized_vol(close_arr, config.vol_window)
-        for symbol, close_arr in close_by_symbol.items()
-    }
+    symbol_count = len(symbols)
+    close_matrix = np.vstack(
+        [np.asarray(aligned[f"{symbol}:close"], dtype=float) for symbol in symbols]
+    )
+    btc_close = close_matrix[symbols.index(config.btc_symbol)]
+    position_state = np.zeros(symbol_count, dtype=float)
+    entry_price = np.full(symbol_count, np.nan, dtype=float)
+    realized_vol_matrix = np.vstack(
+        [_rolling_realized_vol(close_matrix[s_idx], config.vol_window) for s_idx in range(symbol_count)]
+    )
 
     crowding_support_by_symbol: dict[str, dict[str, np.ndarray]] = {}
     missing_symbols: list[str] = []
-    for symbol in symbols:
+    funding_z_matrix = np.zeros_like(close_matrix, dtype=float)
+    basis_z_matrix = np.zeros_like(close_matrix, dtype=float)
+    crowding_score_matrix = np.zeros_like(close_matrix, dtype=float)
+    for s_idx, symbol in enumerate(symbols):
         support_inputs = _resolve_crowding_support_inputs(aligned=aligned, symbol=symbol)
         if support_inputs is None:
             missing_symbols.append(symbol)
@@ -3824,7 +3955,21 @@ def _apply_carry_trend_factor_rotation_strategy(
         )
         crowding_support_by_symbol[symbol] = support
         _note_support_data_symbol(meta, symbol=symbol, values=np.asarray(support.get("crowding_score"), dtype=float))
+        funding_z_matrix[s_idx] = np.asarray(support.get("funding_z"), dtype=float)
+        basis_z_matrix[s_idx] = np.asarray(support.get("basis_z"), dtype=float)
+        crowding_score_matrix[s_idx] = np.asarray(support.get("crowding_score"), dtype=float)
     _finalize_missing_support_symbols(meta, missing_symbols=missing_symbols)
+
+    score_matrix, valid_mask = _carry_trend_factor_score_matrix(
+        close_matrix=close_matrix,
+        realized_vol_matrix=realized_vol_matrix,
+        funding_z_matrix=funding_z_matrix,
+        basis_z_matrix=basis_z_matrix,
+        crowding_score_matrix=crowding_score_matrix,
+        config=config,
+    )
+    rebalance_due = ((np.arange(n, dtype=np.int64) + 1) % max(1, config.rebalance_bars) == 0)
+    rebalance_due[: min(n, config.lookback_bars)] = False
 
     topcap_proxy_config = _TopCapTimeSeriesMomentumConfig(
         lookback_bars=config.lookback_bars,
@@ -3844,48 +3989,63 @@ def _apply_carry_trend_factor_rotation_strategy(
     )
 
     for idx in range(n):
-        current_close_map = {
-            symbol: float(close_by_symbol[symbol][idx])
-            for symbol in symbols
-        }
-        _apply_topcap_risk_exits(
-            current_close_map=current_close_map,
-            symbols=symbols,
-            position_state=position_state,
-            entry_price=entry_price,
-            config=topcap_proxy_config,
-        )
+        close_column = close_matrix[:, idx]
+        if topcap_proxy_config.stop_loss_pct > 0.0 or topcap_proxy_config.take_profit_pct > 0.0:
+            active_mask = (position_state != 0.0) & np.isfinite(entry_price) & np.isfinite(close_column) & (close_column > 0.0)
+            if np.any(active_mask):
+                exit_mask = np.zeros(symbol_count, dtype=bool)
+                if topcap_proxy_config.stop_loss_pct > 0.0:
+                    exit_mask |= (
+                        (position_state > 0.0)
+                        & active_mask
+                        & (close_column <= (entry_price * (1.0 - topcap_proxy_config.stop_loss_pct)))
+                    )
+                    exit_mask |= (
+                        (position_state < 0.0)
+                        & active_mask
+                        & (close_column >= (entry_price * (1.0 + topcap_proxy_config.stop_loss_pct)))
+                    )
+                if topcap_proxy_config.take_profit_pct > 0.0:
+                    exit_mask |= (
+                        (position_state > 0.0)
+                        & active_mask
+                        & (close_column >= (entry_price * (1.0 + topcap_proxy_config.take_profit_pct)))
+                    )
+                    exit_mask |= (
+                        (position_state < 0.0)
+                        & active_mask
+                        & (close_column <= (entry_price * (1.0 - topcap_proxy_config.take_profit_pct)))
+                    )
+                if np.any(exit_mask):
+                    position_state[exit_mask] = 0.0
+                    entry_price[exit_mask] = np.nan
 
-        if not _topcap_rebalance_due(idx=idx, config=topcap_proxy_config):
-            exposures[:, idx] = position_state
-            continue
+        if rebalance_due[idx]:
+            valid_indices = np.flatnonzero(valid_mask[:, idx])
+            regime = _topcap_market_regime(
+                btc_close,
+                idx=idx,
+                config=topcap_proxy_config,
+            )
+            long_indices, short_indices = _carry_trend_factor_target_indices(
+                score_column=score_matrix[:, idx],
+                valid_indices=valid_indices,
+                regime=regime,
+                config=config,
+            )
+            next_position = np.zeros(symbol_count, dtype=float)
+            if long_indices.size > 0:
+                next_position[long_indices] = 1.0
+            if short_indices.size > 0:
+                next_position[short_indices] = -1.0
 
-        score_rows = _carry_trend_factor_rows(
-            close_by_symbol=close_by_symbol,
-            realized_vol_by_symbol=realized_vol_by_symbol,
-            crowding_support_by_symbol=crowding_support_by_symbol,
-            symbols=symbols,
-            idx=idx,
-            config=config,
-        )
-        regime = _topcap_market_regime(
-            btc_close,
-            idx=idx,
-            config=topcap_proxy_config,
-        )
-        long_set, short_set = _carry_trend_factor_target_sets(
-            score_rows,
-            regime=regime,
-            config=config,
-        )
-        _apply_topcap_target_positions(
-            current_close_map=current_close_map,
-            symbols=symbols,
-            position_state=position_state,
-            entry_price=entry_price,
-            long_set=long_set,
-            short_set=short_set,
-        )
+            entry_updates = (next_position != 0.0) & (
+                (position_state != next_position) | ~np.isfinite(entry_price)
+            )
+            entry_price[next_position == 0.0] = np.nan
+            if np.any(entry_updates):
+                entry_price[entry_updates] = close_column[entry_updates]
+            position_state[:] = next_position
         exposures[:, idx] = position_state
 
     meta["cross_sectional"] = True
@@ -6275,6 +6435,7 @@ def _load_bundle_cache(
     allow_synthetic_fallback: bool = True,
     min_bars: int = _MIN_BARS,
     market_data_settings: Mapping[str, Any] | None = None,
+    progress_callback: Callable[[str, Mapping[str, Any]], None] | None = None,
 ) -> tuple[dict[tuple[str, str], SeriesBundle], dict[str, list[str]]]:
     cache: dict[tuple[str, str], SeriesBundle] = {}
     source_map: dict[str, list[str]] = {"parquet": [], "csv": [], "synthetic": []}
@@ -6283,7 +6444,9 @@ def _load_bundle_cache(
     parquet_root = str(defaults["parquet_root"])
     exchange = str(defaults["exchange"])
 
-    for timeframe in timeframes:
+    total_count = len(symbols) * len(timeframes)
+    loaded_count = 0
+    for timeframe_index, timeframe in enumerate(timeframes, start=1):
         loaded = _load_timeframe_parquet_frames(
             symbols=symbols,
             timeframe=timeframe,
@@ -6294,8 +6457,10 @@ def _load_bundle_cache(
             data_mode=data_mode,
         )
 
-        for symbol in symbols:
+        symbol_count = len(symbols)
+        for symbol_index, symbol in enumerate(symbols, start=1):
             key = (symbol, timeframe)
+            started_at = perf_counter()
             bundle, source = _resolve_bundle_cache_entry(
                 symbol=symbol,
                 timeframe=timeframe,
@@ -6308,6 +6473,24 @@ def _load_bundle_cache(
             )
             cache[key] = bundle
             source_map[source].append(f"{symbol}@{timeframe}")
+            loaded_count += 1
+            if progress_callback is not None:
+                progress_callback(
+                    "resource_bundle_item_loaded",
+                    {
+                        "symbol": symbol,
+                        "symbol_index": symbol_index,
+                        "symbol_count": symbol_count,
+                        "timeframe": timeframe,
+                        "timeframe_index": timeframe_index,
+                        "timeframe_count": len(timeframes),
+                        "loaded_count": loaded_count,
+                        "total_count": total_count,
+                        "source": source,
+                        "bar_count": len(bundle.datetime),
+                        "elapsed_seconds": round(max(0.0, perf_counter() - started_at), 6),
+                    },
+                )
 
     return cache, source_map
 
@@ -6315,9 +6498,12 @@ def _load_bundle_cache(
 def _benchmark_cache(
     cache: Mapping[tuple[str, str], SeriesBundle],
     timeframes: Sequence[str],
+    progress_callback: Callable[[str, Mapping[str, Any]], None] | None = None,
 ) -> dict[str, dict[str, np.ndarray]]:
     out: dict[str, dict[str, np.ndarray]] = {}
-    for tf in timeframes:
+    timeframe_count = len(timeframes)
+    for timeframe_index, tf in enumerate(timeframes, start=1):
+        started_at = perf_counter()
         bundle = cache.get(("BTC/USDT", tf))
         if bundle is None:
             out[tf] = {
@@ -6329,6 +6515,18 @@ def _benchmark_cache(
                 "datetime": np.asarray(bundle.datetime, dtype="datetime64[ms]"),
                 "returns": _returns_from_close(bundle.close),
             }
+        if progress_callback is not None:
+            progress_callback(
+                "resource_benchmark_timeframe_built",
+                {
+                    "timeframe": tf,
+                    "timeframe_index": timeframe_index,
+                    "timeframe_count": timeframe_count,
+                    "built_count": timeframe_index,
+                    "return_count": len(np.asarray(out[tf]["returns"], dtype=float)),
+                    "elapsed_seconds": round(max(0.0, perf_counter() - started_at), 6),
+                },
+            )
     return out
 
 
@@ -6419,6 +6617,7 @@ def _load_research_run_resources(
     allow_synthetic_fallback: bool,
     min_bundle_bars: int,
     market_data_settings: Mapping[str, Any] | None = None,
+    progress_callback: Callable[[str, Mapping[str, Any]], None] | None = None,
 ) -> tuple[
     dict[tuple[str, str], SeriesBundle],
     dict[str, list[str]],
@@ -6436,6 +6635,7 @@ def _load_research_run_resources(
         allow_synthetic_fallback=allow_synthetic_fallback,
         min_bundle_bars=min_bundle_bars,
         market_data_settings=market_data_settings,
+        progress_callback=progress_callback,
     )
 
 
@@ -6471,6 +6671,7 @@ def _select_stage2_results(
     benchmark: Mapping[str, Mapping[str, np.ndarray] | np.ndarray],
     scoring: _ResearchRunScoringConfig,
     resolved_split: Mapping[str, Any],
+    progress_callback: Callable[[str, Mapping[str, Any]], None] | None = None,
 ) -> list[dict[str, Any]]:
     return _research_stage_support.select_stage2_results(
         evaluate_candidate=_evaluate_candidate,
@@ -6482,6 +6683,7 @@ def _select_stage2_results(
         benchmark=benchmark,
         scoring=scoring,
         resolved_split=resolved_split,
+        progress_callback=progress_callback,
     )
 
 
@@ -6642,6 +6844,7 @@ def _run_candidate_research_with_adapted_candidates(
     allow_synthetic_fallback: bool,
     min_bundle_bars: int,
     market_data_settings: Mapping[str, Any],
+    progress_callback: Callable[[str, Mapping[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     from lumina_quant.strategy_factory.research_entrypoints import (
         _run_candidate_research_with_adapted_candidates as _run_candidate_research_with_adapted_candidates_impl,
@@ -6660,6 +6863,7 @@ def _run_candidate_research_with_adapted_candidates(
         allow_synthetic_fallback=allow_synthetic_fallback,
         min_bundle_bars=min_bundle_bars,
         market_data_settings=market_data_settings,
+        progress_callback=progress_callback,
     )
 
 
@@ -6677,6 +6881,7 @@ def run_candidate_research(
     allow_csv_fallback: bool = True,
     allow_synthetic_fallback: bool = True,
     min_bundle_bars: int = _MIN_BARS,
+    progress_callback: Callable[[str, Mapping[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     """Evaluate candidate manifest into train/val/OOS report contract (v2)."""
     from lumina_quant.strategy_factory.research_entrypoints import (
@@ -6696,6 +6901,7 @@ def run_candidate_research(
         allow_csv_fallback=allow_csv_fallback,
         allow_synthetic_fallback=allow_synthetic_fallback,
         min_bundle_bars=min_bundle_bars,
+        progress_callback=progress_callback,
     )
 
 

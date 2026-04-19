@@ -42,6 +42,7 @@ def test_build_command_contains_exact_split_and_manifest(tmp_path: Path) -> None
     assert "1m" in command
     assert "--validation-start" in command
     assert "2026-04-14" in command
+    assert "--skip-coverage-rebuild" in command
 
 
 def test_low_memory_env_contains_thread_caps() -> None:

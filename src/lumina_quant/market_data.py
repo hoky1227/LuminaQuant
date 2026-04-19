@@ -514,6 +514,43 @@ def _date_partition_path(
     )
 
 
+def _partition_parquet_paths(
+    base: Path,
+    *,
+    start_date: Any = None,
+    end_date: Any = None,
+) -> list[str]:
+    start_ms = _coerce_timestamp_ms(start_date)
+    end_ms = _coerce_timestamp_ms(end_date)
+    start_token = (
+        _timestamp_ms_to_datetime(start_ms).date().isoformat()
+        if start_ms is not None
+        else None
+    )
+    end_token = (
+        _timestamp_ms_to_datetime(end_ms).date().isoformat()
+        if end_ms is not None
+        else None
+    )
+
+    try:
+        partition_dirs = sorted(path for path in base.glob("date=*") if path.is_dir())
+    except Exception:
+        return []
+
+    parquet_paths: list[str] = []
+    for partition_dir in partition_dirs:
+        token = partition_dir.name.partition("=")[2]
+        if not token:
+            continue
+        if start_token is not None and token < start_token:
+            continue
+        if end_token is not None and token > end_token:
+            continue
+        parquet_paths.extend(str(path) for path in sorted(partition_dir.glob("*.parquet")))
+    return parquet_paths
+
+
 def _load_direct_ohlcv(
     root: Path,
     *,
@@ -524,9 +561,15 @@ def _load_direct_ohlcv(
     end_date: Any = None,
 ) -> pl.DataFrame:
     base = _series_path(root, exchange=exchange, symbol=symbol, timeframe=timeframe)
-    pattern = str(base / "date=*" / "*.parquet")
+    parquet_paths = _partition_parquet_paths(
+        base,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    if not parquet_paths:
+        return _empty_ohlcv_frame()
     try:
-        lazy = pl.scan_parquet(pattern)
+        lazy = pl.scan_parquet(parquet_paths)
     except Exception:
         return _empty_ohlcv_frame()
 
@@ -697,9 +740,15 @@ def _load_feature_points(
         / f"exchange={_normalize_exchange(exchange)}"
         / f"symbol={compact_symbol}"
     )
-    pattern = str(base / "date=*" / "*.parquet")
+    parquet_paths = _partition_parquet_paths(
+        base,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    if not parquet_paths:
+        return pl.DataFrame()
     try:
-        lazy = pl.scan_parquet(pattern)
+        lazy = pl.scan_parquet(parquet_paths)
     except Exception:
         return pl.DataFrame()
 

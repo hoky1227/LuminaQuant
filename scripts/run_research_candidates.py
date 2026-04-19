@@ -9,6 +9,7 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from collections.abc import Mapping
 
 from lumina_quant.config import BaseConfig
 from lumina_quant.storage.parquet import load_data_dict_from_parquet
@@ -195,6 +196,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--validation-end", default="", help="Exact split validation window end (ISO/date).")
     parser.add_argument("--oos-start", default="", help="Exact split OOS/test window start (ISO/date).")
     parser.add_argument("--oos-end", default="", help="Exact split OOS/test window end (ISO/date).")
+    parser.add_argument(
+        "--skip-coverage-rebuild",
+        action="store_true",
+        help="Skip the exact-split preflight coverage scan and evaluate the requested windows directly.",
+    )
     parser.add_argument("--dry-run", action="store_true")
     return parser
 
@@ -203,6 +209,35 @@ def _load_manifest_candidates(path: Path) -> list[dict[str, Any]]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     rows = list(payload.get("candidates") or [])
     return [dict(row) for row in rows if isinstance(row, dict)]
+
+
+def _restrict_candidates_to_symbol_universe(
+    candidates: list[dict[str, Any]],
+    symbol_universe: list[str],
+) -> list[dict[str, Any]]:
+    allowed = set(canonicalize_symbol_list(symbol_universe))
+    if not allowed:
+        return list(candidates)
+
+    restricted: list[dict[str, Any]] = []
+    for row in candidates:
+        candidate = dict(row)
+        candidate_symbols = canonicalize_symbol_list(list(candidate.get("symbols") or []))
+        if not candidate_symbols:
+            restricted.append(candidate)
+            continue
+
+        filtered_symbols = [symbol for symbol in candidate_symbols if symbol in allowed]
+        if not filtered_symbols:
+            continue
+        if filtered_symbols != candidate_symbols:
+            candidate["symbols"] = filtered_symbols
+            metadata = dict(candidate.get("metadata") or {})
+            metadata["screened_symbol_subset"] = list(filtered_symbols)
+            metadata["screened_symbol_count"] = len(filtered_symbols)
+            candidate["metadata"] = metadata
+        restricted.append(candidate)
+    return restricted
 
 
 def _load_score_config(path: Path) -> dict[str, Any]:
@@ -318,6 +353,7 @@ def _rebuild_candidates_after_coverage(
     symbols: list[str],
     timeframes: list[str],
     split: dict[str, Any] | None,
+    progress_callback: Any = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None, dict[str, Any]]:
     if split is None:
         return candidates, split, {"enabled": False, "used_candidate_count": len(candidates)}
@@ -330,8 +366,17 @@ def _rebuild_candidates_after_coverage(
     exchange = str(getattr(BaseConfig, "MARKET_DATA_EXCHANGE", "binance") or "binance")
     coverage: dict[tuple[str, str], dict[str, Any]] = {}
     last_values: list[datetime] = []
+    if progress_callback is not None:
+        progress_callback(
+            "coverage_scan_started",
+            {
+                "symbol_count": len(symbols),
+                "timeframe_count": len(timeframes),
+                "requested_candidate_count": len(candidates),
+            },
+        )
 
-    for timeframe in timeframes:
+    for timeframe_index, timeframe in enumerate(timeframes, start=1):
         loaded = load_data_dict_from_parquet(
             db_path,
             exchange=exchange,
@@ -351,6 +396,21 @@ def _rebuild_candidates_after_coverage(
             coverage[(symbol, timeframe)] = {"rows": rows, "first": first, "last": last}
             if rows >= _MIN_COVERAGE_BARS and first is not None and last is not None:
                 last_values.append(last)
+        if progress_callback is not None:
+            available_symbol_count = sum(
+                1
+                for symbol in symbols
+                if int((coverage.get((symbol, timeframe)) or {}).get("rows", 0)) >= _MIN_COVERAGE_BARS
+            )
+            progress_callback(
+                "coverage_timeframe_loaded",
+                {
+                    "timeframe": timeframe,
+                    "timeframe_index": timeframe_index,
+                    "timeframe_count": len(timeframes),
+                    "available_symbol_count": available_symbol_count,
+                },
+            )
 
     actual_max = min(last_values) if last_values else requested_end
     resolved_split = dict(split)
@@ -382,7 +442,7 @@ def _rebuild_candidates_after_coverage(
         )
     ]
     used = filtered or candidates
-    return used, resolved_split, {
+    summary = {
         "enabled": True,
         "requested_candidate_count": len(candidates),
         "filtered_candidate_count": len(filtered),
@@ -391,6 +451,9 @@ def _rebuild_candidates_after_coverage(
         "actual_max_timestamp": resolved_split.get("actual_max_timestamp"),
         "available_pairs": sorted(f"{symbol}@{timeframe}" for symbol, timeframe in available_pairs),
     }
+    if progress_callback is not None:
+        progress_callback("coverage_rebuilt", summary)
+    return used, resolved_split, summary
 
 
 def _run_candidate_research_with_optional_split(
@@ -403,6 +466,7 @@ def _run_candidate_research_with_optional_split(
     max_candidates: int,
     score_config: dict[str, Any] | None,
     exact_split: dict[str, str] | None,
+    progress_callback: Any = None,
 ) -> dict[str, Any]:
     kwargs: dict[str, Any] = {
         "candidates": candidates,
@@ -413,15 +477,20 @@ def _run_candidate_research_with_optional_split(
         "max_candidates": int(max_candidates),
         "score_config": score_config,
     }
+    signature = inspect.signature(run_candidate_research)
+    param_names = set(signature.parameters)
+    supports_var_kwargs = any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    )
+    if progress_callback is not None and ("progress_callback" in param_names or supports_var_kwargs):
+        kwargs["progress_callback"] = progress_callback
     if not exact_split:
         return run_candidate_research(**kwargs)
 
-    signature = inspect.signature(run_candidate_research)
-    param_names = set(signature.parameters)
-
     split_param_candidates = ("split", "requested_split", "exact_split", "split_windows")
     for param_name in split_param_candidates:
-        if param_name in param_names:
+        if param_name in param_names or supports_var_kwargs:
             kwargs[param_name] = dict(exact_split)
             return run_candidate_research(**kwargs)
 
@@ -576,6 +645,548 @@ def _render_shortlist_markdown(
     output_path.write_text("\n".join(lines), encoding="utf-8")
 
 
+def _progress_metric_summary(split_block: Any) -> dict[str, float]:
+    block = dict(split_block or {})
+    return {
+        "total_return": float(block.get("total_return", block.get("return", 0.0)) or 0.0),
+        "sharpe": float(block.get("sharpe", 0.0) or 0.0),
+        "max_drawdown": float(block.get("max_drawdown", block.get("mdd", 0.0)) or 0.0),
+        "trade_count": float(block.get("trade_count", block.get("trades", 0.0)) or 0.0),
+    }
+
+
+def _progress_elapsed_seconds(payload: Mapping[str, Any]) -> float:
+    return round(float(payload.get("elapsed_seconds", 0.0) or 0.0), 6)
+
+
+def _merge_slowest_entries(
+    existing: list[dict[str, Any]],
+    candidate: Mapping[str, Any],
+    *,
+    limit: int = 5,
+) -> list[dict[str, Any]]:
+    rows = [dict(row) for row in existing]
+    rows.append(dict(candidate))
+    rows.sort(
+        key=lambda row: float(row.get("elapsed_seconds", 0.0) or 0.0),
+        reverse=True,
+    )
+    deduped: list[dict[str, Any]] = []
+    seen_keys: set[str] = set()
+    for row in rows:
+        row_key = "|".join(
+            [
+                str(row.get("symbol") or ""),
+                str(row.get("timeframe") or ""),
+                str(row.get("source") or ""),
+                str(row.get("kind") or ""),
+            ]
+        )
+        if row_key in seen_keys:
+            continue
+        seen_keys.add(row_key)
+        deduped.append(row)
+        if len(deduped) >= limit:
+            break
+    return deduped
+
+
+class _ResearchProgressWriter:
+    def __init__(
+        self,
+        *,
+        output_dir: Path,
+        manifest_path: Path | None,
+        score_config_path: str,
+        base_timeframe: str,
+        strategy_timeframes: list[str],
+        symbol_universe: list[str],
+        requested_split: dict[str, Any] | None,
+    ) -> None:
+        self.output_dir = Path(output_dir)
+        self.started_at = datetime.now(UTC)
+        self.stamp = self.started_at.strftime("%Y%m%dT%H%M%SZ")
+        self.json_path = self.output_dir / f"candidate_research_progress_{self.stamp}.json"
+        self.json_latest = self.output_dir / "candidate_research_progress_latest.json"
+        self.md_path = self.output_dir / f"candidate_research_progress_{self.stamp}.md"
+        self.md_latest = self.output_dir / "candidate_research_progress_latest.md"
+        self.log_path = self.output_dir / f"candidate_research_progress_{self.stamp}.log"
+        self.log_latest = self.output_dir / "candidate_research_progress_latest.log"
+        self.state: dict[str, Any] = {
+            "artifact_kind": "candidate_research_progress",
+            "status": "running",
+            "started_at": self.started_at.isoformat().replace("+00:00", "Z"),
+            "updated_at": self.started_at.isoformat().replace("+00:00", "Z"),
+            "current_stage": "initialized",
+            "manifest_path": str(manifest_path) if manifest_path else "",
+            "score_config_path": str(score_config_path or ""),
+            "base_timeframe": str(base_timeframe),
+            "strategy_timeframes": list(strategy_timeframes),
+            "symbol_universe": list(symbol_universe),
+            "requested_split": dict(requested_split or {}),
+            "progress": {
+                "candidate_count": 0,
+                "evaluated_count": 0,
+                "keep_count": 0,
+                "selected_count": 0,
+            },
+            "resources": {},
+            "resource_load": {
+                "bundle": {
+                    "status": "pending",
+                    "loaded_count": 0,
+                    "total_count": 0,
+                    "elapsed_seconds": 0.0,
+                    "source_counts": {},
+                    "latest_item": {},
+                    "slowest_items": [],
+                },
+                "feature": {
+                    "status": "pending",
+                    "loaded_count": 0,
+                    "symbol_count": 0,
+                    "elapsed_seconds": 0.0,
+                    "latest_symbol": {},
+                    "slowest_symbols": [],
+                },
+                "benchmark": {
+                    "status": "pending",
+                    "built_count": 0,
+                    "timeframe_count": 0,
+                    "elapsed_seconds": 0.0,
+                    "latest_timeframe": {},
+                    "slowest_timeframes": [],
+                },
+            },
+            "latest_candidate": {},
+            "top_stage1_candidates": [],
+            "selected_candidates": [],
+            "report_preview": {},
+            "recent_events": [],
+            "final_artifacts": {},
+        }
+        self._write_latest()
+        self._append_log(
+            "initialized",
+            {
+                "manifest_path": str(manifest_path) if manifest_path else "",
+                "candidate_count": 0,
+            },
+        )
+
+    @property
+    def artifact_paths(self) -> dict[str, str]:
+        return {
+            "json": str(self.json_path),
+            "json_latest": str(self.json_latest),
+            "markdown": str(self.md_path),
+            "markdown_latest": str(self.md_latest),
+            "log": str(self.log_path),
+            "log_latest": str(self.log_latest),
+        }
+
+    def __call__(self, event: str, payload: Mapping[str, Any]) -> None:
+        timestamp = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        progress = dict(self.state.get("progress") or {})
+        self.state["updated_at"] = timestamp
+        self.state["current_stage"] = str(event)
+        self.state.setdefault("recent_events", [])
+        recent_events = list(self.state["recent_events"])
+        recent_events.append(
+            {
+                "timestamp": timestamp,
+                "event": str(event),
+                "context": dict(payload or {}),
+            }
+        )
+        self.state["recent_events"] = recent_events[-20:]
+        resource_load = dict(self.state.get("resource_load") or {})
+        bundle_state = dict(resource_load.get("bundle") or {})
+        feature_state = dict(resource_load.get("feature") or {})
+        benchmark_state = dict(resource_load.get("benchmark") or {})
+
+        if event == "resources_loaded":
+            progress["candidate_count"] = int(payload.get("candidate_count", progress.get("candidate_count", 0)) or 0)
+            self.state["resources"] = dict(payload or {})
+        elif event == "resource_bundle_load_started":
+            bundle_state.update(
+                {
+                    "status": "running",
+                    "loaded_count": 0,
+                    "total_count": int(payload.get("total_count", 0) or 0),
+                    "symbol_count": int(payload.get("symbol_count", 0) or 0),
+                    "timeframe_count": int(payload.get("timeframe_count", 0) or 0),
+                    "normalized_timeframes": list(payload.get("normalized_timeframes") or []),
+                    "symbol_universe": list(payload.get("symbol_universe") or []),
+                    "elapsed_seconds": 0.0,
+                    "source_counts": {},
+                    "latest_item": {},
+                    "slowest_items": [],
+                }
+            )
+        elif event == "resource_bundle_item_loaded":
+            source_counts = dict(bundle_state.get("source_counts") or {})
+            source = str(payload.get("source") or "")
+            if source:
+                source_counts[source] = int(source_counts.get(source, 0) or 0) + 1
+            bundle_state.update(
+                {
+                    "status": "running",
+                    "loaded_count": int(payload.get("loaded_count", bundle_state.get("loaded_count", 0)) or 0),
+                    "total_count": int(payload.get("total_count", bundle_state.get("total_count", 0)) or 0),
+                    "source_counts": source_counts,
+                    "latest_item": dict(payload or {}),
+                    "slowest_items": _merge_slowest_entries(
+                        list(bundle_state.get("slowest_items") or []),
+                        dict(payload or {}),
+                    ),
+                }
+            )
+        elif event == "resource_bundle_load_completed":
+            bundle_state.update(
+                {
+                    "status": "completed",
+                    "loaded_count": int(payload.get("bundle_count", bundle_state.get("loaded_count", 0)) or 0),
+                    "bundle_count": int(payload.get("bundle_count", 0) or 0),
+                    "total_count": int(payload.get("total_count", bundle_state.get("total_count", 0)) or 0),
+                    "elapsed_seconds": _progress_elapsed_seconds(payload),
+                    "source_counts": dict(payload.get("source_counts") or bundle_state.get("source_counts") or {}),
+                }
+            )
+        elif event == "resource_feature_load_started":
+            feature_state.update(
+                {
+                    "status": "running",
+                    "loaded_count": 0,
+                    "symbol_count": int(payload.get("symbol_count", 0) or 0),
+                    "feature_symbols": list(payload.get("feature_symbols") or []),
+                    "elapsed_seconds": 0.0,
+                    "latest_symbol": {},
+                    "slowest_symbols": [],
+                }
+            )
+        elif event == "resource_feature_symbol_loaded":
+            feature_state.update(
+                {
+                    "status": "running",
+                    "loaded_count": int(payload.get("loaded_count", feature_state.get("loaded_count", 0)) or 0),
+                    "symbol_count": int(payload.get("symbol_count", feature_state.get("symbol_count", 0)) or 0),
+                    "latest_symbol": dict(payload or {}),
+                    "slowest_symbols": _merge_slowest_entries(
+                        list(feature_state.get("slowest_symbols") or []),
+                        {**dict(payload or {}), "kind": "feature_symbol"},
+                    ),
+                }
+            )
+        elif event == "resource_feature_load_completed":
+            feature_state.update(
+                {
+                    "status": "completed",
+                    "loaded_count": int(payload.get("feature_frame_count", feature_state.get("loaded_count", 0)) or 0),
+                    "symbol_count": int(payload.get("symbol_count", feature_state.get("symbol_count", 0)) or 0),
+                    "feature_frame_count": int(payload.get("feature_frame_count", 0) or 0),
+                    "nonempty_symbol_count": int(payload.get("nonempty_symbol_count", 0) or 0),
+                    "total_rows": int(payload.get("total_rows", 0) or 0),
+                    "elapsed_seconds": _progress_elapsed_seconds(payload),
+                }
+            )
+        elif event == "resource_benchmark_build_started":
+            benchmark_state.update(
+                {
+                    "status": "running",
+                    "built_count": 0,
+                    "timeframe_count": int(payload.get("timeframe_count", 0) or 0),
+                    "normalized_timeframes": list(payload.get("normalized_timeframes") or []),
+                    "elapsed_seconds": 0.0,
+                    "latest_timeframe": {},
+                    "slowest_timeframes": [],
+                }
+            )
+        elif event == "resource_benchmark_timeframe_built":
+            benchmark_state.update(
+                {
+                    "status": "running",
+                    "built_count": int(payload.get("built_count", benchmark_state.get("built_count", 0)) or 0),
+                    "timeframe_count": int(payload.get("timeframe_count", benchmark_state.get("timeframe_count", 0)) or 0),
+                    "latest_timeframe": dict(payload or {}),
+                    "slowest_timeframes": _merge_slowest_entries(
+                        list(benchmark_state.get("slowest_timeframes") or []),
+                        {**dict(payload or {}), "kind": "benchmark_timeframe"},
+                    ),
+                }
+            )
+        elif event == "resource_benchmark_build_completed":
+            benchmark_state.update(
+                {
+                    "status": "completed",
+                    "built_count": int(payload.get("benchmark_count", benchmark_state.get("built_count", 0)) or 0),
+                    "benchmark_count": int(payload.get("benchmark_count", 0) or 0),
+                    "timeframe_count": int(payload.get("timeframe_count", benchmark_state.get("timeframe_count", 0)) or 0),
+                    "nonempty_timeframe_count": int(payload.get("nonempty_timeframe_count", 0) or 0),
+                    "elapsed_seconds": _progress_elapsed_seconds(payload),
+                }
+            )
+        elif event == "candidate_evaluated":
+            progress["candidate_count"] = int(payload.get("candidate_count", progress.get("candidate_count", 0)) or 0)
+            progress["evaluated_count"] = int(payload.get("candidate_index", progress.get("evaluated_count", 0)) or 0)
+            candidate_snapshot = dict(payload or {})
+            self.state["latest_candidate"] = candidate_snapshot
+            top_rows = [dict(row) for row in list(self.state.get("top_stage1_candidates") or [])]
+            top_rows.append(candidate_snapshot)
+            top_rows.sort(
+                key=lambda row: float(row.get("stage1_prefilter_score", float("-inf")) or float("-inf")),
+                reverse=True,
+            )
+            deduped: list[dict[str, Any]] = []
+            seen_ids: set[str] = set()
+            for row in top_rows:
+                candidate_id = str(row.get("candidate_id") or row.get("name") or "")
+                if candidate_id in seen_ids:
+                    continue
+                seen_ids.add(candidate_id)
+                deduped.append(row)
+                if len(deduped) >= 5:
+                    break
+            self.state["top_stage1_candidates"] = deduped
+        elif event == "stage1_ranked":
+            progress["candidate_count"] = int(payload.get("candidate_count", progress.get("candidate_count", 0)) or 0)
+            progress["keep_count"] = int(payload.get("keep_count", progress.get("keep_count", 0)) or 0)
+            self.state["top_stage1_candidates"] = [dict(row) for row in list(payload.get("top_stage1_candidates") or [])]
+            self.state["keep_ratio_applied"] = float(payload.get("keep_ratio_applied", 0.0) or 0.0)
+        elif event == "stage2_selected":
+            progress["selected_count"] = int(payload.get("selected_count", progress.get("selected_count", 0)) or 0)
+            self.state["selected_candidates"] = [dict(row) for row in list(payload.get("selected_candidates") or [])]
+        elif event == "report_ready":
+            self.state["report_preview"] = dict(payload or {})
+
+        resource_load["bundle"] = bundle_state
+        resource_load["feature"] = feature_state
+        resource_load["benchmark"] = benchmark_state
+        self.state["resource_load"] = resource_load
+        self.state["progress"] = progress
+        self._append_log(event, dict(payload or {}))
+        self._write_latest()
+
+    def complete(
+        self,
+        *,
+        final_artifacts: Mapping[str, Any],
+        report: Mapping[str, Any],
+        shortlisted: list[dict[str, Any]],
+    ) -> None:
+        self.state["status"] = "completed"
+        self.state["completed_at"] = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        self.state["current_stage"] = "completed"
+        self.state["final_artifacts"] = dict(final_artifacts or {})
+        self.state["final_summary"] = {
+            "reported_candidate_count": len(list(report.get("candidates") or [])),
+            "shortlisted_count": len(shortlisted),
+            "top_shortlist_names": [
+                str(row.get("name") or row.get("candidate_id") or "")
+                for row in shortlisted[: min(5, len(shortlisted))]
+            ],
+        }
+        self._append_log(
+            "completed",
+            {
+                "shortlisted_count": len(shortlisted),
+                "reported_candidate_count": len(list(report.get("candidates") or [])),
+            },
+        )
+        self._write_latest()
+
+    def fail(self, error: str) -> None:
+        self.state["status"] = "failed"
+        self.state["current_stage"] = "failed"
+        self.state["error"] = str(error)
+        self.state["failed_at"] = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        self._append_log("failed", {"error": str(error)})
+        self._write_latest()
+
+    def _append_log(self, event: str, payload: Mapping[str, Any]) -> None:
+        line = (
+            f"[{datetime.now(UTC).isoformat().replace('+00:00', 'Z')}] "
+            f"{event} "
+            f"{json.dumps(dict(payload or {}), ensure_ascii=False, sort_keys=True)}\n"
+        )
+        for path in (self.log_path, self.log_latest):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("a", encoding="utf-8") as handle:
+                handle.write(line)
+
+    def _write_latest(self) -> None:
+        payload = json.dumps(self.state, indent=2, ensure_ascii=False)
+        markdown = self._render_markdown()
+        for path, content in (
+            (self.json_path, payload),
+            (self.json_latest, payload),
+            (self.md_path, markdown),
+            (self.md_latest, markdown),
+        ):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
+
+    def _render_markdown(self) -> str:
+        progress = dict(self.state.get("progress") or {})
+        lines = [
+            "# Candidate Research Progress",
+            "",
+            f"- Status: `{self.state.get('status', 'running')}`",
+            f"- Current stage: `{self.state.get('current_stage', 'initialized')}`",
+            f"- Started at: `{self.state.get('started_at', '')}`",
+            f"- Updated at: `{self.state.get('updated_at', '')}`",
+            f"- Candidate progress: `{int(progress.get('evaluated_count', 0))}/{int(progress.get('candidate_count', 0))}`",
+            f"- Stage-2 keep count: `{int(progress.get('keep_count', 0))}`",
+            f"- Selected count: `{int(progress.get('selected_count', 0))}`",
+            "",
+        ]
+
+        resource_load = dict(self.state.get("resource_load") or {})
+        bundle_state = dict(resource_load.get("bundle") or {})
+        feature_state = dict(resource_load.get("feature") or {})
+        benchmark_state = dict(resource_load.get("benchmark") or {})
+        if resource_load:
+            lines.extend(
+                [
+                    "## Resource load progress",
+                    "",
+                    f"- Bundle cache: `{bundle_state.get('status', 'pending')}` "
+                    f"(`{int(bundle_state.get('loaded_count', 0))}/{int(bundle_state.get('total_count', 0))}`, "
+                    f"`{float(bundle_state.get('elapsed_seconds', 0.0) or 0.0):.3f}s`)",
+                    f"- Feature cache: `{feature_state.get('status', 'pending')}` "
+                    f"(`{int(feature_state.get('loaded_count', 0))}/{int(feature_state.get('symbol_count', 0))}`, "
+                    f"`{float(feature_state.get('elapsed_seconds', 0.0) or 0.0):.3f}s`)",
+                    f"- Benchmark build: `{benchmark_state.get('status', 'pending')}` "
+                    f"(`{int(benchmark_state.get('built_count', 0))}/{int(benchmark_state.get('timeframe_count', 0))}`, "
+                    f"`{float(benchmark_state.get('elapsed_seconds', 0.0) or 0.0):.3f}s`)",
+                ]
+            )
+            latest_bundle = dict(bundle_state.get("latest_item") or {})
+            if latest_bundle:
+                lines.append(
+                    "- Latest bundle item: "
+                    f"`{latest_bundle.get('symbol', '')}@{latest_bundle.get('timeframe', '')}` "
+                    f"(source `{latest_bundle.get('source', '')}`, "
+                    f"bars `{int(latest_bundle.get('bar_count', 0) or 0)}`, "
+                    f"elapsed `{float(latest_bundle.get('elapsed_seconds', 0.0) or 0.0):.3f}s`)"
+                )
+            source_counts = dict(bundle_state.get("source_counts") or {})
+            if source_counts:
+                rendered_counts = ", ".join(
+                    f"{source}={count}"
+                    for source, count in sorted(source_counts.items())
+                )
+                lines.append(f"- Bundle sources: `{rendered_counts}`")
+            slowest_bundle = list(bundle_state.get("slowest_items") or [])
+            if slowest_bundle:
+                rendered = ", ".join(
+                    f"{row.get('symbol', '')}@{row.get('timeframe', '')}:{float(row.get('elapsed_seconds', 0.0) or 0.0):.3f}s"
+                    for row in slowest_bundle[:3]
+                )
+                lines.append(f"- Slowest bundle items: `{rendered}`")
+            latest_feature = dict(feature_state.get("latest_symbol") or {})
+            if latest_feature:
+                lines.append(
+                    "- Latest feature symbol: "
+                    f"`{latest_feature.get('symbol', '')}` "
+                    f"(rows `{int(latest_feature.get('row_count', 0) or 0)}`, "
+                    f"elapsed `{float(latest_feature.get('elapsed_seconds', 0.0) or 0.0):.3f}s`)"
+                )
+            if int(feature_state.get("total_rows", 0) or 0) > 0:
+                lines.append(
+                    "- Feature rows loaded: "
+                    f"`{int(feature_state.get('total_rows', 0))}` "
+                    f"across `{int(feature_state.get('nonempty_symbol_count', 0))}` non-empty symbols"
+                )
+            slowest_feature = list(feature_state.get("slowest_symbols") or [])
+            if slowest_feature:
+                rendered = ", ".join(
+                    f"{row.get('symbol', '')}:{float(row.get('elapsed_seconds', 0.0) or 0.0):.3f}s"
+                    for row in slowest_feature[:3]
+                )
+                lines.append(f"- Slowest feature symbols: `{rendered}`")
+            latest_benchmark = dict(benchmark_state.get("latest_timeframe") or {})
+            if latest_benchmark:
+                lines.append(
+                    "- Latest benchmark timeframe: "
+                    f"`{latest_benchmark.get('timeframe', '')}` "
+                    f"(returns `{int(latest_benchmark.get('return_count', 0) or 0)}`, "
+                    f"elapsed `{float(latest_benchmark.get('elapsed_seconds', 0.0) or 0.0):.3f}s`)"
+                )
+            if benchmark_state.get("status") == "completed":
+                lines.append(
+                    "- Benchmark non-empty timeframes: "
+                    f"`{int(benchmark_state.get('nonempty_timeframe_count', 0) or 0)}`"
+                )
+            slowest_benchmark = list(benchmark_state.get("slowest_timeframes") or [])
+            if slowest_benchmark:
+                rendered = ", ".join(
+                    f"{row.get('timeframe', '')}:{float(row.get('elapsed_seconds', 0.0) or 0.0):.3f}s"
+                    for row in slowest_benchmark[:3]
+                )
+                lines.append(f"- Slowest benchmark timeframes: `{rendered}`")
+            lines.extend(["", ""])
+
+        latest_candidate = dict(self.state.get("latest_candidate") or {})
+        if latest_candidate:
+            lines.extend(
+                [
+                    "## Latest candidate",
+                    "",
+                    f"- Name: `{latest_candidate.get('name', '')}`",
+                    f"- Stage-1 prefilter score: `{float(latest_candidate.get('stage1_prefilter_score', 0.0) or 0.0):.6f}`",
+                    f"- OOS return/sharpe/maxDD: `{_progress_metric_summary(latest_candidate.get('oos'))['total_return']:+.4%}` / "
+                    f"`{_progress_metric_summary(latest_candidate.get('oos'))['sharpe']:.4f}` / "
+                    f"`{_progress_metric_summary(latest_candidate.get('oos'))['max_drawdown']:.4%}`",
+                    "",
+                ]
+            )
+
+        top_rows = [dict(row) for row in list(self.state.get("top_stage1_candidates") or [])]
+        if top_rows:
+            lines.extend(
+                [
+                    "## Top stage-1 candidates",
+                    "",
+                    "| # | Name | TF | Stage1 | OOS Return | OOS Sharpe | OOS MaxDD |",
+                    "|---:|---|---|---:|---:|---:|---:|",
+                ]
+            )
+            for index, row in enumerate(top_rows, start=1):
+                oos = _progress_metric_summary(row.get("oos"))
+                lines.append(
+                    "| "
+                    f"{index} | "
+                    f"{row.get('name', '')} | "
+                    f"{row.get('strategy_timeframe', '')} | "
+                    f"{float(row.get('stage1_prefilter_score', 0.0) or 0.0):.6f} | "
+                    f"{oos['total_return']:+.4%} | "
+                    f"{oos['sharpe']:.4f} | "
+                    f"{oos['max_drawdown']:.4%} |"
+                )
+            lines.append("")
+
+        selected_rows = [dict(row) for row in list(self.state.get("selected_candidates") or [])]
+        if selected_rows:
+            lines.extend(["## Current stage-2 selection", ""])
+            for row in selected_rows:
+                lines.append(
+                    f"- `{row.get('name', '')}` "
+                    f"(stage1 `{float(row.get('stage1_prefilter_score', 0.0) or 0.0):.6f}`, "
+                    f"OOS `{_progress_metric_summary(row.get('oos'))['total_return']:+.4%}`)"
+                )
+            lines.append("")
+
+        final_artifacts = dict(self.state.get("final_artifacts") or {})
+        if final_artifacts:
+            lines.extend(["## Final artifacts", ""])
+            for key, value in final_artifacts.items():
+                lines.append(f"- {key}: `{value}`")
+            lines.append("")
+
+        return "\n".join(lines)
+
+
 def main() -> int:
     args = _build_parser().parse_args()
     score_config: dict[str, Any] | None = None
@@ -598,23 +1209,50 @@ def main() -> int:
             timeframes=timeframes,
             max_candidates=max(1, int(args.max_candidates)),
         )
+    candidates = _restrict_candidates_to_symbol_universe(list(candidates), symbols)
     if args.dry_run:
         print(f"[RESEARCH] dry-run mode: candidate_count={len(candidates)}")
         return 0
 
     output_dir = Path(str(args.output_dir)).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
+    requested_split = {
+        "train_start": str(getattr(args, "train_start", "") or ""),
+        "train_end": str(getattr(args, "train_end", "") or ""),
+        "val_start": str(getattr(args, "validation_start", "") or ""),
+        "val_end": str(getattr(args, "validation_end", "") or ""),
+        "oos_start": str(getattr(args, "oos_start", "") or ""),
+        "oos_end": str(getattr(args, "oos_end", "") or ""),
+    }
+    progress_writer = _ResearchProgressWriter(
+        output_dir=output_dir,
+        manifest_path=manifest_path,
+        score_config_path=str(args.score_config),
+        base_timeframe=str(args.base_timeframe),
+        strategy_timeframes=timeframes,
+        symbol_universe=symbols,
+        requested_split=requested_split if any(requested_split.values()) else None,
+    )
 
     coverage_summary: dict[str, Any] | None = None
     try:
         exact_split = _build_exact_split(args)
-        if exact_split is not None:
+        if exact_split is not None and not bool(args.skip_coverage_rebuild):
             exact_split["strategy_timeframe"] = timeframes[0] if timeframes else str(args.base_timeframe)
             candidates, exact_split, coverage_summary = _rebuild_candidates_after_coverage(
                 candidates=list(candidates),
                 symbols=symbols,
                 timeframes=timeframes,
                 split=exact_split,
+                progress_callback=progress_writer,
+            )
+        elif exact_split is not None:
+            progress_writer(
+                "coverage_rebuild_skipped",
+                {
+                    "requested_candidate_count": len(candidates),
+                    "reason": "cli_skip_coverage_rebuild",
+                },
             )
         report = _run_candidate_research_with_optional_split(
             candidates=candidates,
@@ -625,9 +1263,14 @@ def main() -> int:
             max_candidates=max(1, int(args.max_candidates)),
             score_config=score_config_scope or None,
             exact_split=exact_split,
+            progress_callback=progress_writer,
         )
     except ValueError as exc:
+        progress_writer.fail(str(exc))
         raise SystemExit(f"[RESEARCH] {exc}")
+    except Exception as exc:
+        progress_writer.fail(str(exc))
+        raise
 
     if exact_split is not None:
         report["requested_split"] = dict(exact_split)
@@ -638,6 +1281,7 @@ def main() -> int:
         report["split_mode"] = "default"
     if coverage_summary is not None:
         report["coverage_rebuild"] = coverage_summary
+    report["progress_artifacts"] = progress_writer.artifact_paths
 
     shortlist_config = _resolve_shortlist_selection_config(
         score_config_scope or None,
@@ -697,6 +1341,7 @@ def main() -> int:
     }
     if coverage_summary is not None:
         team_report["coverage_rebuild"] = coverage_summary
+    team_report["progress_artifacts"] = progress_writer.artifact_paths
     team_report_path = output_dir / f"strategy_factory_report_{stamp}.json"
     team_report_latest = output_dir / "strategy_factory_report_latest.json"
     team_report_path.write_text(json.dumps(team_report, indent=2), encoding="utf-8")
@@ -708,12 +1353,28 @@ def main() -> int:
         shortlist=shortlisted,
         output_path=shortlist_md,
     )
+    progress_writer.complete(
+        final_artifacts={
+            "candidate_report": str(output_path),
+            "candidate_report_latest": str(latest_path),
+            "team_report": str(team_report_path),
+            "team_report_latest": str(team_report_latest),
+            "summary_csv": str(csv_path),
+            "summary_csv_latest": str(csv_latest),
+            "shortlist_markdown": str(shortlist_md),
+        },
+        report=report,
+        shortlisted=shortlisted,
+    )
 
     print(f"[RESEARCH] candidates_in={len(candidates)}")
     print(f"[RESEARCH] candidates_stage2={len(list(report.get('candidates') or []))}")
     print(f"[RESEARCH] shortlisted={len(shortlisted)}")
     if coverage_summary and coverage_summary.get("actual_max_timestamp"):
         print(f"[RESEARCH] actual_max_timestamp={coverage_summary['actual_max_timestamp']}")
+    print(f"Saved progress JSON latest: {progress_writer.json_latest}")
+    print(f"Saved progress markdown latest: {progress_writer.md_latest}")
+    print(f"Saved progress log latest: {progress_writer.log_latest}")
     print(f"Saved: {output_path}")
     print(f"Saved latest: {latest_path}")
     print(f"Saved CSV: {csv_path}")

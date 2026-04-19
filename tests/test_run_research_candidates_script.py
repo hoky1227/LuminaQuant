@@ -370,3 +370,327 @@ def test_exact_split_coverage_rebuild_clamps_oos_end_and_filters_candidates(monk
     assert split["oos_end"] == "2026-03-07T00:00:00Z"
     assert split["actual_max_timestamp"] == "2026-03-07T00:00:00Z"
     assert summary["used_candidate_count"] == 1
+
+
+def test_manifest_candidates_can_be_restricted_to_screened_symbol_subset():
+    candidates = [
+        {
+            "candidate_id": "keep",
+            "name": "keep",
+            "strategy_class": "CarryTrendFactorRotationStrategy",
+            "symbols": ["BTC/USDT", "ETH/USDT", "SOL/USDT"],
+            "metadata": {"retune_profile": "screen"},
+        },
+        {
+            "candidate_id": "drop",
+            "name": "drop",
+            "strategy_class": "CarryTrendFactorRotationStrategy",
+            "symbols": ["XRP/USDT"],
+        },
+    ]
+
+    restricted = MODULE._restrict_candidates_to_symbol_universe(
+        candidates,
+        ["BTC/USDT", "ETH/USDT"],
+    )
+
+    assert [row["candidate_id"] for row in restricted] == ["keep"]
+    assert restricted[0]["symbols"] == ["BTC/USDT", "ETH/USDT"]
+    assert restricted[0]["metadata"]["screened_symbol_subset"] == ["BTC/USDT", "ETH/USDT"]
+    assert restricted[0]["metadata"]["screened_symbol_count"] == 2
+
+
+def test_run_research_candidates_writes_stage_progress_artifacts(monkeypatch, tmp_path: Path):
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "candidates": [
+                    {
+                        "candidate_id": "demo-candidate",
+                        "name": "demo-candidate",
+                        "strategy_class": "CarryTrendFactorRotationStrategy",
+                        "family": "cross_sectional",
+                        "strategy_timeframe": "1h",
+                        "symbols": ["BTC/USDT"],
+                        "params": {},
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    candidate_row = {
+        "candidate_id": "demo-candidate",
+        "name": "demo-candidate",
+        "strategy_class": "CarryTrendFactorRotationStrategy",
+        "family": "cross_sectional",
+        "strategy_timeframe": "1h",
+        "timeframe": "1h",
+        "selection_score": 1.25,
+        "pass": True,
+        "hard_reject": False,
+        "train": {
+            "total_return": 0.10,
+            "return": 0.10,
+            "sharpe": 1.0,
+            "deflated_sharpe": 0.9,
+            "pbo": 0.1,
+            "turnover": 0.2,
+            "mdd": 0.05,
+            "max_drawdown": 0.05,
+            "trade_count": 12,
+        },
+        "val": {
+            "total_return": 0.08,
+            "return": 0.08,
+            "sharpe": 0.9,
+            "deflated_sharpe": 0.8,
+            "pbo": 0.1,
+            "turnover": 0.2,
+            "mdd": 0.04,
+            "max_drawdown": 0.04,
+            "trade_count": 8,
+        },
+        "oos": {
+            "total_return": 0.12,
+            "return": 0.12,
+            "sharpe": 1.1,
+            "deflated_sharpe": 1.0,
+            "pbo": 0.1,
+            "turnover": 0.2,
+            "mdd": 0.03,
+            "max_drawdown": 0.03,
+            "trade_count": 6,
+            "cross_candidate_corr": 0.0,
+        },
+    }
+
+    def _stub_run_candidate_research(**kwargs):
+        progress_callback = kwargs.get("progress_callback")
+        assert callable(progress_callback)
+        progress_callback(
+            "resource_bundle_load_started",
+            {
+                "symbol_count": 1,
+                "timeframe_count": 1,
+                "total_count": 1,
+                "symbol_universe": ["BTC/USDT"],
+                "normalized_timeframes": ["1h"],
+            },
+        )
+        progress_callback(
+            "resource_bundle_item_loaded",
+            {
+                "symbol": "BTC/USDT",
+                "symbol_index": 1,
+                "symbol_count": 1,
+                "timeframe": "1h",
+                "timeframe_index": 1,
+                "timeframe_count": 1,
+                "loaded_count": 1,
+                "total_count": 1,
+                "source": "parquet",
+                "bar_count": 512,
+                "elapsed_seconds": 1.25,
+            },
+        )
+        progress_callback(
+            "resource_bundle_load_completed",
+            {
+                "bundle_count": 1,
+                "total_count": 1,
+                "elapsed_seconds": 1.25,
+                "source_counts": {"parquet": 1},
+            },
+        )
+        progress_callback(
+            "resource_feature_load_started",
+            {
+                "symbol_count": 1,
+                "feature_symbols": ["BTC/USDT"],
+            },
+        )
+        progress_callback(
+            "resource_feature_symbol_loaded",
+            {
+                "symbol": "BTC/USDT",
+                "symbol_index": 1,
+                "symbol_count": 1,
+                "loaded_count": 1,
+                "row_count": 256,
+                "elapsed_seconds": 0.5,
+            },
+        )
+        progress_callback(
+            "resource_feature_load_completed",
+            {
+                "symbol_count": 1,
+                "feature_frame_count": 1,
+                "nonempty_symbol_count": 1,
+                "total_rows": 256,
+                "elapsed_seconds": 0.5,
+            },
+        )
+        progress_callback(
+            "resource_benchmark_build_started",
+            {
+                "timeframe_count": 1,
+                "normalized_timeframes": ["1h"],
+            },
+        )
+        progress_callback(
+            "resource_benchmark_timeframe_built",
+            {
+                "timeframe": "1h",
+                "timeframe_index": 1,
+                "timeframe_count": 1,
+                "built_count": 1,
+                "return_count": 511,
+                "elapsed_seconds": 0.2,
+            },
+        )
+        progress_callback(
+            "resource_benchmark_build_completed",
+            {
+                "benchmark_count": 1,
+                "timeframe_count": 1,
+                "nonempty_timeframe_count": 1,
+                "elapsed_seconds": 0.2,
+            },
+        )
+        progress_callback(
+            "resources_loaded",
+            {
+                "candidate_count": 1,
+                "normalized_timeframes": ["1h"],
+                "symbol_universe": ["BTC/USDT"],
+                "bundle_count": 1,
+                "feature_frame_count": 1,
+                "benchmark_count": 1,
+            },
+        )
+        progress_callback(
+            "candidate_evaluated",
+            {
+                "candidate_index": 1,
+                "candidate_count": 1,
+                "candidate_id": "demo-candidate",
+                "name": "demo-candidate",
+                "strategy_timeframe": "1h",
+                "stage1_prefilter_score": 0.75,
+                "train": candidate_row["train"],
+                "val": candidate_row["val"],
+                "oos": candidate_row["oos"],
+            },
+        )
+        progress_callback(
+            "stage1_ranked",
+            {
+                "candidate_count": 1,
+                "keep_count": 1,
+                "keep_ratio_applied": 1.0,
+                "top_stage1_candidates": [
+                    {
+                        "candidate_id": "demo-candidate",
+                        "name": "demo-candidate",
+                        "strategy_timeframe": "1h",
+                        "stage1_prefilter_score": 0.75,
+                        "train": candidate_row["train"],
+                        "val": candidate_row["val"],
+                        "oos": candidate_row["oos"],
+                    }
+                ],
+            },
+        )
+        progress_callback(
+            "stage2_selected",
+            {
+                "selected_count": 1,
+                "selected_candidates": [
+                    {
+                        "candidate_id": "demo-candidate",
+                        "name": "demo-candidate",
+                        "strategy_timeframe": "1h",
+                        "stage1_prefilter_score": 0.75,
+                        "train": candidate_row["train"],
+                        "val": candidate_row["val"],
+                        "oos": candidate_row["oos"],
+                    }
+                ],
+            },
+        )
+        progress_callback(
+            "report_ready",
+            {
+                "reported_candidate_count": 1,
+                "top_report_candidates": [
+                    {
+                        "candidate_id": "demo-candidate",
+                        "name": "demo-candidate",
+                        "selection_score": 1.25,
+                        "oos_total_return": 0.12,
+                        "oos_sharpe": 1.1,
+                    }
+                ],
+            },
+        )
+        return {
+            "schema_version": "v2",
+            "base_timeframe": "1m",
+            "strategy_timeframes": ["1h"],
+            "split": {},
+            "candidates": [candidate_row],
+            "stage1": {"input_count": 1, "selected_count": 1},
+            "scoring_config": {},
+            "data_sources": {},
+        }
+
+    monkeypatch.setattr(MODULE, "run_candidate_research", _stub_run_candidate_research)
+    monkeypatch.setattr(MODULE, "select_diversified_shortlist", lambda *args, **kwargs: [candidate_row])
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_research_candidates.py",
+            "--manifest",
+            str(manifest_path),
+            "--output-dir",
+            str(tmp_path),
+            "--symbols",
+            "BTC/USDT",
+            "--timeframes",
+            "1h",
+            "--base-timeframe",
+            "1m",
+        ],
+    )
+    exit_code = MODULE.main()
+
+    assert exit_code == 0
+    progress_json = json.loads((tmp_path / "candidate_research_progress_latest.json").read_text(encoding="utf-8"))
+    progress_md = (tmp_path / "candidate_research_progress_latest.md").read_text(encoding="utf-8")
+    progress_log = (tmp_path / "candidate_research_progress_latest.log").read_text(encoding="utf-8")
+
+    assert progress_json["status"] == "completed"
+    assert progress_json["progress"]["evaluated_count"] == 1
+    assert progress_json["progress"]["selected_count"] == 1
+    assert progress_json["resource_load"]["bundle"]["loaded_count"] == 1
+    assert progress_json["resource_load"]["bundle"]["elapsed_seconds"] == 1.25
+    assert progress_json["resource_load"]["bundle"]["slowest_items"][0]["elapsed_seconds"] == 1.25
+    assert progress_json["resource_load"]["feature"]["total_rows"] == 256
+    assert progress_json["resource_load"]["feature"]["elapsed_seconds"] == 0.5
+    assert progress_json["resource_load"]["benchmark"]["nonempty_timeframe_count"] == 1
+    assert progress_json["resource_load"]["benchmark"]["elapsed_seconds"] == 0.2
+    assert progress_json["latest_candidate"]["candidate_id"] == "demo-candidate"
+    assert "candidate_report" in progress_json["final_artifacts"]
+    assert "Resource load progress" in progress_md
+    assert "Latest bundle item" in progress_md
+    assert "Slowest bundle items" in progress_md
+    assert "Slowest feature symbols" in progress_md
+    assert "Slowest benchmark timeframes" in progress_md
+    assert "Top stage-1 candidates" in progress_md
+    assert "resource_bundle_item_loaded" in progress_log
+    assert "candidate_evaluated" in progress_log

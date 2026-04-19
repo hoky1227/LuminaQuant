@@ -43,6 +43,9 @@ ROBUST_PROMOTION_GATES = {
     "oos_monthly_mean_gte": 0.02,
     "oos_sharpe_relief_gte": 0.50,
 }
+SPARSE_COMPONENT_ACTIVE_DAY_RATIO_MAX = 0.05
+SPARSE_COMPONENT_ACTIVE_DAYS_MAX = 2
+SPARSE_COMPONENT_WEIGHT_CAP = 0.20
 
 
 class BasisUniverseError(ValueError):
@@ -178,7 +181,7 @@ def _daily_aggregate_stream(stream: Sequence[dict[str, Any]]) -> list[dict[str, 
 
 
 def _extract_streams(payload: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
-    for key in ("portfolio_return_streams", "combined_streams"):
+    for key in ("portfolio_return_streams", "combined_streams", "return_streams"):
         block = payload.get(key)
         if isinstance(block, dict) and any(list(block.get(split) or []) for split in ("train", "val", "oos")):
             return {
@@ -274,6 +277,21 @@ def normalize_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
             generated = dict(_metrics_daily(returns))
             generated["return"] = float(generated.get("total_return", 0.0))
             metrics[split] = generated
+
+    def _split_participation(stream: Sequence[dict[str, Any]]) -> dict[str, float | int]:
+        total_days = len(list(stream or []))
+        active_days = sum(
+            1
+            for point in list(stream or [])
+            if abs(_safe_float(point.get("v"), 0.0)) > 1e-12
+        )
+        active_day_ratio = 0.0 if total_days <= 0 else float(active_days) / float(total_days)
+        return {
+            "total_days": int(total_days),
+            "active_days": int(active_days),
+            "active_day_ratio": float(active_day_ratio),
+        }
+
     normalized = {
         "candidate_key": _candidate_key(candidate),
         "label": str(candidate.get("label") or _candidate_key(candidate)),
@@ -285,6 +303,10 @@ def normalize_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
         "portfolio_metrics": metrics,
         "portfolio_return_streams": {split: list(streams.get(split) or []) for split in ("train", "val", "oos")},
         "portfolio_daily_return_streams": daily_streams,
+        "participation": {
+            split: _split_participation(daily_streams[split])
+            for split in ("train", "val", "oos")
+        },
     }
     normalized["lineage"] = infer_basis_lineage(normalized)
     return normalized
@@ -407,6 +429,50 @@ def robustness_gate_failures(
     return reasons
 
 
+def sparse_component_gate_failures(
+    *,
+    candidates: Sequence[dict[str, Any]],
+    weights: Sequence[float],
+    active_day_ratio_max: float = SPARSE_COMPONENT_ACTIVE_DAY_RATIO_MAX,
+    active_days_max: int = SPARSE_COMPONENT_ACTIVE_DAYS_MAX,
+    sparse_weight_cap: float = SPARSE_COMPONENT_WEIGHT_CAP,
+) -> tuple[list[str], list[dict[str, Any]]]:
+    reasons: list[str] = []
+    diagnostics: list[dict[str, Any]] = []
+    for candidate, weight in zip(candidates, weights, strict=True):
+        if float(weight) <= 0.0:
+            continue
+        participation = dict((candidate.get("participation") or {}).get("oos") or {})
+        active_day_ratio = _safe_float(participation.get("active_day_ratio"), 0.0)
+        active_days = int(participation.get("active_days") or 0)
+        total_days = int(participation.get("total_days") or 0)
+        is_sparse = bool(
+            (total_days > 0 and active_day_ratio <= float(active_day_ratio_max))
+            or (total_days > 0 and active_days <= int(active_days_max))
+        )
+        diagnostics.append(
+            {
+                "candidate_key": candidate.get("candidate_key"),
+                "label": candidate.get("label"),
+                "weight": float(weight),
+                "oos_active_days": active_days,
+                "oos_total_days": total_days,
+                "oos_active_day_ratio": active_day_ratio,
+                "sparse_reason": (
+                    "active_days"
+                    if (total_days > 0 and active_days <= int(active_days_max))
+                    else ("active_day_ratio" if is_sparse else "")
+                ),
+                "is_sparse": bool(is_sparse),
+            }
+        )
+        if is_sparse and float(weight) > float(sparse_weight_cap):
+            reasons.append(
+                f"sparse_component_weight_above_cap:{candidate.get('candidate_key')}:{float(weight):.3f}>{float(sparse_weight_cap):.3f}"
+            )
+    return reasons, diagnostics
+
+
 def _combo_weights_record(
     candidates: Sequence[dict[str, Any]],
     weights: Sequence[float],
@@ -440,9 +506,15 @@ def evaluate_weight_combo(
         incumbent_oos=incumbent_oos,
         monthly_returns=monthly,
     )
+    sparse_reasons, participation = sparse_component_gate_failures(
+        candidates=candidates,
+        weights=weights,
+    )
+    reasons.extend(sparse_reasons)
     oos = dict(metrics.get("oos") or {})
     return {
         "weights": _combo_weights_record(candidates, weights),
+        "component_participation": participation,
         "train": dict(metrics.get("train") or {}),
         "val": dict(metrics.get("val") or {}),
         "oos": oos,
@@ -583,6 +655,11 @@ def run_meta_search(
             "weight_step": float(weight_step),
             "validation_objective_formula": VALIDATION_OBJECTIVE_FORMULA,
             "robust_promotion_gates": dict(ROBUST_PROMOTION_GATES),
+            "sparse_component_gates": {
+                "oos_active_day_ratio_max": float(SPARSE_COMPONENT_ACTIVE_DAY_RATIO_MAX),
+                "oos_active_days_max": int(SPARSE_COMPONENT_ACTIVE_DAYS_MAX),
+                "sparse_weight_cap": float(SPARSE_COMPONENT_WEIGHT_CAP),
+            },
             "memory_policy": memory_policy_payload(
                 budget_bytes=PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES
             ),

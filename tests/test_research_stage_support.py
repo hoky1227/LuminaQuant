@@ -41,6 +41,7 @@ def test_build_research_resource_loader_preserves_injected_dependencies() -> Non
 
 def test_load_research_run_resources_delegates_to_loader() -> None:
     captured: dict[str, object] = {}
+    progress_callback = object()
 
     class _Loader:
         def load(self, **kwargs):
@@ -58,6 +59,7 @@ def test_load_research_run_resources_delegates_to_loader() -> None:
         allow_synthetic_fallback=True,
         min_bundle_bars=240,
         market_data_settings={"market_data_parquet_path": "var/data/runtime"},
+        progress_callback=progress_callback,
     )
 
     assert captured == {
@@ -70,6 +72,7 @@ def test_load_research_run_resources_delegates_to_loader() -> None:
         "allow_synthetic_fallback": True,
         "min_bundle_bars": 240,
         "market_data_settings": {"market_data_parquet_path": "var/data/runtime"},
+        "progress_callback": progress_callback,
     }
     assert result == (
         {"cache": 1},
@@ -103,6 +106,7 @@ def test_evaluate_candidate_with_optional_split_uses_selector_wrapper(monkeypatc
         candidate={"candidate_id": "cand-1"},
         cache=cache,
         feature_cache=feature_cache,
+        aligned_cache=None,
         benchmark_cache=benchmark_cache,
         candidate_count=2,
         scoring_config={"return_weight": 10.0},
@@ -115,6 +119,7 @@ def test_evaluate_candidate_with_optional_split_uses_selector_wrapper(monkeypatc
     assert captured["kwargs"] == {
         "cache": cache,
         "feature_cache": feature_cache,
+        "aligned_cache": None,
         "benchmark_cache": benchmark_cache,
         "candidate_count": 2,
         "scoring_config": {"return_weight": 10.0},
@@ -157,6 +162,7 @@ def test_select_stage2_results_uses_selector_wrapper(monkeypatch) -> None:
         adapted=[{"candidate_id": "cand-1"}, {"candidate_id": "cand-2"}],
         cache=cache,
         feature_cache=feature_cache,
+        aligned_cache=None,
         benchmark=benchmark,
         scoring=scoring,
         resolved_split={"mode": "default"},
@@ -168,8 +174,10 @@ def test_select_stage2_results_uses_selector_wrapper(monkeypatch) -> None:
         "adapted": [{"candidate_id": "cand-1"}, {"candidate_id": "cand-2"}],
         "cache": cache,
         "feature_cache": feature_cache,
+        "aligned_cache": None,
         "benchmark": benchmark,
         "scoring": scoring,
         "resolved_split": {"mode": "default"},
+        "progress_callback": None,
     }
     assert result == [{"candidate_id": "cand-2"}]

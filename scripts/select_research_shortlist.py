@@ -147,7 +147,6 @@ def _flatten_reports(paths: list[str], *, mode: str) -> list[dict]:
 
 def _allowlisted_portfolio_native_multi_asset_candidate(row: dict) -> bool:
     """Allow vetted portfolio-native multi-asset rows without opening the floodgates."""
-
     symbols = [str(symbol).strip().upper() for symbol in list(row.get("symbols") or [])]
     if len(symbols) < 3:
         return False

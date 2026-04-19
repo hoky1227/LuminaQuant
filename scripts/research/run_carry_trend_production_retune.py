@@ -77,6 +77,7 @@ def build_command(
         str(oos_start),
         "--oos-end",
         str(oos_end),
+        "--skip-coverage-rebuild",
         "--score-config",
         str(score_config),
     ]

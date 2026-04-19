@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 import numpy as np
@@ -43,6 +43,7 @@ def load_research_run_resources(
     allow_synthetic_fallback: bool,
     min_bundle_bars: int,
     market_data_settings: Mapping[str, Any] | None = None,
+    progress_callback: Callable[[str, Mapping[str, Any]], None] | None = None,
 ) -> tuple[
     dict[tuple[str, str], Any],
     dict[str, list[str]],
@@ -59,6 +60,7 @@ def load_research_run_resources(
         allow_synthetic_fallback=allow_synthetic_fallback,
         min_bundle_bars=min_bundle_bars,
         market_data_settings=market_data_settings,
+        progress_callback=progress_callback,
     )
 
 
@@ -101,6 +103,7 @@ def select_stage2_results(
     benchmark: Mapping[str, Mapping[str, np.ndarray] | np.ndarray],
     scoring: Any,
     resolved_split: Mapping[str, Any],
+    progress_callback: Callable[[str, Mapping[str, Any]], None] | None = None,
 ) -> list[dict[str, Any]]:
     return ResearchStageSelector(
         evaluate_candidate=evaluate_candidate,
@@ -113,6 +116,7 @@ def select_stage2_results(
         benchmark=benchmark,
         scoring=scoring,
         resolved_split=resolved_split,
+        progress_callback=progress_callback,
     )
 
 

@@ -34,10 +34,11 @@ def _candidate(
     train: list[float] | None = None,
     val: list[float] | None = None,
     oos: list[float] | None = None,
+    stream_key: str = "portfolio_return_streams",
 ) -> dict[str, Any]:
     payload = {
         "artifact_kind": "portfolio_candidate_artifact",
-        "portfolio_return_streams": {
+        stream_key: {
             "train": _stream(train or [0.01, 0.01, 0.01], start_day=1),
             "val": _stream(val or [0.01, 0.01, 0.01], start_day=10),
             "oos": _stream(oos or [0.03, 0.02], start_day=20),
@@ -154,6 +155,150 @@ def test_robustness_gate_allows_sharpe_relief_with_worse_drawdown() -> None:
     assert failures == []
 
 
+def test_normalize_candidate_accepts_direct_return_streams_payload() -> None:
+    normalized = MODULE.normalize_candidate(
+        _candidate(
+            "pair_tactical_mode",
+            lineage=MODULE.NEUTRAL_LINEAGE,
+            stream_key="return_streams",
+            train=[0.002, 0.001],
+            val=[0.003, 0.001],
+            oos=[0.004, 0.002],
+        )
+    )
+
+    assert normalized["candidate_key"] == "pair_tactical_mode"
+    assert normalized["portfolio_return_streams"]["oos"]
+    assert normalized["portfolio_metrics"]["oos"]["total_return"] > 0.0
+    assert normalized["participation"]["oos"]["active_days"] == 2
+    assert normalized["participation"]["oos"]["total_days"] == 2
+    assert normalized["participation"]["oos"]["active_day_ratio"] == 1.0
+
+
+def test_sparse_component_gate_fails_when_sparse_candidate_exceeds_cap() -> None:
+    dense = MODULE.normalize_candidate(
+        _candidate(
+            "dense_core",
+            lineage=MODULE.NEUTRAL_LINEAGE,
+            oos=[0.01, 0.01, 0.01, 0.01],
+        )
+    )
+    sparse = MODULE.normalize_candidate(
+        _candidate(
+            "sparse_pair",
+            lineage=MODULE.NEUTRAL_LINEAGE,
+            oos=[0.02] + ([0.0] * 19),
+        )
+    )
+
+    reasons, diagnostics = MODULE.sparse_component_gate_failures(
+        candidates=[dense, sparse],
+        weights=[0.75, 0.25],
+    )
+
+    assert reasons == [
+        f"sparse_component_weight_above_cap:sparse_pair:0.250>{MODULE.SPARSE_COMPONENT_WEIGHT_CAP:.3f}"
+    ]
+    sparse_diag = next(row for row in diagnostics if row["candidate_key"] == "sparse_pair")
+    assert sparse_diag["is_sparse"] is True
+    assert sparse_diag["oos_active_day_ratio"] == 0.05
+
+
+def test_sparse_component_gate_also_flags_too_few_active_days() -> None:
+    dense = MODULE.normalize_candidate(
+        _candidate(
+            "dense_core",
+            lineage=MODULE.NEUTRAL_LINEAGE,
+            oos=[0.01, 0.01, 0.01, 0.01],
+        )
+    )
+    tiny_tail = MODULE.normalize_candidate(
+        _candidate(
+            "tiny_tail",
+            lineage=MODULE.NEUTRAL_LINEAGE,
+            oos=[0.03],
+        )
+    )
+
+    reasons, diagnostics = MODULE.sparse_component_gate_failures(
+        candidates=[dense, tiny_tail],
+        weights=[0.75, 0.25],
+    )
+
+    assert reasons == [
+        f"sparse_component_weight_above_cap:tiny_tail:0.250>{MODULE.SPARSE_COMPONENT_WEIGHT_CAP:.3f}"
+    ]
+    tiny_diag = next(row for row in diagnostics if row["candidate_key"] == "tiny_tail")
+    assert tiny_diag["is_sparse"] is True
+    assert tiny_diag["sparse_reason"] == "active_days"
+
+
+def test_evaluate_weight_combo_carries_sparse_component_rejection_reason() -> None:
+    incumbent = MODULE.normalize_candidate(
+        _candidate(
+            "incumbent",
+            lineage=MODULE.NEUTRAL_LINEAGE,
+            oos=[0.01, 0.01, 0.01, 0.01],
+        )
+    )
+    sparse = MODULE.normalize_candidate(
+        _candidate(
+            "sparse_pair",
+            lineage=MODULE.NEUTRAL_LINEAGE,
+            train=[0.01, 0.01, 0.01],
+            val=[0.01, 0.01, 0.01],
+            oos=[0.03] + ([0.0] * 19),
+        )
+    )
+
+    result = MODULE.evaluate_weight_combo(
+        candidates=[incumbent, sparse],
+        weights=[0.75, 0.25],
+        incumbent_oos=dict((incumbent.get("portfolio_metrics") or {}).get("oos") or {}),
+    )
+
+    assert result["promotable"] is False
+    assert any(
+        reason.startswith("sparse_component_weight_above_cap:sparse_pair")
+        for reason in result["rejection_reasons"]
+    )
+    sparse_diag = next(row for row in result["component_participation"] if row["candidate_key"] == "sparse_pair")
+    assert sparse_diag["is_sparse"] is True
+
+
+def test_normalize_candidate_marks_realistic_single_day_pair_as_sparse() -> None:
+    pair = MODULE.normalize_candidate(
+        {
+            "candidate_key": "pair_tactical_mode",
+            "label": "Pair tactical fast exit",
+            "payload": {
+                "artifact_kind": "pair_tactical_candidate_payload",
+                "return_streams": {
+                    "train": [{"datetime": "2025-01-01T00:00:00Z", "v": 0.01}],
+                    "val": [{"datetime": "2026-01-01T00:00:00Z", "v": 0.01}],
+                    "oos": [{"datetime": "2026-03-01T00:00:00Z", "v": 0.03}],
+                },
+                "portfolio_metrics": {
+                    "train": {"total_return": 0.01, "sharpe": 1.0, "max_drawdown": 0.0},
+                    "val": {"total_return": 0.01, "sharpe": 1.0, "max_drawdown": 0.0},
+                    "oos": {"total_return": 0.03, "sharpe": 3.0, "max_drawdown": 0.0},
+                },
+            },
+        }
+    )
+
+    reasons, diagnostics = MODULE.sparse_component_gate_failures(
+        candidates=[pair],
+        weights=[0.25],
+    )
+
+    assert reasons == [
+        f"sparse_component_weight_above_cap:pair_tactical_mode:0.250>{MODULE.SPARSE_COMPONENT_WEIGHT_CAP:.3f}"
+    ]
+    assert diagnostics[0]["oos_active_days"] == 1
+    assert diagnostics[0]["is_sparse"] is True
+
+
 def test_run_meta_search_writes_artifacts_and_memory_ledger(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -165,12 +310,12 @@ def test_run_meta_search_writes_artifacts_and_memory_ledger(
     )
 
     candidates = MODULE.build_basis_search_universes(
-        incumbent=_candidate("incumbent", oos=[0.01, 0.01]),
-        raw_55_45=_candidate("autoresearch_pair_55_45", oos=[0.04, 0.03]),
-        derived_80_20=_candidate("incumbent_autoresearch_static_blend", oos=[0.03, 0.03]),
-        soft_allocator=_candidate("soft_allocator", train=[-0.01, -0.01], val=[-0.01, -0.01], oos=[0.0, 0.0]),
-        regime_switch=_candidate("regime_switching_portfolio", oos=[0.015, 0.01]),
-        grouped_base=_candidate("grouped_base", oos=[0.012, 0.011]),
+        incumbent=_candidate("incumbent", oos=[0.01, 0.01, 0.01]),
+        raw_55_45=_candidate("autoresearch_pair_55_45", oos=[0.04, 0.03, 0.02]),
+        derived_80_20=_candidate("incumbent_autoresearch_static_blend", oos=[0.03, 0.03, 0.02]),
+        soft_allocator=_candidate("soft_allocator", train=[-0.01, -0.01], val=[-0.01, -0.01], oos=[0.0, 0.0, 0.0]),
+        regime_switch=_candidate("regime_switching_portfolio", oos=[0.015, 0.01, 0.01]),
+        grouped_base=_candidate("grouped_base", oos=[0.012, 0.011, 0.01]),
     )[MODULE.RAW_UNIVERSE_NAME]
 
     result = MODULE.run_meta_search(

@@ -296,6 +296,59 @@ def test_load_bundle_cache_prefers_parquet_frames_and_records_their_source(monke
     assert source_map["parquet"] == ["BTC/USDT@1m"]
 
 
+def test_load_bundle_cache_emits_symbol_timeframe_progress(monkeypatch):
+    frame = pl.DataFrame(
+        {
+            "datetime": [datetime(2024, 1, 1, 0, 0, 0)],
+            "open": [100.0],
+            "high": [101.0],
+            "low": [99.0],
+            "close": [100.5],
+            "volume": [10.0],
+        }
+    )
+    events: list[tuple[str, dict[str, object]]] = []
+
+    monkeypatch.setattr(research_runner, "load_data_dict_from_parquet", lambda *args, **kwargs: {"BTC/USDT": frame})
+    counter = iter([10.0, 10.125])
+    monkeypatch.setattr(research_runner, "perf_counter", lambda: next(counter))
+
+    cache, source_map = research_runner._load_bundle_cache(
+        symbols=["BTC/USDT"],
+        timeframes=["1m"],
+        allow_csv_fallback=True,
+        allow_synthetic_fallback=True,
+        min_bars=1,
+        market_data_settings={
+            "symbols": ["BTC/USDT"],
+            "market_data_parquet_path": "unused",
+            "market_data_exchange": "binance",
+        },
+        progress_callback=lambda event, payload: events.append((event, dict(payload))),
+    )
+
+    assert cache[("BTC/USDT", "1m")].close.tolist() == [100.5]
+    assert source_map["parquet"] == ["BTC/USDT@1m"]
+    assert events == [
+        (
+            "resource_bundle_item_loaded",
+            {
+                "symbol": "BTC/USDT",
+                "symbol_index": 1,
+                "symbol_count": 1,
+                "timeframe": "1m",
+                "timeframe_index": 1,
+                "timeframe_count": 1,
+                "loaded_count": 1,
+                "total_count": 1,
+                "source": "parquet",
+                "bar_count": 1,
+                "elapsed_seconds": 0.125,
+            },
+        )
+    ]
+
+
 def test_load_feature_cache_uses_runtime_market_data_settings(
     tmp_path: Path,
     monkeypatch,
@@ -363,6 +416,90 @@ def test_load_feature_cache_normalizes_feature_frames(monkeypatch):
     ]
     assert frame[lead_field].to_list() == [0.2, 0.2]
     assert trailing_field in frame.columns
+
+
+def test_load_feature_cache_emits_symbol_progress(monkeypatch):
+    lead_field = research_runner._FEATURE_POINT_COLUMNS[0]
+    events: list[tuple[str, dict[str, object]]] = []
+
+    monkeypatch.setattr(
+        research_runner,
+        "load_futures_feature_points_from_db",
+        lambda *args, **kwargs: pl.DataFrame(
+            {
+                "timestamp_ms": [1_000, 2_000],
+                lead_field: [0.1, 0.2],
+            }
+        ),
+    )
+    counter = iter([20.0, 20.25])
+    monkeypatch.setattr(research_runner, "perf_counter", lambda: next(counter))
+
+    cache = research_runner._load_feature_cache(
+        symbols=["ETH/USDT"],
+        market_data_settings={
+            "symbols": ["ETH/USDT"],
+            "market_data_parquet_path": "unused",
+            "market_data_exchange": "binance",
+        },
+        progress_callback=lambda event, payload: events.append((event, dict(payload))),
+    )
+
+    assert cache["ETH/USDT"].height == 2
+    assert events == [
+        (
+            "resource_feature_symbol_loaded",
+            {
+                "symbol": "ETH/USDT",
+                "symbol_index": 1,
+                "symbol_count": 1,
+                "loaded_count": 1,
+                "row_count": 2,
+                "elapsed_seconds": 0.25,
+            },
+        )
+    ]
+
+
+def test_benchmark_cache_emits_timeframe_progress():
+    bundle = research_runner.SeriesBundle(
+        symbol="BTC/USDT",
+        timeframe="1m",
+        datetime=np.asarray(["2024-01-01T00:00:00", "2024-01-01T00:01:00"], dtype="datetime64[ms]"),
+        open=np.asarray([100.0, 101.0], dtype=float),
+        high=np.asarray([101.0, 102.0], dtype=float),
+        low=np.asarray([99.0, 100.0], dtype=float),
+        close=np.asarray([100.0, 101.0], dtype=float),
+        volume=np.asarray([10.0, 11.0], dtype=float),
+    )
+    events: list[tuple[str, dict[str, object]]] = []
+    original_perf_counter = research_runner.perf_counter
+    counter = iter([30.0, 30.5])
+    research_runner.perf_counter = lambda: next(counter)
+
+    try:
+        benchmark = research_runner._benchmark_cache(
+            {("BTC/USDT", "1m"): bundle},
+            ["1m"],
+            progress_callback=lambda event, payload: events.append((event, dict(payload))),
+        )
+    finally:
+        research_runner.perf_counter = original_perf_counter
+
+    assert benchmark["1m"]["returns"].tolist() == [0.0, 0.01]
+    assert events == [
+        (
+            "resource_benchmark_timeframe_built",
+            {
+                "timeframe": "1m",
+                "timeframe_index": 1,
+                "timeframe_count": 1,
+                "built_count": 1,
+                "return_count": 2,
+                "elapsed_seconds": 0.5,
+            },
+        )
+    ]
 
 
 def test_synthetic_bundle_is_deterministic_for_symbol_and_timeframe():

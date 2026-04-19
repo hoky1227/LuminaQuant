@@ -397,6 +397,40 @@ def _meta_search_entries(summary_paths: tuple[Path, ...]) -> list[dict[str, Any]
     return entries
 
 
+def _extra_candidate_entries(extra_paths: tuple[Path, ...]) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    for artifact_path in extra_paths:
+        if not artifact_path.exists():
+            continue
+        payload = _load_json(artifact_path)
+        candidate_key = str(payload.get("candidate_key") or artifact_path.stem).strip()
+        label = str(payload.get("label") or candidate_key).strip()
+        source_artifact_kind = str(
+            payload.get("source_artifact_kind")
+            or payload.get("artifact_kind")
+            or "portfolio_followup.custom_candidate"
+        ).strip()
+        selection_basis = str(
+            payload.get("selection_basis")
+            or "manual_followup_candidate"
+        ).strip()
+        notes = _normalized_notes(payload.get("notes"))
+        if not notes:
+            notes = ["Manually supplied follow-up challenger artifact."]
+        entries.append(
+            _artifact_entry(
+                candidate_key=candidate_key,
+                label=label,
+                artifact_path=artifact_path,
+                payload=payload,
+                source_artifact_kind=source_artifact_kind,
+                selection_basis=selection_basis,
+                notes=notes,
+            )
+        )
+    return entries
+
+
 def _challenger_reason(entry: dict[str, Any]) -> str:
     if entry.get("promotable"):
         return (
@@ -500,6 +534,7 @@ def build_portfolio_max_performance_decision(
     portfolio_four_sleeve_comparison_path: Path | str | None = None,
     four_sleeve_comparison_path: Path | str | None = None,
     meta_search_summary_paths: tuple[Path | str, ...] = (),
+    extra_candidate_artifact_paths: tuple[Path | str, ...] = (),
 ) -> dict[str, Any]:
     resolved_incumbent_bundle_path = _resolve_incumbent_bundle_path(Path(incumbent_bundle_path))
     resolved_incumbent_portfolio_path = _resolve_incumbent_portfolio_path(
@@ -867,6 +902,14 @@ def build_portfolio_max_performance_decision(
         ]
         entries.extend(meta_entries)
 
+    extra_candidate_paths = tuple(Path(path) for path in extra_candidate_artifact_paths)
+    extra_entries = _extra_candidate_entries(extra_candidate_paths)
+    if extra_entries:
+        supporting_artifacts["extra_candidate_artifacts"] = [
+            str(path.resolve()) for path in extra_candidate_paths if path.exists()
+        ]
+        entries.extend(extra_entries)
+
     decorated, incumbent = _decorate_vs_incumbent(entries)
     challengers = [dict(entry) for entry in decorated[1:]]
     promotable = [entry for entry in challengers if bool(entry.get("promotable"))]
@@ -975,6 +1018,7 @@ def write_portfolio_max_performance_decision(
     portfolio_four_sleeve_comparison_path: Path | str | None = None,
     four_sleeve_comparison_path: Path | str | None = None,
     meta_search_summary_paths: tuple[Path | str, ...] = (),
+    extra_candidate_artifact_paths: tuple[Path | str, ...] = (),
     output_json_path: Path | str = DEFAULT_OUTPUT_JSON,
     output_md_path: Path | str = DEFAULT_OUTPUT_MD,
 ) -> dict[str, Any]:
@@ -996,6 +1040,7 @@ def write_portfolio_max_performance_decision(
         portfolio_four_sleeve_comparison_path=portfolio_four_sleeve_comparison_path,
         four_sleeve_comparison_path=four_sleeve_comparison_path,
         meta_search_summary_paths=meta_search_summary_paths,
+        extra_candidate_artifact_paths=extra_candidate_artifact_paths,
     )
     json_path = Path(output_json_path)
     md_path = Path(output_md_path)
@@ -1055,6 +1100,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--portfolio-superiority-meta", default=str(DEFAULT_PORTFOLIO_SUPERIORITY_META))
     parser.add_argument("--backbone-triplet", default=str(DEFAULT_BACKBONE_TRIPLET))
     parser.add_argument("--anchored-comparison", default=str(DEFAULT_ANCHORED_COMPARISON))
+    parser.add_argument("--extra-candidate-artifact", action="append", default=[])
     parser.add_argument("--output-json", default=str(DEFAULT_OUTPUT_JSON))
     parser.add_argument("--output-md", default=str(DEFAULT_OUTPUT_MD))
     return parser
@@ -1077,6 +1123,7 @@ def main(argv: list[str] | None = None) -> int:
         backbone_triplet_path=Path(args.backbone_triplet).resolve(),
         anchored_comparison_path=Path(args.anchored_comparison).resolve(),
         meta_search_summary_paths=DEFAULT_META_SEARCH_SUMMARIES,
+        extra_candidate_artifact_paths=tuple(Path(path).resolve() for path in list(args.extra_candidate_artifact or [])),
         output_json_path=Path(args.output_json).resolve(),
         output_md_path=Path(args.output_md).resolve(),
     )

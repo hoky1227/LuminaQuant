@@ -40,3 +40,29 @@ def test_feature_point_upsert_handles_sparse_mixed_numeric_rows(tmp_path):
     assert frame.get_column("funding_rate").drop_nulls().to_list() == [0.00031]
     assert frame.get_column("funding_fee_rate").drop_nulls().to_list() == [0.00031]
     assert frame.get_column("funding_fee_quote_per_unit").drop_nulls().to_list() == [0.62]
+
+
+def test_feature_point_load_respects_date_partition_bounds(tmp_path):
+    db_path = tmp_path / "market_parquet"
+
+    upsert_futures_feature_points_rows(
+        str(db_path),
+        exchange="binance",
+        symbol="BTC/USDT",
+        rows=[
+            {"timestamp_ms": 1_735_689_600_000, "funding_rate": 0.00010},  # 2025-01-02
+            {"timestamp_ms": 1_741_910_400_000, "funding_rate": 0.00020},  # 2025-03-15
+            {"timestamp_ms": 1_749_600_000_000, "funding_rate": 0.00030},  # 2025-06-12
+        ],
+    )
+
+    frame = load_futures_feature_points_from_db(
+        str(db_path),
+        exchange="binance",
+        symbol="BTC/USDT",
+        start_date="2025-03-01",
+        end_date="2025-04-01",
+    )
+
+    assert frame.height == 1
+    assert frame.get_column("funding_rate").to_list() == [0.00020]
