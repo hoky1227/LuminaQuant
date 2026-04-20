@@ -10,6 +10,7 @@ import hashlib
 import itertools
 import json
 import os
+from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
@@ -237,8 +238,50 @@ def _adapt_candidate_inputs(
     max_candidates: int,
 ) -> list[dict[str, Any]]:
     adapted = [adapt_legacy_candidate(item) for item in candidates]
-    if int(max_candidates) > 0:
-        adapted = adapted[: int(max_candidates)]
+    limit = int(max_candidates)
+    if limit > 0 and len(adapted) > limit:
+        by_family: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        family_order: list[str] = []
+        for row in adapted:
+            family = str(row.get("family") or "other")
+            if family not in by_family:
+                family_order.append(family)
+            by_family[family].append(row)
+
+        selected: list[dict[str, Any]] = []
+        seen_ids: set[str] = set()
+        while len(selected) < limit and family_order:
+            progressed = False
+            next_order: list[str] = []
+            for family in family_order:
+                queue = by_family.get(family) or []
+                while queue:
+                    row = queue.pop(0)
+                    candidate_id = str(row.get("candidate_id") or "")
+                    if candidate_id in seen_ids:
+                        continue
+                    selected.append(row)
+                    seen_ids.add(candidate_id)
+                    progressed = True
+                    break
+                if queue:
+                    next_order.append(family)
+                if len(selected) >= limit:
+                    break
+            if not progressed:
+                break
+            family_order = next_order
+
+        if len(selected) < limit:
+            for row in adapted:
+                candidate_id = str(row.get("candidate_id") or "")
+                if candidate_id in seen_ids:
+                    continue
+                selected.append(row)
+                if len(selected) >= limit:
+                    break
+
+        adapted = selected
     return adapted
 
 

@@ -781,6 +781,105 @@ def test_shortlist_default_blocks_generic_multi_asset_but_keeps_allowlisted_fact
     assert {row["name"] for row in shortlist} == {"carry_trend_factor_rotation_1h_guarded"}
 
 
+def test_shortlist_default_keeps_existing_allowlisted_multi_asset_non_trend_families():
+    candidates = [
+        {
+            "name": "leadlag_spillover_15m_0.35_lag3",
+            "strategy_class": "LeadLagSpilloverStrategy",
+            "family": "intraday_alpha",
+            "strategy_timeframe": "15m",
+            "symbols": ["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "TRX/USDT"],
+            "tags": ["leadlag", "cross-asset", "intraday", "alpha"],
+            "hurdle_fields": {"oos": {"pass": True, "score": 4.4}},
+            "oos": {"return": 0.06, "sharpe": 1.0, "mdd": 0.05, "trades": 25},
+        },
+        {
+            "name": "last_day_liquidity_regime_1h_balanced",
+            "strategy_class": "LastDayLiquidityRegimeStrategy",
+            "family": "cross_sectional",
+            "strategy_timeframe": "1h",
+            "symbols": ["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT"],
+            "tags": ["cross_sectional", "pure_momentum", "liquidity_conditioned", "crypto"],
+            "hurdle_fields": {"oos": {"pass": True, "score": 4.0}},
+            "oos": {"return": 0.07, "sharpe": 1.1, "mdd": 0.04, "trades": 20},
+        },
+        {
+            "name": "perp_crowding_carry_30m_0.35_0.10",
+            "strategy_class": "PerpCrowdingCarryStrategy",
+            "family": "carry",
+            "strategy_timeframe": "30m",
+            "symbols": ["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT"],
+            "tags": ["carry", "perp", "funding", "crowding"],
+            "hurdle_fields": {"oos": {"pass": True, "score": 3.8}},
+            "oos": {"return": 0.05, "sharpe": 0.95, "mdd": 0.04, "trades": 18},
+        },
+    ]
+
+    shortlist = select_diversified_shortlist(
+        candidates,
+        mode="oos",
+        max_total=5,
+        max_per_family=5,
+        max_per_timeframe=5,
+        allow_multi_asset=True,
+    )
+
+    assert {row["name"] for row in shortlist} == {
+        "leadlag_spillover_15m_0.35_lag3",
+        "last_day_liquidity_regime_1h_balanced",
+        "perp_crowding_carry_30m_0.35_0.10",
+    }
+
+
+def test_shortlist_suppresses_same_lineage_param_clones_by_default():
+    candidates = [
+        {
+            "name": "composite_trend_30m_a",
+            "strategy_class": "CompositeTrendStrategy",
+            "family": "trend",
+            "strategy_timeframe": "30m",
+            "symbols": ["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT"],
+            "hurdle_fields": {"oos": {"pass": True, "score": 10.0}},
+            "oos": {"return": 0.10, "sharpe": 2.0, "mdd": 0.04, "trades": 32},
+            "params": {"long_threshold": 0.75},
+        },
+        {
+            "name": "composite_trend_30m_b",
+            "strategy_class": "CompositeTrendStrategy",
+            "family": "trend",
+            "strategy_timeframe": "30m",
+            "symbols": ["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT"],
+            "hurdle_fields": {"oos": {"pass": True, "score": 9.5}},
+            "oos": {"return": 0.095, "sharpe": 1.9, "mdd": 0.04, "trades": 30},
+            "params": {"long_threshold": 0.60},
+        },
+        {
+            "name": "leadlag_spillover_15m_0.35_lag3",
+            "strategy_class": "LeadLagSpilloverStrategy",
+            "family": "intraday_alpha",
+            "strategy_timeframe": "15m",
+            "symbols": ["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "TRX/USDT"],
+            "tags": ["leadlag", "cross-asset", "intraday", "alpha"],
+            "hurdle_fields": {"oos": {"pass": True, "score": 4.4}},
+            "oos": {"return": 0.06, "sharpe": 1.0, "mdd": 0.05, "trades": 25},
+        },
+    ]
+
+    shortlist = select_diversified_shortlist(
+        candidates,
+        mode="oos",
+        max_total=5,
+        max_per_family=5,
+        max_per_timeframe=5,
+        allow_multi_asset=True,
+    )
+
+    assert {row["name"] for row in shortlist} == {
+        "composite_trend_30m_a",
+        "leadlag_spillover_15m_0.35_lag3",
+    }
+
+
 def test_build_single_asset_portfolio_sets_from_shortlist():
     shortlist = [
         {

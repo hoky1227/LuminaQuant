@@ -76,6 +76,30 @@ def candidate_identity(candidate: dict[str, Any]) -> str:
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:20]
 
 
+def _candidate_symbol_basket(candidate: dict[str, Any]) -> tuple[str, ...]:
+    return tuple(
+        sorted(
+            {
+                str(item).strip().upper()
+                for item in list(candidate.get("symbols") or [])
+                if str(item).strip()
+            }
+        )
+    )
+
+
+def candidate_lineage_key(candidate: dict[str, Any]) -> str:
+    """Collapse param variants that share the same structural basket lineage."""
+    payload = {
+        "family": str(candidate.get("family") or strategy_family(str(candidate.get("name", "")))).strip().lower(),
+        "strategy_class": str(candidate.get("strategy_class") or "").strip(),
+        "timeframe": str(candidate.get("strategy_timeframe") or candidate.get("timeframe") or "").strip().lower(),
+        "symbols": list(_candidate_symbol_basket(candidate)),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:20]
+
+
 def _resolve_robust_score_params(overrides: dict[str, Any] | None = None) -> dict[str, float]:
     merged = dict(DEFAULT_ROBUST_SCORE_PARAMS)
     if not isinstance(overrides, dict):
@@ -181,7 +205,15 @@ def _allowlisted_portfolio_native_multi_asset_candidate(candidate: dict[str, Any
     family = str(candidate.get("family") or "").strip().lower()
     tags = {str(item).strip().lower() for item in list(candidate.get("tags") or []) if str(item).strip()}
 
-    if strategy_class == "CarryTrendFactorRotationStrategy":
+    allowlisted_classes = {
+        "CarryTrendFactorRotationStrategy",
+        "LastDayLiquidityRegimeStrategy",
+        "LeadLagSpilloverStrategy",
+        "PerpCrowdingCarryStrategy",
+        "FundingLiquidationCrowdingFadeStrategy",
+        "CrossAssetLiquidationContagionFadeStrategy",
+    }
+    if strategy_class in allowlisted_classes:
         return True
     return (
         family == "cross_sectional"
@@ -412,6 +444,7 @@ def select_diversified_shortlist(
     single_min_sharpe: float | None = None,
     single_min_trades: int | None = None,
     allow_multi_asset: bool = False,
+    max_per_lineage: int = 1,
     include_weights: bool = False,
     weight_temperature: float = 0.35,
     max_weight: float = 0.35,
@@ -425,6 +458,7 @@ def select_diversified_shortlist(
 
     selected: list[dict[str, Any]] = []
     family_count: dict[str, int] = {}
+    lineage_count: dict[str, int] = {}
     timeframe_count: dict[str, int] = {}
     seen_identities: set[str] = set()
 
@@ -436,6 +470,7 @@ def select_diversified_shortlist(
         family = strategy_family(str(row.get("name", "")), fallback=str(row.get("family", "other")))
         mix_type = candidate_mix_type(row)
         identity = str(row.get("identity") or candidate_identity(row))
+        lineage = str(row.get("lineage") or candidate_lineage_key(row))
         score = float(hurdle_score(row, mode=mode, robust_score_params=robust_score_params))
 
         if identity in seen_identities:
@@ -466,18 +501,22 @@ def select_diversified_shortlist(
                     continue
         if family_count.get(family, 0) >= int(max_per_family):
             continue
+        if lineage_count.get(lineage, 0) >= int(max(1, max_per_lineage)):
+            continue
         if timeframe_count.get(timeframe, 0) >= int(max_per_timeframe):
             continue
 
         enriched = dict(row)
         enriched["family"] = family
         enriched["identity"] = identity
+        enriched["lineage"] = lineage
         enriched["mix_type"] = mix_type
         enriched["shortlist_score"] = score
         selected.append(enriched)
 
         seen_identities.add(identity)
         family_count[family] = family_count.get(family, 0) + 1
+        lineage_count[lineage] = lineage_count.get(lineage, 0) + 1
         timeframe_count[timeframe] = timeframe_count.get(timeframe, 0) + 1
 
     if include_weights:
