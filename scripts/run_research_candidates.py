@@ -20,6 +20,10 @@ from lumina_quant.strategy_factory import (
 from lumina_quant.strategy_factory.selection import select_diversified_shortlist
 from lumina_quant.symbols import CANONICAL_STRATEGY_TIMEFRAMES, canonicalize_symbol_list
 
+_METALS = {"XAU/USDT", "XAG/USDT", "XPT/USDT", "XPD/USDT"}
+_RESEARCH_PROMOTION_MAX_SPLIT_DRAWDOWN = 0.15
+_RESEARCH_STRICT_LIQUIDATION_COUNT_MAX = 0
+
 DEFAULT_SHORTLIST_SELECTION_CONFIG: dict[str, Any] = {
     "drop_single_without_metrics": False,
     "single_min_score": 0.0,
@@ -27,6 +31,7 @@ DEFAULT_SHORTLIST_SELECTION_CONFIG: dict[str, Any] = {
     "single_min_sharpe": 0.0,
     "single_min_trades": 5,
     "allow_multi_asset": False,
+    "max_per_lineage": 1,
     "include_weights": True,
     "weight_temperature": 0.35,
     "max_weight": 0.35,
@@ -159,6 +164,12 @@ def _resolve_shortlist_selection_config(
         resolved["allow_multi_asset"] = _safe_bool(
             shortlist_cfg.get("allow_multi_asset"),
             bool(resolved["allow_multi_asset"]),
+        )
+    if "max_per_lineage" in shortlist_cfg:
+        resolved["max_per_lineage"] = _safe_int(
+            shortlist_cfg.get("max_per_lineage"),
+            int(resolved["max_per_lineage"]),
+            minimum=1,
         )
     if "include_weights" in shortlist_cfg:
         resolved["include_weights"] = _safe_bool(
@@ -623,6 +634,7 @@ def _render_shortlist_markdown(
         "",
         f"- Source report: `{report_path}`",
         f"- Candidate count: {len(shortlist)}",
+        "- First-class fallback: `risk_off_cash` / `no_position` remains a valid research output.",
         "",
         "| # | Name | Strategy | TF | Family | OOS Sharpe | DSR | PBO | Score |",
         "|---:|---|---|---|---|---:|---:|---:|---:|",
@@ -1300,11 +1312,24 @@ def main() -> int:
         single_min_sharpe=shortlist_config.get("single_min_sharpe"),
         single_min_trades=int(shortlist_config["single_min_trades"]),
         allow_multi_asset=bool(shortlist_config["allow_multi_asset"]),
+        max_per_lineage=int(shortlist_config["max_per_lineage"]),
         include_weights=bool(shortlist_config["include_weights"]),
         weight_temperature=float(shortlist_config["weight_temperature"]),
         max_weight=float(shortlist_config["max_weight"]),
         robust_score_params=shortlist_score_params,
     )
+
+    risk_off_mode = {
+        "mode": "risk_off_cash",
+        "label": "no_position",
+        "allocation": {"cash": 1.0},
+        "cash_weight": 1.0,
+        "reason": (
+            "Research outputs keep cash / no-position as a first-class hostile-regime fallback "
+            "instead of forcing active risk."
+        ),
+    }
+    report["risk_off_mode"] = risk_off_mode
 
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
 
@@ -1330,6 +1355,7 @@ def main() -> int:
         "split_mode": report.get("split_mode") or ("exact" if exact_split is not None else "default"),
         "source_report": str(output_path),
         "selected_team": shortlisted,
+        "risk_off_mode": risk_off_mode,
         "candidates": report.get("candidates") or [],
         "stage1": report.get("stage1") or {},
         "scoring_config": report.get("scoring_config") or {},

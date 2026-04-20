@@ -7,6 +7,7 @@ import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import polars as pl
 
@@ -176,6 +177,7 @@ def test_shortlist_selection_config_nested_scope_and_cli_precedence():
             "shortlist_selection": {
                 "max_per_family": 7,
                 "max_per_timeframe": 5,
+                "max_per_lineage": 2,
                 "weight_temperature": 0.2,
                 "max_weight": 0.5,
             }
@@ -186,9 +188,116 @@ def test_shortlist_selection_config_nested_scope_and_cli_precedence():
     assert resolved["max_total"] == 11
     assert resolved["max_per_family"] == 7
     assert resolved["max_per_timeframe"] == 5
+    assert resolved["max_per_lineage"] == 2
     assert float(resolved["weight_temperature"]) == 0.2
     assert float(resolved["max_weight"]) == 0.5
     assert resolved["allow_multi_asset"] is False
+
+
+def test_run_research_candidates_forwards_max_per_lineage_and_persists_it(monkeypatch, tmp_path: Path):
+    root = Path(__file__).resolve().parents[1]
+    score_cfg_path = tmp_path / "score_config.json"
+    score_cfg_path.write_text(
+        json.dumps(
+            {
+                "candidate_research": {
+                    "shortlist_selection": {
+                        "max_per_lineage": 2,
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    candidates = [
+        {
+            "candidate_id": "cand-a",
+            "name": "carry_trend_factor_rotation_1h_guarded",
+            "strategy_class": "CarryTrendFactorRotationStrategy",
+            "family": "cross_sectional",
+            "strategy_timeframe": "1h",
+            "symbols": ["BTC/USDT", "ETH/USDT", "SOL/USDT"],
+            "hurdle_fields": {"oos": {"pass": True, "score": 5.0}},
+            "oos": {"return": 0.08, "sharpe": 1.6, "mdd": 0.05, "trades": 24},
+            "return_streams": {"train": [], "val": [], "oos": []},
+            "metadata": {},
+        }
+    ]
+
+    captured: dict[str, Any] = {}
+
+    def _stub_build_default_candidate_rows(*, symbols, timeframes, max_candidates):
+        _ = (symbols, timeframes, max_candidates)
+        return list(candidates)
+
+    def _stub_run_candidate_research_with_optional_split(
+        *,
+        candidates,
+        base_timeframe,
+        strategy_timeframes,
+        symbol_universe,
+        stage1_keep_ratio,
+        max_candidates,
+        score_config,
+        exact_split,
+        progress_callback,
+    ):
+        _ = (
+            candidates,
+            base_timeframe,
+            strategy_timeframes,
+            symbol_universe,
+            stage1_keep_ratio,
+            max_candidates,
+            score_config,
+            exact_split,
+            progress_callback,
+        )
+        return {
+            "schema_version": "v2",
+            "base_timeframe": "1s",
+            "strategy_timeframes": ["1h"],
+            "split": {},
+            "candidates": list(candidates),
+            "stage1": {},
+            "scoring_config": {},
+            "data_sources": {},
+        }
+
+    def _stub_select_diversified_shortlist(rows, **kwargs):
+        captured.update(kwargs)
+        return list(rows)
+
+    monkeypatch.setattr(MODULE, "build_default_candidate_rows", _stub_build_default_candidate_rows)
+    monkeypatch.setattr(MODULE, "_run_candidate_research_with_optional_split", _stub_run_candidate_research_with_optional_split)
+    monkeypatch.setattr(MODULE, "select_diversified_shortlist", _stub_select_diversified_shortlist)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            str(root / "scripts" / "run_research_candidates.py"),
+            "--output-dir",
+            str(tmp_path),
+            "--symbols",
+            "BTC/USDT",
+            "--timeframes",
+            "1h",
+            "--max-candidates",
+            "1",
+            "--top-k",
+            "1",
+            "--score-config",
+            str(score_cfg_path),
+        ],
+    )
+
+    assert MODULE.main() == 0
+    assert int(captured["max_per_lineage"]) == 2
+
+    team_report = json.loads((tmp_path / "strategy_factory_report_latest.json").read_text(encoding="utf-8"))
+    shortlist_config = dict(team_report.get("shortlist_config") or {})
+    assert int(shortlist_config.get("max_per_lineage", 0)) == 2
 
 
 def test_shortlist_robust_score_params_cross_corr_penalty_and_override_precedence():

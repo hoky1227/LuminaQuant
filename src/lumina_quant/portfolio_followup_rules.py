@@ -19,8 +19,10 @@ ROBUST_PROMOTION_GATES = {
     "oos_total_return_delta_min_exclusive": 0.0,
     "oos_monthly_mean_min": 0.02,
     "oos_sharpe_relief_min": 0.50,
-    "candidate_split_max_drawdown_max_inclusive": 0.20,
+    "candidate_split_max_drawdown_max_inclusive": 0.15,
     "strict_liquidation_count_max_inclusive": 0,
+    "strict_max_leverage_max_inclusive": 20.0,
+    "strict_average_leverage_max_exclusive": 5.0,
 }
 
 VALIDATION_OBJECTIVE_FORMULA = (
@@ -796,6 +798,71 @@ def _strict_liquidation_evidence_count(candidate_payload: Mapping[str, Any]) -> 
     return max(totals) if totals else 0
 
 
+def _strict_leverage_evidence(candidate_payload: Mapping[str, Any]) -> dict[str, float | None]:
+    leverage_maps: list[dict[str, float]] = []
+    count_maps: list[dict[str, float]] = []
+
+    def _collect_state_counts(summary: Any) -> None:
+        if not isinstance(summary, Mapping):
+            return
+        for split in ("oos", "val", "train"):
+            split_payload = summary.get(split)
+            if not isinstance(split_payload, Mapping):
+                continue
+            counts = split_payload.get("counts")
+            if not isinstance(counts, Mapping):
+                continue
+            normalized = {
+                str(key): max(0.0, safe_float(value, 0.0))
+                for key, value in counts.items()
+                if max(0.0, safe_float(value, 0.0)) > 0.0
+            }
+            if normalized:
+                count_maps.append(normalized)
+                return
+
+    def _scan(container: Any) -> None:
+        if not isinstance(container, Mapping):
+            return
+        leverage_by_state = container.get("leverage_by_state")
+        if isinstance(leverage_by_state, Mapping):
+            normalized = {
+                str(key): max(0.0, safe_float(value, 0.0))
+                for key, value in leverage_by_state.items()
+                if max(0.0, safe_float(value, 0.0)) > 0.0
+            }
+            if normalized:
+                leverage_maps.append(normalized)
+        _collect_state_counts(container.get("state_summary"))
+        _scan(container.get("strict_allocator"))
+        _scan(container.get("strict_validation"))
+
+    _scan(candidate_payload)
+    metadata = candidate_payload.get("metadata")
+    if isinstance(metadata, Mapping):
+        _scan(metadata)
+
+    leverage_by_state = leverage_maps[0] if leverage_maps else {}
+    max_leverage = max(leverage_by_state.values()) if leverage_by_state else None
+
+    average_leverage: float | None = None
+    if leverage_by_state and count_maps:
+        counts = count_maps[0]
+        total_count = sum(float(value) for value in counts.values())
+        weighted_sum = sum(
+            float(leverage_by_state.get(str(state), 0.0)) * float(count)
+            for state, count in counts.items()
+            if str(state) in leverage_by_state
+        )
+        if total_count > 0.0 and weighted_sum > 0.0:
+            average_leverage = weighted_sum / total_count
+
+    return {
+        "max_leverage": None if max_leverage is None else float(max_leverage),
+        "average_leverage": None if average_leverage is None else float(average_leverage),
+    }
+
+
 def evaluate_robustness_gates(
     candidate_payload: Mapping[str, Any],
     incumbent_payload: Mapping[str, Any],
@@ -821,6 +888,9 @@ def evaluate_robustness_gates(
         ROBUST_PROMOTION_GATES["candidate_split_max_drawdown_max_inclusive"]
     )
     strict_liquidation_count = _strict_liquidation_evidence_count(candidate_payload)
+    strict_leverage = _strict_leverage_evidence(candidate_payload)
+    strict_max_leverage = strict_leverage["max_leverage"]
+    strict_average_leverage = strict_leverage["average_leverage"]
 
     monthly_rows = extract_oos_monthly_returns(candidate_payload)
     oos_monthly_mean = mean_monthly_return(monthly_rows)
@@ -867,6 +937,10 @@ def evaluate_robustness_gates(
         ),
         "strict_liquidation_count": strict_liquidation_count
         <= ROBUST_PROMOTION_GATES["strict_liquidation_count_max_inclusive"],
+        "strict_max_leverage": strict_max_leverage is None
+        or strict_max_leverage <= ROBUST_PROMOTION_GATES["strict_max_leverage_max_inclusive"],
+        "strict_average_leverage": strict_average_leverage is None
+        or strict_average_leverage < ROBUST_PROMOTION_GATES["strict_average_leverage_max_exclusive"],
     }
 
     rejection_reasons: list[str] = []
@@ -892,6 +966,10 @@ def evaluate_robustness_gates(
         rejection_reasons.append("oos_drawdown_worse_without_sharpe_relief")
     if not checks["strict_liquidation_count"]:
         rejection_reasons.append("strict_liquidation_count_positive")
+    if not checks["strict_max_leverage"]:
+        rejection_reasons.append("strict_max_leverage_above_cap")
+    if not checks["strict_average_leverage"]:
+        rejection_reasons.append("strict_average_leverage_above_cap")
 
     return {
         "promotable": not rejection_reasons,
@@ -903,6 +981,8 @@ def evaluate_robustness_gates(
         "oos_max_drawdown_delta": oos_max_drawdown_delta,
         "oos_sharpe_delta": oos_sharpe_delta,
         "strict_liquidation_count": strict_liquidation_count,
+        "strict_max_leverage": strict_max_leverage,
+        "strict_average_leverage": strict_average_leverage,
     }
 
 

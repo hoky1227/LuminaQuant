@@ -100,6 +100,23 @@ def candidate_lineage_key(candidate: dict[str, Any]) -> str:
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:20]
 
 
+def candidate_symbol_basket_key(candidate: dict[str, Any]) -> str:
+    payload = {
+        "symbols": list(_candidate_symbol_basket(candidate)),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:20]
+
+
+def candidate_family_basket_key(candidate: dict[str, Any]) -> str:
+    payload = {
+        "family": str(candidate.get("family") or strategy_family(str(candidate.get("name", "")))).strip().lower(),
+        "symbols": list(_candidate_symbol_basket(candidate)),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:20]
+
+
 def _resolve_robust_score_params(overrides: dict[str, Any] | None = None) -> dict[str, float]:
     merged = dict(DEFAULT_ROBUST_SCORE_PARAMS)
     if not isinstance(overrides, dict):
@@ -445,6 +462,8 @@ def select_diversified_shortlist(
     single_min_trades: int | None = None,
     allow_multi_asset: bool = False,
     max_per_lineage: int = 1,
+    max_per_symbol_basket: int = 2,
+    max_per_family_basket: int = 1,
     include_weights: bool = False,
     weight_temperature: float = 0.35,
     max_weight: float = 0.35,
@@ -459,6 +478,8 @@ def select_diversified_shortlist(
     selected: list[dict[str, Any]] = []
     family_count: dict[str, int] = {}
     lineage_count: dict[str, int] = {}
+    symbol_basket_count: dict[str, int] = {}
+    family_basket_count: dict[str, int] = {}
     timeframe_count: dict[str, int] = {}
     seen_identities: set[str] = set()
 
@@ -471,6 +492,8 @@ def select_diversified_shortlist(
         mix_type = candidate_mix_type(row)
         identity = str(row.get("identity") or candidate_identity(row))
         lineage = str(row.get("lineage") or candidate_lineage_key(row))
+        symbol_basket = str(row.get("symbol_basket") or candidate_symbol_basket_key(row))
+        family_basket = str(row.get("family_basket") or candidate_family_basket_key(row))
         score = float(hurdle_score(row, mode=mode, robust_score_params=robust_score_params))
 
         if identity in seen_identities:
@@ -503,6 +526,10 @@ def select_diversified_shortlist(
             continue
         if lineage_count.get(lineage, 0) >= int(max(1, max_per_lineage)):
             continue
+        if symbol_basket_count.get(symbol_basket, 0) >= int(max(1, max_per_symbol_basket)):
+            continue
+        if family_basket_count.get(family_basket, 0) >= int(max(1, max_per_family_basket)):
+            continue
         if timeframe_count.get(timeframe, 0) >= int(max_per_timeframe):
             continue
 
@@ -510,6 +537,8 @@ def select_diversified_shortlist(
         enriched["family"] = family
         enriched["identity"] = identity
         enriched["lineage"] = lineage
+        enriched["symbol_basket"] = symbol_basket
+        enriched["family_basket"] = family_basket
         enriched["mix_type"] = mix_type
         enriched["shortlist_score"] = score
         selected.append(enriched)
@@ -517,6 +546,8 @@ def select_diversified_shortlist(
         seen_identities.add(identity)
         family_count[family] = family_count.get(family, 0) + 1
         lineage_count[lineage] = lineage_count.get(lineage, 0) + 1
+        symbol_basket_count[symbol_basket] = symbol_basket_count.get(symbol_basket, 0) + 1
+        family_basket_count[family_basket] = family_basket_count.get(family_basket, 0) + 1
         timeframe_count[timeframe] = timeframe_count.get(timeframe, 0) + 1
 
     if include_weights:

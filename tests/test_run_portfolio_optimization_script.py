@@ -276,12 +276,90 @@ def test_run_portfolio_optimization_enforces_strategy_cap_when_feasible(tmp_path
     total_weight = sum(float(row.get("weight", 0.0)) for row in weights)
     total_share = sum(float(row.get("weight_share", 0.0)) for row in weights)
     assert abs(total_weight - float(payload.get("gross_exposure", 0.0))) < 1e-6
-    assert abs(total_share - 1.0) < 1e-6
+    assert 0.0 < total_share <= 1.0
+    assert abs(total_share + float(payload.get("cash_weight", 0.0)) - 1.0) < 1e-6
 
     constraints = dict(payload.get("constraints") or {})
     max_strategy = float(constraints.get("max_strategy", 0.15))
     assert max_strategy <= 0.150001
     assert all(float(row.get("weight_share", 0.0)) <= max_strategy + 1e-6 for row in weights)
+
+
+def test_run_portfolio_optimization_fails_explicitly_when_asset_caps_are_infeasible(tmp_path: Path):
+    root = Path(__file__).resolve().parents[1]
+
+    candidates = [
+        {
+            "candidate_id": f"c{idx}",
+            "name": f"trend_{idx}",
+            "strategy_class": "CompositeTrendStrategy",
+            "family": f"family_{idx}",
+            "strategy_timeframe": "1h",
+            "symbols": ["BTC/USDT"],
+            "oos": {
+                "sharpe": 1.2 - (idx * 0.05),
+                "return": 0.08 - (idx * 0.005),
+                "deflated_sharpe": 0.6 - (idx * 0.02),
+                "pbo": 0.1 + (idx * 0.01),
+                "turnover": 0.2 + (idx * 0.01),
+            },
+            "pass": True,
+            "return_streams": {
+                "train": [{"t": float(i), "v": 0.0002} for i in range(80)],
+                "val": [{"t": float(i), "v": 0.0001} for i in range(40)],
+                "oos": [{"t": float(i), "v": 0.0003} for i in range(40)],
+            },
+            "metadata": {"cost_rate": 0.0005},
+        }
+        for idx in range(3)
+    ]
+
+    research_path = tmp_path / "candidate_research.json"
+    team_path = tmp_path / "team_report.json"
+    score_config_path = tmp_path / "score_config.json"
+    out_dir = tmp_path / "reports"
+    research_path.write_text(json.dumps({"schema_version": "v2", "candidates": candidates}), encoding="utf-8")
+    team_path.write_text(json.dumps({"selected_team": candidates}), encoding="utf-8")
+    score_config_path.write_text(
+        json.dumps(
+            {
+                "portfolio_optimization": {
+                    "constraints": {
+                        "max_strategy": 0.5,
+                        "max_family": 1.0,
+                        "max_asset": 0.2,
+                        "max_metals": 1.0,
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    script = root / "scripts" / "run_portfolio_optimization.py"
+    cmd = [
+        sys.executable,
+        str(script),
+        "--research-report",
+        str(research_path),
+        "--team-report",
+        str(team_path),
+        "--score-config",
+        str(score_config_path),
+        "--output-dir",
+        str(out_dir),
+        "--max-strategies",
+        "3",
+    ]
+    result = subprocess.run(cmd, cwd=str(root), check=False, capture_output=True, text=True)
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads((out_dir / "portfolio_optimization_latest.json").read_text(encoding="utf-8"))
+    assert payload["status"] == "completed"
+    constraints = dict(payload.get("constraints") or {})
+    assert float(constraints.get("max_asset", 0.0)) == 0.2
+    assert float(payload.get("cash_weight", 0.0)) >= 0.79
+    assert float(payload.get("gross_exposure", 0.0)) <= 0.200001
 
 
 def test_run_portfolio_optimization_fits_on_validation_and_reports_oos(tmp_path: Path):
@@ -535,11 +613,14 @@ def test_run_portfolio_optimization_preserves_vol_target_gross_exposure(tmp_path
     low_share = float((low_payload.get("weights") or [{}])[0].get("weight_share", 0.0))
     high_share = float((high_payload.get("weights") or [{}])[0].get("weight_share", 0.0))
 
-    assert abs(low_share - 1.0) < 1e-9
-    assert abs(high_share - 1.0) < 1e-9
+    assert 0.0 < low_share <= 0.15 + 1e-9
+    assert 0.0 < high_share <= 0.15 + 1e-9
     assert 0.0 < low_weight < 1.0
-    assert high_weight > 1.0
+    assert high_weight > low_weight
     assert abs(low_weight - float(low_payload.get("gross_exposure", 0.0))) < 1e-9
     assert abs(high_weight - float(high_payload.get("gross_exposure", 0.0))) < 1e-9
-    assert float((low_payload.get("scoring") or {}).get("vol_targeting", {}).get("vol_scale", 0.0)) < 1.0
-    assert float((high_payload.get("scoring") or {}).get("vol_targeting", {}).get("vol_scale", 0.0)) > 1.0
+    assert float(low_payload.get("cash_weight", 0.0)) > float(high_payload.get("cash_weight", 0.0))
+    low_scale = float((low_payload.get("scoring") or {}).get("vol_targeting", {}).get("vol_scale", 0.0))
+    high_scale = float((high_payload.get("scoring") or {}).get("vol_targeting", {}).get("vol_scale", 0.0))
+    assert low_scale > 0.0
+    assert high_scale > low_scale

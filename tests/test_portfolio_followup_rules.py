@@ -179,7 +179,7 @@ def test_evaluate_robustness_gates_rejects_candidate_split_drawdown_above_cap() 
         oos_total_return=0.08,
         train_sharpe=0.7,
         oos_sharpe=2.1,
-        oos_max_drawdown=0.21,
+        oos_max_drawdown=0.16,
         monthly=[0.03, 0.03, 0.03],
     )
 
@@ -222,6 +222,84 @@ def test_evaluate_robustness_gates_rejects_positive_strict_liquidation_evidence(
     assert result["promotable"] is False
     assert result["strict_liquidation_count"] == 1
     assert "strict_liquidation_count_positive" in result["rejection_reasons"]
+
+
+def test_evaluate_robustness_gates_rejects_strict_max_leverage_above_cap() -> None:
+    incumbent = _payload(
+        train_total_return=0.02,
+        val_total_return=0.03,
+        oos_total_return=0.05,
+        train_sharpe=0.4,
+        oos_sharpe=1.5,
+        oos_max_drawdown=0.07,
+        monthly=[0.02, 0.02, 0.02],
+    )
+    candidate = _payload(
+        train_total_return=0.03,
+        val_total_return=0.04,
+        oos_total_return=0.08,
+        train_sharpe=0.8,
+        oos_sharpe=2.2,
+        oos_max_drawdown=0.04,
+        monthly=[0.03, 0.03, 0.03],
+    )
+    candidate["strict_validation"] = {
+        "leverage_by_state": {
+            "incumbent": 3,
+            "blend_85_15": 21,
+            "autoresearch_55_45": 2,
+        }
+    }
+
+    result = evaluate_robustness_gates(candidate, incumbent)
+
+    assert result["promotable"] is False
+    assert result["strict_max_leverage"] == 21.0
+    assert "strict_max_leverage_above_cap" in result["rejection_reasons"]
+
+
+def test_evaluate_robustness_gates_rejects_strict_average_leverage_above_cap() -> None:
+    incumbent = _payload(
+        train_total_return=0.02,
+        val_total_return=0.03,
+        oos_total_return=0.05,
+        train_sharpe=0.4,
+        oos_sharpe=1.5,
+        oos_max_drawdown=0.07,
+        monthly=[0.02, 0.02, 0.02],
+    )
+    candidate = _payload(
+        train_total_return=0.03,
+        val_total_return=0.04,
+        oos_total_return=0.08,
+        train_sharpe=0.8,
+        oos_sharpe=2.2,
+        oos_max_drawdown=0.04,
+        monthly=[0.03, 0.03, 0.03],
+    )
+    candidate["strict_validation"] = {
+        "leverage_by_state": {
+            "incumbent": 3,
+            "blend_85_15": 6,
+            "autoresearch_55_45": 2,
+        },
+        "strict_allocator": {
+            "state_summary": {
+                "oos": {
+                    "counts": {
+                        "incumbent": 1,
+                        "blend_85_15": 9,
+                    }
+                }
+            }
+        },
+    }
+
+    result = evaluate_robustness_gates(candidate, incumbent)
+
+    assert result["promotable"] is False
+    assert result["strict_average_leverage"] == 5.7
+    assert "strict_average_leverage_above_cap" in result["rejection_reasons"]
 
 
 

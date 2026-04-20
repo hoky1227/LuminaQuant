@@ -52,6 +52,14 @@ DEFAULT_PORTFOLIO_SCORING_CONFIG: dict[str, Any] = {
 }
 
 
+class PortfolioConstraintInfeasibleError(RuntimeError):
+    """Raised when configured portfolio caps cannot be satisfied."""
+
+    def __init__(self, message: str, *, details: dict[str, Any]) -> None:
+        super().__init__(message)
+        self.details = dict(details)
+
+
 def _safe_float(value: Any, default: float = 0.0) -> float:
     try:
         out = float(value)
@@ -488,6 +496,75 @@ def _metals_exposure(weights: dict[str, float], records: dict[str, dict[str, Any
     return exposure
 
 
+def _portfolio_constraint_violations(
+    weights: dict[str, float],
+    *,
+    records: dict[str, dict[str, Any]],
+    max_strategy: float,
+    max_family: float,
+    max_asset: float,
+    max_metals: float,
+) -> dict[str, Any]:
+    strategy_violations = [
+        {
+            "candidate_id": key,
+            "weight": float(weight),
+            "max_strategy": float(max_strategy),
+        }
+        for key, weight in sorted(weights.items())
+        if float(weight) > float(max_strategy) + 1e-9
+    ]
+
+    family_weights: dict[str, float] = defaultdict(float)
+    for key, weight in weights.items():
+        family = str((records.get(key) or {}).get("family", "other"))
+        family_weights[family] += float(weight)
+    family_violations = {
+        family: {
+            "weight": float(weight),
+            "max_family": float(max_family),
+        }
+        for family, weight in sorted(family_weights.items())
+        if float(weight) > float(max_family) + 1e-9
+    }
+
+    assets = sorted(
+        {
+            symbol
+            for key in weights
+            for symbol in _normalized_symbols(records.get(key) or {})
+        }
+    )
+    asset_violations = {}
+    for asset in assets:
+        exposure = _asset_exposure(weights, records, asset)
+        if exposure <= float(max_asset) + 1e-9:
+            continue
+        asset_violations[asset] = {
+            "exposure": float(exposure),
+            "max_asset": float(max_asset),
+        }
+
+    metal_exposure = _metals_exposure(weights, records)
+    metals_violation = None
+    if metal_exposure > float(max_metals) + 1e-9:
+        metals_violation = {
+            "exposure": float(metal_exposure),
+            "max_metals": float(max_metals),
+        }
+
+    violations: dict[str, Any] = {}
+    if strategy_violations:
+        violations["strategy"] = strategy_violations
+    if family_violations:
+        violations["family"] = family_violations
+    if asset_violations:
+        violations["asset"] = asset_violations
+    if metals_violation is not None:
+        violations["metals"] = metals_violation
+    return violations
+
+
 def _apply_caps(
     weights: dict[str, float],
     *,
@@ -508,7 +585,10 @@ def _apply_caps(
 
     out = {key: max(0.0, float(value)) for key, value in weights.items()}
     n = len(out)
-    strategy_cap = max(float(max_strategy), 1.0 / max(1, n))
+    strategy_cap = max(0.0, float(max_strategy))
+    family_cap = max(0.0, float(max_family))
+    asset_cap = max(0.0, float(max_asset))
+    metals_cap = max(0.0, float(max_metals))
 
     families = {
         key: str((records.get(key) or {}).get("family", "other"))
@@ -518,17 +598,13 @@ def _apply_caps(
     for fam in families.values():
         family_counts[fam] += 1
 
-    family_caps: dict[str, float] = {}
-    for fam in family_counts:
-        other_capacity = 0.0
-        for other_fam, other_count in family_counts.items():
-            if other_fam == fam:
-                continue
-            other_capacity += float(other_count) * strategy_cap
-        required = max(0.0, 1.0 - other_capacity)
-        family_caps[fam] = min(1.0, max(float(max_family), required))
+    family_caps = dict.fromkeys(family_counts, family_cap)
+    family_capacity = sum(
+        min(float(count) * strategy_cap, family_cap)
+        for count in family_counts.values()
+    )
+    target_active_weight = min(1.0, float(n) * strategy_cap, family_capacity)
 
-    # Relax caps only when mathematically required by available candidates.
     assets = sorted(
         {
             symbol
@@ -536,23 +612,6 @@ def _apply_caps(
             for symbol in _normalized_symbols(records.get(key) or {})
         }
     )
-    min_required_asset = 0.0
-    for asset in assets:
-        ratios = {}
-        for key in out:
-            symbols = _normalized_symbols(records.get(key) or {})
-            if not symbols:
-                ratios[key] = 0.0
-            elif asset in symbols:
-                ratios[key] = 1.0 / float(len(symbols))
-            else:
-                ratios[key] = 0.0
-        min_required_asset = max(
-            min_required_asset,
-            _min_required_exposure(ratios, strategy_cap=strategy_cap),
-        )
-    asset_cap = max(float(max_asset), float(min_required_asset))
-
     metal_ratios: dict[str, float] = {}
     for key in out:
         symbols = _normalized_symbols(records.get(key) or {})
@@ -561,10 +620,9 @@ def _apply_caps(
             continue
         metals_count = sum(1 for symbol in symbols if symbol in _METALS)
         metal_ratios[key] = float(metals_count) / float(len(symbols))
-    metals_cap = max(float(max_metals), _min_required_exposure(metal_ratios, strategy_cap=strategy_cap))
 
     upper = dict.fromkeys(out, strategy_cap)
-    out = _project_simplex_with_upper_bounds(out, upper=upper, target_sum=1.0)
+    out = _project_simplex_with_upper_bounds(out, upper=upper, target_sum=target_active_weight)
 
     for _ in range(24):
         changed = False
@@ -574,7 +632,7 @@ def _apply_caps(
         for key, weight in out.items():
             family_sums[families[key]] += float(weight)
         for family, total in family_sums.items():
-            limit = float(family_caps.get(family, 1.0))
+            limit = float(family_caps.get(family, family_cap))
             if total <= limit + 1e-9:
                 continue
             scale = limit / max(1e-12, total)
@@ -604,15 +662,48 @@ def _apply_caps(
                     out[key] *= scale
             changed = True
 
-        out = _project_simplex_with_upper_bounds(out, upper=upper, target_sum=1.0)
         if not changed:
             break
 
+    violations = _portfolio_constraint_violations(
+        out,
+        records=records,
+        max_strategy=strategy_cap,
+        max_family=family_cap,
+        max_asset=asset_cap,
+        max_metals=metals_cap,
+    )
+    if violations:
+        target_active_weight = float(sum(out.values()))
+        out = _project_simplex_with_upper_bounds(out, upper=upper, target_sum=target_active_weight)
+        violations = _portfolio_constraint_violations(
+            out,
+            records=records,
+            max_strategy=strategy_cap,
+            max_family=family_cap,
+            max_asset=asset_cap,
+            max_metals=metals_cap,
+        )
+        if violations:
+            raise PortfolioConstraintInfeasibleError(
+                "configured diversification caps are infeasible for the shortlisted candidates",
+                details={
+                    "configured": {
+                        "max_strategy": float(strategy_cap),
+                        "max_family": float(family_cap),
+                        "max_asset": float(asset_cap),
+                        "max_metals": float(metals_cap),
+                    },
+                    "violations": violations,
+                },
+            )
+
     return out, {
         "max_strategy": float(strategy_cap),
-        "max_family": float(max(family_caps.values()) if family_caps else max_family),
+        "max_family": float(family_cap),
         "max_asset": float(asset_cap),
         "max_metals": float(metals_cap),
+        "target_active_weight": float(target_active_weight),
         "family_caps": {key: float(value) for key, value in sorted(family_caps.items())},
     }
 
@@ -869,14 +960,22 @@ def main() -> int:
                 default=0.15,
             ),
         }
-        weights, effective_caps = _apply_caps(
-            weights,
-            records=rows,
-            max_strategy=configured_caps["max_strategy"],
-            max_family=configured_caps["max_family"],
-            max_asset=configured_caps["max_asset"],
-            max_metals=configured_caps["max_metals"],
-        )
+        try:
+            weights, effective_caps = _apply_caps(
+                weights,
+                records=rows,
+                max_strategy=configured_caps["max_strategy"],
+                max_family=configured_caps["max_family"],
+                max_asset=configured_caps["max_asset"],
+                max_metals=configured_caps["max_metals"],
+            )
+        except PortfolioConstraintInfeasibleError as exc:
+            report["constraints"] = {
+                "status": "infeasible",
+                "configured": dict(configured_caps),
+                **dict(exc.details),
+            }
+            raise
         weight_shares = {key: float(value) for key, value in weights.items()}
 
         target_vol_floor = max(0.0, _safe_float(vol_targeting_params.get("target_vol_floor"), 0.01))
