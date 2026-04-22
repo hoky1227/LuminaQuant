@@ -348,6 +348,46 @@ def _datetime_to_iso_z(value: datetime | None) -> str | None:
     return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
+def _resolve_split_stage_end(
+    split: Mapping[str, Any] | None,
+    *,
+    stage: str,
+) -> datetime | None:
+    if not isinstance(split, Mapping):
+        return None
+
+    inclusive_keys: tuple[str, ...]
+    exclusive_keys: tuple[str, ...]
+    if stage == "train":
+        inclusive_keys = ("train_end",)
+        exclusive_keys = ("train_end_exclusive",)
+    elif stage == "val":
+        inclusive_keys = ("val_end", "validation_end")
+        exclusive_keys = ("val_end_exclusive", "validation_end_exclusive")
+    elif stage == "oos":
+        inclusive_keys = ("oos_end", "test_end")
+        exclusive_keys = (
+            "actual_oos_end_exclusive",
+            "oos_end_exclusive",
+            "requested_oos_end_exclusive",
+            "test_end_exclusive",
+        )
+    else:
+        msg = f"unsupported split stage: {stage}"
+        raise ValueError(msg)
+
+    for key in inclusive_keys:
+        value = _coerce_utc_datetime(split.get(key), end_of_day=True)
+        if value is not None:
+            return value
+
+    for key in exclusive_keys:
+        value = _coerce_utc_datetime(split.get(key))
+        if value is not None:
+            return value - timedelta(milliseconds=1)
+    return None
+
+
 def _split_window_bounds(split: Mapping[str, Any] | None) -> tuple[datetime | None, datetime | None]:
     if not isinstance(split, Mapping):
         return None, None
@@ -357,9 +397,9 @@ def _split_window_bounds(split: Mapping[str, Any] | None) -> tuple[datetime | No
         _coerce_utc_datetime(split.get("oos_start") or split.get("test_start")),
     ]
     ends = [
-        _coerce_utc_datetime(split.get("train_end"), end_of_day=True),
-        _coerce_utc_datetime(split.get("val_end"), end_of_day=True),
-        _coerce_utc_datetime(split.get("oos_end") or split.get("test_end"), end_of_day=True),
+        _resolve_split_stage_end(split, stage="train"),
+        _resolve_split_stage_end(split, stage="val"),
+        _resolve_split_stage_end(split, stage="oos"),
     ]
     valid_starts = [item for item in starts if item is not None]
     valid_ends = [item for item in ends if item is not None]
@@ -395,14 +435,11 @@ def _resolve_split_config(
 ) -> dict[str, Any]:
     resolved = dict(split) if isinstance(split, Mapping) else _build_default_split(strategy_timeframe)
     train_start = _coerce_utc_datetime(resolved.get("train_start"))
-    train_end = _coerce_utc_datetime(resolved.get("train_end"), end_of_day=True)
+    train_end = _resolve_split_stage_end(resolved, stage="train")
     val_start = _coerce_utc_datetime(resolved.get("val_start"))
-    val_end = _coerce_utc_datetime(resolved.get("val_end"), end_of_day=True)
+    val_end = _resolve_split_stage_end(resolved, stage="val")
     oos_start = _coerce_utc_datetime(resolved.get("oos_start") or resolved.get("test_start"))
-    oos_end = _coerce_utc_datetime(
-        resolved.get("oos_end") or resolved.get("test_end"),
-        end_of_day=True,
-    )
+    oos_end = _resolve_split_stage_end(resolved, stage="oos")
     return {
         **resolved,
         "train_start": _datetime_to_iso_z(train_start),

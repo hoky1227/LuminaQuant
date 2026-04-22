@@ -744,12 +744,24 @@ class _ResearchProgressWriter:
             },
             "resources": {},
             "resource_load": {
+                "overall": {
+                    "completed_units": 0,
+                    "total_units": 0,
+                    "completion_ratio": 0.0,
+                    "active_detail": {},
+                },
                 "bundle": {
                     "status": "pending",
                     "loaded_count": 0,
                     "total_count": 0,
                     "elapsed_seconds": 0.0,
                     "source_counts": {},
+                    "current_timeframe": {},
+                    "current_symbol_fetch": {},
+                    "recent_timeframes": [],
+                    "latest_symbol_fetch": {},
+                    "latest_window": {},
+                    "recent_windows": [],
                     "latest_item": {},
                     "slowest_items": [],
                 },
@@ -758,6 +770,9 @@ class _ResearchProgressWriter:
                     "loaded_count": 0,
                     "symbol_count": 0,
                     "elapsed_seconds": 0.0,
+                    "current_symbol": {},
+                    "latest_partition_scan": {},
+                    "latest_collect": {},
                     "latest_symbol": {},
                     "slowest_symbols": [],
                 },
@@ -766,6 +781,7 @@ class _ResearchProgressWriter:
                     "built_count": 0,
                     "timeframe_count": 0,
                     "elapsed_seconds": 0.0,
+                    "current_timeframe": {},
                     "latest_timeframe": {},
                     "slowest_timeframes": [],
                 },
@@ -832,8 +848,56 @@ class _ResearchProgressWriter:
                     "symbol_universe": list(payload.get("symbol_universe") or []),
                     "elapsed_seconds": 0.0,
                     "source_counts": {},
+                    "current_timeframe": {},
+                    "current_symbol_fetch": {},
+                    "recent_timeframes": [],
+                    "latest_symbol_fetch": {},
+                    "latest_window": {},
+                    "recent_windows": [],
                     "latest_item": {},
                     "slowest_items": [],
+                }
+            )
+        elif event == "resource_bundle_timeframe_started":
+            bundle_state.update(
+                {
+                    "status": "running",
+                    "current_timeframe": dict(payload or {}),
+                }
+            )
+        elif event == "resource_bundle_timeframe_completed":
+            recent_timeframes = [dict(row) for row in list(bundle_state.get("recent_timeframes") or [])]
+            recent_timeframes.append(dict(payload or {}))
+            bundle_state.update(
+                {
+                    "status": "running",
+                    "current_timeframe": {},
+                    "recent_timeframes": recent_timeframes[-5:],
+                }
+            )
+        elif event == "resource_bundle_symbol_fetch_started":
+            bundle_state.update(
+                {
+                    "status": "running",
+                    "current_symbol_fetch": dict(payload or {}),
+                }
+            )
+        elif event == "resource_bundle_symbol_window_loaded":
+            recent_windows = [dict(row) for row in list(bundle_state.get("recent_windows") or [])]
+            recent_windows.append(dict(payload or {}))
+            bundle_state.update(
+                {
+                    "status": "running",
+                    "latest_window": dict(payload or {}),
+                    "recent_windows": recent_windows[-8:],
+                }
+            )
+        elif event == "resource_bundle_symbol_fetch_completed":
+            bundle_state.update(
+                {
+                    "status": "running",
+                    "current_symbol_fetch": {},
+                    "latest_symbol_fetch": dict(payload or {}),
                 }
             )
         elif event == "resource_bundle_item_loaded":
@@ -863,6 +927,8 @@ class _ResearchProgressWriter:
                     "total_count": int(payload.get("total_count", bundle_state.get("total_count", 0)) or 0),
                     "elapsed_seconds": _progress_elapsed_seconds(payload),
                     "source_counts": dict(payload.get("source_counts") or bundle_state.get("source_counts") or {}),
+                    "current_timeframe": {},
+                    "current_symbol_fetch": {},
                 }
             )
         elif event == "resource_feature_load_started":
@@ -873,8 +939,45 @@ class _ResearchProgressWriter:
                     "symbol_count": int(payload.get("symbol_count", 0) or 0),
                     "feature_symbols": list(payload.get("feature_symbols") or []),
                     "elapsed_seconds": 0.0,
+                    "current_symbol": {},
+                    "latest_partition_scan": {},
+                    "latest_collect": {},
                     "latest_symbol": {},
                     "slowest_symbols": [],
+                }
+            )
+        elif event == "resource_feature_symbol_started":
+            feature_state.update(
+                {
+                    "status": "running",
+                    "current_symbol": dict(payload or {}),
+                }
+            )
+        elif event == "resource_feature_partition_scan_completed":
+            feature_state.update(
+                {
+                    "status": "running",
+                    "latest_partition_scan": dict(payload or {}),
+                }
+            )
+        elif event == "resource_feature_collect_started":
+            feature_state.update(
+                {
+                    "status": "running",
+                    "latest_collect": {
+                        **dict(payload or {}),
+                        "status": "running",
+                    },
+                }
+            )
+        elif event == "resource_feature_collect_completed":
+            feature_state.update(
+                {
+                    "status": "running",
+                    "latest_collect": {
+                        **dict(payload or {}),
+                        "status": "completed",
+                    },
                 }
             )
         elif event == "resource_feature_symbol_loaded":
@@ -883,6 +986,7 @@ class _ResearchProgressWriter:
                     "status": "running",
                     "loaded_count": int(payload.get("loaded_count", feature_state.get("loaded_count", 0)) or 0),
                     "symbol_count": int(payload.get("symbol_count", feature_state.get("symbol_count", 0)) or 0),
+                    "current_symbol": {},
                     "latest_symbol": dict(payload or {}),
                     "slowest_symbols": _merge_slowest_entries(
                         list(feature_state.get("slowest_symbols") or []),
@@ -900,6 +1004,7 @@ class _ResearchProgressWriter:
                     "nonempty_symbol_count": int(payload.get("nonempty_symbol_count", 0) or 0),
                     "total_rows": int(payload.get("total_rows", 0) or 0),
                     "elapsed_seconds": _progress_elapsed_seconds(payload),
+                    "current_symbol": {},
                 }
             )
         elif event == "resource_benchmark_build_started":
@@ -910,8 +1015,16 @@ class _ResearchProgressWriter:
                     "timeframe_count": int(payload.get("timeframe_count", 0) or 0),
                     "normalized_timeframes": list(payload.get("normalized_timeframes") or []),
                     "elapsed_seconds": 0.0,
+                    "current_timeframe": {},
                     "latest_timeframe": {},
                     "slowest_timeframes": [],
+                }
+            )
+        elif event == "resource_benchmark_timeframe_started":
+            benchmark_state.update(
+                {
+                    "status": "running",
+                    "current_timeframe": dict(payload or {}),
                 }
             )
         elif event == "resource_benchmark_timeframe_built":
@@ -920,6 +1033,7 @@ class _ResearchProgressWriter:
                     "status": "running",
                     "built_count": int(payload.get("built_count", benchmark_state.get("built_count", 0)) or 0),
                     "timeframe_count": int(payload.get("timeframe_count", benchmark_state.get("timeframe_count", 0)) or 0),
+                    "current_timeframe": {},
                     "latest_timeframe": dict(payload or {}),
                     "slowest_timeframes": _merge_slowest_entries(
                         list(benchmark_state.get("slowest_timeframes") or []),
@@ -936,6 +1050,7 @@ class _ResearchProgressWriter:
                     "timeframe_count": int(payload.get("timeframe_count", benchmark_state.get("timeframe_count", 0)) or 0),
                     "nonempty_timeframe_count": int(payload.get("nonempty_timeframe_count", 0) or 0),
                     "elapsed_seconds": _progress_elapsed_seconds(payload),
+                    "current_timeframe": {},
                 }
             )
         elif event == "candidate_evaluated":
@@ -971,6 +1086,47 @@ class _ResearchProgressWriter:
         elif event == "report_ready":
             self.state["report_preview"] = dict(payload or {})
 
+        overall_total_units = (
+            int(bundle_state.get("total_count", 0) or 0)
+            + int(feature_state.get("symbol_count", 0) or 0)
+            + int(benchmark_state.get("timeframe_count", 0) or 0)
+        )
+        overall_completed_units = (
+            int(bundle_state.get("loaded_count", 0) or 0)
+            + int(feature_state.get("loaded_count", 0) or 0)
+            + int(benchmark_state.get("built_count", 0) or 0)
+        )
+        active_detail: dict[str, Any] = {}
+        if bundle_state.get("current_symbol_fetch"):
+            active_detail = {
+                "phase": "bundle_symbol_fetch",
+                **dict(bundle_state.get("current_symbol_fetch") or {}),
+            }
+        elif bundle_state.get("current_timeframe"):
+            active_detail = {
+                "phase": "bundle_timeframe",
+                **dict(bundle_state.get("current_timeframe") or {}),
+            }
+        elif feature_state.get("current_symbol"):
+            active_detail = {
+                "phase": "feature_symbol",
+                **dict(feature_state.get("current_symbol") or {}),
+            }
+        elif benchmark_state.get("current_timeframe"):
+            active_detail = {
+                "phase": "benchmark_timeframe",
+                **dict(benchmark_state.get("current_timeframe") or {}),
+            }
+
+        resource_load["overall"] = {
+            "completed_units": overall_completed_units,
+            "total_units": overall_total_units,
+            "completion_ratio": round(
+                (overall_completed_units / overall_total_units) if overall_total_units > 0 else 0.0,
+                6,
+            ),
+            "active_detail": active_detail,
+        }
         resource_load["bundle"] = bundle_state
         resource_load["feature"] = feature_state
         resource_load["benchmark"] = benchmark_state
@@ -1054,6 +1210,7 @@ class _ResearchProgressWriter:
         ]
 
         resource_load = dict(self.state.get("resource_load") or {})
+        overall_state = dict(resource_load.get("overall") or {})
         bundle_state = dict(resource_load.get("bundle") or {})
         feature_state = dict(resource_load.get("feature") or {})
         benchmark_state = dict(resource_load.get("benchmark") or {})
@@ -1062,6 +1219,8 @@ class _ResearchProgressWriter:
                 [
                     "## Resource load progress",
                     "",
+                    f"- Overall resource progress: `{int(overall_state.get('completed_units', 0))}/{int(overall_state.get('total_units', 0))}` "
+                    f"(`{float(overall_state.get('completion_ratio', 0.0) or 0.0):.1%}`)",
                     f"- Bundle cache: `{bundle_state.get('status', 'pending')}` "
                     f"(`{int(bundle_state.get('loaded_count', 0))}/{int(bundle_state.get('total_count', 0))}`, "
                     f"`{float(bundle_state.get('elapsed_seconds', 0.0) or 0.0):.3f}s`)",
@@ -1073,6 +1232,69 @@ class _ResearchProgressWriter:
                     f"`{float(benchmark_state.get('elapsed_seconds', 0.0) or 0.0):.3f}s`)",
                 ]
             )
+            active_detail = dict(overall_state.get("active_detail") or {})
+            if active_detail:
+                phase = str(active_detail.get("phase") or "")
+                if phase == "bundle_timeframe":
+                    lines.append(
+                        "- Active bundle timeframe scan: "
+                        f"`{active_detail.get('timeframe', '')}` "
+                        f"(`{int(active_detail.get('timeframe_index', 0))}/{int(active_detail.get('timeframe_count', 0))}`, "
+                        f"symbols `{int(active_detail.get('symbol_count', 0))}`)"
+                    )
+                elif phase == "bundle_symbol_fetch":
+                    lines.append(
+                        "- Active bundle symbol fetch: "
+                        f"`{active_detail.get('symbol', '')}@{active_detail.get('timeframe', '')}` "
+                        f"(`{int(active_detail.get('symbol_index', 0))}/{int(active_detail.get('symbol_count', 0))}`)"
+                    )
+                elif phase == "feature_symbol":
+                    lines.append(
+                        "- Active feature symbol: "
+                        f"`{active_detail.get('symbol', '')}` "
+                        f"(`{int(active_detail.get('symbol_index', 0))}/{int(active_detail.get('symbol_count', 0))}`)"
+                    )
+                elif phase == "benchmark_timeframe":
+                    lines.append(
+                        "- Active benchmark timeframe: "
+                        f"`{active_detail.get('timeframe', '')}` "
+                        f"(`{int(active_detail.get('timeframe_index', 0))}/{int(active_detail.get('timeframe_count', 0))}`)"
+                    )
+            recent_timeframes = [dict(row) for row in list(bundle_state.get("recent_timeframes") or [])]
+            if recent_timeframes:
+                rendered = ", ".join(
+                    f"{row.get('timeframe', '')}:{int(row.get('parquet_symbol_count', 0) or 0)}/{int(row.get('symbol_count', 0) or 0)} "
+                    f"loaded in {float(row.get('elapsed_seconds', 0.0) or 0.0):.3f}s"
+                    for row in recent_timeframes[-3:]
+                )
+                lines.append(f"- Recent bundle timeframe scans: `{rendered}`")
+            latest_symbol_fetch = dict(bundle_state.get("latest_symbol_fetch") or {})
+            if latest_symbol_fetch:
+                lines.append(
+                    "- Latest bundle symbol fetch: "
+                    f"`{latest_symbol_fetch.get('symbol', '')}@{latest_symbol_fetch.get('timeframe', '')}` "
+                    f"(rows `{int(latest_symbol_fetch.get('row_count', 0) or 0)}`, "
+                    f"elapsed `{float(latest_symbol_fetch.get('elapsed_seconds', 0.0) or 0.0):.3f}s`)"
+                )
+            latest_window = dict(bundle_state.get("latest_window") or {})
+            if latest_window:
+                lines.append(
+                    "- Latest bundle window: "
+                    f"`{latest_window.get('unit_kind', 'chunk')}` "
+                    f"`{int(latest_window.get('unit_index', 0) or 0)}/{int(latest_window.get('unit_count', 0) or 0)}` "
+                    f"for `{latest_window.get('symbol', '')}@{latest_window.get('timeframe', '')}` "
+                    f"(rows `{int(latest_window.get('row_count', 0) or 0)}`, "
+                    f"elapsed `{float(latest_window.get('elapsed_seconds', 0.0) or 0.0):.3f}s`)"
+                )
+            recent_windows = [dict(row) for row in list(bundle_state.get("recent_windows") or [])]
+            if recent_windows:
+                rendered = ", ".join(
+                    f"{row.get('symbol', '')}@{row.get('timeframe', '')}:{row.get('unit_kind', 'chunk')} "
+                    f"{int(row.get('unit_index', 0) or 0)}/{int(row.get('unit_count', 0) or 0)} "
+                    f"in {float(row.get('elapsed_seconds', 0.0) or 0.0):.3f}s"
+                    for row in recent_windows[-3:]
+                )
+                lines.append(f"- Recent bundle windows: `{rendered}`")
             latest_bundle = dict(bundle_state.get("latest_item") or {})
             if latest_bundle:
                 lines.append(
@@ -1103,6 +1325,25 @@ class _ResearchProgressWriter:
                     f"`{latest_feature.get('symbol', '')}` "
                     f"(rows `{int(latest_feature.get('row_count', 0) or 0)}`, "
                     f"elapsed `{float(latest_feature.get('elapsed_seconds', 0.0) or 0.0):.3f}s`)"
+                )
+            latest_partition_scan = dict(feature_state.get("latest_partition_scan") or {})
+            if latest_partition_scan:
+                lines.append(
+                    "- Latest feature partition scan: "
+                    f"`{latest_partition_scan.get('symbol', '')}` "
+                    f"(partitions `{int(latest_partition_scan.get('partition_count', 0) or 0)}`, "
+                    f"files `{int(latest_partition_scan.get('parquet_file_count', 0) or 0)}`, "
+                    f"elapsed `{float(latest_partition_scan.get('elapsed_seconds', 0.0) or 0.0):.3f}s`)"
+                )
+            latest_collect = dict(feature_state.get("latest_collect") or {})
+            if latest_collect:
+                lines.append(
+                    "- Latest feature collect: "
+                    f"`{latest_collect.get('symbol', '')}` "
+                    f"(`{latest_collect.get('status', 'completed')!s}`; "
+                    f"rows `{int(latest_collect.get('row_count', 0) or 0)}`, "
+                    f"files `{int(latest_collect.get('parquet_file_count', 0) or 0)}`, "
+                    f"elapsed `{float(latest_collect.get('elapsed_seconds', 0.0) or 0.0):.3f}s`)"
                 )
             if int(feature_state.get("total_rows", 0) or 0) > 0:
                 lines.append(

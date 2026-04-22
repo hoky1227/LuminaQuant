@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 
 import polars as pl
@@ -732,6 +733,7 @@ def _load_feature_points(
     symbol: str,
     start_date: Any = None,
     end_date: Any = None,
+    progress_callback: Any = None,
 ) -> pl.DataFrame:
     compact_symbol = normalize_symbol(symbol).replace("/", "")
     base = (
@@ -740,11 +742,23 @@ def _load_feature_points(
         / f"exchange={_normalize_exchange(exchange)}"
         / f"symbol={compact_symbol}"
     )
+    scan_started_at = perf_counter()
     parquet_paths = _partition_parquet_paths(
         base,
         start_date=start_date,
         end_date=end_date,
     )
+    partition_count = len({Path(path).parent.name for path in parquet_paths})
+    if progress_callback is not None:
+        progress_callback(
+            "resource_feature_partition_scan_completed",
+            {
+                "symbol": str(symbol),
+                "partition_count": partition_count,
+                "parquet_file_count": len(parquet_paths),
+                "elapsed_seconds": round(max(0.0, perf_counter() - scan_started_at), 6),
+            },
+        )
     if not parquet_paths:
         return pl.DataFrame()
     try:
@@ -758,10 +772,31 @@ def _load_feature_points(
         lazy = lazy.filter(pl.col("timestamp_ms") >= start_ms)
     if end_ms is not None:
         lazy = lazy.filter(pl.col("timestamp_ms") <= end_ms)
+    if progress_callback is not None:
+        progress_callback(
+            "resource_feature_collect_started",
+            {
+                "symbol": str(symbol),
+                "partition_count": partition_count,
+                "parquet_file_count": len(parquet_paths),
+            },
+        )
+    collect_started_at = perf_counter()
     try:
         frame = lazy.collect()
     except Exception:
         return pl.DataFrame()
+    if progress_callback is not None:
+        progress_callback(
+            "resource_feature_collect_completed",
+            {
+                "symbol": str(symbol),
+                "partition_count": partition_count,
+                "parquet_file_count": len(parquet_paths),
+                "row_count": int(frame.height),
+                "elapsed_seconds": round(max(0.0, perf_counter() - collect_started_at), 6),
+            },
+        )
 
     if frame.is_empty():
         return frame
@@ -1068,6 +1103,7 @@ class MarketDataRepository:
         symbol: str,
         start_date: Any = None,
         end_date: Any = None,
+        progress_callback: Any = None,
     ) -> pl.DataFrame:
         return _load_feature_points(
             self.root_path,
@@ -1075,6 +1111,7 @@ class MarketDataRepository:
             symbol=symbol,
             start_date=start_date,
             end_date=end_date,
+            progress_callback=progress_callback,
         )
 
 
@@ -1193,6 +1230,7 @@ def load_futures_feature_points_from_db(
     start_date: Any = None,
     end_date: Any = None,
     backend: str | None = None,
+    progress_callback: Any = None,
     **legacy: Any,
 ) -> pl.DataFrame:
     _ = (backend, legacy)
@@ -1202,6 +1240,7 @@ def load_futures_feature_points_from_db(
         symbol=symbol,
         start_date=start_date,
         end_date=end_date,
+        progress_callback=progress_callback,
     )
 
 

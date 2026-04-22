@@ -46,12 +46,12 @@ def test_run_candidate_research_exact_split_emits_timestamped_streams(monkeypatc
     timestamps = [start + timedelta(days=offset) for offset in range(420)]
     bundle = _bundle("BTC/USDT", timestamps)
 
-    def _mock_load_bundle_cache(*, symbols, timeframes, start_date=None, end_date=None):
-        _ = symbols, timeframes, start_date, end_date
+    def _mock_load_bundle_cache(*, symbols, timeframes, start_date=None, end_date=None, **kwargs):
+        _ = symbols, timeframes, start_date, end_date, kwargs
         return {("BTC/USDT", "1d"): bundle}, {"parquet": ["BTC/USDT@1d"], "csv": [], "synthetic": []}
 
-    def _mock_load_feature_cache(*, symbols, start_date=None, end_date=None):
-        _ = symbols, start_date, end_date
+    def _mock_load_feature_cache(*, symbols, start_date=None, end_date=None, **kwargs):
+        _ = symbols, start_date, end_date, kwargs
         return {}
 
     def _mock_strategy_signal(candidate, *, aligned, symbols):
@@ -105,3 +105,68 @@ def test_run_candidate_research_exact_split_emits_timestamped_streams(monkeypatc
     assert val_stream[0]["t"] == 1_769_904_000_000
     assert oos_stream[-1]["t"] == 1_772_928_000_000
     assert report["split"]["mode"] == "exact_dates"
+
+
+def test_run_candidate_research_exact_split_accepts_end_exclusive_contract(monkeypatch):
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    timestamps = [start + timedelta(days=offset) for offset in range(420)]
+    bundle = _bundle("BTC/USDT", timestamps)
+
+    def _mock_load_bundle_cache(*, symbols, timeframes, start_date=None, end_date=None, **kwargs):
+        _ = symbols, timeframes, start_date, end_date, kwargs
+        return {("BTC/USDT", "1d"): bundle}, {"parquet": ["BTC/USDT@1d"], "csv": [], "synthetic": []}
+
+    def _mock_load_feature_cache(*, symbols, start_date=None, end_date=None, **kwargs):
+        _ = symbols, start_date, end_date, kwargs
+        return {}
+
+    def _mock_strategy_signal(candidate, *, aligned, symbols):
+        _ = candidate, symbols
+        length = len(aligned["datetime"])
+        returns = np.linspace(0.001, 0.003, length, dtype=float)
+        turnover = np.zeros(length, dtype=float)
+        exposure = np.ones(length, dtype=float)
+        return returns, turnover, exposure, {}
+
+    monkeypatch.setattr(research_runner, "_load_bundle_cache", _mock_load_bundle_cache)
+    monkeypatch.setattr(research_runner, "_load_feature_cache", _mock_load_feature_cache)
+    monkeypatch.setattr(research_runner, "_strategy_signal", _mock_strategy_signal)
+
+    report = research_runner.run_candidate_research(
+        candidates=[
+            {
+                "candidate_id": "exact-exclusive-1",
+                "name": "exact-exclusive-1",
+                "strategy_class": "CompositeTrendStrategy",
+                "strategy_timeframe": "1d",
+                "symbols": ["BTC/USDT"],
+                "params": {},
+            }
+        ],
+        strategy_timeframes=["1d"],
+        symbol_universe=["BTC/USDT"],
+        stage1_keep_ratio=1.0,
+        max_candidates=8,
+        split={
+            "train_start": "2026-01-01",
+            "train_end_exclusive": "2026-02-01",
+            "val_start": "2026-02-01",
+            "val_end_exclusive": "2026-03-01",
+            "oos_start": "2026-03-01",
+            "requested_oos_end_exclusive": "2026-03-09",
+            "strategy_timeframe": "1d",
+            "mode": "exact_dates",
+        },
+    )
+
+    row = next(iter(report.get("candidates") or []))
+    train_stream = list((row.get("return_streams") or {}).get("train") or [])
+    val_stream = list((row.get("return_streams") or {}).get("val") or [])
+    oos_stream = list((row.get("return_streams") or {}).get("oos") or [])
+
+    assert len(train_stream) == 31
+    assert len(val_stream) == 28
+    assert len(oos_stream) == 8
+    assert report["split"]["train_end"] == "2026-01-31T23:59:59.999000Z"
+    assert report["split"]["val_end"] == "2026-02-28T23:59:59.999000Z"
+    assert report["split"]["oos_end"] == "2026-03-08T23:59:59.999000Z"

@@ -6,6 +6,7 @@ import json
 import os
 import re
 import time
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from hashlib import sha256
@@ -1750,6 +1751,8 @@ class ParquetMarketDataRepository:
         end_date: Any = None,
         chunk_days: int = 7,
         warmup_bars: int = 0,
+        progress_callback: Callable[[str, Mapping[str, Any]], None] | None = None,
+        progress_context: Mapping[str, Any] | None = None,
     ) -> pl.DataFrame:
         """Load timeframe bars by chunk-days windows with optional warmup overlap."""
         start_dt = self._coerce_datetime(start_date)
@@ -1767,11 +1770,19 @@ class ParquetMarketDataRepository:
         tf_ms = int(timeframe_to_milliseconds(timeframe_token))
         warmup_ms = max(0, int(warmup_bars)) * max(1, tf_ms)
         frames: list[pl.DataFrame] = []
-        for chunk_start, chunk_end in self._iter_chunks(
-            start=start_dt,
-            end=end_dt,
-            chunk_days=max(1, int(chunk_days)),
-        ):
+        chunk_ranges = list(
+            self._iter_chunks(
+                start=start_dt,
+                end=end_dt,
+                chunk_days=max(1, int(chunk_days)),
+            )
+        )
+        progress_base = dict(progress_context or {})
+        progress_base.setdefault("symbol", str(symbol))
+        progress_base.setdefault("timeframe", str(timeframe_token))
+        chunk_count = len(chunk_ranges)
+        for chunk_index, (chunk_start, chunk_end) in enumerate(chunk_ranges, start=1):
+            chunk_started_at = time.perf_counter()
             query_start = (
                 chunk_start - timedelta(milliseconds=warmup_ms) if warmup_ms > 0 else chunk_start
             )
@@ -1782,9 +1793,26 @@ class ParquetMarketDataRepository:
                 start_date=query_start,
                 end_date=chunk_end,
             )
-            if chunk.is_empty():
-                continue
-            trimmed = chunk.filter(pl.col("datetime") >= chunk_start)
+            trimmed = chunk.filter(pl.col("datetime") >= chunk_start) if not chunk.is_empty() else chunk
+            trimmed_row_count = int(trimmed.height) if trimmed is not None else 0
+            if progress_callback is not None:
+                progress_callback(
+                    "resource_bundle_symbol_window_loaded",
+                    {
+                        **progress_base,
+                        "unit_kind": "chunk",
+                        "unit_index": chunk_index,
+                        "unit_count": chunk_count,
+                        "window_start": chunk_start.isoformat(),
+                        "window_end": chunk_end.isoformat(),
+                        "query_start": query_start.isoformat(),
+                        "row_count": trimmed_row_count,
+                        "elapsed_seconds": round(
+                            max(0.0, time.perf_counter() - chunk_started_at),
+                            6,
+                        ),
+                    },
+                )
             if not trimmed.is_empty():
                 frames.append(trimmed)
 
@@ -1885,6 +1913,8 @@ class ParquetMarketDataRepository:
         chunk_days: int = 7,
         warmup_bars: int = 0,
         staleness_threshold_seconds: int | None = None,
+        progress_callback: Callable[[str, Mapping[str, Any]], None] | None = None,
+        progress_context: Mapping[str, Any] | None = None,
     ) -> pl.DataFrame:
         token = normalize_timeframe_token(timeframe)
         start_dt = self._coerce_datetime(start_date)
@@ -1959,7 +1989,12 @@ class ParquetMarketDataRepository:
         frames: list[pl.DataFrame] = []
         newest_watermark_ms: int | None = None
         newest_commit_id: str | None = None
-        for manifest_path in manifests:
+        progress_base = dict(progress_context or {})
+        progress_base.setdefault("symbol", str(symbol))
+        progress_base.setdefault("timeframe", str(token))
+        manifest_count = len(manifests)
+        for manifest_index, manifest_path in enumerate(manifests, start=1):
+            manifest_started_at = time.perf_counter()
             manifest = self._read_json_file(manifest_path)
             self._validate_manifest_payload(
                 manifest=manifest,
@@ -1973,6 +2008,22 @@ class ParquetMarketDataRepository:
                 manifest=manifest,
                 manifest_path=manifest_path,
             )
+            if progress_callback is not None:
+                progress_callback(
+                    "resource_bundle_symbol_window_loaded",
+                    {
+                        **progress_base,
+                        "unit_kind": "manifest",
+                        "unit_index": manifest_index,
+                        "unit_count": manifest_count,
+                        "partition": str(manifest_path.parent.name),
+                        "row_count": int(frame.height),
+                        "elapsed_seconds": round(
+                            max(0.0, time.perf_counter() - manifest_started_at),
+                            6,
+                        ),
+                    },
+                )
             if not frame.is_empty():
                 frames.append(frame)
             try:
@@ -2249,6 +2300,7 @@ def load_data_dict_from_parquet(
     warmup_bars: int = 0,
     data_mode: str = "legacy",
     staleness_threshold_seconds: int | None = None,
+    progress_callback: Callable[[str, Mapping[str, Any]], None] | None = None,
 ) -> dict[str, pl.DataFrame]:
     """Compatibility entrypoint retained for legacy import sites."""
     repo = ParquetMarketDataRepository(root_path)
@@ -2256,7 +2308,22 @@ def load_data_dict_from_parquet(
     out: dict[str, pl.DataFrame] = {}
     missing_symbols: list[str] = []
 
-    for symbol in list(symbol_list or []):
+    symbols = list(symbol_list or [])
+    symbol_count = len(symbols)
+    for symbol_index, symbol in enumerate(symbols, start=1):
+        progress_base = {
+            "symbol": str(symbol),
+            "symbol_index": symbol_index,
+            "symbol_count": symbol_count,
+            "timeframe": str(timeframe),
+            "data_mode": str(resolved_mode),
+        }
+        if progress_callback is not None:
+            progress_callback(
+                "resource_bundle_symbol_fetch_started",
+                progress_base,
+            )
+        symbol_started_at = time.perf_counter()
         if resolved_mode == "raw-first":
             try:
                 frame = repo.load_committed_ohlcv_chunked(
@@ -2268,6 +2335,8 @@ def load_data_dict_from_parquet(
                     chunk_days=chunk_days,
                     warmup_bars=warmup_bars,
                     staleness_threshold_seconds=staleness_threshold_seconds,
+                    progress_callback=progress_callback,
+                    progress_context=progress_base,
                 )
             except RawFirstDataMissingError:
                 from lumina_quant.services.materialize_from_raw import (
@@ -2293,6 +2362,8 @@ def load_data_dict_from_parquet(
                     chunk_days=chunk_days,
                     warmup_bars=warmup_bars,
                     staleness_threshold_seconds=staleness_threshold_seconds,
+                    progress_callback=progress_callback,
+                    progress_context=progress_base,
                 )
         else:
             frame = repo.load_ohlcv_chunked(
@@ -2303,8 +2374,24 @@ def load_data_dict_from_parquet(
                 end_date=end_date,
                 chunk_days=chunk_days,
                 warmup_bars=warmup_bars,
+                progress_callback=progress_callback,
+                progress_context=progress_base,
             )
 
+        row_count = int(frame.height) if frame is not None else 0
+        if progress_callback is not None:
+            progress_callback(
+                "resource_bundle_symbol_fetch_completed",
+                {
+                    **progress_base,
+                    "row_count": row_count,
+                    "was_missing": bool(frame is None or frame.is_empty()),
+                    "elapsed_seconds": round(
+                        max(0.0, time.perf_counter() - symbol_started_at),
+                        6,
+                    ),
+                },
+            )
         if frame is None or frame.is_empty():
             missing_symbols.append(str(symbol))
             continue

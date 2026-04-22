@@ -310,7 +310,7 @@ def test_load_bundle_cache_emits_symbol_timeframe_progress(monkeypatch):
     events: list[tuple[str, dict[str, object]]] = []
 
     monkeypatch.setattr(research_runner, "load_data_dict_from_parquet", lambda *args, **kwargs: {"BTC/USDT": frame})
-    counter = iter([10.0, 10.125])
+    counter = iter([10.0, 10.125, 10.5, 10.625])
     monkeypatch.setattr(research_runner, "perf_counter", lambda: next(counter))
 
     cache, source_map = research_runner._load_bundle_cache(
@@ -330,6 +330,31 @@ def test_load_bundle_cache_emits_symbol_timeframe_progress(monkeypatch):
     assert cache[("BTC/USDT", "1m")].close.tolist() == [100.5]
     assert source_map["parquet"] == ["BTC/USDT@1m"]
     assert events == [
+        (
+            "resource_bundle_timeframe_started",
+            {
+                "timeframe": "1m",
+                "timeframe_index": 1,
+                "timeframe_count": 1,
+                "symbol_count": 1,
+                "loaded_count": 0,
+                "total_count": 1,
+            },
+        ),
+        (
+            "resource_bundle_timeframe_completed",
+            {
+                "timeframe": "1m",
+                "timeframe_index": 1,
+                "timeframe_count": 1,
+                "symbol_count": 1,
+                "parquet_symbol_count": 1,
+                "missing_symbol_count": 0,
+                "loaded_count": 0,
+                "total_count": 1,
+                "elapsed_seconds": 0.125,
+            },
+        ),
         (
             "resource_bundle_item_loaded",
             {
@@ -448,6 +473,15 @@ def test_load_feature_cache_emits_symbol_progress(monkeypatch):
     assert cache["ETH/USDT"].height == 2
     assert events == [
         (
+            "resource_feature_symbol_started",
+            {
+                "symbol": "ETH/USDT",
+                "symbol_index": 1,
+                "symbol_count": 1,
+                "loaded_count": 0,
+            },
+        ),
+        (
             "resource_feature_symbol_loaded",
             {
                 "symbol": "ETH/USDT",
@@ -488,6 +522,15 @@ def test_benchmark_cache_emits_timeframe_progress():
 
     assert benchmark["1m"]["returns"].tolist() == [0.0, 0.01]
     assert events == [
+        (
+            "resource_benchmark_timeframe_started",
+            {
+                "timeframe": "1m",
+                "timeframe_index": 1,
+                "timeframe_count": 1,
+                "built_count": 0,
+            },
+        ),
         (
             "resource_benchmark_timeframe_built",
             {

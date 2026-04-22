@@ -166,6 +166,40 @@ def test_load_data_dict_from_parquet_reads_symbols(tmp_path: Path):
     assert loaded["BTC/USDT"].height == 2
 
 
+def test_load_data_dict_from_parquet_emits_fetch_progress(tmp_path: Path):
+    repo = ParquetMarketDataRepository(tmp_path)
+    repo.upsert_1s(exchange="binance", symbol="BTC/USDT", rows=_sample_1s_frame())
+    events: list[tuple[str, dict[str, object]]] = []
+
+    loaded = load_data_dict_from_parquet(
+        str(tmp_path),
+        exchange="binance",
+        symbol_list=["BTC/USDT", "ETH/USDT"],
+        timeframe="1m",
+        start_date="2026-01-01T00:00:00Z",
+        end_date="2026-01-01T00:01:00Z",
+        chunk_days=1,
+        progress_callback=lambda event, payload: events.append((event, dict(payload))),
+    )
+
+    assert "BTC/USDT" in loaded
+    event_names = [name for name, _ in events]
+    assert event_names == [
+        "resource_bundle_symbol_fetch_started",
+        "resource_bundle_symbol_window_loaded",
+        "resource_bundle_symbol_fetch_completed",
+        "resource_bundle_symbol_fetch_started",
+        "resource_bundle_symbol_window_loaded",
+        "resource_bundle_symbol_fetch_completed",
+    ]
+    assert events[0][1]["symbol"] == "BTC/USDT"
+    assert events[1][1]["unit_kind"] == "chunk"
+    assert events[1][1]["unit_index"] == 1
+    assert events[2][1]["was_missing"] is False
+    assert events[3][1]["symbol"] == "ETH/USDT"
+    assert events[5][1]["was_missing"] is True
+
+
 def test_is_parquet_market_data_store_detects_existing_partition_layout(tmp_path: Path):
     repo = ParquetMarketDataRepository(tmp_path)
     repo.upsert_1s(exchange="binance", symbol="BTC/USDT", rows=_sample_1s_frame())

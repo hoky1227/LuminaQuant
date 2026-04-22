@@ -590,6 +590,68 @@ def test_run_research_candidates_writes_stage_progress_artifacts(monkeypatch, tm
             },
         )
         progress_callback(
+            "resource_bundle_timeframe_started",
+            {
+                "timeframe": "1h",
+                "timeframe_index": 1,
+                "timeframe_count": 1,
+                "symbol_count": 1,
+                "loaded_count": 0,
+                "total_count": 1,
+            },
+        )
+        progress_callback(
+            "resource_bundle_timeframe_completed",
+            {
+                "timeframe": "1h",
+                "timeframe_index": 1,
+                "timeframe_count": 1,
+                "symbol_count": 1,
+                "parquet_symbol_count": 1,
+                "missing_symbol_count": 0,
+                "loaded_count": 0,
+                "total_count": 1,
+                "elapsed_seconds": 0.2,
+            },
+        )
+        progress_callback(
+            "resource_bundle_symbol_fetch_started",
+            {
+                "symbol": "BTC/USDT",
+                "symbol_index": 1,
+                "symbol_count": 1,
+                "timeframe": "1h",
+                "data_mode": "legacy",
+            },
+        )
+        progress_callback(
+            "resource_bundle_symbol_window_loaded",
+            {
+                "symbol": "BTC/USDT",
+                "symbol_index": 1,
+                "symbol_count": 1,
+                "timeframe": "1h",
+                "unit_kind": "chunk",
+                "unit_index": 1,
+                "unit_count": 2,
+                "row_count": 128,
+                "elapsed_seconds": 0.15,
+            },
+        )
+        progress_callback(
+            "resource_bundle_symbol_fetch_completed",
+            {
+                "symbol": "BTC/USDT",
+                "symbol_index": 1,
+                "symbol_count": 1,
+                "timeframe": "1h",
+                "data_mode": "legacy",
+                "row_count": 512,
+                "was_missing": False,
+                "elapsed_seconds": 0.4,
+            },
+        )
+        progress_callback(
             "resource_bundle_item_loaded",
             {
                 "symbol": "BTC/USDT",
@@ -622,6 +684,42 @@ def test_run_research_candidates_writes_stage_progress_artifacts(monkeypatch, tm
             },
         )
         progress_callback(
+            "resource_feature_symbol_started",
+            {
+                "symbol": "BTC/USDT",
+                "symbol_index": 1,
+                "symbol_count": 1,
+                "loaded_count": 0,
+            },
+        )
+        progress_callback(
+            "resource_feature_partition_scan_completed",
+            {
+                "symbol": "BTC/USDT",
+                "partition_count": 3,
+                "parquet_file_count": 3,
+                "elapsed_seconds": 0.1,
+            },
+        )
+        progress_callback(
+            "resource_feature_collect_started",
+            {
+                "symbol": "BTC/USDT",
+                "partition_count": 3,
+                "parquet_file_count": 3,
+            },
+        )
+        progress_callback(
+            "resource_feature_collect_completed",
+            {
+                "symbol": "BTC/USDT",
+                "partition_count": 3,
+                "parquet_file_count": 3,
+                "row_count": 256,
+                "elapsed_seconds": 0.25,
+            },
+        )
+        progress_callback(
             "resource_feature_symbol_loaded",
             {
                 "symbol": "BTC/USDT",
@@ -647,6 +745,15 @@ def test_run_research_candidates_writes_stage_progress_artifacts(monkeypatch, tm
             {
                 "timeframe_count": 1,
                 "normalized_timeframes": ["1h"],
+            },
+        )
+        progress_callback(
+            "resource_benchmark_timeframe_started",
+            {
+                "timeframe": "1h",
+                "timeframe_index": 1,
+                "timeframe_count": 1,
+                "built_count": 0,
             },
         )
         progress_callback(
@@ -789,17 +896,36 @@ def test_run_research_candidates_writes_stage_progress_artifacts(monkeypatch, tm
     assert progress_json["resource_load"]["bundle"]["loaded_count"] == 1
     assert progress_json["resource_load"]["bundle"]["elapsed_seconds"] == 1.25
     assert progress_json["resource_load"]["bundle"]["slowest_items"][0]["elapsed_seconds"] == 1.25
+    assert progress_json["resource_load"]["overall"]["completed_units"] == 3
+    assert progress_json["resource_load"]["overall"]["total_units"] == 3
+    assert progress_json["resource_load"]["overall"]["completion_ratio"] == 1.0
+    assert progress_json["resource_load"]["bundle"]["recent_timeframes"][0]["timeframe"] == "1h"
+    assert progress_json["resource_load"]["bundle"]["latest_symbol_fetch"]["row_count"] == 512
+    assert progress_json["resource_load"]["bundle"]["latest_window"]["unit_kind"] == "chunk"
     assert progress_json["resource_load"]["feature"]["total_rows"] == 256
     assert progress_json["resource_load"]["feature"]["elapsed_seconds"] == 0.5
+    assert progress_json["resource_load"]["feature"]["latest_partition_scan"]["partition_count"] == 3
+    assert progress_json["resource_load"]["feature"]["latest_collect"]["status"] == "completed"
     assert progress_json["resource_load"]["benchmark"]["nonempty_timeframe_count"] == 1
     assert progress_json["resource_load"]["benchmark"]["elapsed_seconds"] == 0.2
     assert progress_json["latest_candidate"]["candidate_id"] == "demo-candidate"
     assert "candidate_report" in progress_json["final_artifacts"]
     assert "Resource load progress" in progress_md
+    assert "Overall resource progress" in progress_md
+    assert "Active bundle symbol fetch" not in progress_md
+    assert "Recent bundle timeframe scans" in progress_md
+    assert "Latest bundle symbol fetch" in progress_md
+    assert "Latest bundle window" in progress_md
+    assert "Recent bundle windows" in progress_md
+    assert "Latest feature partition scan" in progress_md
+    assert "Latest feature collect" in progress_md
     assert "Latest bundle item" in progress_md
     assert "Slowest bundle items" in progress_md
     assert "Slowest feature symbols" in progress_md
     assert "Slowest benchmark timeframes" in progress_md
     assert "Top stage-1 candidates" in progress_md
+    assert "resource_bundle_timeframe_started" in progress_log
+    assert "resource_bundle_symbol_window_loaded" in progress_log
+    assert "resource_feature_partition_scan_completed" in progress_log
     assert "resource_bundle_item_loaded" in progress_log
     assert "candidate_evaluated" in progress_log

@@ -283,6 +283,16 @@ def _load_feature_cache(
     normalized_symbols = canonicalize_symbol_list(symbols)
     symbol_count = len(normalized_symbols)
     for symbol_index, symbol in enumerate(normalized_symbols, start=1):
+        if progress_callback is not None:
+            progress_callback(
+                "resource_feature_symbol_started",
+                {
+                    "symbol": symbol,
+                    "symbol_index": symbol_index,
+                    "symbol_count": symbol_count,
+                    "loaded_count": max(0, symbol_index - 1),
+                },
+            )
         started_at = perf_counter()
         frame = _load_feature_frame(
             db_path=db_path,
@@ -290,6 +300,7 @@ def _load_feature_cache(
             symbol=symbol,
             start_date=start_date,
             end_date=end_date,
+            progress_callback=progress_callback,
         )
         normalized_frame = _normalize_feature_frame(frame)
         cache[symbol] = normalized_frame
@@ -316,15 +327,32 @@ def _load_feature_frame(
     symbol: str,
     start_date: Any,
     end_date: Any,
+    progress_callback: Callable[[str, Mapping[str, Any]], None] | None = None,
 ) -> pl.DataFrame:
     try:
-        return load_futures_feature_points_from_db(
-            db_path,
-            exchange=exchange,
-            symbol=symbol,
-            start_date=start_date,
-            end_date=end_date,
-        )
+        try:
+            return load_futures_feature_points_from_db(
+                db_path,
+                exchange=exchange,
+                symbol=symbol,
+                start_date=start_date,
+                end_date=end_date,
+                progress_callback=progress_callback,
+            )
+        except TypeError as exc:
+            if "unexpected keyword argument" not in str(exc):
+                raise
+            return load_futures_feature_points_from_db(
+                db_path,
+                exchange=exchange,
+                symbol=symbol,
+                start_date=start_date,
+                end_date=end_date,
+            )
+    except TypeError as exc:
+        if "unexpected keyword argument" not in str(exc):
+            raise
+        return pl.DataFrame()
     except (FileNotFoundError, OSError, RuntimeError, ValueError):
         return pl.DataFrame()
 
@@ -6292,17 +6320,36 @@ def _load_timeframe_parquet_frames(
     start_date: Any,
     end_date: Any,
     data_mode: str,
+    progress_callback: Callable[[str, Mapping[str, Any]], None] | None = None,
 ) -> dict[str, pl.DataFrame]:
     try:
-        return load_data_dict_from_parquet(
-            parquet_root,
-            exchange=exchange,
-            symbol_list=list(symbols),
-            timeframe=timeframe,
-            start_date=start_date,
-            end_date=end_date,
-            data_mode=str(data_mode or "legacy"),
-        )
+        try:
+            return load_data_dict_from_parquet(
+                parquet_root,
+                exchange=exchange,
+                symbol_list=list(symbols),
+                timeframe=timeframe,
+                start_date=start_date,
+                end_date=end_date,
+                data_mode=str(data_mode or "legacy"),
+                progress_callback=progress_callback,
+            )
+        except TypeError as exc:
+            if "unexpected keyword argument" not in str(exc):
+                raise
+            return load_data_dict_from_parquet(
+                parquet_root,
+                exchange=exchange,
+                symbol_list=list(symbols),
+                timeframe=timeframe,
+                start_date=start_date,
+                end_date=end_date,
+                data_mode=str(data_mode or "legacy"),
+            )
+    except TypeError as exc:
+        if "unexpected keyword argument" not in str(exc):
+            raise
+        return {}
     except (FileNotFoundError, OSError, RuntimeError, ValueError):
         return {}
 
@@ -6447,6 +6494,19 @@ def _load_bundle_cache(
     total_count = len(symbols) * len(timeframes)
     loaded_count = 0
     for timeframe_index, timeframe in enumerate(timeframes, start=1):
+        if progress_callback is not None:
+            progress_callback(
+                "resource_bundle_timeframe_started",
+                {
+                    "timeframe": timeframe,
+                    "timeframe_index": timeframe_index,
+                    "timeframe_count": len(timeframes),
+                    "symbol_count": len(symbols),
+                    "loaded_count": loaded_count,
+                    "total_count": total_count,
+                },
+            )
+        timeframe_started_at = perf_counter()
         loaded = _load_timeframe_parquet_frames(
             symbols=symbols,
             timeframe=timeframe,
@@ -6455,7 +6515,23 @@ def _load_bundle_cache(
             start_date=start_date,
             end_date=end_date,
             data_mode=data_mode,
+            progress_callback=progress_callback,
         )
+        if progress_callback is not None:
+            progress_callback(
+                "resource_bundle_timeframe_completed",
+                {
+                    "timeframe": timeframe,
+                    "timeframe_index": timeframe_index,
+                    "timeframe_count": len(timeframes),
+                    "symbol_count": len(symbols),
+                    "parquet_symbol_count": len(loaded),
+                    "missing_symbol_count": max(0, len(symbols) - len(loaded)),
+                    "loaded_count": loaded_count,
+                    "total_count": total_count,
+                    "elapsed_seconds": round(max(0.0, perf_counter() - timeframe_started_at), 6),
+                },
+            )
 
         symbol_count = len(symbols)
         for symbol_index, symbol in enumerate(symbols, start=1):
@@ -6503,6 +6579,16 @@ def _benchmark_cache(
     out: dict[str, dict[str, np.ndarray]] = {}
     timeframe_count = len(timeframes)
     for timeframe_index, tf in enumerate(timeframes, start=1):
+        if progress_callback is not None:
+            progress_callback(
+                "resource_benchmark_timeframe_started",
+                {
+                    "timeframe": tf,
+                    "timeframe_index": timeframe_index,
+                    "timeframe_count": timeframe_count,
+                    "built_count": max(0, timeframe_index - 1),
+                },
+            )
         started_at = perf_counter()
         bundle = cache.get(("BTC/USDT", tf))
         if bundle is None:
