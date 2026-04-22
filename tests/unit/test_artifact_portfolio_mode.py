@@ -170,6 +170,16 @@ def test_resolve_portfolio_mode_definition_supports_recursive_allocator_sleeves(
             "symbols": ["BNB/USDT", "TRX/USDT"],
         },
     )
+    state_vwap_pair_path = _write(
+        tmp_path / "state_vwap_pair.json",
+        {
+            "candidate_id": "leaf_state_vwap_pair",
+            "name": "leaf_state_vwap_pair",
+            "strategy_class": "PairSpreadZScoreStrategy",
+            "symbols": ["BNB/USDT", "TRX/USDT"],
+            "params": {"signal_variant": "state_vwap"},
+        },
+    )
     hybrid_path = _write(
         tmp_path / "hybrid.json",
         {
@@ -194,6 +204,7 @@ def test_resolve_portfolio_mode_definition_supports_recursive_allocator_sleeves(
     monkeypatch.setattr(MODULE, "SOFT_THREE_WAY_ALLOCATOR_PATH", soft_path)
     monkeypatch.setattr(MODULE, "THREE_WAY_ALLOCATOR_PATH", three_way_path)
     monkeypatch.setattr(MODULE, "PAIR_TACTICAL_PATH", pair_path)
+    monkeypatch.setattr(MODULE, "STATE_VWAP_PAIR_PATH", state_vwap_pair_path)
     monkeypatch.setattr(MODULE, "HYBRID_PATH", hybrid_path)
     monkeypatch.setattr(MODULE, "PRODUCTION_GUARDED_PATH", _write(
         tmp_path / "production_guarded.json",
@@ -212,12 +223,14 @@ def test_resolve_portfolio_mode_definition_supports_recursive_allocator_sleeves(
     aggressive = MODULE.resolve_portfolio_mode_definition("aggressive_realized_mode")
     hybrid = MODULE.resolve_portfolio_mode_definition("hybrid_guarded_mode")
     practical = MODULE.resolve_portfolio_mode_definition("strict_autoresearch_practical_mode")
+    promoted = MODULE.resolve_portfolio_mode_definition("production_guarded_state_vwap_pair_mode")
     risk_off = MODULE.resolve_portfolio_mode_definition("risk_off_mode")
 
     defensive_weights = {item.component_id: round(item.weight, 6) for item in defensive.components}
     aggressive_weights = {item.component_id: round(item.weight, 6) for item in aggressive.components}
     hybrid_weights = {item.component_id: round(item.weight, 6) for item in hybrid.components}
     practical_weights = {item.component_id: round(item.weight, 6) for item in practical.components}
+    promoted_weights = {item.component_id: round(item.weight, 6) for item in promoted.components}
 
     assert defensive_weights == {
         "leaf_a": 0.357,
@@ -242,7 +255,14 @@ def test_resolve_portfolio_mode_definition_supports_recursive_allocator_sleeves(
         "leaf_b": 0.2064,
         "leaf_c": 0.444,
     }
+    assert promoted_weights == {
+        "leaf_a": 0.1548,
+        "leaf_b": 0.1032,
+        "leaf_c": 0.122,
+        "leaf_state_vwap_pair": 0.25,
+    }
     assert abs(hybrid.cash_weight - 0.3632) < 1e-12
     assert abs(practical.cash_weight - 0.1948) < 1e-6
+    assert abs(promoted.cash_weight - 0.4474) < 1e-6
     assert risk_off.cash_weight == 1.0
     assert risk_off.symbols == ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "TRX/USDT"]

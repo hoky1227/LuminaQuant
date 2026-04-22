@@ -108,9 +108,15 @@ def _build_from_review(review_payload: dict[str, Any], *, review_path: Path) -> 
     status = str(review_payload.get("status") or "").strip().lower()
     recommendation = str(review_payload.get("recommendation") or "").strip()
     review_target = str(review_payload.get("review_target") or "").strip()
-    candidate_key = Path(review_target).stem if review_target else ""
-    selected_mode = ""
-    if candidate_key == "strict_autoresearch_1x_practical_shadow_latest":
+    candidate_key = str(review_payload.get("candidate_key") or "").strip()
+    if not candidate_key and review_target:
+        candidate_key = Path(review_target).stem
+    selected_mode = str(
+        review_payload.get("selected_mode")
+        or review_payload.get("candidate_mode")
+        or ""
+    ).strip()
+    if not selected_mode and candidate_key == "strict_autoresearch_1x_practical_shadow_latest":
         selected_mode = "strict_autoresearch_practical_mode"
 
     if status == "promotion_ready_with_review":
@@ -120,6 +126,7 @@ def _build_from_review(review_payload: dict[str, Any], *, review_path: Path) -> 
         decision = "keep_incumbent"
         reason = recommendation or "Promotion review did not clear the candidate."
         candidate_key = ""
+        selected_mode = ""
 
     return {
         "artifact_kind": "portfolio_live_readiness_decision",

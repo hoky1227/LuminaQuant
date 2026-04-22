@@ -16,6 +16,7 @@ SUPPORTED_LIVE_PORTFOLIO_MODES = frozenset(
         "defensive_overlay_mode",
         "core_mode",
         "pair_tactical_mode",
+        "production_guarded_state_vwap_pair_mode",
         "strict_autoresearch_practical_mode",
         "risk_off_mode",
     }

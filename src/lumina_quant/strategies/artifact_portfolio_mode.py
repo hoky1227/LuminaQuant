@@ -32,6 +32,11 @@ PAIR_TACTICAL_PATH = (
 PRODUCTION_GUARDED_PATH = (
     GROUP_ROOT / "portfolio_production_guarded_current" / "production_guarded_portfolio_latest.json"
 )
+STATE_VWAP_PAIR_PATH = (
+    GROUP_ROOT
+    / "portfolio_superiority_dense_pairs_current"
+    / "state_vwap_pair_candidate_latest.json"
+)
 STRICT_AUTORESEARCH_1X_PATH = (
     GROUP_ROOT
     / "strict_blend_76_24_leverage_sweep_rerun_current"
@@ -145,6 +150,11 @@ def _pair_component(weight: float) -> PortfolioModeComponent:
     return _component_from_row(row, weight=weight, source="pair_tactical")
 
 
+def _state_vwap_pair_component(weight: float) -> PortfolioModeComponent:
+    row = _read_json(STATE_VWAP_PAIR_PATH)
+    return _component_from_row(row, weight=weight, source="state_vwap_pair")
+
+
 def _portfolio_weight_rows(path: Path) -> list[dict[str, Any]]:
     payload = _read_json(path)
     rows = [dict(item) for item in list(payload.get("weights") or []) if isinstance(item, dict)]
@@ -177,18 +187,44 @@ def _state_weight_rows(path: Path) -> list[dict[str, Any]]:
     return out
 
 
+def _hybrid_weight_rows(path: Path) -> list[dict[str, Any]]:
+    payload = _read_json(path)
+    final_allocation = dict(
+        dict((payload.get("scenarios") or {}).get("refreshed_latest_tail") or {}).get("final_allocation")
+        or {}
+    )
+    state_weights = dict(final_allocation.get("weights") or {})
+    out: list[dict[str, Any]] = []
+    for name, weight in state_weights.items():
+        out.append(
+            {
+                "candidate_id": str(name),
+                "name": str(name),
+                "weight": _safe_float(weight, 0.0),
+            }
+        )
+    cash_weight = _safe_float(final_allocation.get("cash_weight"), 0.0)
+    if cash_weight > 1e-12:
+        out.append({"candidate_id": "cash", "name": "cash", "weight": cash_weight})
+    return out
+
+
 def _alias_rows(token: str) -> list[dict[str, Any]] | None:
     portfolio_paths = {
         "incumbent": REFRESHED_INCUMBENT_PATH,
         "incumbent_only": REFRESHED_INCUMBENT_PATH,
         "autoresearch_55_45": REFRESHED_AUTORESEARCH_55_45_PATH,
         "blend_85_15": REFRESHED_BLEND_PATH,
+        "static_blend_76_24": REFRESHED_BLEND_PATH,
         "production_guarded_portfolio": PRODUCTION_GUARDED_PATH,
         "strict_autoresearch_1x": STRICT_AUTORESEARCH_1X_PATH,
     }
     state_paths = {
         "soft_three_way_regime": SOFT_THREE_WAY_ALLOCATOR_PATH,
         "three_way_regime": THREE_WAY_ALLOCATOR_PATH,
+    }
+    hybrid_paths = {
+        "hybrid_guarded_mode": HYBRID_PATH,
     }
     synthetic_rows = {
         "balanced_overlay_80_20": [
@@ -202,6 +238,11 @@ def _alias_rows(token: str) -> list[dict[str, Any]] | None:
             {"candidate_id": "production_guarded_portfolio", "name": "production_guarded_portfolio", "weight": 0.8},
             {"candidate_id": "strict_autoresearch_1x", "name": "strict_autoresearch_1x", "weight": 0.2},
         ],
+        "production_guarded_state_vwap_pair_mode": [
+            {"candidate_id": "production_guarded_portfolio", "name": "production_guarded_portfolio", "weight": 0.4},
+            {"candidate_id": "state_vwap_pair_leaf", "name": "state_vwap_pair_leaf", "weight": 0.25},
+            {"candidate_id": "cash", "name": "cash", "weight": 0.35},
+        ],
         "pair_fast_exit": [
             {"candidate_id": "pair_fast_exit_leaf", "name": "pair_fast_exit_leaf", "weight": 1.0},
         ],
@@ -210,6 +251,8 @@ def _alias_rows(token: str) -> list[dict[str, Any]] | None:
         return _portfolio_weight_rows(portfolio_paths[token])
     if token in state_paths:
         return _state_weight_rows(state_paths[token])
+    if token in hybrid_paths:
+        return _hybrid_weight_rows(hybrid_paths[token])
     if token in synthetic_rows:
         return [dict(item) for item in synthetic_rows[token]]
     return None
@@ -246,6 +289,8 @@ def _expand_reference(
         return [], float(weight_scale)
     if token in {"pair_fast_exit_leaf"}:
         return [_pair_component(float(weight_scale))], 0.0
+    if token in {"state_vwap_pair_leaf"}:
+        return [_state_vwap_pair_component(float(weight_scale))], 0.0
 
     rows = _alias_rows(token)
     if rows is None:
@@ -313,6 +358,7 @@ def resolve_portfolio_mode_definition(portfolio_mode: str) -> PortfolioModeDefin
         "three_way_allocator_path": str(THREE_WAY_ALLOCATOR_PATH.resolve()),
         "pair_tactical_path": str(PAIR_TACTICAL_PATH.resolve()),
         "production_guarded_path": str(PRODUCTION_GUARDED_PATH.resolve()),
+        "state_vwap_pair_path": str(STATE_VWAP_PAIR_PATH.resolve()),
         "strict_autoresearch_1x_path": str(STRICT_AUTORESEARCH_1X_PATH.resolve()),
     }
 
@@ -364,6 +410,12 @@ def resolve_portfolio_mode_definition(portfolio_mode: str) -> PortfolioModeDefin
             weight_scale=1.0,
             source=token,
         )
+    elif token == "production_guarded_state_vwap_pair_mode":
+        components, cash_weight = _expand_reference(
+            "production_guarded_state_vwap_pair_mode",
+            weight_scale=1.0,
+            source=token,
+        )
     else:
         raise ValueError(f"unsupported live portfolio mode: {token}")
 
@@ -385,6 +437,7 @@ def supported_portfolio_modes() -> set[str]:
         "defensive_overlay_mode",
         "core_mode",
         "pair_tactical_mode",
+        "production_guarded_state_vwap_pair_mode",
         "strict_autoresearch_practical_mode",
         "risk_off_mode",
     }

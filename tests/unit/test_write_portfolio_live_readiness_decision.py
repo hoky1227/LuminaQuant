@@ -158,3 +158,34 @@ def test_build_live_readiness_decision_can_fallback_to_review_when_switch_missin
     assert payload["decision"] == "keep_incumbent"
     assert payload["candidate_key"] == ""
     assert payload["selection_basis"] == "portfolio_promotion_review"
+
+
+def test_build_live_readiness_decision_uses_explicit_candidate_mode_from_review(tmp_path: Path) -> None:
+    review_path = tmp_path / "review.json"
+    review_path.write_text(
+        json.dumps(
+            {
+                "status": "promotion_ready_with_review",
+                "recommendation": "promote_candidate_after_manual_review",
+                "review_target": str(tmp_path / "candidate.json"),
+                "candidate_key": "production_guarded_40_state_vwap_pair_25_cash_35",
+                "candidate_mode": "production_guarded_state_vwap_pair_mode",
+                "selected_mode": "production_guarded_state_vwap_pair_mode",
+                "selection_basis": "dense_pairs_state_vwap_overlay_candidate_review",
+                "current_live_default": "production_guarded_mode",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = MODULE.build_live_readiness_decision(
+        review_path=review_path,
+        switch_path=tmp_path / "missing_switch.json",
+        max_perf_path=tmp_path / "missing_max_perf.json",
+    )
+
+    assert payload["decision"] == "promote_candidate"
+    assert payload["candidate_key"] == "production_guarded_40_state_vwap_pair_25_cash_35"
+    assert payload["selected_mode"] == "production_guarded_state_vwap_pair_mode"
+    assert payload["candidate_mode"] == "production_guarded_state_vwap_pair_mode"
+    assert payload["selection_basis"] == "dense_pairs_state_vwap_overlay_candidate_review"
