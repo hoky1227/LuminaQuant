@@ -60,6 +60,35 @@ STRICT_AUTORESEARCH_1X_PATH = (
     / "strict_autoresearch_portfolio_latest.json"
 )
 
+_LIVE_PORTFOLIO_MODE_ALIASES = {
+    "aggressive_realized_mode",
+    "hybrid_guarded_mode",
+    "legacy_no_highvol_hybrid_mode",
+    "retuned_live_portfolio_hybrid_mode",
+    "balanced_overlay_mode",
+    "defensive_overlay_mode",
+    "core_mode",
+    "pair_tactical_mode",
+    "production_guarded_state_vwap_pair_mode",
+    "strict_autoresearch_practical_mode",
+    "risk_off_mode",
+    # Source sleeves / static blends that can be promoted to live by expanding
+    # the same saved strategy rows the research artifacts used.
+    "incumbent",
+    "incumbent_only",
+    "autoresearch_55_45",
+    "blend_85_15",
+    "static_blend_76_24",
+    "production_guarded_portfolio",
+    "strict_autoresearch_1x",
+    "soft_three_way_regime",
+    "three_way_regime",
+    "balanced_overlay_80_20",
+    "pair_fast_exit",
+    "state_vwap_pair",
+    "wave2_pair",
+}
+
 
 @dataclass(frozen=True, slots=True)
 class PortfolioModeComponent:
@@ -305,6 +334,8 @@ def _alias_rows(token: str) -> list[dict[str, Any]] | None:
 def _watch_symbols() -> tuple[str, ...]:
     symbols: list[str] = []
     for path in (REFRESHED_INCUMBENT_PATH, REFRESHED_AUTORESEARCH_55_45_PATH, PAIR_TACTICAL_PATH):
+        if not path.exists():
+            continue
         payload = _read_json(path)
         rows = [payload] if isinstance(payload.get("strategy_class"), str) else list(payload.get("weights") or [])
         for row in rows:
@@ -475,6 +506,12 @@ def resolve_portfolio_mode_definition(portfolio_mode: str) -> PortfolioModeDefin
             weight_scale=1.0,
             source=token,
         )
+    elif _alias_rows(token) is not None:
+        components, cash_weight = _expand_reference(
+            token,
+            weight_scale=1.0,
+            source=token,
+        )
     else:
         raise ValueError(f"unsupported live portfolio mode: {token}")
 
@@ -489,19 +526,7 @@ def resolve_portfolio_mode_definition(portfolio_mode: str) -> PortfolioModeDefin
 
 
 def supported_portfolio_modes() -> set[str]:
-    return {
-        "aggressive_realized_mode",
-        "hybrid_guarded_mode",
-        "legacy_no_highvol_hybrid_mode",
-        "retuned_live_portfolio_hybrid_mode",
-        "balanced_overlay_mode",
-        "defensive_overlay_mode",
-        "core_mode",
-        "pair_tactical_mode",
-        "production_guarded_state_vwap_pair_mode",
-        "strict_autoresearch_practical_mode",
-        "risk_off_mode",
-    }
+    return set(_LIVE_PORTFOLIO_MODE_ALIASES)
 
 
 class ArtifactPortfolioModeStrategy(Strategy):

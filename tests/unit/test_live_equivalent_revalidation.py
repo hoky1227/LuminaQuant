@@ -1,0 +1,118 @@
+from datetime import date
+import importlib.util
+from pathlib import Path
+import sys
+from types import SimpleNamespace
+
+MODULE_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "scripts"
+    / "research"
+    / "revalidate_live_equivalent_candidates.py"
+)
+SPEC = importlib.util.spec_from_file_location("revalidate_live_equivalent_candidates", MODULE_PATH)
+assert SPEC is not None and SPEC.loader is not None
+reval = importlib.util.module_from_spec(SPEC)
+sys.modules[SPEC.name] = reval
+SPEC.loader.exec_module(reval)
+
+
+def _fake_pair_definition(mode: str):
+    component = SimpleNamespace(
+        component_id="pair_fixture",
+        label="pair_fixture",
+        strategy_class="PairSpreadZScoreStrategy",
+        symbols=("BNB/USDT", "TRX/USDT"),
+        weight=1.0,
+    )
+    return SimpleNamespace(
+        portfolio_mode=mode,
+        components=(component,),
+        symbols=["BNB/USDT", "TRX/USDT"],
+        cash_weight=0.0,
+    )
+
+
+def _fake_risk_off_definition(mode: str):
+    return SimpleNamespace(
+        portfolio_mode=mode,
+        components=(),
+        symbols=[],
+        cash_weight=1.0,
+    )
+
+
+def test_mode_preflight_marks_pair_modes_ready_on_complete_stubbed_days(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(
+        reval,
+        "_has_committed_materialized_day",
+        lambda **_kwargs: True,
+    )
+    monkeypatch.setattr(reval, "_legacy_monthly_files", lambda **_kwargs: [])
+    monkeypatch.setattr(reval, "resolve_portfolio_mode_definition", _fake_pair_definition)
+    splits = [
+        reval.SplitWindow("train", date(2025, 1, 1), date(2025, 1, 2), "sanity_filter"),
+        reval.SplitWindow("val", date(2026, 1, 1), date(2026, 1, 2), "primary_selection"),
+        reval.SplitWindow("oos", date(2026, 3, 1), date(2026, 3, 2), "report_only"),
+    ]
+
+    preflight = reval._mode_preflight(
+        mode="state_vwap_pair",
+        market_root=tmp_path,
+        exchange="binance",
+        timeframe="1s",
+        splits=splits,
+    )
+
+    assert preflight.status == "ready_for_live_equivalent_backtest"
+    assert preflight.blocking_reasons == []
+
+
+def test_mode_preflight_blocks_missing_train_val_data(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(
+        reval,
+        "_has_committed_materialized_day",
+        lambda **_kwargs: False,
+    )
+    monkeypatch.setattr(reval, "_legacy_monthly_files", lambda **_kwargs: [])
+    monkeypatch.setattr(reval, "resolve_portfolio_mode_definition", _fake_pair_definition)
+    splits = [
+        reval.SplitWindow("train", date(2025, 1, 1), date(2025, 1, 1), "sanity_filter"),
+        reval.SplitWindow("val", date(2026, 1, 1), date(2026, 1, 1), "primary_selection"),
+        reval.SplitWindow("oos", date(2026, 3, 1), date(2026, 3, 1), "report_only"),
+    ]
+
+    preflight = reval._mode_preflight(
+        mode="state_vwap_pair",
+        market_root=tmp_path,
+        exchange="binance",
+        timeframe="1s",
+        splits=splits,
+    )
+
+    assert preflight.status == "blocked_missing_raw_first_market_data"
+    assert "BNB/USDT:train_raw_first_incomplete" in preflight.blocking_reasons
+
+
+def test_revalidation_defaults_to_preflight_not_full_backtest(monkeypatch, tmp_path: Path) -> None:
+    calls = {"backtests": 0}
+
+    monkeypatch.setattr(reval, "supported_portfolio_modes", lambda: {"risk_off_mode"})
+    monkeypatch.setattr(reval, "resolve_portfolio_mode_definition", _fake_risk_off_definition)
+    monkeypatch.setattr(reval, "_load_full_universe", lambda _path: {"ranked_clean_candidates": []})
+
+    def _unexpected_backtest(**_kwargs):
+        calls["backtests"] += 1
+        raise AssertionError("full backtests must be opt-in")
+
+    monkeypatch.setattr(reval, "_run_live_equivalent_split", _unexpected_backtest)
+    result = reval.build_live_equivalent_revalidation(
+        output_dir=tmp_path,
+        full_universe_path=tmp_path / "missing.json",
+        market_root=tmp_path / "market",
+        exchange="binance",
+        update_live_decision=False,
+    )
+
+    assert calls["backtests"] == 0
+    assert result["payload"]["final_recommendations"]["best_full_universe_live_equivalent_candidate"] is None

@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
@@ -25,6 +26,11 @@ from lumina_quant.cli._strategy_registry_fallback import (
     load_strategy_registry,
 )
 from lumina_quant.config import BacktestConfig, BaseConfig, LiveConfig, OptimizationConfig
+from lumina_quant.live_selection import (
+    normalize_portfolio_mode_reference,
+    resolve_portfolio_mode_runtime_config,
+    supports_live_portfolio_mode,
+)
 from lumina_quant.market_data import (
     load_data_dict_from_db,
     load_data_dict_from_external_root,
@@ -32,9 +38,19 @@ from lumina_quant.market_data import (
     normalize_timeframe_token,
 )
 from lumina_quant.storage.parquet import is_parquet_market_data_store
+from lumina_quant.strategies.artifact_portfolio_mode import ArtifactPortfolioModeStrategy
 from lumina_quant.utils.audit_store import AuditStore
 
 _strategy_registry = None
+
+
+@dataclass(slots=True)
+class BacktestStrategySetup:
+    strategy_cls: type
+    strategy_name: str
+    strategy_params: dict[str, Any]
+    symbol_list: list[str] | None = None
+    portfolio_mode: str | None = None
 
 
 def _get_strategy_registry():
@@ -66,9 +82,41 @@ BACKTEST_DECISION_CADENCE_SECONDS = None
 BACKTEST_AUDIT_SNAPSHOT_SECONDS = None
 
 
-def _resolve_strategy_setup(*, log: bool) -> tuple[type, dict[str, Any]]:
-    strategy_registry = _get_strategy_registry()
+def _portfolio_mode_from_requested_strategy(requested_strategy_name: str) -> str:
+    token = normalize_portfolio_mode_reference(requested_strategy_name)
+    if supports_live_portfolio_mode(token):
+        return token
+    return ""
+
+
+def _resolve_strategy_setup_detail(
+    *,
+    log: bool,
+    portfolio_mode: str | None = None,
+) -> BacktestStrategySetup:
+    requested_portfolio_mode = str(
+        portfolio_mode or os.getenv("LQ_BACKTEST_PORTFOLIO_MODE", "") or ""
+    ).strip()
     requested_strategy_name = str(OptimizationConfig.STRATEGY_NAME or "").strip()
+    if not requested_portfolio_mode:
+        requested_portfolio_mode = _portfolio_mode_from_requested_strategy(requested_strategy_name)
+    if requested_portfolio_mode:
+        runtime_config = resolve_portfolio_mode_runtime_config(requested_portfolio_mode)
+        if log:
+            print(
+                "[OK] Backtest portfolio mode resolved through live runtime: "
+                f"{runtime_config['strategy_name']} "
+                f"symbols={runtime_config['symbols']}"
+            )
+        return BacktestStrategySetup(
+            strategy_cls=ArtifactPortfolioModeStrategy,
+            strategy_name=str(runtime_config["strategy_name"]),
+            strategy_params=dict(runtime_config["strategy_params"]),
+            symbol_list=list(runtime_config["symbols"]),
+            portfolio_mode=str(runtime_config["portfolio_mode"]),
+        )
+
+    strategy_registry = _get_strategy_registry()
     strategy_cls = strategy_registry.resolve_strategy_class(
         requested_strategy_name,
         default_name=strategy_registry.DEFAULT_STRATEGY_NAME,
@@ -114,7 +162,16 @@ def _resolve_strategy_setup(*, log: bool) -> tuple[type, dict[str, Any]]:
     elif log:
         print(f"[INFO] Optimized params not found at {param_path}. Using Defaults.")
 
-    return strategy_cls, strategy_registry.resolve_strategy_params(strategy_name, strategy_params)
+    return BacktestStrategySetup(
+        strategy_cls=strategy_cls,
+        strategy_name=strategy_name,
+        strategy_params=strategy_registry.resolve_strategy_params(strategy_name, strategy_params),
+    )
+
+
+def _resolve_strategy_setup(*, log: bool) -> tuple[type, dict[str, Any]]:
+    setup = _resolve_strategy_setup_detail(log=log)
+    return setup.strategy_cls, setup.strategy_params
 
 
 def _auto_collect_market_data(*args, **kwargs):
@@ -343,9 +400,10 @@ def _load_data_dict(
     data_mode="legacy",
     backtest_mode="windowed",
     auto_collect_db=True,
+    symbol_list=None,
 ):
     settings = _current_backtest_runtime_settings()
-    symbol_list = list(settings["symbol_list"])
+    symbol_list = list(symbol_list) if symbol_list is not None else list(settings["symbol_list"])
     start_date = settings["start_date"]
     end_date = settings["end_date"]
     market_db_backend = str(settings["market_db_backend"])
@@ -656,6 +714,7 @@ def run(
     low_memory=None,
     persist_output=None,
     backtest_mode=None,
+    portfolio_mode=None,
 ):
     settings = _current_backtest_runtime_settings()
     symbol_list = list(settings["symbol_list"])
@@ -683,11 +742,16 @@ def run(
     backtest_poll_seconds = int(settings["backtest_poll_seconds"])
     backtest_window_seconds = int(settings["backtest_window_seconds"])
     backtest_decision_cadence_seconds = int(settings["backtest_decision_cadence_seconds"])
-    strategy_cls, strategy_params = _resolve_strategy_setup(log=True)
+    strategy_setup = _resolve_strategy_setup_detail(log=True, portfolio_mode=portfolio_mode)
+    strategy_cls = strategy_setup.strategy_cls
+    strategy_params = dict(strategy_setup.strategy_params)
+    strategy_runtime_name = str(strategy_setup.strategy_name)
+    if strategy_setup.symbol_list is not None:
+        symbol_list = list(strategy_setup.symbol_list)
 
     print("------------------------------------------------")
     print(f"Running Backtest for {symbol_list}")
-    print(f"Strategy: {strategy_cls.__name__}")
+    print(f"Strategy: {strategy_runtime_name}")
     print(f"Params: {strategy_params}")
     print("------------------------------------------------")
 
@@ -728,8 +792,9 @@ def run(
             mode="backtest",
             metadata={
                 "symbols": symbol_list,
-                "strategy": strategy_cls.__name__,
+                "strategy": strategy_runtime_name,
                 "params": strategy_params,
+                "portfolio_mode": strategy_setup.portfolio_mode,
                 "data_source": str(resolved_data_source),
                 "data_mode": str(resolved_data_mode),
                 "market_db_path": str(market_db_path),
@@ -771,6 +836,7 @@ def run(
                 data_mode=resolved_data_mode,
                 backtest_mode=resolved_backtest_mode,
                 auto_collect_db=bool(auto_collect_db),
+                symbol_list=symbol_list,
             )
 
         if use_chunked_runner:
@@ -927,6 +993,14 @@ def main(argv: list[str] | None = None) -> int:
         help="Backtest event model: windowed (default) or legacy modes.",
     )
     parser.add_argument(
+        "--portfolio-mode",
+        default=str(os.getenv("LQ_BACKTEST_PORTFOLIO_MODE", "") or ""),
+        help=(
+            "Run a live portfolio mode through the event-driven backtest path "
+            "(for example production_guarded_state_vwap_pair_mode)."
+        ),
+    )
+    parser.add_argument(
         "--run-id",
         default="",
         help="Optional external run_id for audit trail correlation.",
@@ -981,6 +1055,7 @@ def main(argv: list[str] | None = None) -> int:
             low_memory=args.low_memory,
             persist_output=args.persist_output,
             backtest_mode=args.backtest_mode,
+            portfolio_mode=args.portfolio_mode,
         )
     except (RawFirstDataMissingError, RawFirstManifestInvalidError, RawFirstStaleWindowError) as exc:
         code = raw_first_exit_code(exc)

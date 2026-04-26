@@ -1,0 +1,14 @@
+{
+  "artifact_kind": "portfolio_live_readiness_decision",
+  "candidate_key": "risk_off_mode",
+  "candidate_mode": "risk_off_mode",
+  "decision": "shadow_only_until_live_equivalent_validation",
+  "decision_reason": "No alpha candidate has completed live-equivalent train/val engine backtest on committed raw-first data.",
+  "generated_at": "2026-04-26T11:28:21.596485Z",
+  "review_status": "fail_closed_cash_or_shadow_only",
+  "selected_mode": "risk_off_mode",
+  "selection_basis": "live_equivalent_revalidation_20260426",
+  "source_artifacts": {
+    "live_equivalent_revalidation_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_incumbent_autoresearch_grouped/live_equivalent_revalidation_20260426/live_equivalent_revalidation_latest.json"
+  }
+}

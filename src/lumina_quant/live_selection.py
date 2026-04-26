@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 DEFAULT_LIVE_DECISION_PATH = Path(
     "var/reports/exact_window_backtests/followup_status/portfolio_live_readiness_decision_latest.json"
@@ -21,8 +22,36 @@ SUPPORTED_LIVE_PORTFOLIO_MODES = frozenset(
         "production_guarded_state_vwap_pair_mode",
         "strict_autoresearch_practical_mode",
         "risk_off_mode",
+        "incumbent",
+        "incumbent_only",
+        "autoresearch_55_45",
+        "blend_85_15",
+        "static_blend_76_24",
+        "production_guarded_portfolio",
+        "strict_autoresearch_1x",
+        "soft_three_way_regime",
+        "three_way_regime",
+        "balanced_overlay_80_20",
+        "pair_fast_exit",
+        "state_vwap_pair",
+        "wave2_pair",
     }
 )
+
+
+def normalize_portfolio_mode_reference(reference: str) -> str:
+    """Normalize a portfolio-mode reference shared by live and backtest CLIs.
+
+    Live decisions sometimes store the bare mode name while operator-facing
+    commands often use ``ArtifactPortfolioModeStrategy[mode]``.  Treat both as
+    the same target so backtests can exercise exactly the same portfolio-mode
+    runtime that live trading will instantiate.
+    """
+    token = str(reference or "").strip()
+    prefix = "ArtifactPortfolioModeStrategy["
+    if token.startswith(prefix) and token.endswith("]"):
+        token = token[len(prefix) : -1].strip()
+    return token
 
 
 def resolve_selection_file(selection_file: str = "") -> Path | None:
@@ -60,7 +89,32 @@ def resolve_live_decision_file(decision_file: str = "") -> Path | None:
 
 
 def supports_live_portfolio_mode(reference: str) -> bool:
-    return str(reference or "").strip() in SUPPORTED_LIVE_PORTFOLIO_MODES
+    return normalize_portfolio_mode_reference(reference) in SUPPORTED_LIVE_PORTFOLIO_MODES
+
+
+def resolve_portfolio_mode_runtime_config(reference: str) -> dict[str, Any]:
+    """Return the canonical runtime config for a supported live portfolio mode.
+
+    This intentionally returns class-free data so both live and backtest entry
+    points can wire their own runtime class while sharing the same symbol list
+    and strategy params.
+    """
+    portfolio_mode = normalize_portfolio_mode_reference(reference)
+    if not supports_live_portfolio_mode(portfolio_mode):
+        raise ValueError(f"Unsupported live portfolio mode: {reference}")
+
+    from lumina_quant.strategies.artifact_portfolio_mode import (
+        resolve_portfolio_mode_definition,
+    )
+
+    definition = resolve_portfolio_mode_definition(portfolio_mode)
+    return {
+        "portfolio_mode": portfolio_mode,
+        "strategy_name": f"ArtifactPortfolioModeStrategy[{portfolio_mode}]",
+        "strategy_params": {"portfolio_mode": portfolio_mode},
+        "symbols": list(definition.symbols),
+        "cash_weight": float(definition.cash_weight),
+    }
 
 
 def load_selection_payload(path: Path) -> dict:
