@@ -225,6 +225,22 @@ def test_resolve_portfolio_mode_definition_supports_recursive_allocator_sleeves(
             }
         },
     )
+    retuned_hybrid_path = _write(
+        tmp_path / "retuned_hybrid.json",
+        {
+            "scenarios": {
+                "refreshed_latest_tail": {
+                    "final_allocation": {
+                        "weights": {
+                            "aggressive_realized_mode": 0.6,
+                            "legacy_no_highvol_hybrid_mode": 0.4,
+                        },
+                        "cash_weight": 0.0,
+                    }
+                }
+            }
+        },
+    )
 
     monkeypatch.setattr(MODULE, "REFRESHED_INCUMBENT_PATH", incumbent_path)
     monkeypatch.setattr(MODULE, "REFRESHED_AUTORESEARCH_55_45_PATH", autoresearch_path)
@@ -236,6 +252,7 @@ def test_resolve_portfolio_mode_definition_supports_recursive_allocator_sleeves(
     monkeypatch.setattr(MODULE, "WAVE2_PAIR_PATH", wave2_pair_path)
     monkeypatch.setattr(MODULE, "HYBRID_PATH", hybrid_path)
     monkeypatch.setattr(MODULE, "LEGACY_NO_HIGHVOL_HYBRID_PATH", legacy_hybrid_path)
+    monkeypatch.setattr(MODULE, "RETUNED_LIVE_PORTFOLIO_HYBRID_PATH", retuned_hybrid_path)
     monkeypatch.setattr(MODULE, "PRODUCTION_GUARDED_PATH", _write(
         tmp_path / "production_guarded.json",
         {
@@ -253,6 +270,7 @@ def test_resolve_portfolio_mode_definition_supports_recursive_allocator_sleeves(
     aggressive = MODULE.resolve_portfolio_mode_definition("aggressive_realized_mode")
     hybrid = MODULE.resolve_portfolio_mode_definition("hybrid_guarded_mode")
     legacy_hybrid = MODULE.resolve_portfolio_mode_definition("legacy_no_highvol_hybrid_mode")
+    retuned_hybrid = MODULE.resolve_portfolio_mode_definition("retuned_live_portfolio_hybrid_mode")
     practical = MODULE.resolve_portfolio_mode_definition("strict_autoresearch_practical_mode")
     promoted = MODULE.resolve_portfolio_mode_definition("production_guarded_state_vwap_pair_mode")
     risk_off = MODULE.resolve_portfolio_mode_definition("risk_off_mode")
@@ -262,6 +280,9 @@ def test_resolve_portfolio_mode_definition_supports_recursive_allocator_sleeves(
     hybrid_weights = {item.component_id: round(item.weight, 6) for item in hybrid.components}
     legacy_hybrid_weights = {
         item.component_id: round(item.weight, 6) for item in legacy_hybrid.components
+    }
+    retuned_hybrid_weights = {
+        item.component_id: round(item.weight, 6) for item in retuned_hybrid.components
     }
     practical_weights = {item.component_id: round(item.weight, 6) for item in practical.components}
     promoted_weights = {item.component_id: round(item.weight, 6) for item in promoted.components}
@@ -291,6 +312,13 @@ def test_resolve_portfolio_mode_definition_supports_recursive_allocator_sleeves(
         "leaf_b": 0.068,
         "leaf_c": 0.03,
     }
+    assert retuned_hybrid_weights == {
+        "leaf_a": 0.2928,
+        "leaf_b": 0.1952,
+        "leaf_c": 0.192,
+        "leaf_state_vwap_pair": 0.16,
+        "leaf_wave2_pair": 0.12,
+    }
     assert practical_weights == {
         "leaf_a": 0.3096,
         "leaf_b": 0.2064,
@@ -304,9 +332,12 @@ def test_resolve_portfolio_mode_definition_supports_recursive_allocator_sleeves(
     }
     assert abs(hybrid.cash_weight - 0.3632) < 1e-12
     assert abs(legacy_hybrid.cash_weight - 0.151) < 1e-12
+    assert abs(retuned_hybrid.cash_weight - 0.1864) < 1e-12
     assert abs(practical.cash_weight - 0.1948) < 1e-6
     assert abs(promoted.cash_weight - 0.4474) < 1e-6
     assert risk_off.cash_weight == 1.0
     assert risk_off.symbols == ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "TRX/USDT"]
     assert "legacy_no_highvol_hybrid_mode" in MODULE.supported_portfolio_modes()
+    assert "retuned_live_portfolio_hybrid_mode" in MODULE.supported_portfolio_modes()
     assert supports_live_portfolio_mode("legacy_no_highvol_hybrid_mode")
+    assert supports_live_portfolio_mode("retuned_live_portfolio_hybrid_mode")

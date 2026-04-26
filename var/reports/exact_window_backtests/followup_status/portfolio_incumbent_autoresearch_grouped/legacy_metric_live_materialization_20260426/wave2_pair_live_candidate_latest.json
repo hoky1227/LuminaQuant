@@ -2,7 +2,7 @@
   "artifact_kind": "live_pair_component",
   "candidate_id": "wave2_pair_leaf",
   "family": "market_neutral",
-  "generated_at": "2026-04-26T10:13:21.222774Z",
+  "generated_at": "2026-04-26T10:32:54.465494Z",
   "name": "wave2_pair_leaf",
   "oos": {
     "active_fold_ratio": 1.0,

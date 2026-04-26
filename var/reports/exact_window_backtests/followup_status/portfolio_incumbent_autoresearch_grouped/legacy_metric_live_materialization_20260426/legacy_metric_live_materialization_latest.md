@@ -1,6 +1,6 @@
 # Legacy Metric No-HighVol HYBRID Live Materialization
 
-- generated_at: `2026-04-26T10:13:21.223335Z`
+- generated_at: `2026-04-26T10:32:54.466165Z`
 - selection remains validation-primary; OOS is report-only.
 - cash efficiency is not scored.
 - MDD up to 25% remains eligible and MDD enters only through bounded headroom.

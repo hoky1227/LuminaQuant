@@ -568,7 +568,14 @@ def _apply_caps(raw: dict[str, float], *, caps: dict[str, float]) -> dict[str, f
 
 
 def _historical_default_name(rows: list[dict[str, Any]]) -> str:
-    preferred = ("soft_three_way_regime", "balanced_overlay_80_20", "pair_tactical_mode")
+    preferred = (
+        "soft_three_way_regime",
+        "core_mode",
+        "balanced_overlay_80_20",
+        "balanced_overlay_mode",
+        "aggressive_realized_mode",
+        "pair_tactical_mode",
+    )
     available = {str(row.get("name")) for row in rows}
     for candidate in preferred:
         if candidate in available:

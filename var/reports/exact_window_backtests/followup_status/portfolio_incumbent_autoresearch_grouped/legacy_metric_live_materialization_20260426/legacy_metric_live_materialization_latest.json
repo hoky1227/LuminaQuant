@@ -29,7 +29,7 @@
     "A stateful live HYBRID allocator would need portfolio/fill/PnL state integration before it can claim exact parity with the dynamic backtest path.",
     "Exchange fees, funding, partial fills, latency, order-size limits, and slippage still require paper/canary validation."
   ],
-  "generated_at": "2026-04-26T10:13:21.223335Z",
+  "generated_at": "2026-04-26T10:32:54.466165Z",
   "live_execution_model": {
     "dynamic_allocator_live_supported": false,
     "dynamic_vs_final_allocation_gap": {

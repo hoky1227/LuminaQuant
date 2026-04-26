@@ -1,10 +1,10 @@
 {
   "best_live_deployable": {
     "cash_weight": 0.0,
-    "caveat": "",
-    "kind": "live_static_or_final_allocation_replay",
+    "caveat": "committed live mode using the validation-primary static allocation over live portfolio sleeves",
+    "kind": "live_hybrid_static_validation_retune",
     "live_deployable": true,
-    "live_mode": "aggressive_realized_mode",
+    "live_mode": "retuned_live_portfolio_hybrid_mode",
     "metrics": {
       "oos": {
         "cagr": 0.014208246579783923,
@@ -34,64 +34,65 @@
         "volatility": 0.13928139886679863
       }
     },
-    "name": "aggressive_realized_mode",
+    "name": "retuned_live_portfolio_hybrid_mode",
     "oos_scaled_score_report_only": 14.880978286792024,
     "selection_score": 71.84892026098862,
     "train_scaled_score": 22.511953421846755,
     "val_scaled_score": 67.7967686450562,
     "weights": {
-      "three_way_regime": 1.0
+      "aggressive_realized_mode": 1.0
     }
   },
-  "best_research_backtest_report_only": {
-    "cash_weight": 0.0,
-    "caveat": "stream-backed in research report, but no committed live portfolio mode artifact yet",
-    "kind": "full_universe_generated_stream_backtest_report_only",
-    "live_deployable": false,
-    "live_mode": "",
-    "metrics": {
-      "oos": {
-        "cagr": 0.00554765192853468,
-        "calmar": 0.7613046803167951,
-        "max_drawdown": 0.007287032474601607,
-        "sharpe": 0.17846078965897763,
-        "sortino": 0.20719824253922955,
-        "total_return": 0.0006671322883500252,
-        "volatility": 0.0341918847535735
-      },
-      "train": {
-        "cagr": 0.6333253870960251,
-        "calmar": 5.869207901557515,
-        "max_drawdown": 0.10790644968087759,
-        "sharpe": 1.858368561826648,
-        "sortino": 3.831538254554075,
-        "total_return": 0.6333253870960251,
-        "volatility": 0.284930459974703
-      },
-      "val": {
-        "cagr": 2.7506543098193417,
-        "calmar": 66.6710146919349,
-        "max_drawdown": 0.041257123842035726,
-        "sharpe": 3.718116581305881,
-        "sortino": 8.988625265491562,
-        "total_return": 0.2382286933882083,
-        "volatility": 0.3738035104202109
-      }
-    },
-    "name": "retuned_full_universe_hybrid_online",
-    "oos_scaled_score_report_only": 11.558987849410999,
-    "selection_score": 85.83144425858937,
-    "source_score": 85.83144425858937,
-    "stream_day_count": 468,
-    "train_scaled_score": 54.37719003674994,
-    "val_scaled_score": 76.04355005197438
-  },
-  "generated_at": "2026-04-26T10:13:21.223335Z",
+  "generated_at": "2026-04-26T10:33:41.527202Z",
   "ranked_candidates": [
     {
       "cash_weight": 0.0,
+      "caveat": "committed live mode using the validation-primary static allocation over live portfolio sleeves",
+      "kind": "live_hybrid_static_validation_retune",
+      "live_deployable": true,
+      "live_mode": "retuned_live_portfolio_hybrid_mode",
+      "metrics": {
+        "oos": {
+          "cagr": 0.014208246579783923,
+          "calmar": 1.9486120014928938,
+          "max_drawdown": 0.007291470322926541,
+          "sharpe": 0.5173122141021481,
+          "sortino": 0.4963877577999353,
+          "total_return": 0.0019732347599001887,
+          "volatility": 0.028014520541434662
+        },
+        "train": {
+          "cagr": 0.05604705845253344,
+          "calmar": 0.7936757240085243,
+          "max_drawdown": 0.07061707540891282,
+          "sharpe": 0.6323112265823205,
+          "sortino": 1.1507515526118857,
+          "total_return": 0.05604705845253344,
+          "volatility": 0.09302821326608875
+        },
+        "val": {
+          "cagr": 0.7689296216630106,
+          "calmar": 53.85637715722416,
+          "max_drawdown": 0.01427741081466094,
+          "sharpe": 4.165593422276222,
+          "sortino": 12.140370813739173,
+          "total_return": 0.09658142261929226,
+          "volatility": 0.13928139886679863
+        }
+      },
+      "name": "retuned_live_portfolio_hybrid_mode",
+      "oos_scaled_score_report_only": 14.880978286792024,
+      "selection_score": 71.84892026098862,
+      "train_scaled_score": 22.511953421846755,
+      "val_scaled_score": 67.7967686450562,
+      "weights": {
+        "aggressive_realized_mode": 1.0
+      }
+    },
+    {
+      "cash_weight": 0.0,
       "caveat": "",
-      "kind": "live_static_or_final_allocation_replay",
+      "kind": "live_portfolio_mode_static_replay",
       "live_deployable": true,
       "live_mode": "aggressive_realized_mode",
       "metrics": {
@@ -127,15 +128,12 @@
       "oos_scaled_score_report_only": 14.880978286792024,
       "selection_score": 71.84892026098862,
       "train_scaled_score": 22.511953421846755,
-      "val_scaled_score": 67.7967686450562,
-      "weights": {
-        "three_way_regime": 1.0
-      }
+      "val_scaled_score": 67.7967686450562
     },
     {
       "cash_weight": 0.0,
       "caveat": "",
-      "kind": "live_static_or_final_allocation_replay",
+      "kind": "live_portfolio_mode_static_replay",
       "live_deployable": true,
       "live_mode": "core_mode",
       "metrics": {
@@ -171,15 +169,12 @@
       "oos_scaled_score_report_only": 12.67593244818469,
       "selection_score": 70.35681890551359,
       "train_scaled_score": 19.378499342993848,
-      "val_scaled_score": 66.86868902377469,
-      "weights": {
-        "soft_three_way_regime": 1.0
-      }
+      "val_scaled_score": 66.86868902377469
     },
     {
       "cash_weight": 0.0,
       "caveat": "",
-      "kind": "live_static_or_final_allocation_replay",
+      "kind": "live_portfolio_mode_static_replay",
       "live_deployable": true,
       "live_mode": "balanced_overlay_mode",
       "metrics": {
@@ -215,15 +210,12 @@
       "oos_scaled_score_report_only": 13.69210538041043,
       "selection_score": 69.11863431914973,
       "train_scaled_score": 19.155403017531164,
-      "val_scaled_score": 65.67066177599412,
-      "weights": {
-        "balanced_overlay_80_20": 1.0
-      }
+      "val_scaled_score": 65.67066177599412
     },
     {
       "cash_weight": 0.0,
       "caveat": "",
-      "kind": "live_static_or_final_allocation_replay",
+      "kind": "live_portfolio_mode_static_replay",
       "live_deployable": true,
       "live_mode": "defensive_overlay_mode",
       "metrics": {
@@ -259,16 +251,12 @@
       "oos_scaled_score_report_only": 16.47583792999925,
       "selection_score": 66.58824671990786,
       "train_scaled_score": 18.714157346941253,
-      "val_scaled_score": 63.21969839745844,
-      "weights": {
-        "pair_tactical_mode": 0.3,
-        "soft_three_way_regime": 0.7
-      }
+      "val_scaled_score": 63.21969839745844
     },
     {
       "cash_weight": 0.0,
       "caveat": "",
-      "kind": "live_static_or_final_allocation_replay",
+      "kind": "live_portfolio_mode_static_replay",
       "live_deployable": true,
       "live_mode": "strict_autoresearch_practical_mode",
       "metrics": {
@@ -304,16 +292,12 @@
       "oos_scaled_score_report_only": 19.92516261018939,
       "selection_score": 64.99463646007638,
       "train_scaled_score": 14.357189546545262,
-      "val_scaled_score": 62.41034234169823,
-      "weights": {
-        "production_guarded_portfolio": 0.8,
-        "strict_autoresearch_1x": 0.2
-      }
+      "val_scaled_score": 62.41034234169823
     },
     {
       "cash_weight": 0.35,
       "caveat": "",
-      "kind": "live_static_or_final_allocation_replay",
+      "kind": "live_portfolio_mode_static_replay",
       "live_deployable": true,
       "live_mode": "production_guarded_state_vwap_pair_mode",
       "metrics": {
@@ -349,16 +333,12 @@
       "oos_scaled_score_report_only": 35.84659089171268,
       "selection_score": 60.56439669058249,
       "train_scaled_score": 8.594485852431045,
-      "val_scaled_score": 59.017389237144904,
-      "weights": {
-        "production_guarded_portfolio": 0.4,
-        "state_vwap_pair": 0.25
-      }
+      "val_scaled_score": 59.017389237144904
     },
     {
       "cash_weight": 0.366197310577848,
-      "caveat": "deployable through ArtifactPortfolioModeStrategy using the materialized final allocation; historical dynamic allocator score is reported separately",
-      "kind": "live_final_allocation_replay",
+      "caveat": "",
+      "kind": "live_portfolio_mode_static_replay",
       "live_deployable": true,
       "live_mode": "legacy_no_highvol_hybrid_mode",
       "metrics": {
@@ -394,16 +374,12 @@
       "oos_scaled_score_report_only": 24.53132826891223,
       "selection_score": 53.35217861778529,
       "train_scaled_score": -7.197494595722702,
-      "val_scaled_score": 54.64772764501538,
-      "weights": {
-        "state_vwap_pair": 0.3850317188122254,
-        "wave2_pair": 0.24877097060992664
-      }
+      "val_scaled_score": 54.64772764501538
     },
     {
       "cash_weight": 0.0,
       "caveat": "",
-      "kind": "live_static_or_final_allocation_replay",
+      "kind": "live_portfolio_mode_static_replay",
       "live_deployable": true,
       "live_mode": "pair_tactical_mode",
       "metrics": {
@@ -439,15 +415,12 @@
       "oos_scaled_score_report_only": 28.007787768256044,
       "selection_score": 47.744932921465306,
       "train_scaled_score": 14.677339031174622,
-      "val_scaled_score": 45.103011895853875,
-      "weights": {
-        "pair_tactical_mode": 1.0
-      }
+      "val_scaled_score": 45.103011895853875
     },
     {
-      "cash_weight": 1.0,
+      "cash_weight": 0.0,
       "caveat": "",
-      "kind": "live_static_or_final_allocation_replay",
+      "kind": "live_portfolio_mode_static_replay",
       "live_deployable": true,
       "live_mode": "risk_off_mode",
       "metrics": {
@@ -483,277 +456,64 @@
       "oos_scaled_score_report_only": 10.0,
       "selection_score": 11.8,
       "train_scaled_score": 10.0,
-      "val_scaled_score": 10.0,
-      "weights": {}
+      "val_scaled_score": 10.0
     },
     {
-      "cash_weight": 1.0,
-      "caveat": "current live HYBRID mode uses the latest saved final allocation, not the dynamic allocator path",
-      "kind": "live_static_or_final_allocation_replay",
-      "live_deployable": true,
-      "live_mode": "hybrid_guarded_mode",
-      "metrics": {
-        "oos": {
-          "cagr": 0.0,
-          "calmar": 0.0,
-          "max_drawdown": 0.0,
-          "sharpe": 0.0,
-          "sortino": 0.0,
-          "total_return": 0.0,
-          "volatility": 0.0
-        },
-        "train": {
-          "cagr": 0.0,
-          "calmar": 0.0,
-          "max_drawdown": 0.0,
-          "sharpe": 0.0,
-          "sortino": 0.0,
-          "total_return": 0.0,
-          "volatility": 0.0
-        },
-        "val": {
-          "cagr": 0.0,
-          "calmar": 0.0,
-          "max_drawdown": 0.0,
-          "sharpe": 0.0,
-          "sortino": 0.0,
-          "total_return": 0.0,
-          "volatility": 0.0
-        }
-      },
-      "name": "hybrid_guarded_mode",
-      "oos_scaled_score_report_only": 10.0,
-      "selection_score": 11.8,
-      "train_scaled_score": 10.0,
-      "val_scaled_score": 10.0,
-      "weights": {}
-    },
-    {
-      "cash_weight": 0.0,
-      "caveat": "stream-backed in research report, but no committed live portfolio mode artifact yet",
-      "kind": "full_universe_generated_stream_backtest_report_only",
-      "live_deployable": false,
-      "live_mode": "",
-      "metrics": {
-        "oos": {
-          "cagr": 0.00554765192853468,
-          "calmar": 0.7613046803167951,
-          "max_drawdown": 0.007287032474601607,
-          "sharpe": 0.17846078965897763,
-          "sortino": 0.20719824253922955,
-          "total_return": 0.0006671322883500252,
-          "volatility": 0.0341918847535735
-        },
-        "train": {
-          "cagr": 0.6333253870960251,
-          "calmar": 5.869207901557515,
-          "max_drawdown": 0.10790644968087759,
-          "sharpe": 1.858368561826648,
-          "sortino": 3.831538254554075,
-          "total_return": 0.6333253870960251,
-          "volatility": 0.284930459974703
-        },
-        "val": {
-          "cagr": 2.7506543098193417,
-          "calmar": 66.6710146919349,
-          "max_drawdown": 0.041257123842035726,
-          "sharpe": 3.718116581305881,
-          "sortino": 8.988625265491562,
-          "total_return": 0.2382286933882083,
-          "volatility": 0.3738035104202109
-        }
-      },
-      "name": "retuned_full_universe_hybrid_online",
-      "oos_scaled_score_report_only": 11.558987849410999,
-      "selection_score": 85.83144425858937,
-      "source_score": 85.83144425858937,
-      "stream_day_count": 468,
-      "train_scaled_score": 54.37719003674994,
-      "val_scaled_score": 76.04355005197438
-    },
-    {
-      "cash_weight": 0.0,
-      "caveat": "stream-backed in research report, but no committed live portfolio mode artifact yet",
-      "kind": "full_universe_generated_stream_backtest_report_only",
-      "live_deployable": false,
-      "live_mode": "",
-      "metrics": {
-        "oos": {
-          "cagr": 0.0313721607435089,
-          "calmar": 4.424896345022248,
-          "max_drawdown": 0.007089919920678089,
-          "sharpe": 1.0071688948090627,
-          "sortino": 1.045660664763523,
-          "total_return": 0.0037306810855510797,
-          "volatility": 0.031140556530075542
-        },
-        "train": {
-          "cagr": 0.16767366804132844,
-          "calmar": 1.1353307842726204,
-          "max_drawdown": 0.14768706210036664,
-          "sharpe": 1.0887743266408951,
-          "sortino": 1.8574885454408334,
-          "total_return": 0.16767366804132844,
-          "volatility": 0.1529056084229908
-        },
-        "val": {
-          "cagr": 1.5719587764442435,
-          "calmar": 42.75416280550446,
-          "max_drawdown": 0.0367673852858571,
-          "sharpe": 3.6331255459665623,
-          "sortino": 7.132147942244293,
-          "total_return": 0.16497511128782305,
-          "volatility": 0.26997354775321714
-        }
-      },
-      "name": "full_universe_v35_train_learned_high_vol_hybrid",
-      "oos_scaled_score_report_only": 19.868774135638077,
-      "selection_score": 73.76581644885513,
-      "source_score": 73.76581644885513,
-      "stream_day_count": 468,
-      "train_scaled_score": 36.51787269500748,
-      "val_scaled_score": 67.19259936375379
-    },
-    {
-      "cash_weight": 0.0,
-      "caveat": "stream-backed in research report, but no committed live portfolio mode artifact yet",
-      "kind": "full_universe_generated_stream_backtest_report_only",
-      "live_deployable": false,
-      "live_mode": "",
-      "metrics": {
-        "oos": {
-          "cagr": 0.026833123323747543,
-          "calmar": 3.765693024614334,
-          "max_drawdown": 0.007125679960727993,
-          "sharpe": 0.8909711636394764,
-          "sortino": 0.9023137937398158,
-          "total_return": 0.003197140656533426,
-          "volatility": 0.03022026114660599
-        },
-        "train": {
-          "cagr": 0.09517064151365595,
-          "calmar": 0.561704729354076,
-          "max_drawdown": 0.16943179670766884,
-          "sharpe": 0.6520964124331091,
-          "sortino": 1.032088561275107,
-          "total_return": 0.09517064151365595,
-          "volatility": 0.1582511588760398
-        },
-        "val": {
-          "cagr": 1.566663540544119,
-          "calmar": 40.22232539473065,
-          "max_drawdown": 0.03895009861238308,
-          "sharpe": 3.5835708704486575,
-          "sortino": 6.678936299518725,
-          "total_return": 0.1645870751093248,
-          "volatility": 0.2734014697458404
-        }
-      },
-      "name": "full_universe_v36_rolling_dynamic_high_vol_hybrid",
-      "oos_scaled_score_report_only": 18.653012690678583,
-      "selection_score": 70.43260499478892,
-      "source_score": 70.43260499478892,
-      "stream_day_count": 468,
-      "train_scaled_score": 23.99503130720326,
-      "val_scaled_score": 66.11349935949234
-    },
-    {
-      "allocation_summary": {
-        "average_cash_by_split": {
-          "oos": 0.25593969784960896,
-          "train": 0.2635508093816603,
-          "val": 0.44008076743973423
-        },
-        "average_weights_by_split": {
-          "oos": {
-            "balanced_overlay_80_20": 0.08366495275100351,
-            "pair_tactical_mode": 0.15588327232774532,
-            "production_guarded_portfolio": 0.20779999078355949,
-            "soft_three_way_regime": 0.02736740834718807,
-            "state_vwap_pair": 0.11281478213037527,
-            "static_blend_76_24": 0.11164193522805317,
-            "three_way_regime": 0.028823639069898585,
-            "wave2_pair": 0.016064321512567592
-          },
-          "train": {
-            "balanced_overlay_80_20": 0.001582825675740129,
-            "pair_tactical_mode": 0.04175593315737226,
-            "production_guarded_portfolio": 0.0012576741258290142,
-            "soft_three_way_regime": 0.6290425394745113,
-            "state_vwap_pair": 0.04962539262289906,
-            "static_blend_76_24": 0.0009343555859462265,
-            "three_way_regime": 0.002152223948393763,
-            "wave2_pair": 0.010098246027647884
-          },
-          "val": {
-            "balanced_overlay_80_20": 0.029770441935000932,
-            "pair_tactical_mode": 0.2762748976293994,
-            "production_guarded_portfolio": 0.053078918111405325,
-            "soft_three_way_regime": 0.03503046852819178,
-            "state_vwap_pair": 0.0016219800224445498,
-            "static_blend_76_24": 0.13290120381683165,
-            "three_way_regime": 0.029906941767975426,
-            "wave2_pair": 0.0013343807490166246
-          }
-        }
-      },
-      "cash_weight": 0.366197310577848,
-      "caveat": "stream-backed reconstruction of the metric-only winner; live strategy mode uses its final allocation unless/until a stateful live HYBRID allocator is implemented",
+      "cash_weight": 0.09999999999999998,
+      "caveat": "dynamic allocation path; live mode below uses the saved final allocation",
       "final_allocation": {
-        "cash_weight": 0.366197310577848,
+        "cash_weight": 0.09999999999999998,
         "date": "2026-04-20",
-        "default_sleeve": "state_vwap_pair",
+        "default_sleeve": "legacy_no_highvol_hybrid_mode",
         "split": "oos",
         "weights": {
-          "state_vwap_pair": 0.3850317188122254,
-          "wave2_pair": 0.24877097060992664
+          "legacy_no_highvol_hybrid_mode": 0.9
         }
       },
-      "kind": "stream_backed_dynamic_research_proxy",
+      "kind": "live_mode_sleeve_dynamic_research_path",
       "live_deployable": false,
       "live_mode": "",
       "metrics": {
         "oos": {
-          "cagr": -0.025252920948962143,
-          "calmar": -6.880746172790446,
-          "max_drawdown": 0.0036700846557635725,
-          "sharpe": -3.5249330761815467,
-          "sortino": -1.246918379125686,
-          "total_return": -0.0035674287697931018,
-          "volatility": 0.007248522329247229
+          "cagr": -0.012128323742569336,
+          "calmar": -2.3148069995941345,
+          "max_drawdown": 0.005239453546103778,
+          "sharpe": -0.5857830028566592,
+          "sortino": -0.6197452246608076,
+          "total_return": -0.0017035502452448226,
+          "volatility": 0.020480151726645843
         },
         "train": {
-          "cagr": 0.09685613038331375,
-          "calmar": 2.2817326282811874,
-          "max_drawdown": 0.04244850127610034,
-          "sharpe": 1.2873275375762105,
-          "sortino": 2.0393804450998956,
-          "total_return": 0.09685613038331375,
-          "volatility": 0.07392705950982598
+          "cagr": 0.10690640527706008,
+          "calmar": 3.3190060379495567,
+          "max_drawdown": 0.03221036781936848,
+          "sharpe": 1.581612484899956,
+          "sortino": 2.516953348248113,
+          "total_return": 0.10690640527706008,
+          "volatility": 0.06557298976083928
         },
         "val": {
-          "cagr": 0.4077343658512771,
-          "calmar": 34.64024314350567,
-          "max_drawdown": 0.011770539951527992,
-          "sharpe": 3.0943058382937774,
-          "sortino": 7.792667918745181,
-          "total_return": 0.05683565699707738,
-          "volatility": 0.11254626855643814
+          "cagr": 0.5339481777242687,
+          "calmar": 37.4131786033814,
+          "max_drawdown": 0.014271660352216387,
+          "sharpe": 3.5353949506195996,
+          "sortino": 12.175793459433379,
+          "total_return": 0.07160603871613702,
+          "volatility": 0.1231525238407756
         }
       },
-      "name": "legacy_metric_no_highvol_materialized_dynamic_stream_backtest",
-      "oos_scaled_score_report_only": -14.79242583425916,
-      "selection_score": 59.21592048030717,
-      "train_scaled_score": 35.33581886053228,
-      "val_scaled_score": 52.85547308541136
+      "name": "retuned_live_portfolio_hybrid_dynamic_backtest",
+      "oos_scaled_score_report_only": 3.936374209260761,
+      "selection_score": 67.22675654876036,
+      "train_scaled_score": 39.696027222591475,
+      "val_scaled_score": 60.0814716486939
     }
   ],
   "selection_policy": {
     "cash_efficiency_scored": false,
     "oos_role": "report_only",
-    "scaled_score_formula": "100*(0.30*tanh(return/0.18)+0.30*tanh(sharpe/4)+0.15*tanh(sortino/12)+0.15*tanh(calmar/80)+0.10*MDD_headroom)",
     "selection_score": "val_scaled_score + 0.18 * train_scaled_score",
     "train_val_mdd_cap": 0.25
   },
-  "source_materialization_report": "var/reports/exact_window_backtests/followup_status/portfolio_incumbent_autoresearch_grouped/legacy_metric_live_materialization_20260426/legacy_metric_live_materialization_latest.json"
+  "source_retune_report": "var/reports/exact_window_backtests/followup_status/portfolio_incumbent_autoresearch_grouped/live_portfolio_hybrid_retune_20260426/live_portfolio_hybrid_retune_latest.json"
 }

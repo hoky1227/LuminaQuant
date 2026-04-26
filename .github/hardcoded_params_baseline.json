@@ -1,5 +1,5 @@
 {
-  "generated_at_utc": "2026-04-26T10:08:50.312121+00:00",
+  "generated_at_utc": "2026-04-26T10:35:00.827464+00:00",
   "literal_paths": [
     "src/lumina_quant/strategies",
     "lumina_quant/strategies"
@@ -9,16 +9,18 @@
     "lumina_quant/indicators/formulaic_definitions.py"
   ],
   "signatures": [
-    "literal:src/lumina_quant/strategies/artifact_portfolio_mode.py:247:97:0.8",
-    "literal:src/lumina_quant/strategies/artifact_portfolio_mode.py:248:83:0.2",
-    "literal:src/lumina_quant/strategies/artifact_portfolio_mode.py:254:111:0.8",
-    "literal:src/lumina_quant/strategies/artifact_portfolio_mode.py:255:99:0.2",
-    "literal:src/lumina_quant/strategies/artifact_portfolio_mode.py:258:111:0.4",
-    "literal:src/lumina_quant/strategies/artifact_portfolio_mode.py:260:63:0.35",
-    "literal:src/lumina_quant/strategies/artifact_portfolio_mode.py:405:93:0.7",
-    "literal:src/lumina_quant/strategies/artifact_portfolio_mode.py:406:90:0.3",
-    "literal:src/lumina_quant/strategies/artifact_portfolio_mode.py:483:40:60",
-    "literal:src/lumina_quant/strategies/artifact_portfolio_mode.py:518:46:12",
-    "literal:src/lumina_quant/strategies/artifact_portfolio_mode.py:528:68:24"
+    "literal:src/lumina_quant/strategies/artifact_portfolio_mode.py:259:97:0.7",
+    "literal:src/lumina_quant/strategies/artifact_portfolio_mode.py:260:91:0.3",
+    "literal:src/lumina_quant/strategies/artifact_portfolio_mode.py:269:97:0.8",
+    "literal:src/lumina_quant/strategies/artifact_portfolio_mode.py:270:83:0.2",
+    "literal:src/lumina_quant/strategies/artifact_portfolio_mode.py:276:111:0.8",
+    "literal:src/lumina_quant/strategies/artifact_portfolio_mode.py:277:99:0.2",
+    "literal:src/lumina_quant/strategies/artifact_portfolio_mode.py:280:111:0.4",
+    "literal:src/lumina_quant/strategies/artifact_portfolio_mode.py:282:63:0.35",
+    "literal:src/lumina_quant/strategies/artifact_portfolio_mode.py:428:93:0.7",
+    "literal:src/lumina_quant/strategies/artifact_portfolio_mode.py:429:90:0.3",
+    "literal:src/lumina_quant/strategies/artifact_portfolio_mode.py:516:40:60",
+    "literal:src/lumina_quant/strategies/artifact_portfolio_mode.py:551:46:12",
+    "literal:src/lumina_quant/strategies/artifact_portfolio_mode.py:561:68:24"
   ]
 }

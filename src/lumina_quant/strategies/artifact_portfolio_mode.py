@@ -20,6 +20,11 @@ LEGACY_NO_HIGHVOL_HYBRID_PATH = (
     / "legacy_metric_live_materialization_20260426"
     / "legacy_metric_live_materialization_latest.json"
 )
+RETUNED_LIVE_PORTFOLIO_HYBRID_PATH = (
+    GROUP_ROOT
+    / "live_portfolio_hybrid_retune_20260426"
+    / "live_portfolio_hybrid_retune_latest.json"
+)
 WAVE2_PAIR_PATH = (
     GROUP_ROOT
     / "legacy_metric_live_materialization_20260426"
@@ -241,8 +246,25 @@ def _alias_rows(token: str) -> list[dict[str, Any]] | None:
     hybrid_paths = {
         "hybrid_guarded_mode": HYBRID_PATH,
         "legacy_no_highvol_hybrid_mode": LEGACY_NO_HIGHVOL_HYBRID_PATH,
+        "retuned_live_portfolio_hybrid_mode": RETUNED_LIVE_PORTFOLIO_HYBRID_PATH,
     }
     synthetic_rows = {
+        "core_mode": [
+            {"candidate_id": "soft_three_way_regime", "name": "soft_three_way_regime", "weight": 1.0},
+        ],
+        "balanced_overlay_mode": [
+            {"candidate_id": "balanced_overlay_80_20", "name": "balanced_overlay_80_20", "weight": 1.0},
+        ],
+        "defensive_overlay_mode": [
+            {"candidate_id": "soft_three_way_regime", "name": "soft_three_way_regime", "weight": 0.7},
+            {"candidate_id": "pair_tactical_mode", "name": "pair_tactical_mode", "weight": 0.3},
+        ],
+        "aggressive_realized_mode": [
+            {"candidate_id": "three_way_regime", "name": "three_way_regime", "weight": 1.0},
+        ],
+        "risk_off_mode": [
+            {"candidate_id": "cash", "name": "cash", "weight": 1.0},
+        ],
         "balanced_overlay_80_20": [
             {"candidate_id": "soft_three_way_regime", "name": "soft_three_way_regime", "weight": 0.8},
             {"candidate_id": "pair_fast_exit", "name": "pair_fast_exit", "weight": 0.2},
@@ -376,6 +398,7 @@ def resolve_portfolio_mode_definition(portfolio_mode: str) -> PortfolioModeDefin
     source_artifacts = {
         "hybrid_path": str(HYBRID_PATH.resolve()),
         "legacy_no_highvol_hybrid_path": str(LEGACY_NO_HIGHVOL_HYBRID_PATH.resolve()),
+        "retuned_live_portfolio_hybrid_path": str(RETUNED_LIVE_PORTFOLIO_HYBRID_PATH.resolve()),
         "refreshed_incumbent_path": str(REFRESHED_INCUMBENT_PATH.resolve()),
         "refreshed_blend_path": str(REFRESHED_BLEND_PATH.resolve()),
         "refreshed_autoresearch_55_45_path": str(REFRESHED_AUTORESEARCH_55_45_PATH.resolve()),
@@ -409,8 +432,17 @@ def resolve_portfolio_mode_definition(portfolio_mode: str) -> PortfolioModeDefin
         cash_weight = soft_cash + pair_cash
     elif token == "aggressive_realized_mode":
         components, cash_weight = _expand_reference("three_way_regime", weight_scale=1.0, source=token)
-    elif token in {"hybrid_guarded_mode", "legacy_no_highvol_hybrid_mode"}:
-        hybrid_path = HYBRID_PATH if token == "hybrid_guarded_mode" else LEGACY_NO_HIGHVOL_HYBRID_PATH
+    elif token in {
+        "hybrid_guarded_mode",
+        "legacy_no_highvol_hybrid_mode",
+        "retuned_live_portfolio_hybrid_mode",
+    }:
+        hybrid_paths = {
+            "hybrid_guarded_mode": HYBRID_PATH,
+            "legacy_no_highvol_hybrid_mode": LEGACY_NO_HIGHVOL_HYBRID_PATH,
+            "retuned_live_portfolio_hybrid_mode": RETUNED_LIVE_PORTFOLIO_HYBRID_PATH,
+        }
+        hybrid_path = hybrid_paths[token]
         hybrid_payload = _read_json(hybrid_path)
         final_allocation = dict(
             dict((hybrid_payload.get("scenarios") or {}).get("refreshed_latest_tail") or {}).get("final_allocation")
@@ -461,6 +493,7 @@ def supported_portfolio_modes() -> set[str]:
         "aggressive_realized_mode",
         "hybrid_guarded_mode",
         "legacy_no_highvol_hybrid_mode",
+        "retuned_live_portfolio_hybrid_mode",
         "balanced_overlay_mode",
         "defensive_overlay_mode",
         "core_mode",

@@ -1,10 +1,19 @@
-# Live-Implementable Portfolio Selection
+# Live Portfolio HYBRID Retune
 
 - generated_at: `2026-04-26T10:33:41.527202Z`
-- best_live_deployable: `retuned_live_portfolio_hybrid_mode` (score `71.85`)
-- universe: live portfolio modes plus the retuned live HYBRID final-allocation mode
+- tuning universe: committed live portfolio modes only
+- selection: validation-primary; OOS report-only; cash efficiency not scored
+- best dynamic retune score: `67.23`
+- deployable validation-primary static mode: `retuned_live_portfolio_hybrid_mode`, score `71.85`
+- best live-deployable after retune: `retuned_live_portfolio_hybrid_mode` (score `71.85`)
 
-## Ranked candidates
+## Final allocation
+
+- date: `static_validation_primary_retune`
+- cash_weight: `0.00%`
+- `aggressive_realized_mode`: `100.00%`
+
+## Live-implementable ranking
 
 | Rank | Candidate | Live? | Score | Train ret/Sh/MDD | Val ret/Sh/MDD | OOS ret/Sh/MDD | Caveat |
 | ---: | --- | --- | ---: | ---: | ---: | ---: | --- |
@@ -19,3 +28,10 @@
 | 9 | `pair_tactical_mode` | yes | 47.74 | +0.5244%/0.4982/+0.8228% | +0.5731%/3.0741/+0.0184% | +0.2892%/2.6752/+0.0000% |  |
 | 10 | `risk_off_mode` | yes | 11.80 | +0.0000%/0.0000/+0.0000% | +0.0000%/0.0000/+0.0000% | +0.0000%/0.0000/+0.0000% |  |
 | 11 | `retuned_live_portfolio_hybrid_dynamic_backtest` | no | 67.23 | +10.6906%/1.5816/+3.2210% | +7.1606%/3.5354/+1.4272% | -0.1704%/-0.5858/+0.5239% | dynamic allocation path; live mode below uses the saved final allocation |
+
+## Caveats
+
+- The retune only uses committed live portfolio modes as sleeves.
+- The dynamic allocator path is still research/backtest; the deployable mode uses the validation-primary static allocation.
+- OOS is report-only and was not used for tuning or health priors.
+- Paper/canary execution is still required before capital promotion.
