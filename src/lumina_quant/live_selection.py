@@ -12,6 +12,7 @@ SUPPORTED_LIVE_PORTFOLIO_MODES = frozenset(
     {
         "aggressive_realized_mode",
         "hybrid_guarded_mode",
+        "legacy_no_highvol_hybrid_mode",
         "balanced_overlay_mode",
         "defensive_overlay_mode",
         "core_mode",

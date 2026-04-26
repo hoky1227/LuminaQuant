@@ -15,6 +15,16 @@ from lumina_quant.strategies import resolve_strategy_class
 GROUP_ROOT = FOLLOWUP_ROOT / "portfolio_incumbent_autoresearch_grouped"
 REFRESH_ROOT = GROUP_ROOT / "current_switch_validation_current"
 HYBRID_PATH = GROUP_ROOT / "portfolio_hybrid_online_current" / "hybrid_online_portfolio_latest.json"
+LEGACY_NO_HIGHVOL_HYBRID_PATH = (
+    GROUP_ROOT
+    / "legacy_metric_live_materialization_20260426"
+    / "legacy_metric_live_materialization_latest.json"
+)
+WAVE2_PAIR_PATH = (
+    GROUP_ROOT
+    / "legacy_metric_live_materialization_20260426"
+    / "wave2_pair_live_candidate_latest.json"
+)
 REFRESHED_INCUMBENT_PATH = REFRESH_ROOT / "refreshed_current_one_shot_incumbent_portfolio_latest.json"
 REFRESHED_BLEND_PATH = REFRESH_ROOT / "refreshed_grouped_static_blend_latest.json"
 REFRESHED_AUTORESEARCH_55_45_PATH = (
@@ -155,6 +165,11 @@ def _state_vwap_pair_component(weight: float) -> PortfolioModeComponent:
     return _component_from_row(row, weight=weight, source="state_vwap_pair")
 
 
+def _wave2_pair_component(weight: float) -> PortfolioModeComponent:
+    row = _read_json(WAVE2_PAIR_PATH)
+    return _component_from_row(row, weight=weight, source="wave2_pair")
+
+
 def _portfolio_weight_rows(path: Path) -> list[dict[str, Any]]:
     payload = _read_json(path)
     rows = [dict(item) for item in list(payload.get("weights") or []) if isinstance(item, dict)]
@@ -225,6 +240,7 @@ def _alias_rows(token: str) -> list[dict[str, Any]] | None:
     }
     hybrid_paths = {
         "hybrid_guarded_mode": HYBRID_PATH,
+        "legacy_no_highvol_hybrid_mode": LEGACY_NO_HIGHVOL_HYBRID_PATH,
     }
     synthetic_rows = {
         "balanced_overlay_80_20": [
@@ -242,6 +258,12 @@ def _alias_rows(token: str) -> list[dict[str, Any]] | None:
             {"candidate_id": "production_guarded_portfolio", "name": "production_guarded_portfolio", "weight": 0.4},
             {"candidate_id": "state_vwap_pair_leaf", "name": "state_vwap_pair_leaf", "weight": 0.25},
             {"candidate_id": "cash", "name": "cash", "weight": 0.35},
+        ],
+        "state_vwap_pair": [
+            {"candidate_id": "state_vwap_pair_leaf", "name": "state_vwap_pair_leaf", "weight": 1.0},
+        ],
+        "wave2_pair": [
+            {"candidate_id": "wave2_pair_leaf", "name": "wave2_pair_leaf", "weight": 1.0},
         ],
         "pair_fast_exit": [
             {"candidate_id": "pair_fast_exit_leaf", "name": "pair_fast_exit_leaf", "weight": 1.0},
@@ -291,6 +313,8 @@ def _expand_reference(
         return [_pair_component(float(weight_scale))], 0.0
     if token in {"state_vwap_pair_leaf"}:
         return [_state_vwap_pair_component(float(weight_scale))], 0.0
+    if token in {"wave2_pair_leaf"}:
+        return [_wave2_pair_component(float(weight_scale))], 0.0
 
     rows = _alias_rows(token)
     if rows is None:
@@ -351,6 +375,7 @@ def resolve_portfolio_mode_definition(portfolio_mode: str) -> PortfolioModeDefin
 
     source_artifacts = {
         "hybrid_path": str(HYBRID_PATH.resolve()),
+        "legacy_no_highvol_hybrid_path": str(LEGACY_NO_HIGHVOL_HYBRID_PATH.resolve()),
         "refreshed_incumbent_path": str(REFRESHED_INCUMBENT_PATH.resolve()),
         "refreshed_blend_path": str(REFRESHED_BLEND_PATH.resolve()),
         "refreshed_autoresearch_55_45_path": str(REFRESHED_AUTORESEARCH_55_45_PATH.resolve()),
@@ -359,6 +384,7 @@ def resolve_portfolio_mode_definition(portfolio_mode: str) -> PortfolioModeDefin
         "pair_tactical_path": str(PAIR_TACTICAL_PATH.resolve()),
         "production_guarded_path": str(PRODUCTION_GUARDED_PATH.resolve()),
         "state_vwap_pair_path": str(STATE_VWAP_PAIR_PATH.resolve()),
+        "wave2_pair_path": str(WAVE2_PAIR_PATH.resolve()),
         "strict_autoresearch_1x_path": str(STRICT_AUTORESEARCH_1X_PATH.resolve()),
     }
 
@@ -383,8 +409,9 @@ def resolve_portfolio_mode_definition(portfolio_mode: str) -> PortfolioModeDefin
         cash_weight = soft_cash + pair_cash
     elif token == "aggressive_realized_mode":
         components, cash_weight = _expand_reference("three_way_regime", weight_scale=1.0, source=token)
-    elif token == "hybrid_guarded_mode":
-        hybrid_payload = _read_json(HYBRID_PATH)
+    elif token in {"hybrid_guarded_mode", "legacy_no_highvol_hybrid_mode"}:
+        hybrid_path = HYBRID_PATH if token == "hybrid_guarded_mode" else LEGACY_NO_HIGHVOL_HYBRID_PATH
+        hybrid_payload = _read_json(hybrid_path)
         final_allocation = dict(
             dict((hybrid_payload.get("scenarios") or {}).get("refreshed_latest_tail") or {}).get("final_allocation")
             or {}
@@ -433,6 +460,7 @@ def supported_portfolio_modes() -> set[str]:
     return {
         "aggressive_realized_mode",
         "hybrid_guarded_mode",
+        "legacy_no_highvol_hybrid_mode",
         "balanced_overlay_mode",
         "defensive_overlay_mode",
         "core_mode",
