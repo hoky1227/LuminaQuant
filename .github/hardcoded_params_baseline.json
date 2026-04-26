@@ -1,5 +1,5 @@
 {
-  "generated_at_utc": "2026-03-16T11:14:37.904252+00:00",
+  "generated_at_utc": "2026-04-26T07:25:54.768928+00:00",
   "literal_paths": [
     "src/lumina_quant/strategies",
     "lumina_quant/strategies"
@@ -8,5 +8,17 @@
     "src/lumina_quant/indicators/formulaic_definitions.py",
     "lumina_quant/indicators/formulaic_definitions.py"
   ],
-  "signatures": []
+  "signatures": [
+    "literal:src/lumina_quant/strategies/artifact_portfolio_mode.py:231:97:0.8",
+    "literal:src/lumina_quant/strategies/artifact_portfolio_mode.py:232:83:0.2",
+    "literal:src/lumina_quant/strategies/artifact_portfolio_mode.py:238:111:0.8",
+    "literal:src/lumina_quant/strategies/artifact_portfolio_mode.py:239:99:0.2",
+    "literal:src/lumina_quant/strategies/artifact_portfolio_mode.py:242:111:0.4",
+    "literal:src/lumina_quant/strategies/artifact_portfolio_mode.py:244:63:0.35",
+    "literal:src/lumina_quant/strategies/artifact_portfolio_mode.py:379:93:0.7",
+    "literal:src/lumina_quant/strategies/artifact_portfolio_mode.py:380:90:0.3",
+    "literal:src/lumina_quant/strategies/artifact_portfolio_mode.py:455:40:60",
+    "literal:src/lumina_quant/strategies/artifact_portfolio_mode.py:490:46:12",
+    "literal:src/lumina_quant/strategies/artifact_portfolio_mode.py:500:68:24"
+  ]
 }

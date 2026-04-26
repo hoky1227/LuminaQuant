@@ -976,19 +976,34 @@ def main() -> int:
                 **dict(exc.details),
             }
             raise
-        weight_shares = {key: float(value) for key, value in weights.items()}
+        pre_vol_weights = {key: float(value) for key, value in weights.items()}
+        active_budget = float(sum(max(0.0, value) for value in pre_vol_weights.values()))
+        underdiversified_default_shortlist = (
+            len(pre_vol_weights) > 1
+            and active_budget <= configured_caps["max_strategy"] * len(pre_vol_weights) + 1e-9
+            and active_budget <= 0.300000001
+        )
+        if active_budget > 0.0 and underdiversified_default_shortlist:
+            weight_shares = {
+                key: float(max(0.0, value) / active_budget)
+                for key, value in pre_vol_weights.items()
+            }
+        elif active_budget > 0.0:
+            weight_shares = dict(pre_vol_weights)
+        else:
+            weight_shares = dict.fromkeys(pre_vol_weights, 0.0)
 
         target_vol_floor = max(0.0, _safe_float(vol_targeting_params.get("target_vol_floor"), 0.01))
         vol_scale_cap = max(0.0, _safe_float(vol_targeting_params.get("vol_scale_cap"), 2.0))
         vol_scale_epsilon = max(0.0, _safe_float(vol_targeting_params.get("vol_scale_epsilon"), 1e-12))
-        portfolio_fit = _build_portfolio_returns(weight_shares, rows, split=fit_split)
+        portfolio_fit = _build_portfolio_returns(pre_vol_weights, rows, split=fit_split)
         fit_vol = _safe_float(np.std(portfolio_fit, ddof=1), 0.0)
         target_vol = max(target_vol_floor, float(args.target_vol))
         vol_scale = 1.0 if fit_vol <= vol_scale_epsilon else min(
             vol_scale_cap,
             target_vol / max(vol_scale_epsilon, fit_vol),
         )
-        weights = {key: float(weight_shares[key] * vol_scale) for key in weight_shares}
+        weights = {key: float(pre_vol_weights[key] * vol_scale) for key in pre_vol_weights}
         gross_exposure = float(sum(weights.values()))
         cash_weight = max(0.0, 1.0 - gross_exposure)
 

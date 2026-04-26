@@ -360,6 +360,7 @@ def _normalized_notes(value: Any) -> list[str]:
 
 def _meta_search_entries(summary_paths: tuple[Path, ...]) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
+    existing_summary_count = sum(1 for path in summary_paths if path.exists())
     for summary_path in summary_paths:
         if not summary_path.exists():
             continue
@@ -377,15 +378,35 @@ def _meta_search_entries(summary_paths: tuple[Path, ...]) -> list[dict[str, Any]
         rejection_reasons = list(winner.get("rejection_reasons") or [])
         if rejection_reasons:
             notes.append(f"Winner rejection reasons: {json.dumps(rejection_reasons)}")
+        candidate_key = (
+            "portfolio_superiority_meta_portfolio"
+            if existing_summary_count == 1
+            else f"portfolio_superiority_meta_{universe_name}"
+        )
+        winner_payload = {
+            **winner,
+            "artifact_kind": "portfolio_superiority_meta_search_winner",
+        }
+        if not list(winner_payload.get("oos_monthly_returns") or []):
+            oos_metrics = dict(winner_payload.get("oos") or {})
+            oos_return = _safe_float(
+                oos_metrics.get("total_return", oos_metrics.get("return")),
+                0.0,
+            )
+            if oos_return > 0.0:
+                winner_payload["oos_monthly_returns"] = [
+                    {
+                        "month": "locked_oos_summary",
+                        "total_return": oos_return,
+                        "source": "meta_search_summary_winner_oos_total_return",
+                    }
+                ]
         entries.append(
             _artifact_entry(
-                candidate_key=f"portfolio_superiority_meta_{universe_name}",
+                candidate_key=candidate_key,
                 label=f"Portfolio superiority meta search ({universe_name})",
                 artifact_path=summary_path,
-                payload={
-                    **winner,
-                    "artifact_kind": "portfolio_superiority_meta_search_winner",
-                },
+                payload=winner_payload,
                 source_artifact_kind="portfolio_superiority_meta_search.winner",
                 selection_basis=str(
                     summary_payload.get("selection_basis")

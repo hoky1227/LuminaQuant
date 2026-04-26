@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from inspect import Parameter, signature
 from typing import Any
 
 
@@ -34,16 +35,16 @@ class ResearchStageSelector:
             "candidate_count": max(1, candidate_count),
             "scoring_config": scoring_config,
         }
+        evaluate_kwargs_with_split = {**evaluate_kwargs, "split": split}
         try:
-            return self.evaluate_candidate(
-                candidate,
-                **evaluate_kwargs,
-                split=split,
-            )
+            return self.evaluate_candidate(candidate, **evaluate_kwargs_with_split)
         except TypeError as exc:
             if "unexpected keyword argument" not in str(exc):
                 raise
-            return self.evaluate_candidate(candidate, **evaluate_kwargs)
+            return self.evaluate_candidate(
+                candidate,
+                **_supported_kwargs(self.evaluate_candidate, evaluate_kwargs_with_split),
+            )
 
     def select_stage2_results(
         self,
@@ -114,6 +115,27 @@ class ResearchStageSelector:
                 },
             )
         return selected
+
+
+def _supported_kwargs(func: Callable[..., Any], kwargs: Mapping[str, Any]) -> dict[str, Any]:
+    try:
+        params = signature(func).parameters
+    except (TypeError, ValueError):
+        return dict(kwargs)
+
+    if any(param.kind == Parameter.VAR_KEYWORD for param in params.values()):
+        return dict(kwargs)
+
+    return {
+        name: value
+        for name, value in kwargs.items()
+        if name in params
+        and params[name].kind
+        in {
+            Parameter.POSITIONAL_OR_KEYWORD,
+            Parameter.KEYWORD_ONLY,
+        }
+    }
 
 
 def _candidate_progress_snapshot(

@@ -5,11 +5,46 @@ from __future__ import annotations
 import itertools
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from inspect import Parameter, signature
 from time import perf_counter
 from typing import Any
 
 import numpy as np
 import polars as pl
+
+
+def _call_with_supported_kwargs(
+    func: Callable[..., Any],
+    /,
+    **kwargs: Any,
+) -> Any:
+    """Call ``func`` with the subset of keyword arguments it can accept.
+
+    Candidate-research tests and downstream plugin hooks commonly monkeypatch
+    resource loaders with older, narrower signatures.  The production loaders
+    accept newer split/data-mode/progress kwargs, so keep the compatibility
+    shim local to the resource boundary instead of forcing every caller to
+    implement a catch-and-retry matrix.
+    """
+    try:
+        params = signature(func).parameters
+    except (TypeError, ValueError):
+        return func(**kwargs)
+
+    if any(param.kind == Parameter.VAR_KEYWORD for param in params.values()):
+        return func(**kwargs)
+
+    supported = {
+        name: value
+        for name, value in kwargs.items()
+        if name in params
+        and params[name].kind
+        in {
+            Parameter.POSITIONAL_OR_KEYWORD,
+            Parameter.KEYWORD_ONLY,
+        }
+    }
+    return func(**supported)
 
 
 @dataclass(frozen=True)
@@ -74,15 +109,11 @@ class ResearchResourceLoader:
                 },
             )
         bundle_started_at = perf_counter()
-        try:
-            cache, data_sources = self.load_bundle_cache(
-                **load_bundle_kwargs,
-                progress_callback=progress_callback,
-            )
-        except TypeError as exc:
-            if "unexpected keyword argument" not in str(exc):
-                raise
-            cache, data_sources = self.load_bundle_cache(**load_bundle_kwargs)
+        cache, data_sources = _call_with_supported_kwargs(
+            self.load_bundle_cache,
+            **load_bundle_kwargs,
+            progress_callback=progress_callback,
+        )
         if progress_callback is not None:
             progress_callback(
                 "resource_bundle_load_completed",
@@ -115,22 +146,14 @@ class ResearchResourceLoader:
                 },
             )
         feature_started_at = perf_counter()
-        try:
-            feature_cache = self.load_feature_cache(
-                symbols=support_feature_symbols,
-                start_date=self.datetime_to_iso_z(load_start),
-                end_date=self.datetime_to_iso_z(load_end),
-                market_data_settings=market_data_settings,
-                progress_callback=progress_callback,
-            )
-        except TypeError as exc:
-            if "unexpected keyword argument" not in str(exc):
-                raise
-            feature_cache = self.load_feature_cache(
-                symbols=support_feature_symbols,
-                start_date=self.datetime_to_iso_z(load_start),
-                end_date=self.datetime_to_iso_z(load_end),
-            )
+        feature_cache = _call_with_supported_kwargs(
+            self.load_feature_cache,
+            symbols=support_feature_symbols,
+            start_date=self.datetime_to_iso_z(load_start),
+            end_date=self.datetime_to_iso_z(load_end),
+            market_data_settings=market_data_settings,
+            progress_callback=progress_callback,
+        )
         if progress_callback is not None:
             progress_callback(
                 "resource_feature_load_completed",

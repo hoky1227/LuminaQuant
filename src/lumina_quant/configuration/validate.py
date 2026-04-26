@@ -384,13 +384,13 @@ def validate_runtime_config(runtime: RuntimeConfig, *, for_live: bool = False) -
     _validate_storage_runtime_invariants(runtime)
     _validate_trading_runtime_invariants(runtime)
     market_data_source, order_state_source = _validate_live_mode_and_sources(runtime)
+    _validate_backtest_runtime_invariants(runtime)
     _validate_live_exchange_runtime_invariants(
         runtime,
         market_data_source=market_data_source,
         order_state_source=order_state_source,
     )
     _validate_risk_and_execution_runtime_invariants(runtime)
-    _validate_backtest_runtime_invariants(runtime)
     _validate_live_and_optimization_runtime_invariants(runtime)
     _validate_promotion_gate_runtime_invariants(runtime)
     _validate_market_window_parity_invariants(runtime)
