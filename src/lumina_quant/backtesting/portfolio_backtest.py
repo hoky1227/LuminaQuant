@@ -123,6 +123,9 @@ class Portfolio:
             "trading_frozen": bool(self.trading_frozen),
             "equity_points": list(self._equity_points),
             "component_positions": self.component_positions,
+            "last_sample_timestamp_ms": self._last_sample_timestamp_ms,
+            "current_day": self._current_day,
+            "day_start_equity": self.day_start_equity,
         }
 
     def set_state(self, state):
@@ -156,6 +159,21 @@ class Portfolio:
                 }
                 for component, symbols in dict(state["component_positions"]).items()
             }
+        if "last_sample_timestamp_ms" in state:
+            raw_last_sample = state.get("last_sample_timestamp_ms")
+            try:
+                self._last_sample_timestamp_ms = (
+                    int(raw_last_sample) if raw_last_sample is not None else None
+                )
+            except Exception:
+                self._last_sample_timestamp_ms = None
+        if "current_day" in state:
+            self._current_day = state.get("current_day")
+        if "day_start_equity" in state:
+            try:
+                self.day_start_equity = float(state.get("day_start_equity"))
+            except Exception:
+                pass
 
     @staticmethod
     def _component_id_from_metadata(metadata) -> str | None:

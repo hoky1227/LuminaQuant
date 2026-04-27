@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import math
 from dataclasses import asdict, dataclass
@@ -44,6 +45,7 @@ GROUP_ROOT = FOLLOWUP_ROOT / "portfolio_incumbent_autoresearch_grouped"
 FULL_UNIVERSE_PATH = GROUP_ROOT / "full_universe_selection_20260426" / "full_universe_selection_latest.json"
 OUTPUT_DIR = GROUP_ROOT / "live_equivalent_revalidation_20260426"
 LIVE_DECISION_PATH = FOLLOWUP_ROOT / "portfolio_live_readiness_decision_latest.json"
+DEFAULT_BACKTEST_CHECKPOINT_PATH = OUTPUT_DIR / "live_equivalent_backtest_checkpoint_20260426.json"
 MDD_CAP = 0.25
 METRIC_KEYS = (
     "total_return",
@@ -392,6 +394,27 @@ def _split_to_datetimes(split: SplitWindow) -> tuple[datetime, datetime]:
     )
 
 
+def _mode_equivalence_key(mode: str) -> str:
+    """Stable key for live modes that replay identical component graphs."""
+    definition = resolve_portfolio_mode_definition(mode)
+    payload = {
+        "cash_weight": round(float(definition.cash_weight), 12),
+        "watch_symbols": list(definition.watch_symbols),
+        "components": [
+            {
+                "component_id": component.component_id,
+                "strategy_class": component.strategy_class,
+                "symbols": list(component.symbols),
+                "params": component.params,
+                "weight": round(float(component.weight), 12),
+            }
+            for component in definition.components
+        ],
+    }
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
 def _run_live_equivalent_split(
     *,
     mode: str,
@@ -402,12 +425,21 @@ def _run_live_equivalent_split(
     chunk_days: int,
     backtest_poll_seconds: int,
     backtest_window_seconds: int,
+    equivalence_key: str,
 ) -> dict[str, Any]:
     runtime_config = resolve_portfolio_mode_runtime_config(mode)
     symbols = list(runtime_config["symbols"])
     start_dt, end_dt = _split_to_datetimes(split)
 
     def _loader(chunk_start: datetime, chunk_end: datetime) -> dict[str, Any]:
+        _progress_event(
+            "live_equivalent_chunk_load",
+            mode=mode,
+            split=split.name,
+            chunk_start=chunk_start.isoformat(),
+            chunk_end=chunk_end.isoformat(),
+            chunk_days=max(1, int(chunk_days)),
+        )
         return load_data_dict_from_parquet(
             str(market_root),
             exchange=str(exchange),
@@ -449,6 +481,7 @@ def _run_live_equivalent_split(
     )
     return {
         "split": split.name,
+        "equivalence_key": equivalence_key,
         "metrics": metrics,
         "trade_count": int(getattr(backtest.portfolio, "trade_count", 0)),
         "final_equity": _safe_float(
@@ -469,6 +502,9 @@ def _run_mode_backtests(
     chunk_days: int,
     backtest_poll_seconds: int,
     backtest_window_seconds: int,
+    checkpoint: dict[str, Any] | None = None,
+    checkpoint_path: Path | None = None,
+    equivalence_cache: dict[tuple[str, str], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     if preflight.status == "eligible_conservative_cash_fallback":
         metrics = {split.name: _empty_metrics() for split in splits}
@@ -496,9 +532,54 @@ def _run_mode_backtests(
             "blocking_reasons": list(preflight.blocking_reasons),
         }
 
+    equivalence_key = _mode_equivalence_key(preflight.mode)
     split_runs: list[dict[str, Any]] = []
     metrics: dict[str, dict[str, float]] = {}
     for split in splits:
+        if checkpoint is not None and checkpoint_path is not None:
+            cached = _checkpointed_split_run(checkpoint, mode=preflight.mode, split=split)
+            if cached is not None:
+                split_runs.append(cached)
+                metrics[split.name] = dict(cached.get("metrics") or {})
+                if equivalence_cache is not None:
+                    equivalence_cache.setdefault(
+                        (str(cached.get("equivalence_key") or equivalence_key), split.name),
+                        dict(cached),
+                    )
+                _progress_event("live_equivalent_split_resume", mode=preflight.mode, split=split.name)
+                continue
+        if equivalence_cache is not None:
+            source_run = equivalence_cache.get((equivalence_key, split.name))
+            if source_run is not None:
+                reused_run = {
+                    **dict(source_run),
+                    "mode": preflight.mode,
+                    "status": "completed",
+                    "reuse_status": "completed_equivalent_reuse",
+                    "equivalent_source_mode": str(
+                        source_run.get("mode") or source_run.get("source_mode") or ""
+                    ),
+                    "source_mode": str(
+                        source_run.get("mode") or source_run.get("source_mode") or preflight.mode
+                    ),
+                    "equivalence_key": equivalence_key,
+                }
+                split_runs.append(reused_run)
+                metrics[split.name] = dict(reused_run.get("metrics") or {})
+                if checkpoint is not None and checkpoint_path is not None:
+                    _store_checkpointed_split_run(
+                        checkpoint,
+                        checkpoint_path,
+                        mode=preflight.mode,
+                        split_run=reused_run,
+                    )
+                _progress_event(
+                    "live_equivalent_split_reuse",
+                    mode=preflight.mode,
+                    split=split.name,
+                    equivalent_source_mode=reused_run.get("equivalent_source_mode"),
+                )
+                continue
         if split.name == "oos":
             oos_complete = all(
                 bool(dict(dict(preflight.coverage.get(symbol) or {}).get("oos") or {}).get("complete_raw_first"))
@@ -508,6 +589,14 @@ def _run_mode_backtests(
                 metrics[split.name] = _empty_metrics()
                 split_runs.append({"split": split.name, "status": "skipped_oos_data_incomplete"})
                 continue
+        _progress_event(
+            "live_equivalent_split_start",
+            mode=preflight.mode,
+            split=split.name,
+            start=split.start.isoformat(),
+            end_inclusive=split.end.isoformat(),
+            symbols=preflight.symbols,
+        )
         run = _run_live_equivalent_split(
             mode=preflight.mode,
             split=split,
@@ -517,9 +606,33 @@ def _run_mode_backtests(
             chunk_days=chunk_days,
             backtest_poll_seconds=backtest_poll_seconds,
             backtest_window_seconds=backtest_window_seconds,
+            equivalence_key=equivalence_key,
         )
-        split_runs.append({**run, "status": "completed"})
+        completed_run = {
+            **run,
+            "status": "completed",
+            "mode": preflight.mode,
+            "source_mode": preflight.mode,
+        }
+        split_runs.append(completed_run)
         metrics[split.name] = dict(run.get("metrics") or {})
+        if equivalence_cache is not None:
+            equivalence_cache[(equivalence_key, split.name)] = dict(completed_run)
+        if checkpoint is not None and checkpoint_path is not None:
+            _store_checkpointed_split_run(
+                checkpoint,
+                checkpoint_path,
+                mode=preflight.mode,
+                split_run=completed_run,
+            )
+        _progress_event(
+            "live_equivalent_split_complete",
+            mode=preflight.mode,
+            split=split.name,
+            metrics=completed_run.get("metrics", {}),
+            trade_count=completed_run.get("trade_count"),
+            final_equity=completed_run.get("final_equity"),
+        )
     for split in splits:
         metrics.setdefault(split.name, _empty_metrics())
     scores = _score_from_split_metrics(metrics)
@@ -650,6 +763,82 @@ def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         writer = csv.DictWriter(fp, fieldnames=fieldnames, lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
+
+
+def _load_backtest_checkpoint(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {"artifact_kind": "live_equivalent_backtest_checkpoint", "split_results": {}}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {"artifact_kind": "live_equivalent_backtest_checkpoint", "split_results": {}}
+    if not isinstance(payload, dict):
+        return {"artifact_kind": "live_equivalent_backtest_checkpoint", "split_results": {}}
+    payload.setdefault("artifact_kind", "live_equivalent_backtest_checkpoint")
+    if not isinstance(payload.get("split_results"), dict):
+        payload["split_results"] = {}
+    return payload
+
+
+def _write_backtest_checkpoint(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload["updated_at"] = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _checkpointed_split_run(
+    checkpoint: dict[str, Any],
+    *,
+    mode: str,
+    split: SplitWindow,
+) -> dict[str, Any] | None:
+    split_results = checkpoint.get("split_results")
+    if not isinstance(split_results, dict):
+        return None
+    by_mode = split_results.get(str(mode))
+    if not isinstance(by_mode, dict):
+        return None
+    row = by_mode.get(str(split.name))
+    if not isinstance(row, dict) or str(row.get("status") or "") != "completed":
+        return None
+    if not isinstance(row.get("metrics"), dict):
+        return None
+    return dict(row)
+
+
+def _store_checkpointed_split_run(
+    checkpoint: dict[str, Any],
+    checkpoint_path: Path,
+    *,
+    mode: str,
+    split_run: dict[str, Any],
+) -> None:
+    split_name = str(split_run.get("split") or "")
+    if not split_name:
+        return
+    split_results = checkpoint.setdefault("split_results", {})
+    if not isinstance(split_results, dict):
+        checkpoint["split_results"] = split_results = {}
+    by_mode = split_results.setdefault(str(mode), {})
+    if not isinstance(by_mode, dict):
+        split_results[str(mode)] = by_mode = {}
+    by_mode[split_name] = dict(split_run)
+    _write_backtest_checkpoint(checkpoint_path, checkpoint)
+
+
+def _progress_event(event: str, **payload: Any) -> None:
+    print(
+        json.dumps(
+            {
+                "event": event,
+                "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+                **payload,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        ),
+        flush=True,
+    )
 
 
 def _fmt_pct(value: Any) -> str:
@@ -818,9 +1007,12 @@ def build_live_equivalent_revalidation(
     chunk_days: int = 1,
     backtest_poll_seconds: int = 20,
     backtest_window_seconds: int = 20,
+    backtest_checkpoint_path: Path | None = None,
 ) -> dict[str, Any]:
     market_root = Path(market_root or str(BaseConfig.MARKET_DATA_PARQUET_PATH))
     exchange = str(exchange or BaseConfig.MARKET_DATA_EXCHANGE).lower()
+    checkpoint_path = Path(backtest_checkpoint_path or DEFAULT_BACKTEST_CHECKPOINT_PATH)
+    checkpoint = _load_backtest_checkpoint(checkpoint_path) if execute_backtests else None
     splits = _split_windows()
     full_universe = _load_full_universe(full_universe_path)
     artifact_rows = _artifact_candidate_reset_rows(full_universe)
@@ -836,28 +1028,36 @@ def build_live_equivalent_revalidation(
         )
         for mode in modes
     }
-    mode_results = [
-        _run_mode_backtests(
-            preflight=preflight,
-            market_root=market_root,
-            exchange=exchange,
-            timeframe=timeframe,
-            splits=splits,
-            chunk_days=chunk_days,
-            backtest_poll_seconds=backtest_poll_seconds,
-            backtest_window_seconds=backtest_window_seconds,
-        )
-        if execute_backtests
-        else {
-            "mode": mode,
-            "status": preflight.status,
-            "metrics": {split.name: _empty_metrics() for split in splits},
-            "scores": {},
-            "split_runs": [],
-            "blocking_reasons": list(preflight.blocking_reasons),
-        }
-        for mode, preflight in preflights.items()
-    ]
+    equivalence_cache: dict[tuple[str, str], dict[str, Any]] = {}
+    mode_results: list[dict[str, Any]] = []
+    for mode, preflight in preflights.items():
+        if execute_backtests:
+            mode_results.append(
+                _run_mode_backtests(
+                    preflight=preflight,
+                    market_root=market_root,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    splits=splits,
+                    chunk_days=chunk_days,
+                    backtest_poll_seconds=backtest_poll_seconds,
+                    backtest_window_seconds=backtest_window_seconds,
+                    checkpoint=checkpoint,
+                    checkpoint_path=checkpoint_path,
+                    equivalence_cache=equivalence_cache,
+                )
+            )
+        else:
+            mode_results.append(
+                {
+                    "mode": mode,
+                    "status": preflight.status,
+                    "metrics": {split.name: _empty_metrics() for split in splits},
+                    "scores": {},
+                    "split_runs": [],
+                    "blocking_reasons": list(preflight.blocking_reasons),
+                }
+            )
     mode_rows = _mode_candidate_rows(mode_results, preflights)
     best_live = _best(mode_rows, predicate=lambda row: bool(row.get("selection_eligible")))
     true_hybrid_modes = {
@@ -900,6 +1100,10 @@ def build_live_equivalent_revalidation(
             "market_root": str(market_root),
             "exchange": str(exchange),
             "timeframe": str(timeframe),
+            "chunk_days": int(chunk_days),
+            "backtest_poll_seconds": int(backtest_poll_seconds),
+            "backtest_window_seconds": int(backtest_window_seconds),
+            "backtest_checkpoint_path": str(checkpoint_path) if execute_backtests else "",
         },
         "preflights": {mode: preflight.as_payload() for mode, preflight in preflights.items()},
         "mode_results": mode_results,
@@ -947,6 +1151,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--chunk-days", type=int, default=1)
     parser.add_argument("--backtest-poll-seconds", type=int, default=20)
     parser.add_argument("--backtest-window-seconds", type=int, default=20)
+    parser.add_argument("--backtest-checkpoint-path", default=str(DEFAULT_BACKTEST_CHECKPOINT_PATH))
     parser.add_argument(
         "--execute-backtests",
         action="store_true",
@@ -972,6 +1177,7 @@ def main(argv: list[str] | None = None) -> int:
         chunk_days=max(1, int(args.chunk_days)),
         backtest_poll_seconds=max(1, int(args.backtest_poll_seconds)),
         backtest_window_seconds=max(1, int(args.backtest_window_seconds)),
+        backtest_checkpoint_path=Path(args.backtest_checkpoint_path),
     )
     print(json.dumps(result["paths"], ensure_ascii=False, indent=2, sort_keys=True))
     return 0

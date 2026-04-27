@@ -132,6 +132,27 @@ def test_timeframe_aggregator_correctness_with_overlapping_windows():
     assert float(bars_1m[-1][4]) == float(rows[-1][4])
 
 
+def test_timeframe_aggregator_batched_update_matches_incremental_rows():
+    start = datetime(2026, 1, 1, 0, 0, 0)
+    frame = _build_1s_frame(start, seconds=125)
+    rows = list(frame.iter_rows(named=False))
+
+    batched = TimeframeAggregator(timeframes=["20s", "1m", "5m"], lookbacks={"20s": 16, "1m": 16, "5m": 16})
+    incremental = TimeframeAggregator(timeframes=["20s", "1m", "5m"], lookbacks={"20s": 16, "1m": 16, "5m": 16})
+
+    batched.update_from_1s_batch({"BTC/USDT": tuple(rows[:80])})
+    batched.update_from_1s_batch({"BTC/USDT": tuple(rows[60:])})
+    for row in rows:
+        incremental.update_from_1s_batch({"BTC/USDT": (row,)})
+
+    for timeframe in ("1s", "20s", "1m", "5m"):
+        assert batched.get_bars("BTC/USDT", timeframe, n=16) == incremental.get_bars(
+            "BTC/USDT",
+            timeframe,
+            n=16,
+        )
+
+
 def test_windowed_mode_matches_legacy_cadence_behavior(monkeypatch):
     monkeypatch.setenv("LQ__BACKTEST__SKIP_AHEAD_ENABLED", "0")
 

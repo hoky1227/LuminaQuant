@@ -44,11 +44,15 @@ class SimulatedExecutionHandler(ExecutionHandler):
         self.active_orders: list[dict[str, Any]] = []
 
     def get_state(self) -> dict[str, Any]:
-        return {
+        state = {
             "active_orders": deepcopy(self.active_orders),
             "order_seq": int(self._order_seq),
             "rng_state": self.rng.getstate(),
         }
+        latency_get_state = getattr(self.latency_model, "get_state", None)
+        if callable(latency_get_state):
+            state["latency_model"] = latency_get_state()
+        return state
 
     def set_state(self, state: dict[str, Any] | None) -> None:
         if not isinstance(state, dict):
@@ -67,6 +71,10 @@ class SimulatedExecutionHandler(ExecutionHandler):
                 self.rng.setstate(rng_state)
             except Exception:
                 pass
+        latency_state = state.get("latency_model")
+        latency_set_state = getattr(self.latency_model, "set_state", None)
+        if isinstance(latency_state, dict) and callable(latency_set_state):
+            latency_set_state(latency_state)
 
     def _next_order_id(self) -> str:
         self._order_seq += 1
@@ -535,6 +543,20 @@ class LatencyModel:
         self.rng = random.Random(seed + 701)
         self.min_bars = max(1, int(getattr(config, "SIM_LATENCY_MIN_BARS", 1)))
         self.max_bars = max(self.min_bars, int(getattr(config, "SIM_LATENCY_MAX_BARS", 1)))
+
+    def get_state(self) -> dict[str, Any]:
+        return {"rng_state": self.rng.getstate()}
+
+    def set_state(self, state: dict[str, Any] | None) -> None:
+        if not isinstance(state, dict):
+            return
+        rng_state = state.get("rng_state")
+        if rng_state is None:
+            return
+        try:
+            self.rng.setstate(rng_state)
+        except Exception:
+            pass
 
     def should_release(self, order: dict[str, Any]) -> bool:
         target = order.get("_latency_target_bars")

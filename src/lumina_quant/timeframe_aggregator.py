@@ -210,6 +210,7 @@ class TimeframeAggregator:
 
             normalized.sort(key=lambda item: item[0])
             last_seen = self._last_seen_ms.get(str(symbol))
+            new_bars: list[tuple[int, tuple[Any, float, float, float, float, float]]] = []
             for ts_ms, bar in normalized:
                 if last_seen is not None and int(ts_ms) <= int(last_seen):
                     continue
@@ -217,21 +218,73 @@ class TimeframeAggregator:
                 last_seen = int(ts_ms)
                 self._last_seen_ms[str(symbol)] = int(ts_ms)
                 self._ensure_history(str(symbol), "1s").append(bar)
+                new_bars.append((int(ts_ms), bar))
 
-                _, open_price, high_price, low_price, close_price, volume = bar
-                for timeframe, tf_ms in self._timeframe_ms.items():
-                    if timeframe == "1s":
+            if not new_bars:
+                continue
+
+            for timeframe, tf_ms in self._timeframe_ms.items():
+                if timeframe == "1s":
+                    continue
+
+                bucket_ms: int | None = None
+                bucket_ts_ms = 0
+                bucket_open = 0.0
+                bucket_high = 0.0
+                bucket_low = 0.0
+                bucket_close = 0.0
+                bucket_volume = 0.0
+
+                for ts_ms, bar in new_bars:
+                    current_bucket = (int(ts_ms) // int(tf_ms)) * int(tf_ms)
+                    _, open_price, high_price, low_price, close_price, volume = bar
+                    if bucket_ms is None:
+                        bucket_ms = int(current_bucket)
+                        bucket_ts_ms = int(ts_ms)
+                        bucket_open = float(open_price)
+                        bucket_high = float(high_price)
+                        bucket_low = float(low_price)
+                        bucket_close = float(close_price)
+                        bucket_volume = float(volume)
                         continue
+                    if int(current_bucket) != int(bucket_ms):
+                        self._update_aggregated_timeframe(
+                            symbol=str(symbol),
+                            timeframe=str(timeframe),
+                            tf_ms=int(tf_ms),
+                            ts_ms=int(bucket_ts_ms),
+                            open_price=float(bucket_open),
+                            high_price=float(bucket_high),
+                            low_price=float(bucket_low),
+                            close_price=float(bucket_close),
+                            volume=float(bucket_volume),
+                        )
+                        bucket_ms = int(current_bucket)
+                        bucket_ts_ms = int(ts_ms)
+                        bucket_open = float(open_price)
+                        bucket_high = float(high_price)
+                        bucket_low = float(low_price)
+                        bucket_close = float(close_price)
+                        bucket_volume = float(volume)
+                        continue
+
+                    bucket_ts_ms = int(ts_ms)
+                    bucket_high = max(float(bucket_high), float(high_price))
+                    bucket_low = min(float(bucket_low), float(low_price))
+                    bucket_close = float(close_price)
+                    bucket_volume += float(volume)
+
+                if bucket_ms is not None:
                     self._update_aggregated_timeframe(
                         symbol=str(symbol),
                         timeframe=str(timeframe),
                         tf_ms=int(tf_ms),
-                        ts_ms=int(ts_ms),
-                        open_price=float(open_price),
-                        high_price=float(high_price),
-                        low_price=float(low_price),
-                        close_price=float(close_price),
-                        volume=float(volume),
+                        ts_ms=int(bucket_ts_ms),
+                        open_price=float(bucket_open),
+                        high_price=float(bucket_high),
+                        low_price=float(bucket_low),
+                        close_price=float(bucket_close),
+                        volume=float(bucket_volume),
                     )
 
     def get_bars(

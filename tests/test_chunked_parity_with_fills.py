@@ -6,7 +6,7 @@ import polars as pl
 from lumina_quant.backtesting.backtest import Backtest
 from lumina_quant.backtesting.chunked_runner import run_backtest_chunked
 from lumina_quant.backtesting.data import HistoricCSVDataHandler
-from lumina_quant.backtesting.execution_sim import SimulatedExecutionHandler
+from lumina_quant.backtesting.execution_sim import LatencyModel, SimulatedExecutionHandler
 from lumina_quant.backtesting.portfolio_backtest import Portfolio
 from lumina_quant.core.events import SignalEvent
 from lumina_quant.strategy import Strategy
@@ -136,3 +136,70 @@ def test_chunked_runner_matches_full_run_with_fills(monkeypatch):
         float(chunked.portfolio.current_holdings["total"])
         - float(baseline.portfolio.current_holdings["total"])
     ) <= 1e-9
+
+
+def test_latency_model_state_restores_random_sequence():
+    class _Config:
+        RANDOM_SEED = 123
+        SIM_LATENCY_MIN_BARS = 1
+        SIM_LATENCY_MAX_BARS = 3
+
+    source = LatencyModel(_Config)
+    for _ in range(5):
+        source.should_release({})
+
+    restored = LatencyModel(_Config)
+    restored.set_state(source.get_state())
+
+    source_targets = []
+    restored_targets = []
+    for _ in range(8):
+        source_order: dict[str, object] = {}
+        restored_order: dict[str, object] = {}
+        source.should_release(source_order)
+        restored.should_release(restored_order)
+        source_targets.append(source_order["_latency_target_bars"])
+        restored_targets.append(restored_order["_latency_target_bars"])
+
+    assert source_targets == restored_targets
+
+
+def test_chunked_runner_preserves_sampling_state_across_chunk_sizes(monkeypatch):
+    monkeypatch.setenv("LQ__BACKTEST__SKIP_AHEAD_ENABLED", "0")
+
+    symbol = "BTC/USDT"
+    start = datetime(2026, 1, 1, 0, 0, 0)
+    end = datetime(2026, 1, 3, 23, 59, 0)
+    frame = _build_frame(start, days=3)
+
+    def _loader(chunk_start: datetime, chunk_end: datetime):
+        part = frame.filter((pl.col("datetime") >= chunk_start) & (pl.col("datetime") <= chunk_end))
+        return {symbol: part} if part.height > 0 else {}
+
+    def _run(chunk_days: int):
+        return run_backtest_chunked(
+            csv_dir="data",
+            symbol_list=[symbol],
+            start_date=start,
+            end_date=end,
+            strategy_cls=_FlipStrategy,
+            strategy_params={},
+            data_loader=_loader,
+            chunk_days=chunk_days,
+            strategy_timeframe="1m",
+            data_handler_cls=HistoricCSVDataHandler,
+            execution_handler_cls=SimulatedExecutionHandler,
+            portfolio_cls=Portfolio,
+            record_history=False,
+            track_metrics=True,
+            record_trades=True,
+        )
+
+    daily = _run(chunk_days=1)
+    full = _run(chunk_days=3)
+
+    assert int(daily.portfolio.trade_count) == int(full.portfolio.trade_count)
+    assert float(daily.portfolio.current_holdings["total"]) == float(
+        full.portfolio.current_holdings["total"]
+    )
+    assert list(daily.portfolio._metric_totals) == list(full.portfolio._metric_totals)
