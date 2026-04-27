@@ -665,6 +665,10 @@ def _fmt_float(value: Any) -> str:
 
 def _markdown_report(payload: dict[str, Any], mode_rows: list[dict[str, Any]], artifact_rows: list[dict[str, Any]]) -> str:
     recs = dict(payload.get("final_recommendations") or {})
+    backtests_executed = bool(payload.get("backtests_executed"))
+    validated_count = sum(1 for row in mode_rows if str(row.get("status") or "") == "live_equivalent_validated")
+    ready_count = sum(1 for row in mode_rows if str(row.get("status") or "") == "ready_for_live_equivalent_backtest")
+    blocked_count = sum(1 for row in mode_rows if str(row.get("status") or "") == "blocked_missing_raw_first_market_data")
     lines = [
         "# Live-equivalent candidate revalidation — 2026-04-26",
         "",
@@ -729,31 +733,68 @@ def _markdown_report(payload: dict[str, Any], mode_rows: list[dict[str, Any]], a
             f"| {row['research_rank']} | `{row['name']}` | {_fmt_float(row['previous_selection_score'])} | "
             f"`{row['mapped_live_portfolio_mode'] or '-'}` | `{row['reset_status']}` |"
         )
+    if blocked_count:
+        coverage_caveat = (
+            f"- `{blocked_count}`개 live portfolio mode는 아직 train/val raw-first materialized coverage가 부족해서 "
+            "`blocked_missing_raw_first_market_data` 상태다."
+        )
+    elif ready_count and not backtests_executed:
+        coverage_caveat = (
+            f"- train/val raw-first materialized coverage preflight는 `{ready_count}`개 alpha mode에서 통과했다. "
+            "아직 `--execute-backtests`를 실행하지 않았으므로 readiness는 엔진 검증 대기 상태이며 selection evidence는 아니다."
+        )
+    elif validated_count:
+        coverage_caveat = (
+            f"- `{validated_count}`개 mode가 train/val live-equivalent engine backtest를 완료했다. "
+            "selection eligibility는 이 검증 통과 후보에만 부여한다."
+        )
+    else:
+        coverage_caveat = "- train/val live-equivalent alpha 후보는 아직 selection eligible 상태가 아니다."
     lines.extend(
         [
             "",
             "## 명시적 caveats",
             "",
-            "- 현재 repo에는 BNB/TRX pair 계열 train/val raw-first coverage는 있으나, BTC/ETH/SOL 포함 포트폴리오의 exact-window raw-first coverage가 부족하다. 그래서 다중자산 포트폴리오 후보는 `blocked_missing_raw_first_market_data`로 내려갔다.",
+            coverage_caveat,
             "- 이 리포트의 핵심 변경은 `좋아 보이는 연구 점수`를 promotion evidence로 쓰지 않고, live-equivalent engine path를 통과한 후보만 승격시키는 것이다.",
-            "- raw-first coverage를 채운 뒤 `--execute-backtests`로 같은 스크립트를 다시 실행하면 같은 live portfolio mode 후보들이 train/val/OOS로 자동 재랭킹된다.",
+            "- OOS는 report-only다. OOS raw-first coverage가 부족한 경우에도 train/val selection score에는 반영하지 않는다.",
         ]
     )
+    if ready_count and not backtests_executed:
+        lines.append("- 다음 단계는 `--execute-backtests`로 같은 live portfolio mode 후보들을 train/val/OOS 재랭킹하는 것이다.")
     return "\n".join(lines) + "\n"
 
 
 def _write_live_decision(payload: dict[str, Any], path: Path) -> None:
+    best_live = dict(payload.get("final_recommendations", {}).get("best_full_universe_live_equivalent_candidate") or {})
     fallback = dict(payload.get("final_recommendations", {}).get("best_conservative_fallback_candidate") or {})
-    selected_mode = str(fallback.get("mode") or "risk_off_mode")
+    mode_rows = list(payload.get("mode_candidate_rows") or [])
+    ready_count = sum(1 for row in mode_rows if str(dict(row).get("status") or "") == "ready_for_live_equivalent_backtest")
+    selected_mode = str(best_live.get("mode") or fallback.get("mode") or "risk_off_mode")
+    if best_live:
+        decision_state = "live_equivalent_validated_candidate_ready_for_review"
+        decision_reason = "An alpha candidate completed live-equivalent train/val engine backtest on committed raw-first data."
+        review_status = "candidate_ready_for_deployment_review"
+    elif ready_count:
+        decision_state = "engine_validation_pending_after_raw_first_preflight"
+        decision_reason = (
+            "Raw-first train/val preflight is complete for alpha candidates, but no alpha candidate has completed "
+            "live-equivalent train/val engine backtest yet."
+        )
+        review_status = "engine_backtest_required_before_promotion"
+    else:
+        decision_state = "shadow_only_until_live_equivalent_validation"
+        decision_reason = "No alpha candidate has completed live-equivalent train/val engine backtest on committed raw-first data."
+        review_status = "fail_closed_cash_or_shadow_only"
     decision = {
         "artifact_kind": "portfolio_live_readiness_decision",
         "generated_at": payload["generated_at"],
-        "decision": "shadow_only_until_live_equivalent_validation",
-        "decision_reason": "No alpha candidate has completed live-equivalent train/val engine backtest on committed raw-first data.",
+        "decision": decision_state,
+        "decision_reason": decision_reason,
         "selected_mode": selected_mode,
         "candidate_mode": selected_mode,
         "candidate_key": selected_mode,
-        "review_status": "fail_closed_cash_or_shadow_only",
+        "review_status": review_status,
         "selection_basis": "live_equivalent_revalidation_20260426",
         "source_artifacts": {
             "live_equivalent_revalidation_path": str(
@@ -840,6 +881,7 @@ def build_live_equivalent_revalidation(
     payload: dict[str, Any] = {
         "artifact_kind": "live_equivalent_revalidation",
         "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        "backtests_executed": bool(execute_backtests),
         "selection_policy": {
             "selection_basis": "validation_primary_live_equivalent_engine_backtest_only",
             "research_artifact_streams": "report_only_not_selection_evidence",

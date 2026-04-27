@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import io
 import json
+import zipfile
 from types import SimpleNamespace
 
 import pytest
 
+from lumina_quant import data_sync
 from lumina_quant.data_collector import collect_binance_aggtrades_raw
 from lumina_quant.eval.exact_window_runtime import HeavyRunLock
 from lumina_quant.storage.parquet import ParquetMarketDataRepository
@@ -14,6 +17,13 @@ from lumina_quant.storage.parquet.ohlcv_repo import RawPartitionBusyError
 class _ExchangeStub:
     def close(self):
         return None
+
+
+def _zip_csv(payload: str) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("payload.csv", payload)
+    return buffer.getvalue()
 
 
 def test_collect_binance_aggtrades_raw_checkpoint_resume(tmp_path, monkeypatch):
@@ -79,6 +89,44 @@ def test_collect_binance_aggtrades_raw_checkpoint_resume(tmp_path, monkeypatch):
     assert int(first["fetched_rows"]) == 2
     assert int(second["fetched_rows"]) == 1
     assert int(second["last_trade_id"]) == 3
+
+
+def test_sync_symbol_aggtrades_raw_streams_archive_chunks(tmp_path, monkeypatch):
+    start_ms = 1_735_689_600_000  # 2025-01-01T00:00:00Z
+    row_count = 1_001
+    end_ms = start_ms + ((row_count - 1) * 1_000)
+    csv_payload = "\n".join(
+        f"{1000 + idx},{100.0 + idx},0.5,{2000 + idx},{2000 + idx},{start_ms + idx * 1000},{str(idx % 2 == 0).lower()}"
+        for idx in range(row_count)
+    )
+    archive = _zip_csv(csv_payload)
+
+    monkeypatch.setattr(data_sync, "_download_zip_bytes", lambda *_args, **_kwargs: archive)
+    monkeypatch.setattr(data_sync, "_now_ms", lambda: end_ms + (3 * 86_400_000))
+    monkeypatch.setenv("LQ_RAW_ARCHIVE_CHUNK_ROWS", "1000")
+    monkeypatch.setenv("LQ_RAW_PARTITION_MAX_PARTS", "128")
+    monkeypatch.setenv("LQ_RAW_COMPACT_ON_THRESHOLD", "false")
+
+    stats = data_sync.sync_symbol_aggtrades_raw(
+        exchange=_ExchangeStub(),
+        db_path=str(tmp_path),
+        exchange_id="binance",
+        symbol="BTC/USDT",
+        start_ms=start_ms,
+        end_ms=end_ms,
+        max_batches=10,
+        resume_from_checkpoint=False,
+    )
+
+    repo = ParquetMarketDataRepository(str(tmp_path))
+    raw = repo.load_raw_aggtrades(exchange="binance", symbol="BTC/USDT")
+
+    assert stats.fetched_rows == row_count
+    assert stats.upserted_rows == row_count
+    assert raw.height == row_count
+    assert raw["agg_trade_id"].head(3).to_list() == [1000, 1001, 1002]
+    part_root = tmp_path / "market_data_raw_aggtrades/binance/BTCUSDT/date=2025-01-01"
+    assert len(list(part_root.glob("part-*.parquet"))) == 2
 
 
 def test_collect_binance_aggtrades_raw_bootstrap_lookback_used_without_checkpoint(

@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import os
 import time
 import urllib.error
 import urllib.parse
@@ -37,6 +38,8 @@ from lumina_quant.market_data import (
     upsert_ohlcv_rows,
     upsert_ohlcv_rows_1s,
 )
+
+_DEFAULT_RAW_ARCHIVE_CHUNK_ROWS = 250_000
 
 
 def _now_ms() -> int:
@@ -190,47 +193,6 @@ def _download_zip_bytes(
             wait = min(wait * 2.0, 10.0)
 
 
-def _archive_rows_to_raw_aggtrades(
-    zip_blob: bytes,
-    *,
-    cursor_ms: int,
-    until_ms: int,
-) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    with zipfile.ZipFile(io.BytesIO(zip_blob)) as zf:
-        names = zf.namelist()
-        if not names:
-            return rows
-        with zf.open(names[0], "r") as raw_file:
-            text_file = io.TextIOWrapper(raw_file, encoding="utf-8")
-            reader = csv.reader(text_file)
-            for row in reader:
-                if len(row) < 7:
-                    continue
-                try:
-                    agg_trade_id = int(row[0])
-                    price = float(row[1])
-                    quantity = float(row[2])
-                    timestamp_ms = int(row[5])
-                except Exception:
-                    continue
-                if price <= 0.0 or quantity < 0.0:
-                    continue
-                if timestamp_ms < int(cursor_ms) or timestamp_ms > int(until_ms):
-                    continue
-                rows.append(
-                    {
-                        "agg_trade_id": agg_trade_id,
-                        "timestamp_ms": timestamp_ms,
-                        "price": price,
-                        "quantity": quantity,
-                        "is_buyer_maker": str(row[6]).strip().lower()
-                        in {"1", "true", "t", "yes"},
-                    }
-                )
-    rows.sort(key=lambda item: (int(item["timestamp_ms"]), int(item["agg_trade_id"])))
-    return rows
-
 def _last_1s_close(
     *,
     db_path: str,
@@ -353,17 +315,36 @@ def _normalize_raw_trade_row(row: dict[str, Any], *, fallback_id: int = 0) -> di
     }
 
 
-def _archive_rows_to_raw_aggtrades(
+def _raw_archive_chunk_rows() -> int:
+    raw = str(os.getenv("LQ_RAW_ARCHIVE_CHUNK_ROWS", "") or "").strip()
+    if raw:
+        try:
+            return max(1_000, int(raw))
+        except ValueError:
+            pass
+    return _DEFAULT_RAW_ARCHIVE_CHUNK_ROWS
+
+
+def _iter_archive_rows_to_raw_aggtrades(
     zip_blob: bytes,
     *,
     cursor_ms: int,
     until_ms: int,
-) -> list[dict[str, Any]]:
+    chunk_rows: int | None = None,
+):
+    """Yield raw aggTrade archive rows in bounded chunks.
+
+    Binance daily aggTrades archives can contain millions of rows.  Building a
+    full-day ``list[dict]`` can push RSS above 8 GB on busy ETH/SOL days; the
+    backfill path only needs append-ordered chunks, so parse and commit bounded
+    pieces instead.
+    """
     rows: list[dict[str, Any]] = []
+    max_rows = max(1, int(chunk_rows or _raw_archive_chunk_rows()))
     with zipfile.ZipFile(io.BytesIO(zip_blob)) as zf:
         names = zf.namelist()
         if not names:
-            return rows
+            return
         with zf.open(names[0], "r") as raw_file:
             text_file = io.TextIOWrapper(raw_file, encoding="utf-8")
             reader = csv.reader(text_file)
@@ -391,8 +372,37 @@ def _archive_rows_to_raw_aggtrades(
                         in {"1", "true", "t", "yes"},
                     }
                 )
+                if len(rows) >= max_rows:
+                    rows.sort(key=lambda item: (int(item["timestamp_ms"]), int(item["agg_trade_id"])))
+                    yield rows
+                    rows = []
     rows.sort(key=lambda item: (int(item["timestamp_ms"]), int(item["agg_trade_id"])))
-    return rows
+    if rows:
+        yield rows
+
+
+def _archive_rows_to_raw_aggtrades(
+    zip_blob: bytes,
+    *,
+    cursor_ms: int,
+    until_ms: int,
+) -> list[dict[str, Any]]:
+    """Return archive rows for tests/small callers.
+
+    Production sync uses ``_iter_archive_rows_to_raw_aggtrades`` to avoid
+    materializing high-volume daily archives in memory.
+    """
+    chunks = list(
+        _iter_archive_rows_to_raw_aggtrades(
+            zip_blob,
+            cursor_ms=cursor_ms,
+            until_ms=until_ms,
+            chunk_rows=_raw_archive_chunk_rows(),
+        )
+    )
+    if not chunks:
+        return []
+    return [row for chunk in chunks for row in chunk]
 
 
 def sync_symbol_aggtrades_raw(
@@ -527,21 +537,27 @@ def sync_symbol_aggtrades_raw(
             )
             if blob is None:
                 continue
-            archive_rows = _archive_rows_to_raw_aggtrades(
+            committed_any = False
+            for archive_rows in _iter_archive_rows_to_raw_aggtrades(
                 blob,
                 cursor_ms=range_start,
                 until_ms=range_end,
-            )
-            deduped = _dedupe_new_rows(
-                archive_rows,
-                cursor_ms=int(cursor),
-                last_trade_id_seen=int(last_trade_id),
-            )
-            if not deduped:
+            ):
+                deduped = _dedupe_new_rows(
+                    archive_rows,
+                    cursor_ms=int(cursor),
+                    last_trade_id_seen=int(last_trade_id),
+                )
+                if not deduped:
+                    continue
+                committed_any = True
+                _commit_batch(deduped, observed_until_ms=int(range_end))
+                if last_ts is not None and int(last_ts) >= int(until):
+                    break
+            if not committed_any:
                 cursor = max(int(cursor), int(range_end) + 1)
                 last_trade_id = -1
                 continue
-            _commit_batch(deduped, observed_until_ms=int(range_end))
             cursor = max(int(cursor) + 1, int(range_end) + 1)
             last_trade_id = -1
             if last_ts is not None and int(last_ts) >= int(until):
