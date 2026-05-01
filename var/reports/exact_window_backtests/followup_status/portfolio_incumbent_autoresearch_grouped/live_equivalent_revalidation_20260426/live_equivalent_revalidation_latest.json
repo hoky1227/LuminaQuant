@@ -1,8 +1,12 @@
 {
   "artifact_kind": "live_equivalent_revalidation",
-  "backtests_executed": false,
+  "backtests_executed": true,
   "execution_model": {
+    "backtest_checkpoint_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/exact_window_backtests/followup_status/portfolio_incumbent_autoresearch_grouped/live_equivalent_revalidation_20260426/live_equivalent_backtest_checkpoint_20260426.json",
     "backtest_data_handler": "HistoricParquetWindowedDataHandler",
+    "backtest_poll_seconds": 20,
+    "backtest_window_seconds": 20,
+    "chunk_days": 7,
     "exchange": "binance",
     "execution_handler": "SimulatedExecutionHandler",
     "market_data_contract": "raw-first committed materialized parquet",
@@ -19,19 +23,19 @@
       "oos_cagr": 0.0,
       "oos_calmar": 0.0,
       "oos_max_drawdown": 0.0,
-      "oos_scaled_score_report_only": null,
+      "oos_scaled_score_report_only": 10.0,
       "oos_sharpe": 0.0,
       "oos_sortino": 0.0,
       "oos_total_return": 0.0,
       "oos_volatility": 0.0,
       "selection_eligible": false,
-      "selection_score": null,
+      "selection_score": 11.8,
       "status": "eligible_conservative_cash_fallback",
       "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
       "train_cagr": 0.0,
       "train_calmar": 0.0,
       "train_max_drawdown": 0.0,
-      "train_scaled_score": null,
+      "train_scaled_score": 10.0,
       "train_sharpe": 0.0,
       "train_sortino": 0.0,
       "train_total_return": 0.0,
@@ -39,370 +43,32 @@
       "val_cagr": 0.0,
       "val_calmar": 0.0,
       "val_max_drawdown": 0.0,
-      "val_scaled_score": null,
+      "val_scaled_score": 10.0,
       "val_sharpe": 0.0,
       "val_sortino": 0.0,
       "val_total_return": 0.0,
       "val_volatility": 0.0
     },
-    "best_deployable_true_hybrid_candidate": null,
-    "best_full_universe_live_equivalent_candidate": null,
-    "candidate_reset": "All prior artifact-ranked alpha candidates are demoted until they pass live-equivalent train/val engine backtest.",
-    "shadow_queue_requires_market_data_then_engine_backtest": [
-      {
-        "blocking_reasons": "",
-        "cash_weight": 0.0,
-        "mode": "aggressive_realized_mode",
-        "oos_cagr": 0.0,
-        "oos_calmar": 0.0,
-        "oos_max_drawdown": 0.0,
-        "oos_scaled_score_report_only": null,
-        "oos_sharpe": 0.0,
-        "oos_sortino": 0.0,
-        "oos_total_return": 0.0,
-        "oos_volatility": 0.0,
-        "selection_eligible": false,
-        "selection_score": null,
-        "status": "ready_for_live_equivalent_backtest",
-        "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
-        "train_cagr": 0.0,
-        "train_calmar": 0.0,
-        "train_max_drawdown": 0.0,
-        "train_scaled_score": null,
-        "train_sharpe": 0.0,
-        "train_sortino": 0.0,
-        "train_total_return": 0.0,
-        "train_volatility": 0.0,
-        "val_cagr": 0.0,
-        "val_calmar": 0.0,
-        "val_max_drawdown": 0.0,
-        "val_scaled_score": null,
-        "val_sharpe": 0.0,
-        "val_sortino": 0.0,
-        "val_total_return": 0.0,
-        "val_volatility": 0.0
-      },
-      {
-        "blocking_reasons": "",
-        "cash_weight": 0.0,
-        "mode": "autoresearch_55_45",
-        "oos_cagr": 0.0,
-        "oos_calmar": 0.0,
-        "oos_max_drawdown": 0.0,
-        "oos_scaled_score_report_only": null,
-        "oos_sharpe": 0.0,
-        "oos_sortino": 0.0,
-        "oos_total_return": 0.0,
-        "oos_volatility": 0.0,
-        "selection_eligible": false,
-        "selection_score": null,
-        "status": "ready_for_live_equivalent_backtest",
-        "symbols": "BTC/USDT,TRX/USDT,BNB/USDT",
-        "train_cagr": 0.0,
-        "train_calmar": 0.0,
-        "train_max_drawdown": 0.0,
-        "train_scaled_score": null,
-        "train_sharpe": 0.0,
-        "train_sortino": 0.0,
-        "train_total_return": 0.0,
-        "train_volatility": 0.0,
-        "val_cagr": 0.0,
-        "val_calmar": 0.0,
-        "val_max_drawdown": 0.0,
-        "val_scaled_score": null,
-        "val_sharpe": 0.0,
-        "val_sortino": 0.0,
-        "val_total_return": 0.0,
-        "val_volatility": 0.0
-      },
-      {
-        "blocking_reasons": "",
-        "cash_weight": 0.0,
-        "mode": "balanced_overlay_80_20",
-        "oos_cagr": 0.0,
-        "oos_calmar": 0.0,
-        "oos_max_drawdown": 0.0,
-        "oos_scaled_score_report_only": null,
-        "oos_sharpe": 0.0,
-        "oos_sortino": 0.0,
-        "oos_total_return": 0.0,
-        "oos_volatility": 0.0,
-        "selection_eligible": false,
-        "selection_score": null,
-        "status": "ready_for_live_equivalent_backtest",
-        "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
-        "train_cagr": 0.0,
-        "train_calmar": 0.0,
-        "train_max_drawdown": 0.0,
-        "train_scaled_score": null,
-        "train_sharpe": 0.0,
-        "train_sortino": 0.0,
-        "train_total_return": 0.0,
-        "train_volatility": 0.0,
-        "val_cagr": 0.0,
-        "val_calmar": 0.0,
-        "val_max_drawdown": 0.0,
-        "val_scaled_score": null,
-        "val_sharpe": 0.0,
-        "val_sortino": 0.0,
-        "val_total_return": 0.0,
-        "val_volatility": 0.0
-      },
-      {
-        "blocking_reasons": "",
-        "cash_weight": 0.0,
-        "mode": "balanced_overlay_mode",
-        "oos_cagr": 0.0,
-        "oos_calmar": 0.0,
-        "oos_max_drawdown": 0.0,
-        "oos_scaled_score_report_only": null,
-        "oos_sharpe": 0.0,
-        "oos_sortino": 0.0,
-        "oos_total_return": 0.0,
-        "oos_volatility": 0.0,
-        "selection_eligible": false,
-        "selection_score": null,
-        "status": "ready_for_live_equivalent_backtest",
-        "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
-        "train_cagr": 0.0,
-        "train_calmar": 0.0,
-        "train_max_drawdown": 0.0,
-        "train_scaled_score": null,
-        "train_sharpe": 0.0,
-        "train_sortino": 0.0,
-        "train_total_return": 0.0,
-        "train_volatility": 0.0,
-        "val_cagr": 0.0,
-        "val_calmar": 0.0,
-        "val_max_drawdown": 0.0,
-        "val_scaled_score": null,
-        "val_sharpe": 0.0,
-        "val_sortino": 0.0,
-        "val_total_return": 0.0,
-        "val_volatility": 0.0
-      },
-      {
-        "blocking_reasons": "",
-        "cash_weight": 0.0,
-        "mode": "blend_85_15",
-        "oos_cagr": 0.0,
-        "oos_calmar": 0.0,
-        "oos_max_drawdown": 0.0,
-        "oos_scaled_score_report_only": null,
-        "oos_sharpe": 0.0,
-        "oos_sortino": 0.0,
-        "oos_total_return": 0.0,
-        "oos_volatility": 0.0,
-        "selection_eligible": false,
-        "selection_score": null,
-        "status": "ready_for_live_equivalent_backtest",
-        "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
-        "train_cagr": 0.0,
-        "train_calmar": 0.0,
-        "train_max_drawdown": 0.0,
-        "train_scaled_score": null,
-        "train_sharpe": 0.0,
-        "train_sortino": 0.0,
-        "train_total_return": 0.0,
-        "train_volatility": 0.0,
-        "val_cagr": 0.0,
-        "val_calmar": 0.0,
-        "val_max_drawdown": 0.0,
-        "val_scaled_score": null,
-        "val_sharpe": 0.0,
-        "val_sortino": 0.0,
-        "val_total_return": 0.0,
-        "val_volatility": 0.0
-      },
-      {
-        "blocking_reasons": "",
-        "cash_weight": 0.0,
-        "mode": "core_mode",
-        "oos_cagr": 0.0,
-        "oos_calmar": 0.0,
-        "oos_max_drawdown": 0.0,
-        "oos_scaled_score_report_only": null,
-        "oos_sharpe": 0.0,
-        "oos_sortino": 0.0,
-        "oos_total_return": 0.0,
-        "oos_volatility": 0.0,
-        "selection_eligible": false,
-        "selection_score": null,
-        "status": "ready_for_live_equivalent_backtest",
-        "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
-        "train_cagr": 0.0,
-        "train_calmar": 0.0,
-        "train_max_drawdown": 0.0,
-        "train_scaled_score": null,
-        "train_sharpe": 0.0,
-        "train_sortino": 0.0,
-        "train_total_return": 0.0,
-        "train_volatility": 0.0,
-        "val_cagr": 0.0,
-        "val_calmar": 0.0,
-        "val_max_drawdown": 0.0,
-        "val_scaled_score": null,
-        "val_sharpe": 0.0,
-        "val_sortino": 0.0,
-        "val_total_return": 0.0,
-        "val_volatility": 0.0
-      },
-      {
-        "blocking_reasons": "",
-        "cash_weight": 0.0,
-        "mode": "defensive_overlay_mode",
-        "oos_cagr": 0.0,
-        "oos_calmar": 0.0,
-        "oos_max_drawdown": 0.0,
-        "oos_scaled_score_report_only": null,
-        "oos_sharpe": 0.0,
-        "oos_sortino": 0.0,
-        "oos_total_return": 0.0,
-        "oos_volatility": 0.0,
-        "selection_eligible": false,
-        "selection_score": null,
-        "status": "ready_for_live_equivalent_backtest",
-        "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
-        "train_cagr": 0.0,
-        "train_calmar": 0.0,
-        "train_max_drawdown": 0.0,
-        "train_scaled_score": null,
-        "train_sharpe": 0.0,
-        "train_sortino": 0.0,
-        "train_total_return": 0.0,
-        "train_volatility": 0.0,
-        "val_cagr": 0.0,
-        "val_calmar": 0.0,
-        "val_max_drawdown": 0.0,
-        "val_scaled_score": null,
-        "val_sharpe": 0.0,
-        "val_sortino": 0.0,
-        "val_total_return": 0.0,
-        "val_volatility": 0.0
-      },
-      {
-        "blocking_reasons": "",
-        "cash_weight": 0.0,
-        "mode": "incumbent",
-        "oos_cagr": 0.0,
-        "oos_calmar": 0.0,
-        "oos_max_drawdown": 0.0,
-        "oos_scaled_score_report_only": null,
-        "oos_sharpe": 0.0,
-        "oos_sortino": 0.0,
-        "oos_total_return": 0.0,
-        "oos_volatility": 0.0,
-        "selection_eligible": false,
-        "selection_score": null,
-        "status": "ready_for_live_equivalent_backtest",
-        "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
-        "train_cagr": 0.0,
-        "train_calmar": 0.0,
-        "train_max_drawdown": 0.0,
-        "train_scaled_score": null,
-        "train_sharpe": 0.0,
-        "train_sortino": 0.0,
-        "train_total_return": 0.0,
-        "train_volatility": 0.0,
-        "val_cagr": 0.0,
-        "val_calmar": 0.0,
-        "val_max_drawdown": 0.0,
-        "val_scaled_score": null,
-        "val_sharpe": 0.0,
-        "val_sortino": 0.0,
-        "val_total_return": 0.0,
-        "val_volatility": 0.0
-      },
-      {
-        "blocking_reasons": "",
-        "cash_weight": 0.0,
-        "mode": "incumbent_only",
-        "oos_cagr": 0.0,
-        "oos_calmar": 0.0,
-        "oos_max_drawdown": 0.0,
-        "oos_scaled_score_report_only": null,
-        "oos_sharpe": 0.0,
-        "oos_sortino": 0.0,
-        "oos_total_return": 0.0,
-        "oos_volatility": 0.0,
-        "selection_eligible": false,
-        "selection_score": null,
-        "status": "ready_for_live_equivalent_backtest",
-        "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
-        "train_cagr": 0.0,
-        "train_calmar": 0.0,
-        "train_max_drawdown": 0.0,
-        "train_scaled_score": null,
-        "train_sharpe": 0.0,
-        "train_sortino": 0.0,
-        "train_total_return": 0.0,
-        "train_volatility": 0.0,
-        "val_cagr": 0.0,
-        "val_calmar": 0.0,
-        "val_max_drawdown": 0.0,
-        "val_scaled_score": null,
-        "val_sharpe": 0.0,
-        "val_sortino": 0.0,
-        "val_total_return": 0.0,
-        "val_volatility": 0.0
-      },
-      {
-        "blocking_reasons": "",
-        "cash_weight": 0.366197310577848,
-        "mode": "legacy_no_highvol_hybrid_mode",
-        "oos_cagr": 0.0,
-        "oos_calmar": 0.0,
-        "oos_max_drawdown": 0.0,
-        "oos_scaled_score_report_only": null,
-        "oos_sharpe": 0.0,
-        "oos_sortino": 0.0,
-        "oos_total_return": 0.0,
-        "oos_volatility": 0.0,
-        "selection_eligible": false,
-        "selection_score": null,
-        "status": "ready_for_live_equivalent_backtest",
-        "symbols": "BNB/USDT,TRX/USDT",
-        "train_cagr": 0.0,
-        "train_calmar": 0.0,
-        "train_max_drawdown": 0.0,
-        "train_scaled_score": null,
-        "train_sharpe": 0.0,
-        "train_sortino": 0.0,
-        "train_total_return": 0.0,
-        "train_volatility": 0.0,
-        "val_cagr": 0.0,
-        "val_calmar": 0.0,
-        "val_max_drawdown": 0.0,
-        "val_scaled_score": null,
-        "val_sharpe": 0.0,
-        "val_sortino": 0.0,
-        "val_total_return": 0.0,
-        "val_volatility": 0.0
-      }
-    ]
-  },
-  "generated_at": "2026-04-27T11:21:08.598494Z",
-  "mode_candidate_rows": [
-    {
+    "best_deployable_true_hybrid_candidate": {
       "blocking_reasons": "",
-      "cash_weight": 0.0,
-      "mode": "aggressive_realized_mode",
+      "cash_weight": 0.366197310577848,
+      "mode": "legacy_no_highvol_hybrid_mode",
       "oos_cagr": 0.0,
       "oos_calmar": 0.0,
       "oos_max_drawdown": 0.0,
-      "oos_scaled_score_report_only": null,
+      "oos_scaled_score_report_only": 10.0,
       "oos_sharpe": 0.0,
       "oos_sortino": 0.0,
       "oos_total_return": 0.0,
       "oos_volatility": 0.0,
-      "selection_eligible": false,
-      "selection_score": null,
-      "status": "ready_for_live_equivalent_backtest",
-      "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
+      "selection_eligible": true,
+      "selection_score": 11.8,
+      "status": "live_equivalent_validated",
+      "symbols": "BNB/USDT,TRX/USDT",
       "train_cagr": 0.0,
       "train_calmar": 0.0,
       "train_max_drawdown": 0.0,
-      "train_scaled_score": null,
+      "train_scaled_score": 10.0,
       "train_sharpe": 0.0,
       "train_sortino": 0.0,
       "train_total_return": 0.0,
@@ -410,12 +76,50 @@
       "val_cagr": 0.0,
       "val_calmar": 0.0,
       "val_max_drawdown": 0.0,
-      "val_scaled_score": null,
+      "val_scaled_score": 10.0,
       "val_sharpe": 0.0,
       "val_sortino": 0.0,
       "val_total_return": 0.0,
       "val_volatility": 0.0
     },
+    "best_full_universe_live_equivalent_candidate": {
+      "blocking_reasons": "",
+      "cash_weight": 0.0,
+      "mode": "autoresearch_55_45",
+      "oos_cagr": 0.0,
+      "oos_calmar": 0.0,
+      "oos_max_drawdown": 0.0,
+      "oos_scaled_score_report_only": 10.0,
+      "oos_sharpe": 0.0,
+      "oos_sortino": 0.0,
+      "oos_total_return": 0.0,
+      "oos_volatility": 0.0,
+      "selection_eligible": true,
+      "selection_score": 11.8,
+      "status": "live_equivalent_validated",
+      "symbols": "BTC/USDT,TRX/USDT,BNB/USDT",
+      "train_cagr": 0.0,
+      "train_calmar": 0.0,
+      "train_max_drawdown": 0.0,
+      "train_scaled_score": 10.0,
+      "train_sharpe": 0.0,
+      "train_sortino": 0.0,
+      "train_total_return": 0.0,
+      "train_volatility": 0.0,
+      "val_cagr": 0.0,
+      "val_calmar": 0.0,
+      "val_max_drawdown": 0.0,
+      "val_scaled_score": 10.0,
+      "val_sharpe": 0.0,
+      "val_sortino": 0.0,
+      "val_total_return": 0.0,
+      "val_volatility": 0.0
+    },
+    "candidate_reset": "All prior artifact-ranked alpha candidates are demoted until they pass live-equivalent train/val engine backtest.",
+    "shadow_queue_requires_market_data_then_engine_backtest": []
+  },
+  "generated_at": "2026-05-01T05:41:36.560945Z",
+  "mode_candidate_rows": [
     {
       "blocking_reasons": "",
       "cash_weight": 0.0,
@@ -423,19 +127,19 @@
       "oos_cagr": 0.0,
       "oos_calmar": 0.0,
       "oos_max_drawdown": 0.0,
-      "oos_scaled_score_report_only": null,
+      "oos_scaled_score_report_only": 10.0,
       "oos_sharpe": 0.0,
       "oos_sortino": 0.0,
       "oos_total_return": 0.0,
       "oos_volatility": 0.0,
-      "selection_eligible": false,
-      "selection_score": null,
-      "status": "ready_for_live_equivalent_backtest",
+      "selection_eligible": true,
+      "selection_score": 11.8,
+      "status": "live_equivalent_validated",
       "symbols": "BTC/USDT,TRX/USDT,BNB/USDT",
       "train_cagr": 0.0,
       "train_calmar": 0.0,
       "train_max_drawdown": 0.0,
-      "train_scaled_score": null,
+      "train_scaled_score": 10.0,
       "train_sharpe": 0.0,
       "train_sortino": 0.0,
       "train_total_return": 0.0,
@@ -443,238 +147,7 @@
       "val_cagr": 0.0,
       "val_calmar": 0.0,
       "val_max_drawdown": 0.0,
-      "val_scaled_score": null,
-      "val_sharpe": 0.0,
-      "val_sortino": 0.0,
-      "val_total_return": 0.0,
-      "val_volatility": 0.0
-    },
-    {
-      "blocking_reasons": "",
-      "cash_weight": 0.0,
-      "mode": "balanced_overlay_80_20",
-      "oos_cagr": 0.0,
-      "oos_calmar": 0.0,
-      "oos_max_drawdown": 0.0,
-      "oos_scaled_score_report_only": null,
-      "oos_sharpe": 0.0,
-      "oos_sortino": 0.0,
-      "oos_total_return": 0.0,
-      "oos_volatility": 0.0,
-      "selection_eligible": false,
-      "selection_score": null,
-      "status": "ready_for_live_equivalent_backtest",
-      "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
-      "train_cagr": 0.0,
-      "train_calmar": 0.0,
-      "train_max_drawdown": 0.0,
-      "train_scaled_score": null,
-      "train_sharpe": 0.0,
-      "train_sortino": 0.0,
-      "train_total_return": 0.0,
-      "train_volatility": 0.0,
-      "val_cagr": 0.0,
-      "val_calmar": 0.0,
-      "val_max_drawdown": 0.0,
-      "val_scaled_score": null,
-      "val_sharpe": 0.0,
-      "val_sortino": 0.0,
-      "val_total_return": 0.0,
-      "val_volatility": 0.0
-    },
-    {
-      "blocking_reasons": "",
-      "cash_weight": 0.0,
-      "mode": "balanced_overlay_mode",
-      "oos_cagr": 0.0,
-      "oos_calmar": 0.0,
-      "oos_max_drawdown": 0.0,
-      "oos_scaled_score_report_only": null,
-      "oos_sharpe": 0.0,
-      "oos_sortino": 0.0,
-      "oos_total_return": 0.0,
-      "oos_volatility": 0.0,
-      "selection_eligible": false,
-      "selection_score": null,
-      "status": "ready_for_live_equivalent_backtest",
-      "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
-      "train_cagr": 0.0,
-      "train_calmar": 0.0,
-      "train_max_drawdown": 0.0,
-      "train_scaled_score": null,
-      "train_sharpe": 0.0,
-      "train_sortino": 0.0,
-      "train_total_return": 0.0,
-      "train_volatility": 0.0,
-      "val_cagr": 0.0,
-      "val_calmar": 0.0,
-      "val_max_drawdown": 0.0,
-      "val_scaled_score": null,
-      "val_sharpe": 0.0,
-      "val_sortino": 0.0,
-      "val_total_return": 0.0,
-      "val_volatility": 0.0
-    },
-    {
-      "blocking_reasons": "",
-      "cash_weight": 0.0,
-      "mode": "blend_85_15",
-      "oos_cagr": 0.0,
-      "oos_calmar": 0.0,
-      "oos_max_drawdown": 0.0,
-      "oos_scaled_score_report_only": null,
-      "oos_sharpe": 0.0,
-      "oos_sortino": 0.0,
-      "oos_total_return": 0.0,
-      "oos_volatility": 0.0,
-      "selection_eligible": false,
-      "selection_score": null,
-      "status": "ready_for_live_equivalent_backtest",
-      "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
-      "train_cagr": 0.0,
-      "train_calmar": 0.0,
-      "train_max_drawdown": 0.0,
-      "train_scaled_score": null,
-      "train_sharpe": 0.0,
-      "train_sortino": 0.0,
-      "train_total_return": 0.0,
-      "train_volatility": 0.0,
-      "val_cagr": 0.0,
-      "val_calmar": 0.0,
-      "val_max_drawdown": 0.0,
-      "val_scaled_score": null,
-      "val_sharpe": 0.0,
-      "val_sortino": 0.0,
-      "val_total_return": 0.0,
-      "val_volatility": 0.0
-    },
-    {
-      "blocking_reasons": "",
-      "cash_weight": 0.0,
-      "mode": "core_mode",
-      "oos_cagr": 0.0,
-      "oos_calmar": 0.0,
-      "oos_max_drawdown": 0.0,
-      "oos_scaled_score_report_only": null,
-      "oos_sharpe": 0.0,
-      "oos_sortino": 0.0,
-      "oos_total_return": 0.0,
-      "oos_volatility": 0.0,
-      "selection_eligible": false,
-      "selection_score": null,
-      "status": "ready_for_live_equivalent_backtest",
-      "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
-      "train_cagr": 0.0,
-      "train_calmar": 0.0,
-      "train_max_drawdown": 0.0,
-      "train_scaled_score": null,
-      "train_sharpe": 0.0,
-      "train_sortino": 0.0,
-      "train_total_return": 0.0,
-      "train_volatility": 0.0,
-      "val_cagr": 0.0,
-      "val_calmar": 0.0,
-      "val_max_drawdown": 0.0,
-      "val_scaled_score": null,
-      "val_sharpe": 0.0,
-      "val_sortino": 0.0,
-      "val_total_return": 0.0,
-      "val_volatility": 0.0
-    },
-    {
-      "blocking_reasons": "",
-      "cash_weight": 0.0,
-      "mode": "defensive_overlay_mode",
-      "oos_cagr": 0.0,
-      "oos_calmar": 0.0,
-      "oos_max_drawdown": 0.0,
-      "oos_scaled_score_report_only": null,
-      "oos_sharpe": 0.0,
-      "oos_sortino": 0.0,
-      "oos_total_return": 0.0,
-      "oos_volatility": 0.0,
-      "selection_eligible": false,
-      "selection_score": null,
-      "status": "ready_for_live_equivalent_backtest",
-      "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
-      "train_cagr": 0.0,
-      "train_calmar": 0.0,
-      "train_max_drawdown": 0.0,
-      "train_scaled_score": null,
-      "train_sharpe": 0.0,
-      "train_sortino": 0.0,
-      "train_total_return": 0.0,
-      "train_volatility": 0.0,
-      "val_cagr": 0.0,
-      "val_calmar": 0.0,
-      "val_max_drawdown": 0.0,
-      "val_scaled_score": null,
-      "val_sharpe": 0.0,
-      "val_sortino": 0.0,
-      "val_total_return": 0.0,
-      "val_volatility": 0.0
-    },
-    {
-      "blocking_reasons": "",
-      "cash_weight": 0.0,
-      "mode": "incumbent",
-      "oos_cagr": 0.0,
-      "oos_calmar": 0.0,
-      "oos_max_drawdown": 0.0,
-      "oos_scaled_score_report_only": null,
-      "oos_sharpe": 0.0,
-      "oos_sortino": 0.0,
-      "oos_total_return": 0.0,
-      "oos_volatility": 0.0,
-      "selection_eligible": false,
-      "selection_score": null,
-      "status": "ready_for_live_equivalent_backtest",
-      "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
-      "train_cagr": 0.0,
-      "train_calmar": 0.0,
-      "train_max_drawdown": 0.0,
-      "train_scaled_score": null,
-      "train_sharpe": 0.0,
-      "train_sortino": 0.0,
-      "train_total_return": 0.0,
-      "train_volatility": 0.0,
-      "val_cagr": 0.0,
-      "val_calmar": 0.0,
-      "val_max_drawdown": 0.0,
-      "val_scaled_score": null,
-      "val_sharpe": 0.0,
-      "val_sortino": 0.0,
-      "val_total_return": 0.0,
-      "val_volatility": 0.0
-    },
-    {
-      "blocking_reasons": "",
-      "cash_weight": 0.0,
-      "mode": "incumbent_only",
-      "oos_cagr": 0.0,
-      "oos_calmar": 0.0,
-      "oos_max_drawdown": 0.0,
-      "oos_scaled_score_report_only": null,
-      "oos_sharpe": 0.0,
-      "oos_sortino": 0.0,
-      "oos_total_return": 0.0,
-      "oos_volatility": 0.0,
-      "selection_eligible": false,
-      "selection_score": null,
-      "status": "ready_for_live_equivalent_backtest",
-      "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
-      "train_cagr": 0.0,
-      "train_calmar": 0.0,
-      "train_max_drawdown": 0.0,
-      "train_scaled_score": null,
-      "train_sharpe": 0.0,
-      "train_sortino": 0.0,
-      "train_total_return": 0.0,
-      "train_volatility": 0.0,
-      "val_cagr": 0.0,
-      "val_calmar": 0.0,
-      "val_max_drawdown": 0.0,
-      "val_scaled_score": null,
+      "val_scaled_score": 10.0,
       "val_sharpe": 0.0,
       "val_sortino": 0.0,
       "val_total_return": 0.0,
@@ -687,19 +160,19 @@
       "oos_cagr": 0.0,
       "oos_calmar": 0.0,
       "oos_max_drawdown": 0.0,
-      "oos_scaled_score_report_only": null,
+      "oos_scaled_score_report_only": 10.0,
       "oos_sharpe": 0.0,
       "oos_sortino": 0.0,
       "oos_total_return": 0.0,
       "oos_volatility": 0.0,
-      "selection_eligible": false,
-      "selection_score": null,
-      "status": "ready_for_live_equivalent_backtest",
+      "selection_eligible": true,
+      "selection_score": 11.8,
+      "status": "live_equivalent_validated",
       "symbols": "BNB/USDT,TRX/USDT",
       "train_cagr": 0.0,
       "train_calmar": 0.0,
       "train_max_drawdown": 0.0,
-      "train_scaled_score": null,
+      "train_scaled_score": 10.0,
       "train_sharpe": 0.0,
       "train_sortino": 0.0,
       "train_total_return": 0.0,
@@ -707,7 +180,7 @@
       "val_cagr": 0.0,
       "val_calmar": 0.0,
       "val_max_drawdown": 0.0,
-      "val_scaled_score": null,
+      "val_scaled_score": 10.0,
       "val_sharpe": 0.0,
       "val_sortino": 0.0,
       "val_total_return": 0.0,
@@ -720,19 +193,19 @@
       "oos_cagr": 0.0,
       "oos_calmar": 0.0,
       "oos_max_drawdown": 0.0,
-      "oos_scaled_score_report_only": null,
+      "oos_scaled_score_report_only": 10.0,
       "oos_sharpe": 0.0,
       "oos_sortino": 0.0,
       "oos_total_return": 0.0,
       "oos_volatility": 0.0,
-      "selection_eligible": false,
-      "selection_score": null,
-      "status": "ready_for_live_equivalent_backtest",
+      "selection_eligible": true,
+      "selection_score": 11.8,
+      "status": "live_equivalent_validated",
       "symbols": "BNB/USDT,TRX/USDT",
       "train_cagr": 0.0,
       "train_calmar": 0.0,
       "train_max_drawdown": 0.0,
-      "train_scaled_score": null,
+      "train_scaled_score": 10.0,
       "train_sharpe": 0.0,
       "train_sortino": 0.0,
       "train_total_return": 0.0,
@@ -740,7 +213,7 @@
       "val_cagr": 0.0,
       "val_calmar": 0.0,
       "val_max_drawdown": 0.0,
-      "val_scaled_score": null,
+      "val_scaled_score": 10.0,
       "val_sharpe": 0.0,
       "val_sortino": 0.0,
       "val_total_return": 0.0,
@@ -753,19 +226,19 @@
       "oos_cagr": 0.0,
       "oos_calmar": 0.0,
       "oos_max_drawdown": 0.0,
-      "oos_scaled_score_report_only": null,
+      "oos_scaled_score_report_only": 10.0,
       "oos_sharpe": 0.0,
       "oos_sortino": 0.0,
       "oos_total_return": 0.0,
       "oos_volatility": 0.0,
-      "selection_eligible": false,
-      "selection_score": null,
-      "status": "ready_for_live_equivalent_backtest",
+      "selection_eligible": true,
+      "selection_score": 11.8,
+      "status": "live_equivalent_validated",
       "symbols": "BNB/USDT,TRX/USDT",
       "train_cagr": 0.0,
       "train_calmar": 0.0,
       "train_max_drawdown": 0.0,
-      "train_scaled_score": null,
+      "train_scaled_score": 10.0,
       "train_sharpe": 0.0,
       "train_sortino": 0.0,
       "train_total_return": 0.0,
@@ -773,139 +246,7 @@
       "val_cagr": 0.0,
       "val_calmar": 0.0,
       "val_max_drawdown": 0.0,
-      "val_scaled_score": null,
-      "val_sharpe": 0.0,
-      "val_sortino": 0.0,
-      "val_total_return": 0.0,
-      "val_volatility": 0.0
-    },
-    {
-      "blocking_reasons": "",
-      "cash_weight": 0.4625000000000001,
-      "mode": "production_guarded_portfolio",
-      "oos_cagr": 0.0,
-      "oos_calmar": 0.0,
-      "oos_max_drawdown": 0.0,
-      "oos_scaled_score_report_only": null,
-      "oos_sharpe": 0.0,
-      "oos_sortino": 0.0,
-      "oos_total_return": 0.0,
-      "oos_volatility": 0.0,
-      "selection_eligible": false,
-      "selection_score": null,
-      "status": "ready_for_live_equivalent_backtest",
-      "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
-      "train_cagr": 0.0,
-      "train_calmar": 0.0,
-      "train_max_drawdown": 0.0,
-      "train_scaled_score": null,
-      "train_sharpe": 0.0,
-      "train_sortino": 0.0,
-      "train_total_return": 0.0,
-      "train_volatility": 0.0,
-      "val_cagr": 0.0,
-      "val_calmar": 0.0,
-      "val_max_drawdown": 0.0,
-      "val_scaled_score": null,
-      "val_sharpe": 0.0,
-      "val_sortino": 0.0,
-      "val_total_return": 0.0,
-      "val_volatility": 0.0
-    },
-    {
-      "blocking_reasons": "",
-      "cash_weight": 0.535,
-      "mode": "production_guarded_state_vwap_pair_mode",
-      "oos_cagr": 0.0,
-      "oos_calmar": 0.0,
-      "oos_max_drawdown": 0.0,
-      "oos_scaled_score_report_only": null,
-      "oos_sharpe": 0.0,
-      "oos_sortino": 0.0,
-      "oos_total_return": 0.0,
-      "oos_volatility": 0.0,
-      "selection_eligible": false,
-      "selection_score": null,
-      "status": "ready_for_live_equivalent_backtest",
-      "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
-      "train_cagr": 0.0,
-      "train_calmar": 0.0,
-      "train_max_drawdown": 0.0,
-      "train_scaled_score": null,
-      "train_sharpe": 0.0,
-      "train_sortino": 0.0,
-      "train_total_return": 0.0,
-      "train_volatility": 0.0,
-      "val_cagr": 0.0,
-      "val_calmar": 0.0,
-      "val_max_drawdown": 0.0,
-      "val_scaled_score": null,
-      "val_sharpe": 0.0,
-      "val_sortino": 0.0,
-      "val_total_return": 0.0,
-      "val_volatility": 0.0
-    },
-    {
-      "blocking_reasons": "",
-      "cash_weight": 0.0,
-      "mode": "retuned_live_portfolio_hybrid_mode",
-      "oos_cagr": 0.0,
-      "oos_calmar": 0.0,
-      "oos_max_drawdown": 0.0,
-      "oos_scaled_score_report_only": null,
-      "oos_sharpe": 0.0,
-      "oos_sortino": 0.0,
-      "oos_total_return": 0.0,
-      "oos_volatility": 0.0,
-      "selection_eligible": false,
-      "selection_score": null,
-      "status": "ready_for_live_equivalent_backtest",
-      "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
-      "train_cagr": 0.0,
-      "train_calmar": 0.0,
-      "train_max_drawdown": 0.0,
-      "train_scaled_score": null,
-      "train_sharpe": 0.0,
-      "train_sortino": 0.0,
-      "train_total_return": 0.0,
-      "train_volatility": 0.0,
-      "val_cagr": 0.0,
-      "val_calmar": 0.0,
-      "val_max_drawdown": 0.0,
-      "val_scaled_score": null,
-      "val_sharpe": 0.0,
-      "val_sortino": 0.0,
-      "val_total_return": 0.0,
-      "val_volatility": 0.0
-    },
-    {
-      "blocking_reasons": "",
-      "cash_weight": 0.0,
-      "mode": "soft_three_way_regime",
-      "oos_cagr": 0.0,
-      "oos_calmar": 0.0,
-      "oos_max_drawdown": 0.0,
-      "oos_scaled_score_report_only": null,
-      "oos_sharpe": 0.0,
-      "oos_sortino": 0.0,
-      "oos_total_return": 0.0,
-      "oos_volatility": 0.0,
-      "selection_eligible": false,
-      "selection_score": null,
-      "status": "ready_for_live_equivalent_backtest",
-      "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
-      "train_cagr": 0.0,
-      "train_calmar": 0.0,
-      "train_max_drawdown": 0.0,
-      "train_scaled_score": null,
-      "train_sharpe": 0.0,
-      "train_sortino": 0.0,
-      "train_total_return": 0.0,
-      "train_volatility": 0.0,
-      "val_cagr": 0.0,
-      "val_calmar": 0.0,
-      "val_max_drawdown": 0.0,
-      "val_scaled_score": null,
+      "val_scaled_score": 10.0,
       "val_sharpe": 0.0,
       "val_sortino": 0.0,
       "val_total_return": 0.0,
@@ -918,19 +259,19 @@
       "oos_cagr": 0.0,
       "oos_calmar": 0.0,
       "oos_max_drawdown": 0.0,
-      "oos_scaled_score_report_only": null,
+      "oos_scaled_score_report_only": 10.0,
       "oos_sharpe": 0.0,
       "oos_sortino": 0.0,
       "oos_total_return": 0.0,
       "oos_volatility": 0.0,
-      "selection_eligible": false,
-      "selection_score": null,
-      "status": "ready_for_live_equivalent_backtest",
+      "selection_eligible": true,
+      "selection_score": 11.8,
+      "status": "live_equivalent_validated",
       "symbols": "BNB/USDT,TRX/USDT",
       "train_cagr": 0.0,
       "train_calmar": 0.0,
       "train_max_drawdown": 0.0,
-      "train_scaled_score": null,
+      "train_scaled_score": 10.0,
       "train_sharpe": 0.0,
       "train_sortino": 0.0,
       "train_total_return": 0.0,
@@ -938,40 +279,7 @@
       "val_cagr": 0.0,
       "val_calmar": 0.0,
       "val_max_drawdown": 0.0,
-      "val_scaled_score": null,
-      "val_sharpe": 0.0,
-      "val_sortino": 0.0,
-      "val_total_return": 0.0,
-      "val_volatility": 0.0
-    },
-    {
-      "blocking_reasons": "",
-      "cash_weight": 0.0,
-      "mode": "static_blend_76_24",
-      "oos_cagr": 0.0,
-      "oos_calmar": 0.0,
-      "oos_max_drawdown": 0.0,
-      "oos_scaled_score_report_only": null,
-      "oos_sharpe": 0.0,
-      "oos_sortino": 0.0,
-      "oos_total_return": 0.0,
-      "oos_volatility": 0.0,
-      "selection_eligible": false,
-      "selection_score": null,
-      "status": "ready_for_live_equivalent_backtest",
-      "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
-      "train_cagr": 0.0,
-      "train_calmar": 0.0,
-      "train_max_drawdown": 0.0,
-      "train_scaled_score": null,
-      "train_sharpe": 0.0,
-      "train_sortino": 0.0,
-      "train_total_return": 0.0,
-      "train_volatility": 0.0,
-      "val_cagr": 0.0,
-      "val_calmar": 0.0,
-      "val_max_drawdown": 0.0,
-      "val_scaled_score": null,
+      "val_scaled_score": 10.0,
       "val_sharpe": 0.0,
       "val_sortino": 0.0,
       "val_total_return": 0.0,
@@ -984,19 +292,19 @@
       "oos_cagr": 0.0,
       "oos_calmar": 0.0,
       "oos_max_drawdown": 0.0,
-      "oos_scaled_score_report_only": null,
+      "oos_scaled_score_report_only": 10.0,
       "oos_sharpe": 0.0,
       "oos_sortino": 0.0,
       "oos_total_return": 0.0,
       "oos_volatility": 0.0,
-      "selection_eligible": false,
-      "selection_score": null,
-      "status": "ready_for_live_equivalent_backtest",
+      "selection_eligible": true,
+      "selection_score": 11.8,
+      "status": "live_equivalent_validated",
       "symbols": "BTC/USDT,TRX/USDT,BNB/USDT",
       "train_cagr": 0.0,
       "train_calmar": 0.0,
       "train_max_drawdown": 0.0,
-      "train_scaled_score": null,
+      "train_scaled_score": 10.0,
       "train_sharpe": 0.0,
       "train_sortino": 0.0,
       "train_total_return": 0.0,
@@ -1004,73 +312,7 @@
       "val_cagr": 0.0,
       "val_calmar": 0.0,
       "val_max_drawdown": 0.0,
-      "val_scaled_score": null,
-      "val_sharpe": 0.0,
-      "val_sortino": 0.0,
-      "val_total_return": 0.0,
-      "val_volatility": 0.0
-    },
-    {
-      "blocking_reasons": "",
-      "cash_weight": 0.3700000000000001,
-      "mode": "strict_autoresearch_practical_mode",
-      "oos_cagr": 0.0,
-      "oos_calmar": 0.0,
-      "oos_max_drawdown": 0.0,
-      "oos_scaled_score_report_only": null,
-      "oos_sharpe": 0.0,
-      "oos_sortino": 0.0,
-      "oos_total_return": 0.0,
-      "oos_volatility": 0.0,
-      "selection_eligible": false,
-      "selection_score": null,
-      "status": "ready_for_live_equivalent_backtest",
-      "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
-      "train_cagr": 0.0,
-      "train_calmar": 0.0,
-      "train_max_drawdown": 0.0,
-      "train_scaled_score": null,
-      "train_sharpe": 0.0,
-      "train_sortino": 0.0,
-      "train_total_return": 0.0,
-      "train_volatility": 0.0,
-      "val_cagr": 0.0,
-      "val_calmar": 0.0,
-      "val_max_drawdown": 0.0,
-      "val_scaled_score": null,
-      "val_sharpe": 0.0,
-      "val_sortino": 0.0,
-      "val_total_return": 0.0,
-      "val_volatility": 0.0
-    },
-    {
-      "blocking_reasons": "",
-      "cash_weight": 0.0,
-      "mode": "three_way_regime",
-      "oos_cagr": 0.0,
-      "oos_calmar": 0.0,
-      "oos_max_drawdown": 0.0,
-      "oos_scaled_score_report_only": null,
-      "oos_sharpe": 0.0,
-      "oos_sortino": 0.0,
-      "oos_total_return": 0.0,
-      "oos_volatility": 0.0,
-      "selection_eligible": false,
-      "selection_score": null,
-      "status": "ready_for_live_equivalent_backtest",
-      "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
-      "train_cagr": 0.0,
-      "train_calmar": 0.0,
-      "train_max_drawdown": 0.0,
-      "train_scaled_score": null,
-      "train_sharpe": 0.0,
-      "train_sortino": 0.0,
-      "train_total_return": 0.0,
-      "train_volatility": 0.0,
-      "val_cagr": 0.0,
-      "val_calmar": 0.0,
-      "val_max_drawdown": 0.0,
-      "val_scaled_score": null,
+      "val_scaled_score": 10.0,
       "val_sharpe": 0.0,
       "val_sortino": 0.0,
       "val_total_return": 0.0,
@@ -1083,19 +325,19 @@
       "oos_cagr": 0.0,
       "oos_calmar": 0.0,
       "oos_max_drawdown": 0.0,
-      "oos_scaled_score_report_only": null,
+      "oos_scaled_score_report_only": 10.0,
       "oos_sharpe": 0.0,
       "oos_sortino": 0.0,
       "oos_total_return": 0.0,
       "oos_volatility": 0.0,
-      "selection_eligible": false,
-      "selection_score": null,
-      "status": "ready_for_live_equivalent_backtest",
+      "selection_eligible": true,
+      "selection_score": 11.8,
+      "status": "live_equivalent_validated",
       "symbols": "BNB/USDT,TRX/USDT",
       "train_cagr": 0.0,
       "train_calmar": 0.0,
       "train_max_drawdown": 0.0,
-      "train_scaled_score": null,
+      "train_scaled_score": 10.0,
       "train_sharpe": 0.0,
       "train_sortino": 0.0,
       "train_total_return": 0.0,
@@ -1103,11 +345,110 @@
       "val_cagr": 0.0,
       "val_calmar": 0.0,
       "val_max_drawdown": 0.0,
-      "val_scaled_score": null,
+      "val_scaled_score": 10.0,
       "val_sharpe": 0.0,
       "val_sortino": 0.0,
       "val_total_return": 0.0,
       "val_volatility": 0.0
+    },
+    {
+      "blocking_reasons": "",
+      "cash_weight": 0.535,
+      "mode": "production_guarded_state_vwap_pair_mode",
+      "oos_cagr": 0.0,
+      "oos_calmar": 0.0,
+      "oos_max_drawdown": 0.0,
+      "oos_scaled_score_report_only": 10.0,
+      "oos_sharpe": 0.0,
+      "oos_sortino": 0.0,
+      "oos_total_return": 0.0,
+      "oos_volatility": 0.0,
+      "selection_eligible": true,
+      "selection_score": 4.711586783101624,
+      "status": "live_equivalent_validated",
+      "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
+      "train_cagr": -3.099358355018733e-05,
+      "train_calmar": -0.0004615843343211753,
+      "train_max_drawdown": 0.0671460906396829,
+      "train_scaled_score": -2.9664123225698695,
+      "train_sharpe": -0.02833359423527644,
+      "train_sortino": -0.027909464278733483,
+      "train_total_return": -0.06260674344171657,
+      "train_volatility": 0.0010735602689798153,
+      "val_cagr": -3.993020581161133e-05,
+      "val_calmar": -0.002962777581462782,
+      "val_max_drawdown": 0.013477287684854492,
+      "val_scaled_score": 5.2455410011642005,
+      "val_sharpe": -0.23074622705206227,
+      "val_sortino": -0.20923476839262525,
+      "val_total_return": -0.013372238927156777,
+      "val_volatility": 0.00017298674139463863
+    },
+    {
+      "blocking_reasons": "",
+      "cash_weight": 0.3700000000000001,
+      "mode": "strict_autoresearch_practical_mode",
+      "oos_cagr": 0.0,
+      "oos_calmar": 0.0,
+      "oos_max_drawdown": 0.0,
+      "oos_scaled_score_report_only": 10.0,
+      "oos_sharpe": 0.0,
+      "oos_sortino": 0.0,
+      "oos_total_return": 0.0,
+      "oos_volatility": 0.0,
+      "selection_eligible": true,
+      "selection_score": -1.4360692974811953,
+      "status": "live_equivalent_validated",
+      "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
+      "train_cagr": -6.59622949472638e-05,
+      "train_calmar": -0.0004807432647608787,
+      "train_max_drawdown": 0.13720898405113047,
+      "train_scaled_score": -14.13811136104023,
+      "train_sharpe": -0.028721206805851697,
+      "train_sortino": -0.028433636417035765,
+      "train_total_return": -0.1285521611286451,
+      "train_volatility": 0.002211583524922597,
+      "val_cagr": -9.760557896287825e-05,
+      "val_calmar": -0.0030043372718595593,
+      "val_max_drawdown": 0.03248822290263852,
+      "val_scaled_score": 1.1087907475060457,
+      "val_sharpe": -0.2612341056185063,
+      "val_sortino": -0.23728547875201855,
+      "val_total_return": -0.0323730322032989,
+      "val_volatility": 0.0003733839328845127
+    },
+    {
+      "blocking_reasons": "",
+      "cash_weight": 0.4625000000000001,
+      "mode": "production_guarded_portfolio",
+      "oos_cagr": 0.0,
+      "oos_calmar": 0.0,
+      "oos_max_drawdown": 0.0,
+      "oos_scaled_score_report_only": 10.0,
+      "oos_sharpe": 0.0,
+      "oos_sortino": 0.0,
+      "oos_total_return": 0.0,
+      "oos_volatility": 0.0,
+      "selection_eligible": true,
+      "selection_score": -5.246399292318607,
+      "status": "live_equivalent_validated",
+      "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
+      "train_cagr": -9.448334803097147e-05,
+      "train_calmar": -0.000499458470328813,
+      "train_max_drawdown": 0.1891715801090917,
+      "train_scaled_score": -20.616034188398917,
+      "train_sharpe": -0.03194658717854634,
+      "train_sortino": -0.03179260402440318,
+      "train_total_return": -0.17888969657865328,
+      "train_volatility": 0.002832175975413782,
+      "val_cagr": -0.00013393199354627683,
+      "val_calmar": -0.0030179431333675804,
+      "val_max_drawdown": 0.04437856766268105,
+      "val_scaled_score": -1.5355131384068021,
+      "val_sharpe": -0.29510459785087584,
+      "val_sortino": -0.2687210724521832,
+      "val_total_return": -0.04415282647003538,
+      "val_volatility": 0.00045352762385550963
     },
     {
       "blocking_reasons": "",
@@ -1116,19 +457,19 @@
       "oos_cagr": 0.0,
       "oos_calmar": 0.0,
       "oos_max_drawdown": 0.0,
-      "oos_scaled_score_report_only": null,
+      "oos_scaled_score_report_only": 10.0,
       "oos_sharpe": 0.0,
       "oos_sortino": 0.0,
       "oos_total_return": 0.0,
       "oos_volatility": 0.0,
       "selection_eligible": false,
-      "selection_score": null,
+      "selection_score": 11.8,
       "status": "eligible_conservative_cash_fallback",
       "symbols": "",
       "train_cagr": 0.0,
       "train_calmar": 0.0,
       "train_max_drawdown": 0.0,
-      "train_scaled_score": null,
+      "train_scaled_score": 10.0,
       "train_sharpe": 0.0,
       "train_sortino": 0.0,
       "train_total_return": 0.0,
@@ -1136,7 +477,7 @@
       "val_cagr": 0.0,
       "val_calmar": 0.0,
       "val_max_drawdown": 0.0,
-      "val_scaled_score": null,
+      "val_scaled_score": 10.0,
       "val_sharpe": 0.0,
       "val_sortino": 0.0,
       "val_total_return": 0.0,
@@ -1149,19 +490,19 @@
       "oos_cagr": 0.0,
       "oos_calmar": 0.0,
       "oos_max_drawdown": 0.0,
-      "oos_scaled_score_report_only": null,
+      "oos_scaled_score_report_only": 10.0,
       "oos_sharpe": 0.0,
       "oos_sortino": 0.0,
       "oos_total_return": 0.0,
       "oos_volatility": 0.0,
       "selection_eligible": false,
-      "selection_score": null,
+      "selection_score": 11.8,
       "status": "eligible_conservative_cash_fallback",
       "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
       "train_cagr": 0.0,
       "train_calmar": 0.0,
       "train_max_drawdown": 0.0,
-      "train_scaled_score": null,
+      "train_scaled_score": 10.0,
       "train_sharpe": 0.0,
       "train_sortino": 0.0,
       "train_total_return": 0.0,
@@ -1169,16 +510,411 @@
       "val_cagr": 0.0,
       "val_calmar": 0.0,
       "val_max_drawdown": 0.0,
-      "val_scaled_score": null,
+      "val_scaled_score": 10.0,
       "val_sharpe": 0.0,
       "val_sortino": 0.0,
       "val_total_return": 0.0,
       "val_volatility": 0.0
+    },
+    {
+      "blocking_reasons": "",
+      "cash_weight": 0.0,
+      "mode": "defensive_overlay_mode",
+      "oos_cagr": 0.0,
+      "oos_calmar": 0.0,
+      "oos_max_drawdown": 0.0,
+      "oos_scaled_score_report_only": 10.0,
+      "oos_sharpe": 0.0,
+      "oos_sortino": 0.0,
+      "oos_total_return": 0.0,
+      "oos_volatility": 0.0,
+      "selection_eligible": false,
+      "selection_score": -10.01948263184697,
+      "status": "failed_train_val_mdd_gate",
+      "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
+      "train_cagr": -0.00015480927596023264,
+      "train_calmar": -0.0005339626684614316,
+      "train_max_drawdown": 0.2899252796198328,
+      "train_scaled_score": -27.589443326779683,
+      "train_sharpe": -0.029681581350679425,
+      "train_sortino": -0.029760981848888177,
+      "train_total_return": -0.2759906736486075,
+      "train_volatility": 0.004824379219826541,
+      "val_cagr": -0.00019294664297231368,
+      "val_calmar": -0.003052040467105046,
+      "val_max_drawdown": 0.06321890061809354,
+      "val_scaled_score": -5.053382833026627,
+      "val_sharpe": -0.2822283673968385,
+      "val_sortino": -0.2573815705422399,
+      "val_total_return": -0.06298581577143558,
+      "val_volatility": 0.0006828938815888962
+    },
+    {
+      "blocking_reasons": "",
+      "cash_weight": 0.0,
+      "mode": "aggressive_realized_mode",
+      "oos_cagr": 0.0,
+      "oos_calmar": 0.0,
+      "oos_max_drawdown": 0.0,
+      "oos_scaled_score_report_only": 10.0,
+      "oos_sharpe": 0.0,
+      "oos_sortino": 0.0,
+      "oos_total_return": 0.0,
+      "oos_volatility": 0.0,
+      "selection_eligible": false,
+      "selection_score": -11.274471629877716,
+      "status": "failed_train_val_mdd_gate",
+      "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
+      "train_cagr": -0.00017077686304212136,
+      "train_calmar": -0.0005415130945773947,
+      "train_max_drawdown": 0.3153697754537188,
+      "train_scaled_score": -28.180654610452883,
+      "train_sharpe": -0.02896791235759313,
+      "train_sortino": -0.029116391760884267,
+      "train_total_return": -0.29971240698689394,
+      "train_volatility": 0.0053942409266883404,
+      "val_cagr": -0.00021292218587543044,
+      "val_calmar": -0.003057930842286606,
+      "val_max_drawdown": 0.06962949682544659,
+      "val_scaled_score": -6.201953799996198,
+      "val_sharpe": -0.2791290936420722,
+      "val_sortino": -0.25475809721556725,
+      "val_total_return": -0.06927552664308767,
+      "val_volatility": 0.0007618502725131916
+    },
+    {
+      "blocking_reasons": "",
+      "cash_weight": 0.0,
+      "mode": "blend_85_15",
+      "oos_cagr": 0.0,
+      "oos_calmar": 0.0,
+      "oos_max_drawdown": 0.0,
+      "oos_scaled_score_report_only": 10.0,
+      "oos_sharpe": 0.0,
+      "oos_sortino": 0.0,
+      "oos_total_return": 0.0,
+      "oos_volatility": 0.0,
+      "selection_eligible": false,
+      "selection_score": -11.274471629877716,
+      "status": "failed_train_val_mdd_gate",
+      "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
+      "train_cagr": -0.00017077686304212136,
+      "train_calmar": -0.0005415130945773947,
+      "train_max_drawdown": 0.3153697754537188,
+      "train_scaled_score": -28.180654610452883,
+      "train_sharpe": -0.02896791235759313,
+      "train_sortino": -0.029116391760884267,
+      "train_total_return": -0.29971240698689394,
+      "train_volatility": 0.0053942409266883404,
+      "val_cagr": -0.00021292218587543044,
+      "val_calmar": -0.003057930842286606,
+      "val_max_drawdown": 0.06962949682544659,
+      "val_scaled_score": -6.201953799996198,
+      "val_sharpe": -0.2791290936420722,
+      "val_sortino": -0.25475809721556725,
+      "val_total_return": -0.06927552664308767,
+      "val_volatility": 0.0007618502725131916
+    },
+    {
+      "blocking_reasons": "",
+      "cash_weight": 0.0,
+      "mode": "retuned_live_portfolio_hybrid_mode",
+      "oos_cagr": 0.0,
+      "oos_calmar": 0.0,
+      "oos_max_drawdown": 0.0,
+      "oos_scaled_score_report_only": 10.0,
+      "oos_sharpe": 0.0,
+      "oos_sortino": 0.0,
+      "oos_total_return": 0.0,
+      "oos_volatility": 0.0,
+      "selection_eligible": false,
+      "selection_score": -11.274471629877716,
+      "status": "failed_train_val_mdd_gate",
+      "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
+      "train_cagr": -0.00017077686304212136,
+      "train_calmar": -0.0005415130945773947,
+      "train_max_drawdown": 0.3153697754537188,
+      "train_scaled_score": -28.180654610452883,
+      "train_sharpe": -0.02896791235759313,
+      "train_sortino": -0.029116391760884267,
+      "train_total_return": -0.29971240698689394,
+      "train_volatility": 0.0053942409266883404,
+      "val_cagr": -0.00021292218587543044,
+      "val_calmar": -0.003057930842286606,
+      "val_max_drawdown": 0.06962949682544659,
+      "val_scaled_score": -6.201953799996198,
+      "val_sharpe": -0.2791290936420722,
+      "val_sortino": -0.25475809721556725,
+      "val_total_return": -0.06927552664308767,
+      "val_volatility": 0.0007618502725131916
+    },
+    {
+      "blocking_reasons": "",
+      "cash_weight": 0.0,
+      "mode": "static_blend_76_24",
+      "oos_cagr": 0.0,
+      "oos_calmar": 0.0,
+      "oos_max_drawdown": 0.0,
+      "oos_scaled_score_report_only": 10.0,
+      "oos_sharpe": 0.0,
+      "oos_sortino": 0.0,
+      "oos_total_return": 0.0,
+      "oos_volatility": 0.0,
+      "selection_eligible": false,
+      "selection_score": -11.274471629877716,
+      "status": "failed_train_val_mdd_gate",
+      "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
+      "train_cagr": -0.00017077686304212136,
+      "train_calmar": -0.0005415130945773947,
+      "train_max_drawdown": 0.3153697754537188,
+      "train_scaled_score": -28.180654610452883,
+      "train_sharpe": -0.02896791235759313,
+      "train_sortino": -0.029116391760884267,
+      "train_total_return": -0.29971240698689394,
+      "train_volatility": 0.0053942409266883404,
+      "val_cagr": -0.00021292218587543044,
+      "val_calmar": -0.003057930842286606,
+      "val_max_drawdown": 0.06962949682544659,
+      "val_scaled_score": -6.201953799996198,
+      "val_sharpe": -0.2791290936420722,
+      "val_sortino": -0.25475809721556725,
+      "val_total_return": -0.06927552664308767,
+      "val_volatility": 0.0007618502725131916
+    },
+    {
+      "blocking_reasons": "",
+      "cash_weight": 0.0,
+      "mode": "three_way_regime",
+      "oos_cagr": 0.0,
+      "oos_calmar": 0.0,
+      "oos_max_drawdown": 0.0,
+      "oos_scaled_score_report_only": 10.0,
+      "oos_sharpe": 0.0,
+      "oos_sortino": 0.0,
+      "oos_total_return": 0.0,
+      "oos_volatility": 0.0,
+      "selection_eligible": false,
+      "selection_score": -11.274471629877716,
+      "status": "failed_train_val_mdd_gate",
+      "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
+      "train_cagr": -0.00017077686304212136,
+      "train_calmar": -0.0005415130945773947,
+      "train_max_drawdown": 0.3153697754537188,
+      "train_scaled_score": -28.180654610452883,
+      "train_sharpe": -0.02896791235759313,
+      "train_sortino": -0.029116391760884267,
+      "train_total_return": -0.29971240698689394,
+      "train_volatility": 0.0053942409266883404,
+      "val_cagr": -0.00021292218587543044,
+      "val_calmar": -0.003057930842286606,
+      "val_max_drawdown": 0.06962949682544659,
+      "val_scaled_score": -6.201953799996198,
+      "val_sharpe": -0.2791290936420722,
+      "val_sortino": -0.25475809721556725,
+      "val_total_return": -0.06927552664308767,
+      "val_volatility": 0.0007618502725131916
+    },
+    {
+      "blocking_reasons": "",
+      "cash_weight": 0.0,
+      "mode": "balanced_overlay_80_20",
+      "oos_cagr": 0.0,
+      "oos_calmar": 0.0,
+      "oos_max_drawdown": 0.0,
+      "oos_scaled_score_report_only": 10.0,
+      "oos_sharpe": 0.0,
+      "oos_sortino": 0.0,
+      "oos_total_return": 0.0,
+      "oos_volatility": 0.0,
+      "selection_eligible": false,
+      "selection_score": -11.685463600292199,
+      "status": "failed_train_val_mdd_gate",
+      "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
+      "train_cagr": -0.00017443961685459364,
+      "train_calmar": -0.000543497494685509,
+      "train_max_drawdown": 0.3209575362542046,
+      "train_scaled_score": -28.295873428581626,
+      "train_sharpe": -0.02895211206074376,
+      "train_sortino": -0.029114301113628376,
+      "train_total_return": -0.3050433846160364,
+      "train_volatility": 0.005503250679132735,
+      "val_cagr": -0.00021868772910971224,
+      "val_calmar": -0.003061038319136019,
+      "val_max_drawdown": 0.07144233632835967,
+      "val_scaled_score": -6.592206383147505,
+      "val_sharpe": -0.2858757564999215,
+      "val_sortino": -0.26086182940371677,
+      "val_total_return": -0.07108329108641065,
+      "val_volatility": 0.0007640371227694776
+    },
+    {
+      "blocking_reasons": "",
+      "cash_weight": 0.0,
+      "mode": "balanced_overlay_mode",
+      "oos_cagr": 0.0,
+      "oos_calmar": 0.0,
+      "oos_max_drawdown": 0.0,
+      "oos_scaled_score_report_only": 10.0,
+      "oos_sharpe": 0.0,
+      "oos_sortino": 0.0,
+      "oos_total_return": 0.0,
+      "oos_volatility": 0.0,
+      "selection_eligible": false,
+      "selection_score": -11.685463600292199,
+      "status": "failed_train_val_mdd_gate",
+      "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
+      "train_cagr": -0.00017443961685459364,
+      "train_calmar": -0.000543497494685509,
+      "train_max_drawdown": 0.3209575362542046,
+      "train_scaled_score": -28.295873428581626,
+      "train_sharpe": -0.02895211206074376,
+      "train_sortino": -0.029114301113628376,
+      "train_total_return": -0.3050433846160364,
+      "train_volatility": 0.005503250679132735,
+      "val_cagr": -0.00021868772910971224,
+      "val_calmar": -0.003061038319136019,
+      "val_max_drawdown": 0.07144233632835967,
+      "val_scaled_score": -6.592206383147505,
+      "val_sharpe": -0.2858757564999215,
+      "val_sortino": -0.26086182940371677,
+      "val_total_return": -0.07108329108641065,
+      "val_volatility": 0.0007640371227694776
+    },
+    {
+      "blocking_reasons": "",
+      "cash_weight": 0.0,
+      "mode": "core_mode",
+      "oos_cagr": 0.0,
+      "oos_calmar": 0.0,
+      "oos_max_drawdown": 0.0,
+      "oos_scaled_score_report_only": 10.0,
+      "oos_sharpe": 0.0,
+      "oos_sortino": 0.0,
+      "oos_total_return": 0.0,
+      "oos_volatility": 0.0,
+      "selection_eligible": false,
+      "selection_score": -15.690439190967933,
+      "status": "failed_train_val_mdd_gate",
+      "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
+      "train_cagr": -0.00022093934233091694,
+      "train_calmar": -0.0005690144434996896,
+      "train_max_drawdown": 0.38828424279011725,
+      "train_scaled_score": -29.242348036025984,
+      "train_sharpe": -0.024759176178357052,
+      "train_sortino": -0.02521616567536144,
+      "train_total_return": -0.3692978903620334,
+      "train_volatility": 0.007723205560944686,
+      "val_cagr": -0.0002876953442438879,
+      "val_calmar": -0.0031011520541116143,
+      "val_max_drawdown": 0.09277047343178528,
+      "val_scaled_score": -10.426816544483255,
+      "val_sharpe": -0.29354161221466113,
+      "val_sortino": -0.26812740681807157,
+      "val_total_return": -0.09245056784486971,
+      "val_volatility": 0.0009785930814444675
+    },
+    {
+      "blocking_reasons": "",
+      "cash_weight": 0.0,
+      "mode": "soft_three_way_regime",
+      "oos_cagr": 0.0,
+      "oos_calmar": 0.0,
+      "oos_max_drawdown": 0.0,
+      "oos_scaled_score_report_only": 10.0,
+      "oos_sharpe": 0.0,
+      "oos_sortino": 0.0,
+      "oos_total_return": 0.0,
+      "oos_volatility": 0.0,
+      "selection_eligible": false,
+      "selection_score": -15.690439190967933,
+      "status": "failed_train_val_mdd_gate",
+      "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
+      "train_cagr": -0.00022093934233091694,
+      "train_calmar": -0.0005690144434996896,
+      "train_max_drawdown": 0.38828424279011725,
+      "train_scaled_score": -29.242348036025984,
+      "train_sharpe": -0.024759176178357052,
+      "train_sortino": -0.02521616567536144,
+      "train_total_return": -0.3692978903620334,
+      "train_volatility": 0.007723205560944686,
+      "val_cagr": -0.0002876953442438879,
+      "val_calmar": -0.0031011520541116143,
+      "val_max_drawdown": 0.09277047343178528,
+      "val_scaled_score": -10.426816544483255,
+      "val_sharpe": -0.29354161221466113,
+      "val_sortino": -0.26812740681807157,
+      "val_total_return": -0.09245056784486971,
+      "val_volatility": 0.0009785930814444675
+    },
+    {
+      "blocking_reasons": "",
+      "cash_weight": 0.0,
+      "mode": "incumbent",
+      "oos_cagr": 0.0,
+      "oos_calmar": 0.0,
+      "oos_max_drawdown": 0.0,
+      "oos_scaled_score_report_only": 10.0,
+      "oos_sharpe": 0.0,
+      "oos_sortino": 0.0,
+      "oos_total_return": 0.0,
+      "oos_volatility": 0.0,
+      "selection_eligible": false,
+      "selection_score": -17.11045457251387,
+      "status": "failed_train_val_mdd_gate",
+      "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
+      "train_cagr": -0.0002410925590241586,
+      "train_calmar": -0.0005775198105906506,
+      "train_max_drawdown": 0.41746197204488006,
+      "train_scaled_score": -29.473572668978782,
+      "train_sharpe": -0.023585220616651578,
+      "train_sortino": -0.024121882359019204,
+      "train_total_return": -0.39526815134936266,
+      "train_volatility": 0.008644497348761061,
+      "val_cagr": -0.00031629188764314975,
+      "val_calmar": -0.003111146248717,
+      "val_max_drawdown": 0.1016641013817929,
+      "val_scaled_score": -11.805211492097689,
+      "val_sharpe": -0.2843398795022962,
+      "val_sortino": -0.2600906200024758,
+      "val_total_return": -0.10116196158071888,
+      "val_volatility": 0.0011103799919363717
+    },
+    {
+      "blocking_reasons": "",
+      "cash_weight": 0.0,
+      "mode": "incumbent_only",
+      "oos_cagr": 0.0,
+      "oos_calmar": 0.0,
+      "oos_max_drawdown": 0.0,
+      "oos_scaled_score_report_only": 10.0,
+      "oos_sharpe": 0.0,
+      "oos_sortino": 0.0,
+      "oos_total_return": 0.0,
+      "oos_volatility": 0.0,
+      "selection_eligible": false,
+      "selection_score": -17.11045457251387,
+      "status": "failed_train_val_mdd_gate",
+      "symbols": "BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT",
+      "train_cagr": -0.0002410925590241586,
+      "train_calmar": -0.0005775198105906506,
+      "train_max_drawdown": 0.41746197204488006,
+      "train_scaled_score": -29.473572668978782,
+      "train_sharpe": -0.023585220616651578,
+      "train_sortino": -0.024121882359019204,
+      "train_total_return": -0.39526815134936266,
+      "train_volatility": 0.008644497348761061,
+      "val_cagr": -0.00031629188764314975,
+      "val_calmar": -0.003111146248717,
+      "val_max_drawdown": 0.1016641013817929,
+      "val_scaled_score": -11.805211492097689,
+      "val_sharpe": -0.2843398795022962,
+      "val_sortino": -0.2600906200024758,
+      "val_total_return": -0.10116196158071888,
+      "val_volatility": 0.0011103799919363717
     }
   ],
   "mode_results": [
     {
-      "blocking_reasons": [],
       "metrics": {
         "oos": {
           "cagr": 0.0,
@@ -1190,31 +926,79 @@
           "volatility": 0.0
         },
         "train": {
-          "cagr": 0.0,
-          "calmar": 0.0,
-          "max_drawdown": 0.0,
-          "sharpe": 0.0,
-          "sortino": 0.0,
-          "total_return": 0.0,
-          "volatility": 0.0
+          "cagr": -0.00017077686304212136,
+          "calmar": -0.0005415130945773947,
+          "max_drawdown": 0.3153697754537188,
+          "sharpe": -0.02896791235759313,
+          "sortino": -0.029116391760884267,
+          "total_return": -0.29971240698689394,
+          "volatility": 0.0053942409266883404
         },
         "val": {
-          "cagr": 0.0,
-          "calmar": 0.0,
-          "max_drawdown": 0.0,
-          "sharpe": 0.0,
-          "sortino": 0.0,
-          "total_return": 0.0,
-          "volatility": 0.0
+          "cagr": -0.00021292218587543044,
+          "calmar": -0.003057930842286606,
+          "max_drawdown": 0.06962949682544659,
+          "sharpe": -0.2791290936420722,
+          "sortino": -0.25475809721556725,
+          "total_return": -0.06927552664308767,
+          "volatility": 0.0007618502725131916
         }
       },
       "mode": "aggressive_realized_mode",
-      "scores": {},
-      "split_runs": [],
-      "status": "ready_for_live_equivalent_backtest"
+      "scores": {
+        "oos_scaled_score_report_only": 10.0,
+        "selection_score": -11.274471629877716,
+        "train_scaled_score": -28.180654610452883,
+        "train_val_mdd_ok": false,
+        "val_scaled_score": -6.201953799996198
+      },
+      "split_runs": [
+        {
+          "equivalence_key": "cda54f5449fe84c779f490499bf25fd9c80e37baf8e08e978246523cc0cbc6cd",
+          "final_equity": 7002.864270131062,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": -0.00017077686304212136,
+            "calmar": -0.0005415130945773947,
+            "max_drawdown": 0.3153697754537188,
+            "sharpe": -0.02896791235759313,
+            "sortino": -0.029116391760884267,
+            "total_return": -0.29971240698689394,
+            "volatility": 0.0053942409266883404
+          },
+          "mode": "aggressive_realized_mode",
+          "source_mode": "aggressive_realized_mode",
+          "split": "train",
+          "status": "completed",
+          "trade_count": 23116
+        },
+        {
+          "equivalence_key": "cda54f5449fe84c779f490499bf25fd9c80e37baf8e08e978246523cc0cbc6cd",
+          "final_equity": 9307.209473569123,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": -0.00021292218587543044,
+            "calmar": -0.003057930842286606,
+            "max_drawdown": 0.06962949682544659,
+            "sharpe": -0.2791290936420722,
+            "sortino": -0.25475809721556725,
+            "total_return": -0.06927552664308767,
+            "volatility": 0.0007618502725131916
+          },
+          "mode": "aggressive_realized_mode",
+          "source_mode": "aggressive_realized_mode",
+          "split": "val",
+          "status": "completed",
+          "trade_count": 4344
+        },
+        {
+          "split": "oos",
+          "status": "skipped_oos_data_incomplete"
+        }
+      ],
+      "status": "failed_train_val_mdd_gate"
     },
     {
-      "blocking_reasons": [],
       "metrics": {
         "oos": {
           "cagr": 0.0,
@@ -1245,12 +1029,60 @@
         }
       },
       "mode": "autoresearch_55_45",
-      "scores": {},
-      "split_runs": [],
-      "status": "ready_for_live_equivalent_backtest"
+      "scores": {
+        "oos_scaled_score_report_only": 10.0,
+        "selection_score": 11.8,
+        "train_scaled_score": 10.0,
+        "train_val_mdd_ok": true,
+        "val_scaled_score": 10.0
+      },
+      "split_runs": [
+        {
+          "equivalence_key": "13e8e770395e691daf3b9bf60eae6478bf84380ded2992e5d8fcf25587cd3323",
+          "final_equity": 10000.0,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": 0.0,
+            "calmar": 0.0,
+            "max_drawdown": 0.0,
+            "sharpe": 0.0,
+            "sortino": 0.0,
+            "total_return": 0.0,
+            "volatility": 0.0
+          },
+          "mode": "autoresearch_55_45",
+          "source_mode": "autoresearch_55_45",
+          "split": "train",
+          "status": "completed",
+          "trade_count": 0
+        },
+        {
+          "equivalence_key": "13e8e770395e691daf3b9bf60eae6478bf84380ded2992e5d8fcf25587cd3323",
+          "final_equity": 10000.0,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": 0.0,
+            "calmar": 0.0,
+            "max_drawdown": 0.0,
+            "sharpe": 0.0,
+            "sortino": 0.0,
+            "total_return": 0.0,
+            "volatility": 0.0
+          },
+          "mode": "autoresearch_55_45",
+          "source_mode": "autoresearch_55_45",
+          "split": "val",
+          "status": "completed",
+          "trade_count": 0
+        },
+        {
+          "split": "oos",
+          "status": "skipped_oos_data_incomplete"
+        }
+      ],
+      "status": "live_equivalent_validated"
     },
     {
-      "blocking_reasons": [],
       "metrics": {
         "oos": {
           "cagr": 0.0,
@@ -1262,31 +1094,79 @@
           "volatility": 0.0
         },
         "train": {
-          "cagr": 0.0,
-          "calmar": 0.0,
-          "max_drawdown": 0.0,
-          "sharpe": 0.0,
-          "sortino": 0.0,
-          "total_return": 0.0,
-          "volatility": 0.0
+          "cagr": -0.00017443961685459364,
+          "calmar": -0.000543497494685509,
+          "max_drawdown": 0.3209575362542046,
+          "sharpe": -0.02895211206074376,
+          "sortino": -0.029114301113628376,
+          "total_return": -0.3050433846160364,
+          "volatility": 0.005503250679132735
         },
         "val": {
-          "cagr": 0.0,
-          "calmar": 0.0,
-          "max_drawdown": 0.0,
-          "sharpe": 0.0,
-          "sortino": 0.0,
-          "total_return": 0.0,
-          "volatility": 0.0
+          "cagr": -0.00021868772910971224,
+          "calmar": -0.003061038319136019,
+          "max_drawdown": 0.07144233632835967,
+          "sharpe": -0.2858757564999215,
+          "sortino": -0.26086182940371677,
+          "total_return": -0.07108329108641065,
+          "volatility": 0.0007640371227694776
         }
       },
       "mode": "balanced_overlay_80_20",
-      "scores": {},
-      "split_runs": [],
-      "status": "ready_for_live_equivalent_backtest"
+      "scores": {
+        "oos_scaled_score_report_only": 10.0,
+        "selection_score": -11.685463600292199,
+        "train_scaled_score": -28.295873428581626,
+        "train_val_mdd_ok": false,
+        "val_scaled_score": -6.592206383147505
+      },
+      "split_runs": [
+        {
+          "equivalence_key": "65d0d14eff2456e412c806a69311fe079965794e2ff7376ebf399e71aafc0dd2",
+          "final_equity": 6949.554283839636,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": -0.00017443961685459364,
+            "calmar": -0.000543497494685509,
+            "max_drawdown": 0.3209575362542046,
+            "sharpe": -0.02895211206074376,
+            "sortino": -0.029114301113628376,
+            "total_return": -0.3050433846160364,
+            "volatility": 0.005503250679132735
+          },
+          "mode": "balanced_overlay_80_20",
+          "source_mode": "balanced_overlay_80_20",
+          "split": "train",
+          "status": "completed",
+          "trade_count": 23122
+        },
+        {
+          "equivalence_key": "65d0d14eff2456e412c806a69311fe079965794e2ff7376ebf399e71aafc0dd2",
+          "final_equity": 9289.131399135893,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": -0.00021868772910971224,
+            "calmar": -0.003061038319136019,
+            "max_drawdown": 0.07144233632835967,
+            "sharpe": -0.2858757564999215,
+            "sortino": -0.26086182940371677,
+            "total_return": -0.07108329108641065,
+            "volatility": 0.0007640371227694776
+          },
+          "mode": "balanced_overlay_80_20",
+          "source_mode": "balanced_overlay_80_20",
+          "split": "val",
+          "status": "completed",
+          "trade_count": 4344
+        },
+        {
+          "split": "oos",
+          "status": "skipped_oos_data_incomplete"
+        }
+      ],
+      "status": "failed_train_val_mdd_gate"
     },
     {
-      "blocking_reasons": [],
       "metrics": {
         "oos": {
           "cagr": 0.0,
@@ -1298,31 +1178,83 @@
           "volatility": 0.0
         },
         "train": {
-          "cagr": 0.0,
-          "calmar": 0.0,
-          "max_drawdown": 0.0,
-          "sharpe": 0.0,
-          "sortino": 0.0,
-          "total_return": 0.0,
-          "volatility": 0.0
+          "cagr": -0.00017443961685459364,
+          "calmar": -0.000543497494685509,
+          "max_drawdown": 0.3209575362542046,
+          "sharpe": -0.02895211206074376,
+          "sortino": -0.029114301113628376,
+          "total_return": -0.3050433846160364,
+          "volatility": 0.005503250679132735
         },
         "val": {
-          "cagr": 0.0,
-          "calmar": 0.0,
-          "max_drawdown": 0.0,
-          "sharpe": 0.0,
-          "sortino": 0.0,
-          "total_return": 0.0,
-          "volatility": 0.0
+          "cagr": -0.00021868772910971224,
+          "calmar": -0.003061038319136019,
+          "max_drawdown": 0.07144233632835967,
+          "sharpe": -0.2858757564999215,
+          "sortino": -0.26086182940371677,
+          "total_return": -0.07108329108641065,
+          "volatility": 0.0007640371227694776
         }
       },
       "mode": "balanced_overlay_mode",
-      "scores": {},
-      "split_runs": [],
-      "status": "ready_for_live_equivalent_backtest"
+      "scores": {
+        "oos_scaled_score_report_only": 10.0,
+        "selection_score": -11.685463600292199,
+        "train_scaled_score": -28.295873428581626,
+        "train_val_mdd_ok": false,
+        "val_scaled_score": -6.592206383147505
+      },
+      "split_runs": [
+        {
+          "equivalence_key": "65d0d14eff2456e412c806a69311fe079965794e2ff7376ebf399e71aafc0dd2",
+          "equivalent_source_mode": "balanced_overlay_80_20",
+          "final_equity": 6949.554283839636,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": -0.00017443961685459364,
+            "calmar": -0.000543497494685509,
+            "max_drawdown": 0.3209575362542046,
+            "sharpe": -0.02895211206074376,
+            "sortino": -0.029114301113628376,
+            "total_return": -0.3050433846160364,
+            "volatility": 0.005503250679132735
+          },
+          "mode": "balanced_overlay_mode",
+          "reuse_status": "completed_equivalent_reuse",
+          "source_mode": "balanced_overlay_80_20",
+          "split": "train",
+          "status": "completed",
+          "trade_count": 23122
+        },
+        {
+          "equivalence_key": "65d0d14eff2456e412c806a69311fe079965794e2ff7376ebf399e71aafc0dd2",
+          "equivalent_source_mode": "balanced_overlay_80_20",
+          "final_equity": 9289.131399135893,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": -0.00021868772910971224,
+            "calmar": -0.003061038319136019,
+            "max_drawdown": 0.07144233632835967,
+            "sharpe": -0.2858757564999215,
+            "sortino": -0.26086182940371677,
+            "total_return": -0.07108329108641065,
+            "volatility": 0.0007640371227694776
+          },
+          "mode": "balanced_overlay_mode",
+          "reuse_status": "completed_equivalent_reuse",
+          "source_mode": "balanced_overlay_80_20",
+          "split": "val",
+          "status": "completed",
+          "trade_count": 4344
+        },
+        {
+          "split": "oos",
+          "status": "skipped_oos_data_incomplete"
+        }
+      ],
+      "status": "failed_train_val_mdd_gate"
     },
     {
-      "blocking_reasons": [],
       "metrics": {
         "oos": {
           "cagr": 0.0,
@@ -1334,31 +1266,83 @@
           "volatility": 0.0
         },
         "train": {
-          "cagr": 0.0,
-          "calmar": 0.0,
-          "max_drawdown": 0.0,
-          "sharpe": 0.0,
-          "sortino": 0.0,
-          "total_return": 0.0,
-          "volatility": 0.0
+          "cagr": -0.00017077686304212136,
+          "calmar": -0.0005415130945773947,
+          "max_drawdown": 0.3153697754537188,
+          "sharpe": -0.02896791235759313,
+          "sortino": -0.029116391760884267,
+          "total_return": -0.29971240698689394,
+          "volatility": 0.0053942409266883404
         },
         "val": {
-          "cagr": 0.0,
-          "calmar": 0.0,
-          "max_drawdown": 0.0,
-          "sharpe": 0.0,
-          "sortino": 0.0,
-          "total_return": 0.0,
-          "volatility": 0.0
+          "cagr": -0.00021292218587543044,
+          "calmar": -0.003057930842286606,
+          "max_drawdown": 0.06962949682544659,
+          "sharpe": -0.2791290936420722,
+          "sortino": -0.25475809721556725,
+          "total_return": -0.06927552664308767,
+          "volatility": 0.0007618502725131916
         }
       },
       "mode": "blend_85_15",
-      "scores": {},
-      "split_runs": [],
-      "status": "ready_for_live_equivalent_backtest"
+      "scores": {
+        "oos_scaled_score_report_only": 10.0,
+        "selection_score": -11.274471629877716,
+        "train_scaled_score": -28.180654610452883,
+        "train_val_mdd_ok": false,
+        "val_scaled_score": -6.201953799996198
+      },
+      "split_runs": [
+        {
+          "equivalence_key": "cda54f5449fe84c779f490499bf25fd9c80e37baf8e08e978246523cc0cbc6cd",
+          "equivalent_source_mode": "aggressive_realized_mode",
+          "final_equity": 7002.864270131062,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": -0.00017077686304212136,
+            "calmar": -0.0005415130945773947,
+            "max_drawdown": 0.3153697754537188,
+            "sharpe": -0.02896791235759313,
+            "sortino": -0.029116391760884267,
+            "total_return": -0.29971240698689394,
+            "volatility": 0.0053942409266883404
+          },
+          "mode": "blend_85_15",
+          "reuse_status": "completed_equivalent_reuse",
+          "source_mode": "aggressive_realized_mode",
+          "split": "train",
+          "status": "completed",
+          "trade_count": 23116
+        },
+        {
+          "equivalence_key": "cda54f5449fe84c779f490499bf25fd9c80e37baf8e08e978246523cc0cbc6cd",
+          "equivalent_source_mode": "aggressive_realized_mode",
+          "final_equity": 9307.209473569123,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": -0.00021292218587543044,
+            "calmar": -0.003057930842286606,
+            "max_drawdown": 0.06962949682544659,
+            "sharpe": -0.2791290936420722,
+            "sortino": -0.25475809721556725,
+            "total_return": -0.06927552664308767,
+            "volatility": 0.0007618502725131916
+          },
+          "mode": "blend_85_15",
+          "reuse_status": "completed_equivalent_reuse",
+          "source_mode": "aggressive_realized_mode",
+          "split": "val",
+          "status": "completed",
+          "trade_count": 4344
+        },
+        {
+          "split": "oos",
+          "status": "skipped_oos_data_incomplete"
+        }
+      ],
+      "status": "failed_train_val_mdd_gate"
     },
     {
-      "blocking_reasons": [],
       "metrics": {
         "oos": {
           "cagr": 0.0,
@@ -1370,31 +1354,79 @@
           "volatility": 0.0
         },
         "train": {
-          "cagr": 0.0,
-          "calmar": 0.0,
-          "max_drawdown": 0.0,
-          "sharpe": 0.0,
-          "sortino": 0.0,
-          "total_return": 0.0,
-          "volatility": 0.0
+          "cagr": -0.00022093934233091694,
+          "calmar": -0.0005690144434996896,
+          "max_drawdown": 0.38828424279011725,
+          "sharpe": -0.024759176178357052,
+          "sortino": -0.02521616567536144,
+          "total_return": -0.3692978903620334,
+          "volatility": 0.007723205560944686
         },
         "val": {
-          "cagr": 0.0,
-          "calmar": 0.0,
-          "max_drawdown": 0.0,
-          "sharpe": 0.0,
-          "sortino": 0.0,
-          "total_return": 0.0,
-          "volatility": 0.0
+          "cagr": -0.0002876953442438879,
+          "calmar": -0.0031011520541116143,
+          "max_drawdown": 0.09277047343178528,
+          "sharpe": -0.29354161221466113,
+          "sortino": -0.26812740681807157,
+          "total_return": -0.09245056784486971,
+          "volatility": 0.0009785930814444675
         }
       },
       "mode": "core_mode",
-      "scores": {},
-      "split_runs": [],
-      "status": "ready_for_live_equivalent_backtest"
+      "scores": {
+        "oos_scaled_score_report_only": 10.0,
+        "selection_score": -15.690439190967933,
+        "train_scaled_score": -29.242348036025984,
+        "train_val_mdd_ok": false,
+        "val_scaled_score": -10.426816544483255
+      },
+      "split_runs": [
+        {
+          "equivalence_key": "419540a0607df0f313509e5b6b0089e45d207f2363f2357a5f6638505fc680e7",
+          "final_equity": 6307.007016379666,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": -0.00022093934233091694,
+            "calmar": -0.0005690144434996896,
+            "max_drawdown": 0.38828424279011725,
+            "sharpe": -0.024759176178357052,
+            "sortino": -0.02521616567536144,
+            "total_return": -0.3692978903620334,
+            "volatility": 0.007723205560944686
+          },
+          "mode": "core_mode",
+          "source_mode": "core_mode",
+          "split": "train",
+          "status": "completed",
+          "trade_count": 23245
+        },
+        {
+          "equivalence_key": "419540a0607df0f313509e5b6b0089e45d207f2363f2357a5f6638505fc680e7",
+          "final_equity": 9075.450031551301,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": -0.0002876953442438879,
+            "calmar": -0.0031011520541116143,
+            "max_drawdown": 0.09277047343178528,
+            "sharpe": -0.29354161221466113,
+            "sortino": -0.26812740681807157,
+            "total_return": -0.09245056784486971,
+            "volatility": 0.0009785930814444675
+          },
+          "mode": "core_mode",
+          "source_mode": "core_mode",
+          "split": "val",
+          "status": "completed",
+          "trade_count": 4406
+        },
+        {
+          "split": "oos",
+          "status": "skipped_oos_data_incomplete"
+        }
+      ],
+      "status": "failed_train_val_mdd_gate"
     },
     {
-      "blocking_reasons": [],
       "metrics": {
         "oos": {
           "cagr": 0.0,
@@ -1406,31 +1438,79 @@
           "volatility": 0.0
         },
         "train": {
-          "cagr": 0.0,
-          "calmar": 0.0,
-          "max_drawdown": 0.0,
-          "sharpe": 0.0,
-          "sortino": 0.0,
-          "total_return": 0.0,
-          "volatility": 0.0
+          "cagr": -0.00015480927596023264,
+          "calmar": -0.0005339626684614316,
+          "max_drawdown": 0.2899252796198328,
+          "sharpe": -0.029681581350679425,
+          "sortino": -0.029760981848888177,
+          "total_return": -0.2759906736486075,
+          "volatility": 0.004824379219826541
         },
         "val": {
-          "cagr": 0.0,
-          "calmar": 0.0,
-          "max_drawdown": 0.0,
-          "sharpe": 0.0,
-          "sortino": 0.0,
-          "total_return": 0.0,
-          "volatility": 0.0
+          "cagr": -0.00019294664297231368,
+          "calmar": -0.003052040467105046,
+          "max_drawdown": 0.06321890061809354,
+          "sharpe": -0.2822283673968385,
+          "sortino": -0.2573815705422399,
+          "total_return": -0.06298581577143558,
+          "volatility": 0.0006828938815888962
         }
       },
       "mode": "defensive_overlay_mode",
-      "scores": {},
-      "split_runs": [],
-      "status": "ready_for_live_equivalent_backtest"
+      "scores": {
+        "oos_scaled_score_report_only": 10.0,
+        "selection_score": -10.01948263184697,
+        "train_scaled_score": -27.589443326779683,
+        "train_val_mdd_ok": false,
+        "val_scaled_score": -5.053382833026627
+      },
+      "split_runs": [
+        {
+          "equivalence_key": "af5b5a2b0159a533dbd501f66eab3b836cc4b577d3d16d43695826fbf90c83c5",
+          "final_equity": 7240.082863513925,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": -0.00015480927596023264,
+            "calmar": -0.0005339626684614316,
+            "max_drawdown": 0.2899252796198328,
+            "sharpe": -0.029681581350679425,
+            "sortino": -0.029760981848888177,
+            "total_return": -0.2759906736486075,
+            "volatility": 0.004824379219826541
+          },
+          "mode": "defensive_overlay_mode",
+          "source_mode": "defensive_overlay_mode",
+          "split": "train",
+          "status": "completed",
+          "trade_count": 23069
+        },
+        {
+          "equivalence_key": "af5b5a2b0159a533dbd501f66eab3b836cc4b577d3d16d43695826fbf90c83c5",
+          "final_equity": 9370.110452285644,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": -0.00019294664297231368,
+            "calmar": -0.003052040467105046,
+            "max_drawdown": 0.06321890061809354,
+            "sharpe": -0.2822283673968385,
+            "sortino": -0.2573815705422399,
+            "total_return": -0.06298581577143558,
+            "volatility": 0.0006828938815888962
+          },
+          "mode": "defensive_overlay_mode",
+          "source_mode": "defensive_overlay_mode",
+          "split": "val",
+          "status": "completed",
+          "trade_count": 4328
+        },
+        {
+          "split": "oos",
+          "status": "skipped_oos_data_incomplete"
+        }
+      ],
+      "status": "failed_train_val_mdd_gate"
     },
     {
-      "blocking_reasons": [],
       "metrics": {
         "oos": {
           "cagr": 0.0,
@@ -1461,12 +1541,17 @@
         }
       },
       "mode": "hybrid_guarded_mode",
-      "scores": {},
+      "scores": {
+        "oos_scaled_score_report_only": 10.0,
+        "selection_score": 11.8,
+        "train_scaled_score": 10.0,
+        "train_val_mdd_ok": true,
+        "val_scaled_score": 10.0
+      },
       "split_runs": [],
       "status": "eligible_conservative_cash_fallback"
     },
     {
-      "blocking_reasons": [],
       "metrics": {
         "oos": {
           "cagr": 0.0,
@@ -1478,31 +1563,79 @@
           "volatility": 0.0
         },
         "train": {
-          "cagr": 0.0,
-          "calmar": 0.0,
-          "max_drawdown": 0.0,
-          "sharpe": 0.0,
-          "sortino": 0.0,
-          "total_return": 0.0,
-          "volatility": 0.0
+          "cagr": -0.0002410925590241586,
+          "calmar": -0.0005775198105906506,
+          "max_drawdown": 0.41746197204488006,
+          "sharpe": -0.023585220616651578,
+          "sortino": -0.024121882359019204,
+          "total_return": -0.39526815134936266,
+          "volatility": 0.008644497348761061
         },
         "val": {
-          "cagr": 0.0,
-          "calmar": 0.0,
-          "max_drawdown": 0.0,
-          "sharpe": 0.0,
-          "sortino": 0.0,
-          "total_return": 0.0,
-          "volatility": 0.0
+          "cagr": -0.00031629188764314975,
+          "calmar": -0.003111146248717,
+          "max_drawdown": 0.1016641013817929,
+          "sharpe": -0.2843398795022962,
+          "sortino": -0.2600906200024758,
+          "total_return": -0.10116196158071888,
+          "volatility": 0.0011103799919363717
         }
       },
       "mode": "incumbent",
-      "scores": {},
-      "split_runs": [],
-      "status": "ready_for_live_equivalent_backtest"
+      "scores": {
+        "oos_scaled_score_report_only": 10.0,
+        "selection_score": -17.11045457251387,
+        "train_scaled_score": -29.473572668978782,
+        "train_val_mdd_ok": false,
+        "val_scaled_score": -11.805211492097689
+      },
+      "split_runs": [
+        {
+          "equivalence_key": "b400bedf9d152e762842797a61d30904154faf9c3bc829cb43053489025bdb6d",
+          "final_equity": 6047.302096506373,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": -0.0002410925590241586,
+            "calmar": -0.0005775198105906506,
+            "max_drawdown": 0.41746197204488006,
+            "sharpe": -0.023585220616651578,
+            "sortino": -0.024121882359019204,
+            "total_return": -0.39526815134936266,
+            "volatility": 0.008644497348761061
+          },
+          "mode": "incumbent",
+          "source_mode": "incumbent",
+          "split": "train",
+          "status": "completed",
+          "trade_count": 23310
+        },
+        {
+          "equivalence_key": "b400bedf9d152e762842797a61d30904154faf9c3bc829cb43053489025bdb6d",
+          "final_equity": 8988.33050419281,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": -0.00031629188764314975,
+            "calmar": -0.003111146248717,
+            "max_drawdown": 0.1016641013817929,
+            "sharpe": -0.2843398795022962,
+            "sortino": -0.2600906200024758,
+            "total_return": -0.10116196158071888,
+            "volatility": 0.0011103799919363717
+          },
+          "mode": "incumbent",
+          "source_mode": "incumbent",
+          "split": "val",
+          "status": "completed",
+          "trade_count": 4416
+        },
+        {
+          "split": "oos",
+          "status": "skipped_oos_data_incomplete"
+        }
+      ],
+      "status": "failed_train_val_mdd_gate"
     },
     {
-      "blocking_reasons": [],
       "metrics": {
         "oos": {
           "cagr": 0.0,
@@ -1514,31 +1647,83 @@
           "volatility": 0.0
         },
         "train": {
-          "cagr": 0.0,
-          "calmar": 0.0,
-          "max_drawdown": 0.0,
-          "sharpe": 0.0,
-          "sortino": 0.0,
-          "total_return": 0.0,
-          "volatility": 0.0
+          "cagr": -0.0002410925590241586,
+          "calmar": -0.0005775198105906506,
+          "max_drawdown": 0.41746197204488006,
+          "sharpe": -0.023585220616651578,
+          "sortino": -0.024121882359019204,
+          "total_return": -0.39526815134936266,
+          "volatility": 0.008644497348761061
         },
         "val": {
-          "cagr": 0.0,
-          "calmar": 0.0,
-          "max_drawdown": 0.0,
-          "sharpe": 0.0,
-          "sortino": 0.0,
-          "total_return": 0.0,
-          "volatility": 0.0
+          "cagr": -0.00031629188764314975,
+          "calmar": -0.003111146248717,
+          "max_drawdown": 0.1016641013817929,
+          "sharpe": -0.2843398795022962,
+          "sortino": -0.2600906200024758,
+          "total_return": -0.10116196158071888,
+          "volatility": 0.0011103799919363717
         }
       },
       "mode": "incumbent_only",
-      "scores": {},
-      "split_runs": [],
-      "status": "ready_for_live_equivalent_backtest"
+      "scores": {
+        "oos_scaled_score_report_only": 10.0,
+        "selection_score": -17.11045457251387,
+        "train_scaled_score": -29.473572668978782,
+        "train_val_mdd_ok": false,
+        "val_scaled_score": -11.805211492097689
+      },
+      "split_runs": [
+        {
+          "equivalence_key": "b400bedf9d152e762842797a61d30904154faf9c3bc829cb43053489025bdb6d",
+          "equivalent_source_mode": "incumbent",
+          "final_equity": 6047.302096506373,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": -0.0002410925590241586,
+            "calmar": -0.0005775198105906506,
+            "max_drawdown": 0.41746197204488006,
+            "sharpe": -0.023585220616651578,
+            "sortino": -0.024121882359019204,
+            "total_return": -0.39526815134936266,
+            "volatility": 0.008644497348761061
+          },
+          "mode": "incumbent_only",
+          "reuse_status": "completed_equivalent_reuse",
+          "source_mode": "incumbent",
+          "split": "train",
+          "status": "completed",
+          "trade_count": 23310
+        },
+        {
+          "equivalence_key": "b400bedf9d152e762842797a61d30904154faf9c3bc829cb43053489025bdb6d",
+          "equivalent_source_mode": "incumbent",
+          "final_equity": 8988.33050419281,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": -0.00031629188764314975,
+            "calmar": -0.003111146248717,
+            "max_drawdown": 0.1016641013817929,
+            "sharpe": -0.2843398795022962,
+            "sortino": -0.2600906200024758,
+            "total_return": -0.10116196158071888,
+            "volatility": 0.0011103799919363717
+          },
+          "mode": "incumbent_only",
+          "reuse_status": "completed_equivalent_reuse",
+          "source_mode": "incumbent",
+          "split": "val",
+          "status": "completed",
+          "trade_count": 4416
+        },
+        {
+          "split": "oos",
+          "status": "skipped_oos_data_incomplete"
+        }
+      ],
+      "status": "failed_train_val_mdd_gate"
     },
     {
-      "blocking_reasons": [],
       "metrics": {
         "oos": {
           "cagr": 0.0,
@@ -1569,12 +1754,60 @@
         }
       },
       "mode": "legacy_no_highvol_hybrid_mode",
-      "scores": {},
-      "split_runs": [],
-      "status": "ready_for_live_equivalent_backtest"
+      "scores": {
+        "oos_scaled_score_report_only": 10.0,
+        "selection_score": 11.8,
+        "train_scaled_score": 10.0,
+        "train_val_mdd_ok": true,
+        "val_scaled_score": 10.0
+      },
+      "split_runs": [
+        {
+          "equivalence_key": "b5cdf09820cff21a6ab41ec677fce822e31a4682a3e5a8d09f78c36334a8d188",
+          "final_equity": 10000.0,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": 0.0,
+            "calmar": 0.0,
+            "max_drawdown": 0.0,
+            "sharpe": 0.0,
+            "sortino": 0.0,
+            "total_return": 0.0,
+            "volatility": 0.0
+          },
+          "mode": "legacy_no_highvol_hybrid_mode",
+          "source_mode": "legacy_no_highvol_hybrid_mode",
+          "split": "train",
+          "status": "completed",
+          "trade_count": 0
+        },
+        {
+          "equivalence_key": "b5cdf09820cff21a6ab41ec677fce822e31a4682a3e5a8d09f78c36334a8d188",
+          "final_equity": 10000.0,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": 0.0,
+            "calmar": 0.0,
+            "max_drawdown": 0.0,
+            "sharpe": 0.0,
+            "sortino": 0.0,
+            "total_return": 0.0,
+            "volatility": 0.0
+          },
+          "mode": "legacy_no_highvol_hybrid_mode",
+          "source_mode": "legacy_no_highvol_hybrid_mode",
+          "split": "val",
+          "status": "completed",
+          "trade_count": 0
+        },
+        {
+          "split": "oos",
+          "status": "skipped_oos_data_incomplete"
+        }
+      ],
+      "status": "live_equivalent_validated"
     },
     {
-      "blocking_reasons": [],
       "metrics": {
         "oos": {
           "cagr": 0.0,
@@ -1605,12 +1838,60 @@
         }
       },
       "mode": "pair_fast_exit",
-      "scores": {},
-      "split_runs": [],
-      "status": "ready_for_live_equivalent_backtest"
+      "scores": {
+        "oos_scaled_score_report_only": 10.0,
+        "selection_score": 11.8,
+        "train_scaled_score": 10.0,
+        "train_val_mdd_ok": true,
+        "val_scaled_score": 10.0
+      },
+      "split_runs": [
+        {
+          "equivalence_key": "a951c497cf5046a90fdf82d2ccb627012dce9e5357d1406bc5cd4f94f3117c00",
+          "final_equity": 10000.0,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": 0.0,
+            "calmar": 0.0,
+            "max_drawdown": 0.0,
+            "sharpe": 0.0,
+            "sortino": 0.0,
+            "total_return": 0.0,
+            "volatility": 0.0
+          },
+          "mode": "pair_fast_exit",
+          "source_mode": "pair_fast_exit",
+          "split": "train",
+          "status": "completed",
+          "trade_count": 0
+        },
+        {
+          "equivalence_key": "a951c497cf5046a90fdf82d2ccb627012dce9e5357d1406bc5cd4f94f3117c00",
+          "final_equity": 10000.0,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": 0.0,
+            "calmar": 0.0,
+            "max_drawdown": 0.0,
+            "sharpe": 0.0,
+            "sortino": 0.0,
+            "total_return": 0.0,
+            "volatility": 0.0
+          },
+          "mode": "pair_fast_exit",
+          "source_mode": "pair_fast_exit",
+          "split": "val",
+          "status": "completed",
+          "trade_count": 0
+        },
+        {
+          "split": "oos",
+          "status": "skipped_oos_data_incomplete"
+        }
+      ],
+      "status": "live_equivalent_validated"
     },
     {
-      "blocking_reasons": [],
       "metrics": {
         "oos": {
           "cagr": 0.0,
@@ -1641,12 +1922,64 @@
         }
       },
       "mode": "pair_tactical_mode",
-      "scores": {},
-      "split_runs": [],
-      "status": "ready_for_live_equivalent_backtest"
+      "scores": {
+        "oos_scaled_score_report_only": 10.0,
+        "selection_score": 11.8,
+        "train_scaled_score": 10.0,
+        "train_val_mdd_ok": true,
+        "val_scaled_score": 10.0
+      },
+      "split_runs": [
+        {
+          "equivalence_key": "a951c497cf5046a90fdf82d2ccb627012dce9e5357d1406bc5cd4f94f3117c00",
+          "equivalent_source_mode": "pair_fast_exit",
+          "final_equity": 10000.0,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": 0.0,
+            "calmar": 0.0,
+            "max_drawdown": 0.0,
+            "sharpe": 0.0,
+            "sortino": 0.0,
+            "total_return": 0.0,
+            "volatility": 0.0
+          },
+          "mode": "pair_tactical_mode",
+          "reuse_status": "completed_equivalent_reuse",
+          "source_mode": "pair_fast_exit",
+          "split": "train",
+          "status": "completed",
+          "trade_count": 0
+        },
+        {
+          "equivalence_key": "a951c497cf5046a90fdf82d2ccb627012dce9e5357d1406bc5cd4f94f3117c00",
+          "equivalent_source_mode": "pair_fast_exit",
+          "final_equity": 10000.0,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": 0.0,
+            "calmar": 0.0,
+            "max_drawdown": 0.0,
+            "sharpe": 0.0,
+            "sortino": 0.0,
+            "total_return": 0.0,
+            "volatility": 0.0
+          },
+          "mode": "pair_tactical_mode",
+          "reuse_status": "completed_equivalent_reuse",
+          "source_mode": "pair_fast_exit",
+          "split": "val",
+          "status": "completed",
+          "trade_count": 0
+        },
+        {
+          "split": "oos",
+          "status": "skipped_oos_data_incomplete"
+        }
+      ],
+      "status": "live_equivalent_validated"
     },
     {
-      "blocking_reasons": [],
       "metrics": {
         "oos": {
           "cagr": 0.0,
@@ -1658,31 +1991,79 @@
           "volatility": 0.0
         },
         "train": {
-          "cagr": 0.0,
-          "calmar": 0.0,
-          "max_drawdown": 0.0,
-          "sharpe": 0.0,
-          "sortino": 0.0,
-          "total_return": 0.0,
-          "volatility": 0.0
+          "cagr": -9.448334803097147e-05,
+          "calmar": -0.000499458470328813,
+          "max_drawdown": 0.1891715801090917,
+          "sharpe": -0.03194658717854634,
+          "sortino": -0.03179260402440318,
+          "total_return": -0.17888969657865328,
+          "volatility": 0.002832175975413782
         },
         "val": {
-          "cagr": 0.0,
-          "calmar": 0.0,
-          "max_drawdown": 0.0,
-          "sharpe": 0.0,
-          "sortino": 0.0,
-          "total_return": 0.0,
-          "volatility": 0.0
+          "cagr": -0.00013393199354627683,
+          "calmar": -0.0030179431333675804,
+          "max_drawdown": 0.04437856766268105,
+          "sharpe": -0.29510459785087584,
+          "sortino": -0.2687210724521832,
+          "total_return": -0.04415282647003538,
+          "volatility": 0.00045352762385550963
         }
       },
       "mode": "production_guarded_portfolio",
-      "scores": {},
-      "split_runs": [],
-      "status": "ready_for_live_equivalent_backtest"
+      "scores": {
+        "oos_scaled_score_report_only": 10.0,
+        "selection_score": -5.246399292318607,
+        "train_scaled_score": -20.616034188398917,
+        "train_val_mdd_ok": true,
+        "val_scaled_score": -1.5355131384068021
+      },
+      "split_runs": [
+        {
+          "equivalence_key": "9d29e5772b0d61d59d759b93007988a62876cd3d375fffe128d51b4d5af94ad0",
+          "final_equity": 8211.095264213467,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": -9.448334803097147e-05,
+            "calmar": -0.000499458470328813,
+            "max_drawdown": 0.1891715801090917,
+            "sharpe": -0.03194658717854634,
+            "sortino": -0.03179260402440318,
+            "total_return": -0.17888969657865328,
+            "volatility": 0.002832175975413782
+          },
+          "mode": "production_guarded_portfolio",
+          "source_mode": "production_guarded_portfolio",
+          "split": "train",
+          "status": "completed",
+          "trade_count": 18836
+        },
+        {
+          "equivalence_key": "9d29e5772b0d61d59d759b93007988a62876cd3d375fffe128d51b4d5af94ad0",
+          "final_equity": 9558.449805299646,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": -0.00013393199354627683,
+            "calmar": -0.0030179431333675804,
+            "max_drawdown": 0.04437856766268105,
+            "sharpe": -0.29510459785087584,
+            "sortino": -0.2687210724521832,
+            "total_return": -0.04415282647003538,
+            "volatility": 0.00045352762385550963
+          },
+          "mode": "production_guarded_portfolio",
+          "source_mode": "production_guarded_portfolio",
+          "split": "val",
+          "status": "completed",
+          "trade_count": 4280
+        },
+        {
+          "split": "oos",
+          "status": "skipped_oos_data_incomplete"
+        }
+      ],
+      "status": "live_equivalent_validated"
     },
     {
-      "blocking_reasons": [],
       "metrics": {
         "oos": {
           "cagr": 0.0,
@@ -1694,31 +2075,79 @@
           "volatility": 0.0
         },
         "train": {
-          "cagr": 0.0,
-          "calmar": 0.0,
-          "max_drawdown": 0.0,
-          "sharpe": 0.0,
-          "sortino": 0.0,
-          "total_return": 0.0,
-          "volatility": 0.0
+          "cagr": -3.099358355018733e-05,
+          "calmar": -0.0004615843343211753,
+          "max_drawdown": 0.0671460906396829,
+          "sharpe": -0.02833359423527644,
+          "sortino": -0.027909464278733483,
+          "total_return": -0.06260674344171657,
+          "volatility": 0.0010735602689798153
         },
         "val": {
-          "cagr": 0.0,
-          "calmar": 0.0,
-          "max_drawdown": 0.0,
-          "sharpe": 0.0,
-          "sortino": 0.0,
-          "total_return": 0.0,
-          "volatility": 0.0
+          "cagr": -3.993020581161133e-05,
+          "calmar": -0.002962777581462782,
+          "max_drawdown": 0.013477287684854492,
+          "sharpe": -0.23074622705206227,
+          "sortino": -0.20923476839262525,
+          "total_return": -0.013372238927156777,
+          "volatility": 0.00017298674139463863
         }
       },
       "mode": "production_guarded_state_vwap_pair_mode",
-      "scores": {},
-      "split_runs": [],
-      "status": "ready_for_live_equivalent_backtest"
+      "scores": {
+        "oos_scaled_score_report_only": 10.0,
+        "selection_score": 4.711586783101624,
+        "train_scaled_score": -2.9664123225698695,
+        "train_val_mdd_ok": true,
+        "val_scaled_score": 5.2455410011642005
+      },
+      "split_runs": [
+        {
+          "equivalence_key": "25dd4ca1593e1e937d6c6c6eec692e41e534aa20158322763a07808bac4e37fd",
+          "final_equity": 9373.929415582836,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": -3.099358355018733e-05,
+            "calmar": -0.0004615843343211753,
+            "max_drawdown": 0.0671460906396829,
+            "sharpe": -0.02833359423527644,
+            "sortino": -0.027909464278733483,
+            "total_return": -0.06260674344171657,
+            "volatility": 0.0010735602689798153
+          },
+          "mode": "production_guarded_state_vwap_pair_mode",
+          "source_mode": "production_guarded_state_vwap_pair_mode",
+          "split": "train",
+          "status": "completed",
+          "trade_count": 15137
+        },
+        {
+          "equivalence_key": "25dd4ca1593e1e937d6c6c6eec692e41e534aa20158322763a07808bac4e37fd",
+          "final_equity": 9866.26901072843,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": -3.993020581161133e-05,
+            "calmar": -0.002962777581462782,
+            "max_drawdown": 0.013477287684854492,
+            "sharpe": -0.23074622705206227,
+            "sortino": -0.20923476839262525,
+            "total_return": -0.013372238927156777,
+            "volatility": 0.00017298674139463863
+          },
+          "mode": "production_guarded_state_vwap_pair_mode",
+          "source_mode": "production_guarded_state_vwap_pair_mode",
+          "split": "val",
+          "status": "completed",
+          "trade_count": 2841
+        },
+        {
+          "split": "oos",
+          "status": "skipped_oos_data_incomplete"
+        }
+      ],
+      "status": "live_equivalent_validated"
     },
     {
-      "blocking_reasons": [],
       "metrics": {
         "oos": {
           "cagr": 0.0,
@@ -1730,31 +2159,83 @@
           "volatility": 0.0
         },
         "train": {
-          "cagr": 0.0,
-          "calmar": 0.0,
-          "max_drawdown": 0.0,
-          "sharpe": 0.0,
-          "sortino": 0.0,
-          "total_return": 0.0,
-          "volatility": 0.0
+          "cagr": -0.00017077686304212136,
+          "calmar": -0.0005415130945773947,
+          "max_drawdown": 0.3153697754537188,
+          "sharpe": -0.02896791235759313,
+          "sortino": -0.029116391760884267,
+          "total_return": -0.29971240698689394,
+          "volatility": 0.0053942409266883404
         },
         "val": {
-          "cagr": 0.0,
-          "calmar": 0.0,
-          "max_drawdown": 0.0,
-          "sharpe": 0.0,
-          "sortino": 0.0,
-          "total_return": 0.0,
-          "volatility": 0.0
+          "cagr": -0.00021292218587543044,
+          "calmar": -0.003057930842286606,
+          "max_drawdown": 0.06962949682544659,
+          "sharpe": -0.2791290936420722,
+          "sortino": -0.25475809721556725,
+          "total_return": -0.06927552664308767,
+          "volatility": 0.0007618502725131916
         }
       },
       "mode": "retuned_live_portfolio_hybrid_mode",
-      "scores": {},
-      "split_runs": [],
-      "status": "ready_for_live_equivalent_backtest"
+      "scores": {
+        "oos_scaled_score_report_only": 10.0,
+        "selection_score": -11.274471629877716,
+        "train_scaled_score": -28.180654610452883,
+        "train_val_mdd_ok": false,
+        "val_scaled_score": -6.201953799996198
+      },
+      "split_runs": [
+        {
+          "equivalence_key": "cda54f5449fe84c779f490499bf25fd9c80e37baf8e08e978246523cc0cbc6cd",
+          "equivalent_source_mode": "aggressive_realized_mode",
+          "final_equity": 7002.864270131062,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": -0.00017077686304212136,
+            "calmar": -0.0005415130945773947,
+            "max_drawdown": 0.3153697754537188,
+            "sharpe": -0.02896791235759313,
+            "sortino": -0.029116391760884267,
+            "total_return": -0.29971240698689394,
+            "volatility": 0.0053942409266883404
+          },
+          "mode": "retuned_live_portfolio_hybrid_mode",
+          "reuse_status": "completed_equivalent_reuse",
+          "source_mode": "aggressive_realized_mode",
+          "split": "train",
+          "status": "completed",
+          "trade_count": 23116
+        },
+        {
+          "equivalence_key": "cda54f5449fe84c779f490499bf25fd9c80e37baf8e08e978246523cc0cbc6cd",
+          "equivalent_source_mode": "aggressive_realized_mode",
+          "final_equity": 9307.209473569123,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": -0.00021292218587543044,
+            "calmar": -0.003057930842286606,
+            "max_drawdown": 0.06962949682544659,
+            "sharpe": -0.2791290936420722,
+            "sortino": -0.25475809721556725,
+            "total_return": -0.06927552664308767,
+            "volatility": 0.0007618502725131916
+          },
+          "mode": "retuned_live_portfolio_hybrid_mode",
+          "reuse_status": "completed_equivalent_reuse",
+          "source_mode": "aggressive_realized_mode",
+          "split": "val",
+          "status": "completed",
+          "trade_count": 4344
+        },
+        {
+          "split": "oos",
+          "status": "skipped_oos_data_incomplete"
+        }
+      ],
+      "status": "failed_train_val_mdd_gate"
     },
     {
-      "blocking_reasons": [],
       "metrics": {
         "oos": {
           "cagr": 0.0,
@@ -1785,12 +2266,17 @@
         }
       },
       "mode": "risk_off_mode",
-      "scores": {},
+      "scores": {
+        "oos_scaled_score_report_only": 10.0,
+        "selection_score": 11.8,
+        "train_scaled_score": 10.0,
+        "train_val_mdd_ok": true,
+        "val_scaled_score": 10.0
+      },
       "split_runs": [],
       "status": "eligible_conservative_cash_fallback"
     },
     {
-      "blocking_reasons": [],
       "metrics": {
         "oos": {
           "cagr": 0.0,
@@ -1802,31 +2288,83 @@
           "volatility": 0.0
         },
         "train": {
-          "cagr": 0.0,
-          "calmar": 0.0,
-          "max_drawdown": 0.0,
-          "sharpe": 0.0,
-          "sortino": 0.0,
-          "total_return": 0.0,
-          "volatility": 0.0
+          "cagr": -0.00022093934233091694,
+          "calmar": -0.0005690144434996896,
+          "max_drawdown": 0.38828424279011725,
+          "sharpe": -0.024759176178357052,
+          "sortino": -0.02521616567536144,
+          "total_return": -0.3692978903620334,
+          "volatility": 0.007723205560944686
         },
         "val": {
-          "cagr": 0.0,
-          "calmar": 0.0,
-          "max_drawdown": 0.0,
-          "sharpe": 0.0,
-          "sortino": 0.0,
-          "total_return": 0.0,
-          "volatility": 0.0
+          "cagr": -0.0002876953442438879,
+          "calmar": -0.0031011520541116143,
+          "max_drawdown": 0.09277047343178528,
+          "sharpe": -0.29354161221466113,
+          "sortino": -0.26812740681807157,
+          "total_return": -0.09245056784486971,
+          "volatility": 0.0009785930814444675
         }
       },
       "mode": "soft_three_way_regime",
-      "scores": {},
-      "split_runs": [],
-      "status": "ready_for_live_equivalent_backtest"
+      "scores": {
+        "oos_scaled_score_report_only": 10.0,
+        "selection_score": -15.690439190967933,
+        "train_scaled_score": -29.242348036025984,
+        "train_val_mdd_ok": false,
+        "val_scaled_score": -10.426816544483255
+      },
+      "split_runs": [
+        {
+          "equivalence_key": "419540a0607df0f313509e5b6b0089e45d207f2363f2357a5f6638505fc680e7",
+          "equivalent_source_mode": "core_mode",
+          "final_equity": 6307.007016379666,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": -0.00022093934233091694,
+            "calmar": -0.0005690144434996896,
+            "max_drawdown": 0.38828424279011725,
+            "sharpe": -0.024759176178357052,
+            "sortino": -0.02521616567536144,
+            "total_return": -0.3692978903620334,
+            "volatility": 0.007723205560944686
+          },
+          "mode": "soft_three_way_regime",
+          "reuse_status": "completed_equivalent_reuse",
+          "source_mode": "core_mode",
+          "split": "train",
+          "status": "completed",
+          "trade_count": 23245
+        },
+        {
+          "equivalence_key": "419540a0607df0f313509e5b6b0089e45d207f2363f2357a5f6638505fc680e7",
+          "equivalent_source_mode": "core_mode",
+          "final_equity": 9075.450031551301,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": -0.0002876953442438879,
+            "calmar": -0.0031011520541116143,
+            "max_drawdown": 0.09277047343178528,
+            "sharpe": -0.29354161221466113,
+            "sortino": -0.26812740681807157,
+            "total_return": -0.09245056784486971,
+            "volatility": 0.0009785930814444675
+          },
+          "mode": "soft_three_way_regime",
+          "reuse_status": "completed_equivalent_reuse",
+          "source_mode": "core_mode",
+          "split": "val",
+          "status": "completed",
+          "trade_count": 4406
+        },
+        {
+          "split": "oos",
+          "status": "skipped_oos_data_incomplete"
+        }
+      ],
+      "status": "failed_train_val_mdd_gate"
     },
     {
-      "blocking_reasons": [],
       "metrics": {
         "oos": {
           "cagr": 0.0,
@@ -1857,12 +2395,60 @@
         }
       },
       "mode": "state_vwap_pair",
-      "scores": {},
-      "split_runs": [],
-      "status": "ready_for_live_equivalent_backtest"
+      "scores": {
+        "oos_scaled_score_report_only": 10.0,
+        "selection_score": 11.8,
+        "train_scaled_score": 10.0,
+        "train_val_mdd_ok": true,
+        "val_scaled_score": 10.0
+      },
+      "split_runs": [
+        {
+          "equivalence_key": "9e9d70d7f0af98cc6776dfd8e7a3c6df0b73fec878d1f98e3cc9faaeb4144e75",
+          "final_equity": 10000.0,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": 0.0,
+            "calmar": 0.0,
+            "max_drawdown": 0.0,
+            "sharpe": 0.0,
+            "sortino": 0.0,
+            "total_return": 0.0,
+            "volatility": 0.0
+          },
+          "mode": "state_vwap_pair",
+          "source_mode": "state_vwap_pair",
+          "split": "train",
+          "status": "completed",
+          "trade_count": 0
+        },
+        {
+          "equivalence_key": "9e9d70d7f0af98cc6776dfd8e7a3c6df0b73fec878d1f98e3cc9faaeb4144e75",
+          "final_equity": 10000.0,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": 0.0,
+            "calmar": 0.0,
+            "max_drawdown": 0.0,
+            "sharpe": 0.0,
+            "sortino": 0.0,
+            "total_return": 0.0,
+            "volatility": 0.0
+          },
+          "mode": "state_vwap_pair",
+          "source_mode": "state_vwap_pair",
+          "split": "val",
+          "status": "completed",
+          "trade_count": 0
+        },
+        {
+          "split": "oos",
+          "status": "skipped_oos_data_incomplete"
+        }
+      ],
+      "status": "live_equivalent_validated"
     },
     {
-      "blocking_reasons": [],
       "metrics": {
         "oos": {
           "cagr": 0.0,
@@ -1874,31 +2460,83 @@
           "volatility": 0.0
         },
         "train": {
-          "cagr": 0.0,
-          "calmar": 0.0,
-          "max_drawdown": 0.0,
-          "sharpe": 0.0,
-          "sortino": 0.0,
-          "total_return": 0.0,
-          "volatility": 0.0
+          "cagr": -0.00017077686304212136,
+          "calmar": -0.0005415130945773947,
+          "max_drawdown": 0.3153697754537188,
+          "sharpe": -0.02896791235759313,
+          "sortino": -0.029116391760884267,
+          "total_return": -0.29971240698689394,
+          "volatility": 0.0053942409266883404
         },
         "val": {
-          "cagr": 0.0,
-          "calmar": 0.0,
-          "max_drawdown": 0.0,
-          "sharpe": 0.0,
-          "sortino": 0.0,
-          "total_return": 0.0,
-          "volatility": 0.0
+          "cagr": -0.00021292218587543044,
+          "calmar": -0.003057930842286606,
+          "max_drawdown": 0.06962949682544659,
+          "sharpe": -0.2791290936420722,
+          "sortino": -0.25475809721556725,
+          "total_return": -0.06927552664308767,
+          "volatility": 0.0007618502725131916
         }
       },
       "mode": "static_blend_76_24",
-      "scores": {},
-      "split_runs": [],
-      "status": "ready_for_live_equivalent_backtest"
+      "scores": {
+        "oos_scaled_score_report_only": 10.0,
+        "selection_score": -11.274471629877716,
+        "train_scaled_score": -28.180654610452883,
+        "train_val_mdd_ok": false,
+        "val_scaled_score": -6.201953799996198
+      },
+      "split_runs": [
+        {
+          "equivalence_key": "cda54f5449fe84c779f490499bf25fd9c80e37baf8e08e978246523cc0cbc6cd",
+          "equivalent_source_mode": "aggressive_realized_mode",
+          "final_equity": 7002.864270131062,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": -0.00017077686304212136,
+            "calmar": -0.0005415130945773947,
+            "max_drawdown": 0.3153697754537188,
+            "sharpe": -0.02896791235759313,
+            "sortino": -0.029116391760884267,
+            "total_return": -0.29971240698689394,
+            "volatility": 0.0053942409266883404
+          },
+          "mode": "static_blend_76_24",
+          "reuse_status": "completed_equivalent_reuse",
+          "source_mode": "aggressive_realized_mode",
+          "split": "train",
+          "status": "completed",
+          "trade_count": 23116
+        },
+        {
+          "equivalence_key": "cda54f5449fe84c779f490499bf25fd9c80e37baf8e08e978246523cc0cbc6cd",
+          "equivalent_source_mode": "aggressive_realized_mode",
+          "final_equity": 9307.209473569123,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": -0.00021292218587543044,
+            "calmar": -0.003057930842286606,
+            "max_drawdown": 0.06962949682544659,
+            "sharpe": -0.2791290936420722,
+            "sortino": -0.25475809721556725,
+            "total_return": -0.06927552664308767,
+            "volatility": 0.0007618502725131916
+          },
+          "mode": "static_blend_76_24",
+          "reuse_status": "completed_equivalent_reuse",
+          "source_mode": "aggressive_realized_mode",
+          "split": "val",
+          "status": "completed",
+          "trade_count": 4344
+        },
+        {
+          "split": "oos",
+          "status": "skipped_oos_data_incomplete"
+        }
+      ],
+      "status": "failed_train_val_mdd_gate"
     },
     {
-      "blocking_reasons": [],
       "metrics": {
         "oos": {
           "cagr": 0.0,
@@ -1929,12 +2567,64 @@
         }
       },
       "mode": "strict_autoresearch_1x",
-      "scores": {},
-      "split_runs": [],
-      "status": "ready_for_live_equivalent_backtest"
+      "scores": {
+        "oos_scaled_score_report_only": 10.0,
+        "selection_score": 11.8,
+        "train_scaled_score": 10.0,
+        "train_val_mdd_ok": true,
+        "val_scaled_score": 10.0
+      },
+      "split_runs": [
+        {
+          "equivalence_key": "13e8e770395e691daf3b9bf60eae6478bf84380ded2992e5d8fcf25587cd3323",
+          "equivalent_source_mode": "autoresearch_55_45",
+          "final_equity": 10000.0,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": 0.0,
+            "calmar": 0.0,
+            "max_drawdown": 0.0,
+            "sharpe": 0.0,
+            "sortino": 0.0,
+            "total_return": 0.0,
+            "volatility": 0.0
+          },
+          "mode": "strict_autoresearch_1x",
+          "reuse_status": "completed_equivalent_reuse",
+          "source_mode": "autoresearch_55_45",
+          "split": "train",
+          "status": "completed",
+          "trade_count": 0
+        },
+        {
+          "equivalence_key": "13e8e770395e691daf3b9bf60eae6478bf84380ded2992e5d8fcf25587cd3323",
+          "equivalent_source_mode": "autoresearch_55_45",
+          "final_equity": 10000.0,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": 0.0,
+            "calmar": 0.0,
+            "max_drawdown": 0.0,
+            "sharpe": 0.0,
+            "sortino": 0.0,
+            "total_return": 0.0,
+            "volatility": 0.0
+          },
+          "mode": "strict_autoresearch_1x",
+          "reuse_status": "completed_equivalent_reuse",
+          "source_mode": "autoresearch_55_45",
+          "split": "val",
+          "status": "completed",
+          "trade_count": 0
+        },
+        {
+          "split": "oos",
+          "status": "skipped_oos_data_incomplete"
+        }
+      ],
+      "status": "live_equivalent_validated"
     },
     {
-      "blocking_reasons": [],
       "metrics": {
         "oos": {
           "cagr": 0.0,
@@ -1946,31 +2636,79 @@
           "volatility": 0.0
         },
         "train": {
-          "cagr": 0.0,
-          "calmar": 0.0,
-          "max_drawdown": 0.0,
-          "sharpe": 0.0,
-          "sortino": 0.0,
-          "total_return": 0.0,
-          "volatility": 0.0
+          "cagr": -6.59622949472638e-05,
+          "calmar": -0.0004807432647608787,
+          "max_drawdown": 0.13720898405113047,
+          "sharpe": -0.028721206805851697,
+          "sortino": -0.028433636417035765,
+          "total_return": -0.1285521611286451,
+          "volatility": 0.002211583524922597
         },
         "val": {
-          "cagr": 0.0,
-          "calmar": 0.0,
-          "max_drawdown": 0.0,
-          "sharpe": 0.0,
-          "sortino": 0.0,
-          "total_return": 0.0,
-          "volatility": 0.0
+          "cagr": -9.760557896287825e-05,
+          "calmar": -0.0030043372718595593,
+          "max_drawdown": 0.03248822290263852,
+          "sharpe": -0.2612341056185063,
+          "sortino": -0.23728547875201855,
+          "total_return": -0.0323730322032989,
+          "volatility": 0.0003733839328845127
         }
       },
       "mode": "strict_autoresearch_practical_mode",
-      "scores": {},
-      "split_runs": [],
-      "status": "ready_for_live_equivalent_backtest"
+      "scores": {
+        "oos_scaled_score_report_only": 10.0,
+        "selection_score": -1.4360692974811953,
+        "train_scaled_score": -14.13811136104023,
+        "train_val_mdd_ok": true,
+        "val_scaled_score": 1.1087907475060457
+      },
+      "split_runs": [
+        {
+          "equivalence_key": "a0fbf00a355c5741dc79ff50de11a73ca66a57b97cf8a68b5411aa1f2c7f1ac2",
+          "final_equity": 8714.472298713548,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": -6.59622949472638e-05,
+            "calmar": -0.0004807432647608787,
+            "max_drawdown": 0.13720898405113047,
+            "sharpe": -0.028721206805851697,
+            "sortino": -0.028433636417035765,
+            "total_return": -0.1285521611286451,
+            "volatility": 0.002211583524922597
+          },
+          "mode": "strict_autoresearch_practical_mode",
+          "source_mode": "strict_autoresearch_practical_mode",
+          "split": "train",
+          "status": "completed",
+          "trade_count": 16059
+        },
+        {
+          "equivalence_key": "a0fbf00a355c5741dc79ff50de11a73ca66a57b97cf8a68b5411aa1f2c7f1ac2",
+          "final_equity": 9676.252047967011,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": -9.760557896287825e-05,
+            "calmar": -0.0030043372718595593,
+            "max_drawdown": 0.03248822290263852,
+            "sharpe": -0.2612341056185063,
+            "sortino": -0.23728547875201855,
+            "total_return": -0.0323730322032989,
+            "volatility": 0.0003733839328845127
+          },
+          "mode": "strict_autoresearch_practical_mode",
+          "source_mode": "strict_autoresearch_practical_mode",
+          "split": "val",
+          "status": "completed",
+          "trade_count": 3658
+        },
+        {
+          "split": "oos",
+          "status": "skipped_oos_data_incomplete"
+        }
+      ],
+      "status": "live_equivalent_validated"
     },
     {
-      "blocking_reasons": [],
       "metrics": {
         "oos": {
           "cagr": 0.0,
@@ -1982,31 +2720,83 @@
           "volatility": 0.0
         },
         "train": {
-          "cagr": 0.0,
-          "calmar": 0.0,
-          "max_drawdown": 0.0,
-          "sharpe": 0.0,
-          "sortino": 0.0,
-          "total_return": 0.0,
-          "volatility": 0.0
+          "cagr": -0.00017077686304212136,
+          "calmar": -0.0005415130945773947,
+          "max_drawdown": 0.3153697754537188,
+          "sharpe": -0.02896791235759313,
+          "sortino": -0.029116391760884267,
+          "total_return": -0.29971240698689394,
+          "volatility": 0.0053942409266883404
         },
         "val": {
-          "cagr": 0.0,
-          "calmar": 0.0,
-          "max_drawdown": 0.0,
-          "sharpe": 0.0,
-          "sortino": 0.0,
-          "total_return": 0.0,
-          "volatility": 0.0
+          "cagr": -0.00021292218587543044,
+          "calmar": -0.003057930842286606,
+          "max_drawdown": 0.06962949682544659,
+          "sharpe": -0.2791290936420722,
+          "sortino": -0.25475809721556725,
+          "total_return": -0.06927552664308767,
+          "volatility": 0.0007618502725131916
         }
       },
       "mode": "three_way_regime",
-      "scores": {},
-      "split_runs": [],
-      "status": "ready_for_live_equivalent_backtest"
+      "scores": {
+        "oos_scaled_score_report_only": 10.0,
+        "selection_score": -11.274471629877716,
+        "train_scaled_score": -28.180654610452883,
+        "train_val_mdd_ok": false,
+        "val_scaled_score": -6.201953799996198
+      },
+      "split_runs": [
+        {
+          "equivalence_key": "cda54f5449fe84c779f490499bf25fd9c80e37baf8e08e978246523cc0cbc6cd",
+          "equivalent_source_mode": "aggressive_realized_mode",
+          "final_equity": 7002.864270131062,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": -0.00017077686304212136,
+            "calmar": -0.0005415130945773947,
+            "max_drawdown": 0.3153697754537188,
+            "sharpe": -0.02896791235759313,
+            "sortino": -0.029116391760884267,
+            "total_return": -0.29971240698689394,
+            "volatility": 0.0053942409266883404
+          },
+          "mode": "three_way_regime",
+          "reuse_status": "completed_equivalent_reuse",
+          "source_mode": "aggressive_realized_mode",
+          "split": "train",
+          "status": "completed",
+          "trade_count": 23116
+        },
+        {
+          "equivalence_key": "cda54f5449fe84c779f490499bf25fd9c80e37baf8e08e978246523cc0cbc6cd",
+          "equivalent_source_mode": "aggressive_realized_mode",
+          "final_equity": 9307.209473569123,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": -0.00021292218587543044,
+            "calmar": -0.003057930842286606,
+            "max_drawdown": 0.06962949682544659,
+            "sharpe": -0.2791290936420722,
+            "sortino": -0.25475809721556725,
+            "total_return": -0.06927552664308767,
+            "volatility": 0.0007618502725131916
+          },
+          "mode": "three_way_regime",
+          "reuse_status": "completed_equivalent_reuse",
+          "source_mode": "aggressive_realized_mode",
+          "split": "val",
+          "status": "completed",
+          "trade_count": 4344
+        },
+        {
+          "split": "oos",
+          "status": "skipped_oos_data_incomplete"
+        }
+      ],
+      "status": "failed_train_val_mdd_gate"
     },
     {
-      "blocking_reasons": [],
       "metrics": {
         "oos": {
           "cagr": 0.0,
@@ -2037,9 +2827,58 @@
         }
       },
       "mode": "wave2_pair",
-      "scores": {},
-      "split_runs": [],
-      "status": "ready_for_live_equivalent_backtest"
+      "scores": {
+        "oos_scaled_score_report_only": 10.0,
+        "selection_score": 11.8,
+        "train_scaled_score": 10.0,
+        "train_val_mdd_ok": true,
+        "val_scaled_score": 10.0
+      },
+      "split_runs": [
+        {
+          "equivalence_key": "1a542eb0128b9684697771c9ba390b47e8228fc8a10473d09643b6a6edc01f72",
+          "final_equity": 10000.0,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": 0.0,
+            "calmar": 0.0,
+            "max_drawdown": 0.0,
+            "sharpe": 0.0,
+            "sortino": 0.0,
+            "total_return": 0.0,
+            "volatility": 0.0
+          },
+          "mode": "wave2_pair",
+          "source_mode": "wave2_pair",
+          "split": "train",
+          "status": "completed",
+          "trade_count": 0
+        },
+        {
+          "equivalence_key": "1a542eb0128b9684697771c9ba390b47e8228fc8a10473d09643b6a6edc01f72",
+          "final_equity": 10000.0,
+          "liquidation_count": 0,
+          "metrics": {
+            "cagr": 0.0,
+            "calmar": 0.0,
+            "max_drawdown": 0.0,
+            "sharpe": 0.0,
+            "sortino": 0.0,
+            "total_return": 0.0,
+            "volatility": 0.0
+          },
+          "mode": "wave2_pair",
+          "source_mode": "wave2_pair",
+          "split": "val",
+          "status": "completed",
+          "trade_count": 0
+        },
+        {
+          "split": "oos",
+          "status": "skipped_oos_data_incomplete"
+        }
+      ],
+      "status": "live_equivalent_validated"
     }
   ],
   "preflights": {
@@ -2122,8 +2961,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/BNBUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -2169,8 +3008,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/BTCUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -2216,8 +3055,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -2263,8 +3102,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/SOLUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -2310,8 +3149,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/TRXUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -2395,8 +3234,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/BNBUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -2442,8 +3281,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/BTCUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -2489,8 +3328,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/TRXUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -2618,8 +3457,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/BNBUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -2665,8 +3504,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/BTCUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -2712,8 +3551,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -2759,8 +3598,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/SOLUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -2806,8 +3645,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/TRXUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -2937,8 +3776,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/BNBUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -2984,8 +3823,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/BTCUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -3031,8 +3870,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -3078,8 +3917,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/SOLUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -3125,8 +3964,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/TRXUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -3246,8 +4085,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/BNBUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -3293,8 +4132,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/BTCUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -3340,8 +4179,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -3387,8 +4226,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/SOLUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -3434,8 +4273,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/TRXUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -3555,8 +4394,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/BNBUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -3602,8 +4441,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/BTCUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -3649,8 +4488,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -3696,8 +4535,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/SOLUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -3743,8 +4582,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/TRXUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -3874,8 +4713,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/BNBUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -3921,8 +4760,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/BTCUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -3968,8 +4807,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -4015,8 +4854,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/SOLUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -4062,8 +4901,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/TRXUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -4173,8 +5012,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/BNBUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -4220,8 +5059,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/BTCUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -4267,8 +5106,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -4314,8 +5153,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/SOLUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -4361,8 +5200,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/TRXUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -4462,8 +5301,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/BNBUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -4509,8 +5348,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/BTCUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -4556,8 +5395,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -4603,8 +5442,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/SOLUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -4650,8 +5489,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/TRXUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -4735,8 +5574,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/BNBUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -4782,8 +5621,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/TRXUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -4854,8 +5693,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/BNBUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -4901,8 +5740,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/TRXUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -4973,8 +5812,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/BNBUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -5020,8 +5859,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/TRXUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -5138,8 +5977,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/BNBUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -5185,8 +6024,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/BTCUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -5232,8 +6071,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -5279,8 +6118,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/SOLUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -5326,8 +6165,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/TRXUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -5457,8 +6296,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/BNBUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -5504,8 +6343,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/BTCUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -5551,8 +6390,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -5598,8 +6437,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/SOLUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -5645,8 +6484,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/TRXUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -5766,8 +6605,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/BNBUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -5813,8 +6652,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/BTCUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -5860,8 +6699,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -5907,8 +6746,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/SOLUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -5954,8 +6793,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/TRXUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -6091,8 +6930,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/BNBUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -6138,8 +6977,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/BTCUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -6185,8 +7024,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -6232,8 +7071,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/SOLUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -6279,8 +7118,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/TRXUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -6354,8 +7193,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/BNBUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -6401,8 +7240,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/TRXUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -6519,8 +7358,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/BNBUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -6566,8 +7405,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/BTCUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -6613,8 +7452,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -6660,8 +7499,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/SOLUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -6707,8 +7546,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/TRXUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -6792,8 +7631,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/BNBUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -6839,8 +7678,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/BTCUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -6886,8 +7725,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/TRXUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -7005,8 +7844,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/BNBUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -7052,8 +7891,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/BTCUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -7099,8 +7938,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -7146,8 +7985,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/SOLUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -7193,8 +8032,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/TRXUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -7314,8 +8153,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/BNBUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -7361,8 +8200,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/BTCUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -7408,8 +8247,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -7455,8 +8294,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/SOLUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 58,
-            "required_day_count": 58
+            "missing_day_count": 62,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -7502,8 +8341,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/TRXUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -7577,8 +8416,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/BNBUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -7624,8 +8463,8 @@
               "data/market_parquet/market_ohlcv_1s/binance/TRXUSDT/2026-04.parquet"
             ],
             "legacy_monthly_files_present": 2,
-            "missing_day_count": 24,
-            "required_day_count": 58
+            "missing_day_count": 28,
+            "required_day_count": 62
           },
           "train": {
             "committed_day_count": 365,
@@ -56815,7 +57654,7 @@
       "start": "2026-01-01"
     },
     {
-      "end_inclusive": "2026-04-27",
+      "end_inclusive": "2026-05-01",
       "name": "oos",
       "role": "report_only",
       "start": "2026-03-01"

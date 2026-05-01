@@ -57,6 +57,7 @@ class Strategy(ABC):
         return {}
 
     decision_cadence_seconds: int | None = None
+    uses_timeframe_aggregator: bool = False
     required_timeframes: tuple[str, ...] = ()
     required_lookbacks: dict[str, int] = {}
     required_inputs: tuple[str, ...] = ()

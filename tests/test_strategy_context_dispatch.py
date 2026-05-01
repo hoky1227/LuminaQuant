@@ -33,6 +33,11 @@ class _WindowStrategy(Strategy):
         self.calls.append(("window", aggregator))
 
 
+class _AggregatorWindowStrategy(_WindowStrategy):
+    uses_timeframe_aggregator = True
+    required_timeframes = ("20s",)
+
+
 class _FeatureStrategy(Strategy):
     required_features = ("funding_rate",)
 
@@ -89,7 +94,20 @@ def test_engine_preserves_window_callback_for_legacy_strategies():
 
     assert len(strategy.calls) == 1
     assert strategy.calls[0][0] == "window"
-    assert strategy.calls[0][1] is not None
+    assert strategy.calls[0][1] is None
+    assert engine.timeframe_aggregator is None
+
+
+def test_engine_builds_aggregator_only_for_explicit_aggregator_users():
+    strategy = _AggregatorWindowStrategy()
+    engine = _build_engine(strategy)
+
+    engine.handle_market_window_event(_event())
+
+    assert len(strategy.calls) == 1
+    assert strategy.calls[0][0] == "window"
+    assert strategy.calls[0][1] is engine.timeframe_aggregator
+    assert engine.timeframe_aggregator is not None
 
 
 def test_engine_fails_fast_when_required_features_are_unavailable():

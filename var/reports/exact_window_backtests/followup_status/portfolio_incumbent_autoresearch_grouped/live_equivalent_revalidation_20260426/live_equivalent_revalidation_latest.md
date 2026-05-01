@@ -1,6 +1,6 @@
 # Live-equivalent candidate revalidation — 2026-04-26
 
-Generated: `2026-04-27T11:21:08.598494Z`
+Generated: `2026-05-01T05:41:36.560945Z`
 
 ## 기준 변경
 
@@ -11,8 +11,8 @@ Generated: `2026-04-27T11:21:08.598494Z`
 
 ## 결론
 
-- Best full-universe live-equivalent candidate: `NONE` — train/val 원시 market-data 기반 engine backtest가 완료된 후보가 없다.
-- Best deployable true-HYBRID candidate: `NONE` — dynamic/true HYBRID는 아직 live-equivalent engine validation 미완료다.
+- Best full-universe live-equivalent candidate: `autoresearch_55_45`
+- Best deployable true-HYBRID candidate: `legacy_no_highvol_hybrid_mode`
 - Conservative fallback/shadow: `risk_off_mode` (`eligible_conservative_cash_fallback`)
 
 ## 왜 이전 val return을 그대로 쓰면 안 되는가
@@ -23,30 +23,30 @@ Generated: `2026-04-27T11:21:08.598494Z`
 
 | rank | mode | status | score | val ret | val Sharpe | val MDD | symbols/blocker |
 |---:|---|---|---:|---:|---:|---:|---|
-| 1 | `aggressive_realized_mode` | `ready_for_live_equivalent_backtest` | n/a | +0.00% | 0.0000 | +0.00% | BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT |
-| 2 | `autoresearch_55_45` | `ready_for_live_equivalent_backtest` | n/a | +0.00% | 0.0000 | +0.00% | BTC/USDT,TRX/USDT,BNB/USDT |
-| 3 | `balanced_overlay_80_20` | `ready_for_live_equivalent_backtest` | n/a | +0.00% | 0.0000 | +0.00% | BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT |
-| 4 | `balanced_overlay_mode` | `ready_for_live_equivalent_backtest` | n/a | +0.00% | 0.0000 | +0.00% | BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT |
-| 5 | `blend_85_15` | `ready_for_live_equivalent_backtest` | n/a | +0.00% | 0.0000 | +0.00% | BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT |
-| 6 | `core_mode` | `ready_for_live_equivalent_backtest` | n/a | +0.00% | 0.0000 | +0.00% | BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT |
-| 7 | `defensive_overlay_mode` | `ready_for_live_equivalent_backtest` | n/a | +0.00% | 0.0000 | +0.00% | BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT |
-| 8 | `incumbent` | `ready_for_live_equivalent_backtest` | n/a | +0.00% | 0.0000 | +0.00% | BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT |
-| 9 | `incumbent_only` | `ready_for_live_equivalent_backtest` | n/a | +0.00% | 0.0000 | +0.00% | BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT |
-| 10 | `legacy_no_highvol_hybrid_mode` | `ready_for_live_equivalent_backtest` | n/a | +0.00% | 0.0000 | +0.00% | BNB/USDT,TRX/USDT |
-| 11 | `pair_fast_exit` | `ready_for_live_equivalent_backtest` | n/a | +0.00% | 0.0000 | +0.00% | BNB/USDT,TRX/USDT |
-| 12 | `pair_tactical_mode` | `ready_for_live_equivalent_backtest` | n/a | +0.00% | 0.0000 | +0.00% | BNB/USDT,TRX/USDT |
-| 13 | `production_guarded_portfolio` | `ready_for_live_equivalent_backtest` | n/a | +0.00% | 0.0000 | +0.00% | BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT |
-| 14 | `production_guarded_state_vwap_pair_mode` | `ready_for_live_equivalent_backtest` | n/a | +0.00% | 0.0000 | +0.00% | BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT |
-| 15 | `retuned_live_portfolio_hybrid_mode` | `ready_for_live_equivalent_backtest` | n/a | +0.00% | 0.0000 | +0.00% | BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT |
-| 16 | `soft_three_way_regime` | `ready_for_live_equivalent_backtest` | n/a | +0.00% | 0.0000 | +0.00% | BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT |
-| 17 | `state_vwap_pair` | `ready_for_live_equivalent_backtest` | n/a | +0.00% | 0.0000 | +0.00% | BNB/USDT,TRX/USDT |
-| 18 | `static_blend_76_24` | `ready_for_live_equivalent_backtest` | n/a | +0.00% | 0.0000 | +0.00% | BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT |
-| 19 | `strict_autoresearch_1x` | `ready_for_live_equivalent_backtest` | n/a | +0.00% | 0.0000 | +0.00% | BTC/USDT,TRX/USDT,BNB/USDT |
-| 20 | `strict_autoresearch_practical_mode` | `ready_for_live_equivalent_backtest` | n/a | +0.00% | 0.0000 | +0.00% | BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT |
-| 21 | `three_way_regime` | `ready_for_live_equivalent_backtest` | n/a | +0.00% | 0.0000 | +0.00% | BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT |
-| 22 | `wave2_pair` | `ready_for_live_equivalent_backtest` | n/a | +0.00% | 0.0000 | +0.00% | BNB/USDT,TRX/USDT |
-| 23 | `hybrid_guarded_mode` | `eligible_conservative_cash_fallback` | n/a | +0.00% | 0.0000 | +0.00% |  |
-| 24 | `risk_off_mode` | `eligible_conservative_cash_fallback` | n/a | +0.00% | 0.0000 | +0.00% | BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT |
+| 1 | `autoresearch_55_45` | `live_equivalent_validated` | 11.8000 | +0.00% | 0.0000 | +0.00% | BTC/USDT,TRX/USDT,BNB/USDT |
+| 2 | `legacy_no_highvol_hybrid_mode` | `live_equivalent_validated` | 11.8000 | +0.00% | 0.0000 | +0.00% | BNB/USDT,TRX/USDT |
+| 3 | `pair_fast_exit` | `live_equivalent_validated` | 11.8000 | +0.00% | 0.0000 | +0.00% | BNB/USDT,TRX/USDT |
+| 4 | `pair_tactical_mode` | `live_equivalent_validated` | 11.8000 | +0.00% | 0.0000 | +0.00% | BNB/USDT,TRX/USDT |
+| 5 | `state_vwap_pair` | `live_equivalent_validated` | 11.8000 | +0.00% | 0.0000 | +0.00% | BNB/USDT,TRX/USDT |
+| 6 | `strict_autoresearch_1x` | `live_equivalent_validated` | 11.8000 | +0.00% | 0.0000 | +0.00% | BTC/USDT,TRX/USDT,BNB/USDT |
+| 7 | `wave2_pair` | `live_equivalent_validated` | 11.8000 | +0.00% | 0.0000 | +0.00% | BNB/USDT,TRX/USDT |
+| 8 | `production_guarded_state_vwap_pair_mode` | `live_equivalent_validated` | 4.7116 | -1.34% | -0.2307 | +1.35% | BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT |
+| 9 | `strict_autoresearch_practical_mode` | `live_equivalent_validated` | -1.4361 | -3.24% | -0.2612 | +3.25% | BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT |
+| 10 | `production_guarded_portfolio` | `live_equivalent_validated` | -5.2464 | -4.42% | -0.2951 | +4.44% | BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT |
+| 11 | `hybrid_guarded_mode` | `eligible_conservative_cash_fallback` | 11.8000 | +0.00% | 0.0000 | +0.00% |  |
+| 12 | `risk_off_mode` | `eligible_conservative_cash_fallback` | 11.8000 | +0.00% | 0.0000 | +0.00% | BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT |
+| 13 | `defensive_overlay_mode` | `failed_train_val_mdd_gate` | -10.0195 | -6.30% | -0.2822 | +6.32% | BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT |
+| 14 | `aggressive_realized_mode` | `failed_train_val_mdd_gate` | -11.2745 | -6.93% | -0.2791 | +6.96% | BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT |
+| 15 | `blend_85_15` | `failed_train_val_mdd_gate` | -11.2745 | -6.93% | -0.2791 | +6.96% | BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT |
+| 16 | `retuned_live_portfolio_hybrid_mode` | `failed_train_val_mdd_gate` | -11.2745 | -6.93% | -0.2791 | +6.96% | BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT |
+| 17 | `static_blend_76_24` | `failed_train_val_mdd_gate` | -11.2745 | -6.93% | -0.2791 | +6.96% | BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT |
+| 18 | `three_way_regime` | `failed_train_val_mdd_gate` | -11.2745 | -6.93% | -0.2791 | +6.96% | BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT |
+| 19 | `balanced_overlay_80_20` | `failed_train_val_mdd_gate` | -11.6855 | -7.11% | -0.2859 | +7.14% | BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT |
+| 20 | `balanced_overlay_mode` | `failed_train_val_mdd_gate` | -11.6855 | -7.11% | -0.2859 | +7.14% | BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT |
+| 21 | `core_mode` | `failed_train_val_mdd_gate` | -15.6904 | -9.25% | -0.2935 | +9.28% | BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT |
+| 22 | `soft_three_way_regime` | `failed_train_val_mdd_gate` | -15.6904 | -9.25% | -0.2935 | +9.28% | BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT |
+| 23 | `incumbent` | `failed_train_val_mdd_gate` | -17.1105 | -10.12% | -0.2843 | +10.17% | BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT |
+| 24 | `incumbent_only` | `failed_train_val_mdd_gate` | -17.1105 | -10.12% | -0.2843 | +10.17% | BNB/USDT,TRX/USDT,BTC/USDT,ETH/USDT,SOL/USDT |
 
 ## Research artifact reset sample
 
@@ -95,7 +95,6 @@ Generated: `2026-04-27T11:21:08.598494Z`
 
 ## 명시적 caveats
 
-- train/val raw-first materialized coverage preflight는 `22`개 alpha mode에서 통과했다. 아직 `--execute-backtests`를 실행하지 않았으므로 readiness는 엔진 검증 대기 상태이며 selection evidence는 아니다.
+- `10`개 mode가 train/val live-equivalent engine backtest를 완료했다. selection eligibility는 이 검증 통과 후보에만 부여한다.
 - 이 리포트의 핵심 변경은 `좋아 보이는 연구 점수`를 promotion evidence로 쓰지 않고, live-equivalent engine path를 통과한 후보만 승격시키는 것이다.
 - OOS는 report-only다. OOS raw-first coverage가 부족한 경우에도 train/val selection score에는 반영하지 않는다.
-- 다음 단계는 `--execute-backtests`로 같은 live portfolio mode 후보들을 train/val/OOS 재랭킹하는 것이다.

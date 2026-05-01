@@ -21,24 +21,7 @@ sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 
 
-def test_portfolio_mode_strategy_forwards_component_weighted_signals(monkeypatch) -> None:
-    class _ChildStrategy:
-        required_timeframes = ("1h",)
-
-        def __init__(self, bars, events, **params):
-            _ = bars, params
-            self.events = events
-
-        def calculate_signals(self, event):
-            self.events.put(
-                SignalEvent(
-                    strategy_id="child",
-                    symbol="BNB/USDT",
-                    datetime=event.time,
-                    signal_type="LONG",
-                )
-            )
-
+def _patch_single_component(monkeypatch, child_cls: type) -> None:
     monkeypatch.setattr(
         MODULE,
         "resolve_portfolio_mode_definition",
@@ -59,7 +42,75 @@ def test_portfolio_mode_strategy_forwards_component_weighted_signals(monkeypatch
             source_artifacts={},
         ),
     )
-    monkeypatch.setattr(MODULE, "resolve_strategy_class", lambda name, default_name=None: _ChildStrategy)
+    monkeypatch.setattr(MODULE, "resolve_strategy_class", lambda name, default_name=None: child_cls)
+
+
+def test_portfolio_mode_does_not_propagate_child_timeframes_without_explicit_aggregator_use(
+    monkeypatch,
+) -> None:
+    class _LegacyWindowChild:
+        required_timeframes = ("1h",)
+
+        def __init__(self, bars, events, **params):
+            _ = bars, events, params
+
+        def calculate_signals(self, event):
+            _ = event
+
+    _patch_single_component(monkeypatch, _LegacyWindowChild)
+
+    strategy = MODULE.ArtifactPortfolioModeStrategy(
+        bars=SimpleNamespace(symbol_list=["BNB/USDT"], get_latest_bar_value=lambda *args, **kwargs: 100.0),
+        events=SimpleNamespace(put=lambda item: None),
+        portfolio_mode="hybrid_guarded_mode",
+    )
+
+    assert strategy.uses_timeframe_aggregator is False
+    assert strategy.required_timeframes == ()
+
+
+def test_portfolio_mode_propagates_child_timeframes_for_explicit_aggregator_use(monkeypatch) -> None:
+    class _AggregatorChild:
+        uses_timeframe_aggregator = True
+        required_timeframes = ("20s", "1m")
+
+        def __init__(self, bars, events, **params):
+            _ = bars, events, params
+
+        def calculate_signals(self, event):
+            _ = event
+
+    _patch_single_component(monkeypatch, _AggregatorChild)
+
+    strategy = MODULE.ArtifactPortfolioModeStrategy(
+        bars=SimpleNamespace(symbol_list=["BNB/USDT"], get_latest_bar_value=lambda *args, **kwargs: 100.0),
+        events=SimpleNamespace(put=lambda item: None),
+        portfolio_mode="hybrid_guarded_mode",
+    )
+
+    assert strategy.uses_timeframe_aggregator is True
+    assert strategy.required_timeframes == ("1m", "20s")
+
+
+def test_portfolio_mode_strategy_forwards_component_weighted_signals(monkeypatch) -> None:
+    class _ChildStrategy:
+        required_timeframes = ("1h",)
+
+        def __init__(self, bars, events, **params):
+            _ = bars, params
+            self.events = events
+
+        def calculate_signals(self, event):
+            self.events.put(
+                SignalEvent(
+                    strategy_id="child",
+                    symbol="BNB/USDT",
+                    datetime=event.time,
+                    signal_type="LONG",
+                )
+            )
+
+    _patch_single_component(monkeypatch, _ChildStrategy)
 
     events = []
     strategy = MODULE.ArtifactPortfolioModeStrategy(

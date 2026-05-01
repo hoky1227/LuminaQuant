@@ -69,10 +69,47 @@ def normalize_bars_1s(
             continue
         if not isinstance(rows, (tuple, list)):
             raise MarketWindowContractError(f"bars_1s[{symbol_key}] must be tuple/list of OHLCV rows.")
+        fast_rows = _normalized_sorted_rows_fast_path(rows)
+        if fast_rows is not None:
+            normalized[symbol_key] = fast_rows
+            continue
         converted = [_normalize_row(row, symbol=symbol_key) for row in rows]
         converted.sort(key=lambda item: item[0])
         normalized[symbol_key] = tuple(converted)
     return normalized
+
+
+def _normalized_sorted_rows_fast_path(
+    rows: tuple[Any, ...] | list[Any],
+) -> tuple[tuple[int, float, float, float, float, float], ...] | None:
+    """Reuse already-normalized MARKET_WINDOW rows without per-tick casting/sorting.
+
+    `build_market_window_event` is called for every backtest poll. Backtest
+    window handlers already know their 1s rows are in ascending epoch-ms order,
+    while live/external callers may still need the slower validation path. This
+    helper only accepts rows that are already exactly in the canonical contract
+    representation, so the returned payload is byte-for-byte equivalent to the
+    generic normalize/sort path.
+    """
+    if not rows:
+        return tuple()
+
+    out: list[tuple[int, float, float, float, float, float]] = []
+    previous_ts: int | None = None
+    for row in rows:
+        if not isinstance(row, (tuple, list)) or len(row) < 6:
+            return None
+        ts = row[0]
+        if not isinstance(ts, int) or abs(ts) < 100_000_000_000:
+            return None
+        if previous_ts is not None and int(ts) < previous_ts:
+            return None
+        open_, high, low, close, volume = row[1], row[2], row[3], row[4], row[5]
+        if not all(isinstance(value, float) for value in (open_, high, low, close, volume)):
+            return None
+        out.append((int(ts), open_, high, low, close, volume))
+        previous_ts = int(ts)
+    return tuple(out)
 
 
 def validate_market_window_event_schema(event: MarketWindowEvent) -> None:

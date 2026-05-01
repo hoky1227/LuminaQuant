@@ -529,6 +529,24 @@ def supported_portfolio_modes() -> set[str]:
     return set(_LIVE_PORTFOLIO_MODE_ALIASES)
 
 
+def _child_uses_timeframe_aggregator(child: Any) -> bool:
+    raw = getattr(child, "uses_timeframe_aggregator", False)
+    if callable(raw):
+        try:
+            raw = raw()
+        except Exception:
+            raw = False
+    if bool(raw):
+        return True
+
+    required_inputs = getattr(child, "required_inputs", ()) or ()
+    try:
+        tokens = tuple(required_inputs)
+    except TypeError:
+        tokens = ()
+    return any(str(token).strip().lower() == "aggregator" for token in tokens)
+
+
 class ArtifactPortfolioModeStrategy(Strategy):
     preferred_contract = "market_window"
 
@@ -541,14 +559,19 @@ class ArtifactPortfolioModeStrategy(Strategy):
         self.decision_cadence_seconds = 60
         self._children: list[tuple[PortfolioModeComponent, Any, _SignalCaptureQueue]] = []
         required_timeframes: set[str] = set()
+        uses_timeframe_aggregator = False
         for component in self.definition.components:
             strategy_cls = resolve_strategy_class(component.strategy_class, default_name=component.strategy_class)
             child_queue = _SignalCaptureQueue()
             child_bars = _BarsSubsetProxy(self.bars, list(component.symbols))
             child = strategy_cls(child_bars, child_queue, **dict(component.params))
-            raw_timeframes = getattr(child, "required_timeframes", ()) or ()
-            required_timeframes.update(str(token) for token in raw_timeframes if str(token).strip())
+            child_uses_timeframe_aggregator = _child_uses_timeframe_aggregator(child)
+            uses_timeframe_aggregator = uses_timeframe_aggregator or child_uses_timeframe_aggregator
+            if child_uses_timeframe_aggregator:
+                raw_timeframes = getattr(child, "required_timeframes", ()) or ()
+                required_timeframes.update(str(token) for token in raw_timeframes if str(token).strip())
             self._children.append((component, child, child_queue))
+        self.uses_timeframe_aggregator = bool(uses_timeframe_aggregator)
         self.required_timeframes = tuple(sorted(required_timeframes))
 
     def get_state(self) -> dict[str, Any]:

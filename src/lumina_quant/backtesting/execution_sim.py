@@ -1,9 +1,17 @@
+import os
 import random
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from typing import Any
 
 from lumina_quant.core.events import FillEvent
+
+
+def _env_flag(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return bool(default)
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
 
 class ExecutionHandler(ABC):
@@ -343,9 +351,10 @@ class SimulatedExecutionHandler(ExecutionHandler):
                 original_qty = order["quantity"]
 
                 if original_qty > max_trade_vol:
-                    print(
-                        f"[Realism] Partial Fill: Req {original_qty} > Limit {max_trade_vol:.4f}. Filling {max_trade_vol} and keeping remainder."
-                    )
+                    if not _env_flag("LQ_BACKTEST_SUPPRESS_PARTIAL_FILL_LOGS", False):
+                        print(
+                            f"[Realism] Partial Fill: Req {original_qty} > Limit {max_trade_vol:.4f}. Filling {max_trade_vol} and keeping remainder."
+                        )
                     order["quantity"] = max_trade_vol
                     remainder = original_qty - max_trade_vol
                     remainder_order = {

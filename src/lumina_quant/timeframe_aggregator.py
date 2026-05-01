@@ -127,6 +127,45 @@ class TimeframeAggregator:
         return None
 
     @staticmethod
+    def _coerce_rows_batch(
+        symbol: str,
+        rows: tuple[Any, ...] | list[Any],
+    ) -> list[tuple[int, tuple[Any, float, float, float, float, float]]]:
+        """Normalize a 1s row batch, avoiding sort/cast work for canonical rows."""
+        if not rows:
+            return []
+
+        fast: list[tuple[int, tuple[Any, float, float, float, float, float]]] = []
+        previous_ts: int | None = None
+        for row in rows:
+            if not isinstance(row, (tuple, list)) or len(row) < 6:
+                fast = []
+                break
+            ts = row[0]
+            if not isinstance(ts, int) or abs(ts) < 100_000_000_000:
+                fast = []
+                break
+            if previous_ts is not None and int(ts) < previous_ts:
+                fast = []
+                break
+            open_, high, low, close, volume = row[1], row[2], row[3], row[4], row[5]
+            if not all(isinstance(value, float) for value in (open_, high, low, close, volume)):
+                fast = []
+                break
+            fast.append((int(ts), (ts, open_, high, low, close, volume)))
+            previous_ts = int(ts)
+        if fast:
+            return fast
+
+        normalized: list[tuple[int, tuple[Any, float, float, float, float, float]]] = []
+        for row in rows:
+            parsed = TimeframeAggregator._coerce_bar(str(symbol), row)
+            if parsed is not None:
+                normalized.append(parsed)
+        normalized.sort(key=lambda item: item[0])
+        return normalized
+
+    @staticmethod
     def _to_bar_tuple(working: dict[str, Any]) -> tuple[Any, float, float, float, float, float]:
         return (
             working["time"],
@@ -200,15 +239,9 @@ class TimeframeAggregator:
         for symbol, rows in bars_1s.items():
             if not rows:
                 continue
-            normalized: list[tuple[int, tuple[Any, float, float, float, float, float]]] = []
-            for row in rows:
-                parsed = self._coerce_bar(str(symbol), row)
-                if parsed is not None:
-                    normalized.append(parsed)
+            normalized = self._coerce_rows_batch(str(symbol), rows)
             if not normalized:
                 continue
-
-            normalized.sort(key=lambda item: item[0])
             last_seen = self._last_seen_ms.get(str(symbol))
             new_bars: list[tuple[int, tuple[Any, float, float, float, float, float]]] = []
             for ts_ms, bar in normalized:

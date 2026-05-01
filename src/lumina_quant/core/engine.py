@@ -189,6 +189,29 @@ class TradingEngine(ABC):
                 continue
         return out
 
+    def _strategy_uses_timeframe_aggregator(self) -> bool:
+        raw = getattr(self.strategy, "uses_timeframe_aggregator", False)
+        if callable(raw):
+            try:
+                raw = raw()
+            except Exception:
+                raw = False
+        if bool(raw):
+            return True
+
+        if "aggregator" in self._required_inputs():
+            return True
+
+        raw_timeframes = getattr(self.strategy, "required_timeframes", None)
+        if callable(raw_timeframes):
+            try:
+                raw_timeframes = raw_timeframes()
+            except Exception:
+                raw_timeframes = None
+        if isinstance(raw_timeframes, (list, tuple, set)):
+            return any(str(token or "").strip() for token in raw_timeframes)
+        return False
+
     def _ensure_timeframe_aggregator(self):
         if self.timeframe_aggregator is not None:
             return self.timeframe_aggregator
@@ -256,11 +279,11 @@ class TradingEngine(ABC):
         return True
 
     def handle_market_window_event(self, event):
-        bars_1s = dict(getattr(event, "bars_1s", {}) or {})
+        bars_1s = getattr(event, "bars_1s", {}) or {}
         total_bars = sum(len(values or ()) for values in bars_1s.values())
         self.market_events += int(total_bars if total_bars > 0 else 1)
 
-        aggregator = self._ensure_timeframe_aggregator()
+        aggregator = self._ensure_timeframe_aggregator() if self._strategy_uses_timeframe_aggregator() else None
         if aggregator is not None:
             aggregator.update_from_1s_batch(bars_1s)
 
@@ -345,6 +368,9 @@ class TradingEngine(ABC):
         state: dict[str, Any] = {
             "window_decision_last_bucket": self._window_decision_last_bucket,
         }
+        if self.timeframe_aggregator is None and not self._strategy_uses_timeframe_aggregator():
+            return state
+
         aggregator = self._ensure_timeframe_aggregator()
         if aggregator is not None:
             get_state_fn = getattr(aggregator, "get_state", None)
@@ -368,7 +394,7 @@ class TradingEngine(ABC):
                 self._window_decision_last_bucket = None
 
         aggregator_state = state.get("timeframe_aggregator")
-        if isinstance(aggregator_state, dict):
+        if isinstance(aggregator_state, dict) and self._strategy_uses_timeframe_aggregator():
             aggregator = self._ensure_timeframe_aggregator()
             if aggregator is not None:
                 set_state_fn = getattr(aggregator, "set_state", None)

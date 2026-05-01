@@ -39,6 +39,7 @@ class HistoricParquetWindowedDataHandler(HistoricCSVDataHandler):
             end_date=end_date,
             data_dict=data_dict,
         )
+        self._freeze_rows_as_epoch_ms()
         self.backtest_poll_seconds = max(1, int(backtest_poll_seconds))
         self.backtest_window_seconds = max(self.backtest_poll_seconds, int(backtest_window_seconds))
         self.backtest_poll_ms = int(self.backtest_poll_seconds * 1000)
@@ -46,6 +47,9 @@ class HistoricParquetWindowedDataHandler(HistoricCSVDataHandler):
 
         max_rows = max(64, int(self.backtest_window_seconds + self.backtest_poll_seconds + 4))
         self._window_rows: dict[str, deque[tuple[Any, ...]]] = {
+            symbol: deque(maxlen=max_rows) for symbol in self.symbol_list
+        }
+        self._window_row_timestamps_ms: dict[str, deque[int | None]] = {
             symbol: deque(maxlen=max_rows) for symbol in self.symbol_list
         }
         self._next_emit_ts_ms: int | None = None
@@ -56,6 +60,40 @@ class HistoricParquetWindowedDataHandler(HistoricCSVDataHandler):
             else bool(market_window_parity_v2_enabled)
         )
         self._metrics_log_path = str(BaseConfig.MARKET_WINDOW_METRICS_LOG_PATH)
+
+    def _freeze_rows_as_epoch_ms(self) -> None:
+        """Convert loaded 1s rows once into the canonical MARKET_WINDOW shape.
+
+        The generic CSV/parquet handler keeps row[0] as whatever Polars yields
+        (usually `datetime`). MARKET_WINDOW construction normalizes those rows
+        into `(epoch_ms, float, float, float, float, float)` on every poll. This
+        windowed handler only emits MARKET_WINDOW events, so freezing rows once
+        keeps the public event payload identical while removing repeated
+        datetime conversion and float casting from the hot loop.
+        """
+        for symbol, rows in list(self.symbol_rows.items()):
+            timestamps = self.symbol_timestamps_ms.get(symbol)
+            if not rows or not timestamps or len(rows) != len(timestamps):
+                continue
+            frozen = tuple(
+                (
+                    int(ts_ms),
+                    float(row[1]),
+                    float(row[2]),
+                    float(row[3]),
+                    float(row[4]),
+                    float(row[5]),
+                )
+                for ts_ms, row in zip(timestamps, rows, strict=False)
+            )
+            if not frozen:
+                continue
+            self.symbol_rows[symbol] = frozen
+            idx = int(self.symbol_index.get(symbol, 0))
+            if 0 <= idx < len(frozen):
+                self.next_bar[symbol] = frozen[idx]
+
+        self._rebuild_heap()
 
     def _align_emit_timestamp(self, ts_ms: int) -> int:
         step = max(1, int(self.backtest_poll_ms))
@@ -92,14 +130,16 @@ class HistoricParquetWindowedDataHandler(HistoricCSVDataHandler):
             emit_symbols.append(symbol)
 
         emitted_rows: dict[str, tuple[Any, ...]] = {}
+        selected_ts_ms = self._bar_time_ms(selected_time)
         for symbol in emit_symbols:
             bar = self.next_bar[symbol]
             self.latest_symbol_data[symbol].append(bar)
             self._window_rows[symbol].append(bar)
+            self._window_row_timestamps_ms[symbol].append(selected_ts_ms)
             emitted_rows[symbol] = bar
             self._advance_symbol(symbol)
 
-        self.last_emitted_timestamp_ms = self._bar_time_ms(selected_time)
+        self.last_emitted_timestamp_ms = selected_ts_ms
         if not self.next_bar:
             self.continue_backtest = False
         return selected_time, emitted_rows
@@ -117,8 +157,11 @@ class HistoricParquetWindowedDataHandler(HistoricCSVDataHandler):
                 snapshot[symbol] = tuple()
                 continue
             scoped = []
-            for row in rows:
-                ts_ms = self._bar_time_ms(row[0])
+            timestamp_rows = self._window_row_timestamps_ms.get(symbol)
+            if timestamp_rows is None or len(timestamp_rows) != len(rows):
+                timestamp_rows = deque((self._bar_time_ms(row[0]) for row in rows), maxlen=rows.maxlen)
+                self._window_row_timestamps_ms[symbol] = timestamp_rows
+            for ts_ms, row in zip(timestamp_rows, rows, strict=False):
                 if ts_ms is None or int(ts_ms) < cutoff_ms:
                     continue
                 scoped.append(row)
@@ -193,16 +236,23 @@ class HistoricParquetWindowedDataHandler(HistoricCSVDataHandler):
 
         target = int(target_ts_ms)
         cutoff = target - (int(self.backtest_window_seconds) * 1000)
-        for rows in self._window_rows.values():
-            kept = []
-            for row in rows:
-                ts_ms = self._bar_time_ms(row[0])
+        for symbol, rows in self._window_rows.items():
+            kept_rows = []
+            kept_timestamps = []
+            timestamp_rows = self._window_row_timestamps_ms.get(symbol)
+            if timestamp_rows is None or len(timestamp_rows) != len(rows):
+                timestamp_rows = deque((self._bar_time_ms(row[0]) for row in rows), maxlen=rows.maxlen)
+                self._window_row_timestamps_ms[symbol] = timestamp_rows
+            for ts_ms, row in zip(timestamp_rows, rows, strict=False):
                 if ts_ms is None:
                     continue
                 if int(ts_ms) >= cutoff:
-                    kept.append(row)
+                    kept_rows.append(row)
+                    kept_timestamps.append(ts_ms)
             rows.clear()
-            rows.extend(kept)
+            rows.extend(kept_rows)
+            timestamp_rows.clear()
+            timestamp_rows.extend(kept_timestamps)
 
         self._next_emit_ts_ms = self._align_emit_timestamp(target)
         return moved

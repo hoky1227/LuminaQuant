@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import polars as pl
 from lumina_quant.backtesting.backtest import Backtest
@@ -9,6 +9,7 @@ from lumina_quant.backtesting.data_windowed_parquet import HistoricParquetWindow
 from lumina_quant.backtesting.execution_sim import SimulatedExecutionHandler
 from lumina_quant.backtesting.portfolio_backtest import Portfolio
 from lumina_quant.core.events import SignalEvent
+from lumina_quant.core.market_window_contract import normalize_bars_1s
 from lumina_quant.strategy import Strategy
 from lumina_quant.timeframe_aggregator import TimeframeAggregator
 
@@ -151,6 +152,67 @@ def test_timeframe_aggregator_batched_update_matches_incremental_rows():
             timeframe,
             n=16,
         )
+
+
+def test_timeframe_aggregator_canonical_epoch_rows_match_datetime_rows():
+    start = datetime(2026, 1, 1, 0, 0, 0)
+    frame = _build_1s_frame(start, seconds=125)
+    datetime_rows = list(frame.iter_rows(named=False))
+    canonical_rows = [
+        (
+            int(row[0].replace(tzinfo=UTC).timestamp() * 1000),
+            float(row[1]),
+            float(row[2]),
+            float(row[3]),
+            float(row[4]),
+            float(row[5]),
+        )
+        for row in datetime_rows
+    ]
+
+    datetime_aggregator = TimeframeAggregator(
+        timeframes=["20s", "1m", "5m"],
+        lookbacks={"20s": 16, "1m": 16, "5m": 16},
+    )
+    canonical_aggregator = TimeframeAggregator(
+        timeframes=["20s", "1m", "5m"],
+        lookbacks={"20s": 16, "1m": 16, "5m": 16},
+    )
+
+    # Use overlapping batches to exercise the dedupe path as it appears in
+    # MARKET_WINDOW replay.
+    normalized_datetime_rows = normalize_bars_1s({"BTC/USDT": tuple(datetime_rows)})["BTC/USDT"]
+    datetime_aggregator.update_from_1s_batch({"BTC/USDT": tuple(normalized_datetime_rows[:80])})
+    datetime_aggregator.update_from_1s_batch({"BTC/USDT": tuple(normalized_datetime_rows[60:])})
+    canonical_aggregator.update_from_1s_batch({"BTC/USDT": tuple(canonical_rows[:80])})
+    canonical_aggregator.update_from_1s_batch({"BTC/USDT": tuple(canonical_rows[60:])})
+
+    for timeframe in ("1s", "20s", "1m", "5m"):
+        assert canonical_aggregator.get_bars("BTC/USDT", timeframe, n=16) == datetime_aggregator.get_bars(
+            "BTC/USDT",
+            timeframe,
+            n=16,
+        )
+
+
+def test_market_window_normalize_canonical_epoch_rows_match_datetime_rows():
+    start = datetime(2026, 1, 1, 0, 0, 0)
+    rows = list(_build_1s_frame(start, seconds=21).iter_rows(named=False))
+    canonical_rows = [
+        (
+            int(row[0].replace(tzinfo=UTC).timestamp() * 1000),
+            float(row[1]),
+            float(row[2]),
+            float(row[3]),
+            float(row[4]),
+            float(row[5]),
+        )
+        for row in rows
+    ]
+
+    assert normalize_bars_1s({"BTC/USDT": tuple(canonical_rows)}) == normalize_bars_1s(
+        {"BTC/USDT": tuple(rows)}
+    )
 
 
 def test_windowed_mode_matches_legacy_cadence_behavior(monkeypatch):
