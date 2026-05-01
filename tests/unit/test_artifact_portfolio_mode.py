@@ -107,6 +107,12 @@ def test_portfolio_mode_strategy_forwards_component_weighted_signals(monkeypatch
                     symbol="BNB/USDT",
                     datetime=event.time,
                     signal_type="LONG",
+                    strength=0.25,
+                    metadata={
+                        "target_allocation": 0.20,
+                        "max_symbol_exposure_pct": 0.20,
+                        "max_order_value": 500.0,
+                    },
                 )
             )
 
@@ -134,7 +140,59 @@ def test_portfolio_mode_strategy_forwards_component_weighted_signals(monkeypatch
     signal = events[0]
     assert signal.metadata["component_id"] == "comp-a"
     assert signal.metadata["target_allocation_scale"] == 0.3
+    assert signal.metadata["child_target_allocation"] == 0.20
+    assert signal.metadata["target_allocation"] == 0.06
+    assert signal.metadata["max_symbol_exposure_pct"] == 0.06
+    assert signal.metadata["max_order_value"] == 150.0
+    assert signal.strength == 0.075
     assert signal.client_order_id.startswith("LQPM-") or signal.client_order_id.startswith("comp-a-")
+
+
+def test_profit_portfolio_mode_caps_unbounded_child_signals(monkeypatch) -> None:
+    class _UnboundedChildStrategy:
+        def __init__(self, bars, events, **params):
+            _ = bars, params
+            self.events = events
+
+        def calculate_signals(self, event):
+            self.events.put(
+                SignalEvent(
+                    strategy_id="unbounded-child",
+                    symbol="BNB/USDT",
+                    datetime=event.time,
+                    signal_type="LONG",
+                    strength=1.0,
+                    metadata={"strategy": "legacy_pair_child_without_sizing_metadata"},
+                )
+            )
+
+    _patch_single_component(monkeypatch, _UnboundedChildStrategy)
+
+    events = []
+    strategy = MODULE.ArtifactPortfolioModeStrategy(
+        bars=SimpleNamespace(symbol_list=["BNB/USDT"], get_latest_bar_value=lambda *args, **kwargs: 100.0),
+        events=SimpleNamespace(put=lambda item: events.append(item)),
+        portfolio_mode="profit_moonshot_balanced_mode",
+    )
+    strategy.calculate_signals(
+        MarketEvent(
+            time="2026-04-17T00:00:00Z",
+            symbol="BNB/USDT",
+            open=100.0,
+            high=101.0,
+            low=99.0,
+            close=100.0,
+            volume=1.0,
+        )
+    )
+
+    assert len(events) == 1
+    signal = events[0]
+    assert signal.metadata["target_allocation"] == 0.006
+    assert signal.metadata["max_symbol_exposure_pct"] == 0.006
+    assert signal.metadata["max_order_value"] == 75.0
+    assert signal.metadata["portfolio_mode_unbounded_child_target_allocation"] == 0.02
+    assert signal.metadata["portfolio_mode_unbounded_child_max_order_value"] == 250.0
 
 
 def test_resolve_portfolio_mode_definition_supports_recursive_allocator_sleeves(monkeypatch, tmp_path: Path) -> None:
@@ -390,5 +448,65 @@ def test_resolve_portfolio_mode_definition_supports_recursive_allocator_sleeves(
     assert risk_off.symbols == ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "TRX/USDT"]
     assert "legacy_no_highvol_hybrid_mode" in MODULE.supported_portfolio_modes()
     assert "retuned_live_portfolio_hybrid_mode" in MODULE.supported_portfolio_modes()
+    assert "profit_reboot_panic_rebound_mode" in MODULE.supported_portfolio_modes()
+    assert "profit_reboot_session_pair_carry_mode" in MODULE.supported_portfolio_modes()
+    assert "profit_moonshot_ensemble_mode" in MODULE.supported_portfolio_modes()
     assert supports_live_portfolio_mode("legacy_no_highvol_hybrid_mode")
     assert supports_live_portfolio_mode("retuned_live_portfolio_hybrid_mode")
+    assert supports_live_portfolio_mode("profit_reboot_panic_rebound_mode")
+    assert supports_live_portfolio_mode("profit_reboot_session_pair_carry_mode")
+    assert supports_live_portfolio_mode("profit_moonshot_ensemble_mode")
+
+
+def test_profit_reboot_synthetic_modes_resolve_new_strategy_families() -> None:
+    panic = MODULE.resolve_portfolio_mode_definition("profit_reboot_panic_rebound_mode")
+    pair = MODULE.resolve_portfolio_mode_definition("profit_reboot_session_pair_carry_mode")
+
+    assert panic.components[0].strategy_class == "PanicReboundMeanReversionStrategy"
+    assert panic.components[0].symbols == (
+        "BTC/USDT",
+        "ETH/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "TRX/USDT",
+    )
+    assert pair.components[0].strategy_class == "SessionFilteredPairCarryStrategy"
+    assert pair.components[0].symbols == ("BNB/USDT", "TRX/USDT")
+    assert pair.components[0].params["allowed_session_utc_hours"]
+
+
+def test_profit_moonshot_synthetic_modes_resolve_no_aggregator_strategy_families() -> None:
+    trend = MODULE.resolve_portfolio_mode_definition("profit_moonshot_trend_mode")
+    breakout = MODULE.resolve_portfolio_mode_definition("profit_moonshot_breakout_mode")
+    reversion = MODULE.resolve_portfolio_mode_definition("profit_moonshot_reversion_mode")
+    ensemble = MODULE.resolve_portfolio_mode_definition("profit_moonshot_ensemble_mode")
+
+    assert trend.components[0].strategy_class == "ProfitMoonshotTrendStrategy"
+    assert breakout.components[0].strategy_class == "ProfitMoonshotBreakoutStrategy"
+    assert reversion.components[0].strategy_class == "ProfitMoonshotReversionStrategy"
+    assert {component.strategy_class for component in ensemble.components} == {
+        "ProfitMoonshotTrendStrategy",
+        "ProfitMoonshotBreakoutStrategy",
+        "ProfitMoonshotReversionStrategy",
+    }
+    assert {
+        component.strategy_class
+        for component in MODULE.resolve_portfolio_mode_definition("profit_moonshot_balanced_mode").components
+    } == {
+        "ProfitMoonshotTrendStrategy",
+        "ProfitMoonshotBreakoutStrategy",
+        "ProfitMoonshotReversionStrategy",
+    }
+    assert sum(component.weight for component in ensemble.components) == 1.0
+    for definition in (trend, breakout, reversion, ensemble):
+        strategy = MODULE.ArtifactPortfolioModeStrategy(
+            bars=SimpleNamespace(
+                symbol_list=definition.symbols,
+                get_latest_bar_value=lambda *args, **kwargs: 100.0,
+                get_latest_bar_datetime=lambda *args, **kwargs: "2026-01-01T00:00:00Z",
+            ),
+            events=SimpleNamespace(put=lambda item: None),
+            portfolio_mode=definition.portfolio_mode,
+        )
+        assert strategy.uses_timeframe_aggregator is False
+        assert strategy.required_timeframes == ()

@@ -38,6 +38,17 @@ SUPPORTED_LIVE_PORTFOLIO_MODES = frozenset(
         "profit_reboot_adaptive_momentum_mode",
         "profit_reboot_adaptive_momentum_defensive_mode",
         "profit_reboot_adaptive_momentum_short_bias_mode",
+        "profit_reboot_panic_rebound_mode",
+        "profit_reboot_session_pair_carry_mode",
+        "profit_reboot_compression_breakout_mode",
+        "profit_moonshot_adaptive_momentum_mode",
+        "profit_moonshot_panic_rebound_mode",
+        "profit_moonshot_session_pair_carry_mode",
+        "profit_moonshot_balanced_mode",
+        "profit_moonshot_trend_mode",
+        "profit_moonshot_breakout_mode",
+        "profit_moonshot_reversion_mode",
+        "profit_moonshot_ensemble_mode",
     }
 )
 
@@ -150,8 +161,32 @@ def infer_strategy_class_name(candidate_name: str) -> str | None:
         return "RollingBreakoutStrategy"
     if token.startswith("topcap_tsmom"):
         return "TopCapTimeSeriesMomentumStrategy"
-    if token.startswith("adaptive_regime_momentum") or token.startswith("profit_reboot_adaptive_momentum"):
+    if (
+        token.startswith("adaptive_regime_momentum")
+        or token.startswith("profit_reboot_adaptive_momentum")
+        or token.startswith("profit_moonshot_adaptive_momentum")
+    ):
         return "AdaptiveRegimeMomentumStrategy"
+    if (
+        token.startswith("panic_rebound")
+        or token.startswith("profit_reboot_panic_rebound")
+        or token.startswith("profit_moonshot_panic_rebound")
+    ):
+        return "PanicReboundMeanReversionStrategy"
+    if (
+        token.startswith("session_filtered_pair_carry")
+        or token.startswith("profit_reboot_session_pair_carry")
+        or token.startswith("profit_moonshot_session_pair_carry")
+    ):
+        return "SessionFilteredPairCarryStrategy"
+    if token.startswith("profit_moonshot_trend"):
+        return "ProfitMoonshotTrendStrategy"
+    if token.startswith("profit_moonshot_breakout"):
+        return "ProfitMoonshotBreakoutStrategy"
+    if token.startswith("profit_moonshot_reversion"):
+        return "ProfitMoonshotReversionStrategy"
+    if token.startswith("compression_breakout") or token.startswith("profit_reboot_compression_breakout"):
+        return "CompressionBreakoutContinuationStrategy"
     if token.startswith("pair_"):
         return "PairTradingZScoreStrategy"
     if token.startswith("vwap_reversion"):

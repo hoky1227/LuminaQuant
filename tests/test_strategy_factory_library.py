@@ -675,6 +675,46 @@ def test_candidate_library_generates_additional_existing_strategy_families():
     assert "TopCapTimeSeriesMomentumStrategy" in names
 
 
+def test_candidate_library_generates_profit_reboot_moonshot_families():
+    rows = build_binance_futures_candidates(
+        timeframes=["5m", "15m", "1h", "4h"],
+        symbols=["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "TRX/USDT"],
+    )
+    by_name = {row.name: row for row in rows}
+    strategy_names = {row.strategy_class for row in rows}
+
+    assert "PanicReboundMeanReversionStrategy" in strategy_names
+    assert "SessionFilteredPairCarryStrategy" in strategy_names
+    assert "ProfitMoonshotTrendStrategy" in strategy_names
+    assert "ProfitMoonshotBreakoutStrategy" in strategy_names
+    assert "ProfitMoonshotReversionStrategy" in strategy_names
+
+    panic = by_name["panic_rebound_mr_5m_volume_strict_32_0.025"]
+    assert panic.family == "profit_reboot_mean_reversion"
+    assert "profit_reboot_20260501" in panic.tags
+    assert panic.metadata["article_pipeline_family_ids"] == [
+        "profit-reboot-panic-rebound-mean-reversion"
+    ]
+    assert panic.params["confirmation_bars"] == 3
+
+    pair = by_name["session_filtered_pair_carry_1h_bnbtrx_overlap_2.2_0.50"]
+    assert pair.family == "profit_reboot_pair_carry"
+    assert pair.symbols == ("BNB/USDT", "TRX/USDT")
+    assert pair.params["allowed_session_utc_hours"] == "0,1,8,9,13,14,15,20,21"
+    assert pair.metadata["article_pipeline_family_ids"] == [
+        "profit-reboot-session-filtered-pair-carry"
+    ]
+
+    moonshot = by_name["profit_moonshot_breakout_1h_expansion_48_0.006"]
+    assert moonshot.family == "profit_moonshot_breakout"
+    assert "profit_moonshot_20260501" in moonshot.tags
+    assert "no_timeframe_aggregator" in moonshot.tags
+    assert moonshot.metadata["article_pipeline_family_ids"] == [
+        "profit-moonshot-range-expansion-breakout"
+    ]
+    assert moonshot.params["gross_exposure"] == 0.10
+
+
 def test_candidate_library_generates_alpha101_formula_candidates_with_tuned_overrides():
     rows = build_binance_futures_candidates(
         timeframes=["1h", "4h"],
@@ -693,6 +733,8 @@ def test_registry_exposes_new_candidate_strategies():
     names = get_strategy_names()
     assert "RegimeBreakoutCandidateStrategy" in names
     assert "VolatilityCompressionReversionStrategy" in names
+    assert "PanicReboundMeanReversionStrategy" in names
+    assert "SessionFilteredPairCarryStrategy" in names
 
 
 def test_shortlist_filters_weak_single_and_assigns_weights():

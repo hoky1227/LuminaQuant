@@ -1295,6 +1295,338 @@ _ADAPTIVE_REGIME_MOMENTUM_SLICE: dict[str, tuple[dict[str, Any], ...]] = {
     ),
 }
 
+_PANIC_REBOUND_MEAN_REVERSION_SLICE: dict[str, tuple[dict[str, Any], ...]] = {
+    "5m": (
+        {
+            "variant": "fast_confirm",
+            "history_bars": 144,
+            "return_window": 18,
+            "volume_window": 18,
+            "vwap_window": 12,
+            "shock_return_z": 1.6,
+            "shock_return_pct": 0.018,
+            "volume_z": 0.8,
+            "confirmation_bars": 2,
+            "min_rebound_pct": 0.004,
+            "vwap_recovery_pct": 0.0,
+            "stop_loss_pct": 0.016,
+            "take_profit_pct": 0.025,
+            "trailing_exit_pct": 0.014,
+            "max_hold_bars": 10,
+            "target_allocation": 0.06,
+            "max_order_value": 250.0,
+        },
+        {
+            "variant": "volume_strict",
+            "history_bars": 192,
+            "return_window": 32,
+            "volume_window": 32,
+            "vwap_window": 24,
+            "shock_return_z": 2.1,
+            "shock_return_pct": 0.025,
+            "volume_z": 1.2,
+            "confirmation_bars": 3,
+            "min_rebound_pct": 0.006,
+            "vwap_recovery_pct": 0.001,
+            "stop_loss_pct": 0.018,
+            "take_profit_pct": 0.035,
+            "trailing_exit_pct": 0.018,
+            "max_hold_bars": 18,
+            "target_allocation": 0.08,
+            "max_order_value": 300.0,
+        },
+    ),
+    "15m": (
+        {
+            "variant": "slow_confirm",
+            "history_bars": 160,
+            "return_window": 24,
+            "volume_window": 24,
+            "vwap_window": 16,
+            "shock_return_z": 1.8,
+            "shock_return_pct": 0.030,
+            "volume_z": 1.0,
+            "confirmation_bars": 2,
+            "min_rebound_pct": 0.008,
+            "vwap_recovery_pct": 0.0,
+            "stop_loss_pct": 0.020,
+            "take_profit_pct": 0.045,
+            "trailing_exit_pct": 0.020,
+            "max_hold_bars": 12,
+            "target_allocation": 0.08,
+            "max_order_value": 300.0,
+        },
+    ),
+}
+
+_SESSION_FILTERED_PAIR_CARRY_SLICE: dict[str, tuple[dict[str, Any], ...]] = {
+    "1h": (
+        {
+            "variant": "bnbtrx_overlap",
+            "lookback_window": 96,
+            "hedge_window": 192,
+            "entry_z": 2.2,
+            "exit_z": 0.50,
+            "stop_z": 3.8,
+            "min_correlation": 0.18,
+            "max_hold_bars": 72,
+            "cooldown_bars": 6,
+            "reentry_z_buffer": 0.25,
+            "min_z_turn": 0.02,
+            "stop_loss_pct": 0.020,
+            "take_profit_pct": 0.045,
+            "allowed_session_utc_hours": "0,1,8,9,13,14,15,20,21",
+            "min_expected_move_pct": 0.0015,
+        },
+        {
+            "variant": "bnbtrx_strict",
+            "lookback_window": 120,
+            "hedge_window": 240,
+            "entry_z": 2.6,
+            "exit_z": 0.65,
+            "stop_z": 4.2,
+            "min_correlation": 0.24,
+            "max_hold_bars": 48,
+            "cooldown_bars": 8,
+            "reentry_z_buffer": 0.30,
+            "min_z_turn": 0.03,
+            "stop_loss_pct": 0.018,
+            "take_profit_pct": 0.040,
+            "allowed_session_utc_hours": "0,1,8,9,13,14,15,20,21",
+            "min_expected_move_pct": 0.0025,
+        },
+    ),
+    "4h": (
+        {
+            "variant": "bnbtrx_asia_us",
+            "lookback_window": 72,
+            "hedge_window": 144,
+            "entry_z": 1.8,
+            "exit_z": 0.45,
+            "stop_z": 3.3,
+            "min_correlation": 0.10,
+            "max_hold_bars": 36,
+            "cooldown_bars": 4,
+            "reentry_z_buffer": 0.18,
+            "min_z_turn": 0.01,
+            "stop_loss_pct": 0.018,
+            "take_profit_pct": 0.035,
+            "allowed_session_utc_hours": "0,4,8,12,16,20",
+            "min_expected_move_pct": 0.0010,
+        },
+    ),
+}
+
+_COMPRESSION_BREAKOUT_CONTINUATION_SLICE: dict[str, tuple[dict[str, Any], ...]] = {
+    "30m": (
+        {
+            "variant": "fast",
+            "lookback_bars": 32,
+            "compression_window": 16,
+            "compression_history_bars": 96,
+            "compression_percentile": 0.30,
+            "breakout_buffer": 0.003,
+            "broad_lookback_bars": 12,
+            "broad_threshold": 0.0,
+            "stop_loss_pct": 0.020,
+            "take_profit_pct": 0.045,
+            "trailing_exit_pct": 0.025,
+            "max_hold_bars": 36,
+            "target_allocation": 0.08,
+            "max_order_value": 300.0,
+        },
+        {
+            "variant": "balanced",
+            "lookback_bars": 48,
+            "compression_window": 24,
+            "compression_history_bars": 160,
+            "compression_percentile": 0.25,
+            "breakout_buffer": 0.002,
+            "broad_lookback_bars": 24,
+            "broad_threshold": 0.0,
+            "stop_loss_pct": 0.025,
+            "take_profit_pct": 0.060,
+            "trailing_exit_pct": 0.030,
+            "max_hold_bars": 72,
+            "target_allocation": 0.10,
+            "max_order_value": 350.0,
+        },
+    ),
+    "1h": (
+        {
+            "variant": "slow",
+            "lookback_bars": 36,
+            "compression_window": 18,
+            "compression_history_bars": 120,
+            "compression_percentile": 0.25,
+            "breakout_buffer": 0.002,
+            "broad_lookback_bars": 18,
+            "broad_threshold": 0.0,
+            "stop_loss_pct": 0.025,
+            "take_profit_pct": 0.070,
+            "trailing_exit_pct": 0.035,
+            "max_hold_bars": 60,
+            "target_allocation": 0.10,
+            "max_order_value": 350.0,
+        },
+    ),
+}
+
+_PROFIT_MOONSHOT_TREND_SLICE: dict[str, tuple[dict[str, Any], ...]] = {
+    "1h": (
+        {
+            "variant": "balanced",
+            "lookback_bars": 60,
+            "fast_lookback_bars": 12,
+            "slow_lookback_bars": 240,
+            "rebalance_bars": 12,
+            "entry_threshold": 0.012,
+            "exit_threshold": 0.002,
+            "max_longs": 2,
+            "max_shorts": 2,
+            "gross_exposure": 0.10,
+            "max_order_value": 1_000.0,
+            "stop_loss_pct": 0.045,
+            "take_profit_pct": 0.120,
+            "trailing_exit_pct": 0.055,
+            "max_hold_bars": 240,
+            "breadth_threshold": -0.002,
+        },
+        {
+            "variant": "defensive",
+            "lookback_bars": 72,
+            "fast_lookback_bars": 18,
+            "slow_lookback_bars": 288,
+            "rebalance_bars": 24,
+            "entry_threshold": 0.018,
+            "exit_threshold": 0.004,
+            "max_longs": 1,
+            "max_shorts": 1,
+            "gross_exposure": 0.05,
+            "max_order_value": 500.0,
+            "stop_loss_pct": 0.035,
+            "take_profit_pct": 0.090,
+            "trailing_exit_pct": 0.040,
+            "max_hold_bars": 240,
+            "breadth_threshold": 0.000,
+        },
+    ),
+    "4h": (
+        {
+            "variant": "slow",
+            "lookback_bars": 36,
+            "fast_lookback_bars": 6,
+            "slow_lookback_bars": 120,
+            "rebalance_bars": 6,
+            "entry_threshold": 0.014,
+            "exit_threshold": 0.003,
+            "max_longs": 2,
+            "max_shorts": 1,
+            "gross_exposure": 0.08,
+            "max_order_value": 800.0,
+            "stop_loss_pct": 0.055,
+            "take_profit_pct": 0.140,
+            "trailing_exit_pct": 0.060,
+            "max_hold_bars": 180,
+            "breadth_threshold": -0.004,
+        },
+    ),
+}
+
+_PROFIT_MOONSHOT_BREAKOUT_SLICE: dict[str, tuple[dict[str, Any], ...]] = {
+    "1h": (
+        {
+            "variant": "expansion",
+            "lookback_bars": 48,
+            "fast_lookback_bars": 8,
+            "slow_lookback_bars": 168,
+            "rebalance_bars": 3,
+            "entry_threshold": 0.006,
+            "exit_threshold": 0.002,
+            "max_longs": 2,
+            "max_shorts": 2,
+            "gross_exposure": 0.10,
+            "max_order_value": 1_000.0,
+            "stop_loss_pct": 0.040,
+            "take_profit_pct": 0.110,
+            "trailing_exit_pct": 0.050,
+            "max_hold_bars": 144,
+            "breakout_buffer": 0.002,
+            "squeeze_ratio_max": 1.60,
+            "volume_z_min": -0.25,
+        },
+    ),
+    "4h": (
+        {
+            "variant": "slow_expansion",
+            "lookback_bars": 30,
+            "fast_lookback_bars": 5,
+            "slow_lookback_bars": 90,
+            "rebalance_bars": 2,
+            "entry_threshold": 0.008,
+            "exit_threshold": 0.003,
+            "max_longs": 2,
+            "max_shorts": 1,
+            "gross_exposure": 0.08,
+            "max_order_value": 800.0,
+            "stop_loss_pct": 0.050,
+            "take_profit_pct": 0.140,
+            "trailing_exit_pct": 0.060,
+            "max_hold_bars": 96,
+            "breakout_buffer": 0.003,
+            "squeeze_ratio_max": 1.50,
+            "volume_z_min": -0.10,
+        },
+    ),
+}
+
+_PROFIT_MOONSHOT_REVERSION_SLICE: dict[str, tuple[dict[str, Any], ...]] = {
+    "1h": (
+        {
+            "variant": "shock_fade",
+            "lookback_bars": 36,
+            "fast_lookback_bars": 4,
+            "slow_lookback_bars": 96,
+            "rebalance_bars": 2,
+            "entry_threshold": 0.75,
+            "exit_threshold": 0.25,
+            "max_longs": 2,
+            "max_shorts": 2,
+            "gross_exposure": 0.07,
+            "max_order_value": 700.0,
+            "stop_loss_pct": 0.030,
+            "take_profit_pct": 0.060,
+            "trailing_exit_pct": 0.030,
+            "max_hold_bars": 72,
+            "return_z_min": 1.20,
+            "volume_z_min": 0.25,
+            "range_z_min": 0.25,
+        },
+    ),
+    "4h": (
+        {
+            "variant": "slow_shock_fade",
+            "lookback_bars": 24,
+            "fast_lookback_bars": 3,
+            "slow_lookback_bars": 60,
+            "rebalance_bars": 1,
+            "entry_threshold": 0.85,
+            "exit_threshold": 0.30,
+            "max_longs": 2,
+            "max_shorts": 1,
+            "gross_exposure": 0.06,
+            "max_order_value": 600.0,
+            "stop_loss_pct": 0.035,
+            "take_profit_pct": 0.080,
+            "trailing_exit_pct": 0.035,
+            "max_hold_bars": 48,
+            "return_z_min": 1.30,
+            "volume_z_min": 0.20,
+            "range_z_min": 0.20,
+        },
+    ),
+}
+
 _LAST_DAY_LIQUIDITY_REGIME_SLICE: dict[str, tuple[dict[str, Any], ...]] = {
     "1h": (
         {
@@ -1757,6 +2089,18 @@ def _article_pipeline_family_ids(
         return ("topcap-rotation-relative-momentum",)
     if strategy_token == "AdaptiveRegimeMomentumStrategy":
         return ("profit-reboot-adaptive-regime-momentum",)
+    if strategy_token == "PanicReboundMeanReversionStrategy":
+        return ("profit-reboot-panic-rebound-mean-reversion",)
+    if strategy_token == "SessionFilteredPairCarryStrategy":
+        return ("profit-reboot-session-filtered-pair-carry",)
+    if strategy_token == "CompressionBreakoutContinuationStrategy":
+        return ("profit-reboot-compression-breakout-continuation",)
+    if strategy_token == "ProfitMoonshotTrendStrategy":
+        return ("profit-moonshot-cross-sectional-trend",)
+    if strategy_token == "ProfitMoonshotBreakoutStrategy":
+        return ("profit-moonshot-range-expansion-breakout",)
+    if strategy_token == "ProfitMoonshotReversionStrategy":
+        return ("profit-moonshot-shock-reversion",)
     if strategy_token == "CarryTrendFactorRotationStrategy":
         return ("carry-trend-factor-rotation",)
     if strategy_token == "Alpha101FormulaStrategy":
@@ -1989,6 +2333,7 @@ class _CandidateBuildContext:
     mean_rev_tfs: list[str] = field(init=False)
     std_mean_rev_tfs: list[str] = field(init=False)
     liquidity_tfs: list[str] = field(init=False)
+    panic_rebound_tfs: list[str] = field(init=False)
     session_liquidity_tfs: list[str] = field(init=False)
     funding_crowding_tfs: list[str] = field(init=False)
     basis_snapback_tfs: list[str] = field(init=False)
@@ -1996,6 +2341,7 @@ class _CandidateBuildContext:
     session_residual_tfs: list[str] = field(init=False)
     contagion_tfs: list[str] = field(init=False)
     breakout_tfs: list[str] = field(init=False)
+    compression_breakout_tfs: list[str] = field(init=False)
     breadth_tfs: list[str] = field(init=False)
     trend_exhaustion_tfs: list[str] = field(init=False)
     topcap_tfs: list[str] = field(init=False)
@@ -2003,6 +2349,7 @@ class _CandidateBuildContext:
     abnormal_return_tfs: list[str] = field(init=False)
     alpha101_tfs: list[str] = field(init=False)
     pair_tfs: list[str] = field(init=False)
+    session_pair_carry_tfs: list[str] = field(init=False)
     residual_basket_tfs: list[str] = field(init=False)
     lag_convergence_tfs: list[str] = field(init=False)
     carry_tfs: list[str] = field(init=False)
@@ -2017,6 +2364,7 @@ class _CandidateBuildContext:
         self.mean_rev_tfs = self._present('5m', '15m')
         self.std_mean_rev_tfs = self._present('15m', '30m')
         self.liquidity_tfs = self._present('5m', '15m')
+        self.panic_rebound_tfs = self._present('5m', '15m')
         self.session_liquidity_tfs = self._present('5m')
         self.funding_crowding_tfs = self._present('30m')
         self.basis_snapback_tfs = self._present('30m')
@@ -2024,6 +2372,7 @@ class _CandidateBuildContext:
         self.session_residual_tfs = self._present('5m')
         self.contagion_tfs = self._present('5m')
         self.breakout_tfs = self._present('30m', '1h')
+        self.compression_breakout_tfs = self._present('30m', '1h')
         self.breadth_tfs = self._present('30m')
         self.trend_exhaustion_tfs = self._present('30m')
         self.topcap_tfs = self._present('1h', '4h')
@@ -2031,6 +2380,7 @@ class _CandidateBuildContext:
         self.abnormal_return_tfs = self._present('1d')
         self.alpha101_tfs = self._present('1h', '4h')
         self.pair_tfs = self._present('15m', '30m', '1h', '4h', '1d')
+        self.session_pair_carry_tfs = self._present('1h', '4h')
         self.residual_basket_tfs = self._present('15m')
         self.lag_convergence_tfs = self._present('4h', '1d')
         self.carry_tfs = self._present('30m', '1h', '4h')
@@ -2341,6 +2691,68 @@ def _build_liquidity_event_reversion_candidates(ctx: _CandidateBuildContext) -> 
             )
 
 
+def _build_panic_rebound_candidates(ctx: _CandidateBuildContext) -> None:
+    candidates = ctx.candidates
+    panic_rebound_tfs = ctx.panic_rebound_tfs
+    crypto_symbols = tuple(symbol for symbol in ctx.normalized_symbols if symbol not in _METALS)
+    if not crypto_symbols:
+        return
+
+    for timeframe in panic_rebound_tfs:
+        tf_tag = timeframe.replace("/", "-")
+        for spec in _PANIC_REBOUND_MEAN_REVERSION_SLICE.get(timeframe, ()):
+            params = {
+                "history_bars": int(spec["history_bars"]),
+                "return_window": int(spec["return_window"]),
+                "volume_window": int(spec["volume_window"]),
+                "vwap_window": int(spec["vwap_window"]),
+                "shock_return_z": float(spec["shock_return_z"]),
+                "shock_return_pct": float(spec["shock_return_pct"]),
+                "volume_z": float(spec["volume_z"]),
+                "confirmation_bars": int(spec["confirmation_bars"]),
+                "min_rebound_pct": float(spec["min_rebound_pct"]),
+                "vwap_recovery_pct": float(spec["vwap_recovery_pct"]),
+                "stop_loss_pct": float(spec["stop_loss_pct"]),
+                "take_profit_pct": float(spec["take_profit_pct"]),
+                "trailing_exit_pct": float(spec["trailing_exit_pct"]),
+                "max_hold_bars": int(spec["max_hold_bars"]),
+                "target_allocation": float(spec["target_allocation"]),
+                "max_order_value": float(spec["max_order_value"]),
+                "min_price": 0.10,
+            }
+            _add_candidate(
+                candidates,
+                name=(
+                    f"panic_rebound_mr_{tf_tag}_{spec['variant']}_"
+                    f"{int(spec['return_window'])}_{float(spec['shock_return_pct']):.3f}"
+                ),
+                family="profit_reboot_mean_reversion",
+                strategy_class="PanicReboundMeanReversionStrategy",
+                timeframe=timeframe,
+                symbols=crypto_symbols,
+                params=params,
+                notes=(
+                    "Profit-reboot long-only panic rebound sleeve that waits for post-shock "
+                    "VWAP/rebound confirmation before entering and uses fast stop/time exits "
+                    f"for {timeframe} ({spec['variant']})."
+                ),
+                    tags=(
+                        "profit_reboot_20260501",
+                        "profit_moonshot_20260501",
+                        "mean_reversion",
+                        "panic_rebound",
+                        "liquidation_rebound",
+                    "crypto",
+                ),
+                metadata={
+                    "timeframe": timeframe,
+                    "retune_profile": str(spec["variant"]),
+                    "symbol_scope": "crypto_excluding_metals",
+                    "confirmation_required": True,
+                },
+            )
+
+
 def _build_derivatives_mean_reversion_candidates(ctx: _CandidateBuildContext) -> None:
     candidates = ctx.candidates
     normalized_symbols = ctx.normalized_symbols
@@ -2463,6 +2875,7 @@ def _build_core_mean_reversion_candidates(ctx: _CandidateBuildContext) -> None:
     _build_vwap_mean_reversion_candidates(ctx)
     _build_zscore_mean_reversion_candidates(ctx)
     _build_liquidity_event_reversion_candidates(ctx)
+    _build_panic_rebound_candidates(ctx)
     _build_derivatives_mean_reversion_candidates(ctx)
 
 
@@ -2628,6 +3041,7 @@ def _build_cross_sectional_rotation_candidates(ctx: _CandidateBuildContext) -> N
                     ),
                     tags=(
                         "profit_reboot_20260501",
+                        "profit_moonshot_20260501",
                         "cross_sectional",
                         "adaptive_regime",
                         "momentum",
@@ -2640,6 +3054,83 @@ def _build_cross_sectional_rotation_candidates(ctx: _CandidateBuildContext) -> N
                         "market_window_one_bar_per_decision": True,
                     },
                 )
+
+        moonshot_specs = (
+            ("trend", "profit_moonshot_cross_sectional", "ProfitMoonshotTrendStrategy", _PROFIT_MOONSHOT_TREND_SLICE),
+            (
+                "breakout",
+                "profit_moonshot_breakout",
+                "ProfitMoonshotBreakoutStrategy",
+                _PROFIT_MOONSHOT_BREAKOUT_SLICE,
+            ),
+            (
+                "reversion",
+                "profit_moonshot_reversion",
+                "ProfitMoonshotReversionStrategy",
+                _PROFIT_MOONSHOT_REVERSION_SLICE,
+            ),
+        )
+        for sleeve, family, strategy_class, spec_by_timeframe in moonshot_specs:
+            for timeframe in topcap_tfs:
+                tf_tag = timeframe.replace("/", "-")
+                for spec in spec_by_timeframe.get(timeframe, ()):
+                    params = {
+                        "lookback_bars": int(spec["lookback_bars"]),
+                        "fast_lookback_bars": int(spec["fast_lookback_bars"]),
+                        "slow_lookback_bars": int(spec["slow_lookback_bars"]),
+                        "rebalance_bars": int(spec["rebalance_bars"]),
+                        "entry_threshold": float(spec["entry_threshold"]),
+                        "exit_threshold": float(spec["exit_threshold"]),
+                        "max_longs": int(spec["max_longs"]),
+                        "max_shorts": int(spec["max_shorts"]),
+                        "gross_exposure": float(spec["gross_exposure"]),
+                        "max_order_value": float(spec["max_order_value"]),
+                        "stop_loss_pct": float(spec["stop_loss_pct"]),
+                        "take_profit_pct": float(spec["take_profit_pct"]),
+                        "trailing_exit_pct": float(spec["trailing_exit_pct"]),
+                        "max_hold_bars": int(spec["max_hold_bars"]),
+                        "min_price": 0.10,
+                        "allow_shorts": True,
+                    }
+                    for optional_key in (
+                        "breadth_threshold",
+                        "breakout_buffer",
+                        "squeeze_ratio_max",
+                        "volume_z_min",
+                        "return_z_min",
+                        "range_z_min",
+                    ):
+                        if optional_key in spec:
+                            params[optional_key] = spec[optional_key]
+                    _add_candidate(
+                        candidates,
+                        name=(
+                            f"profit_moonshot_{sleeve}_{tf_tag}_{spec['variant']}_"
+                            f"{int(spec['lookback_bars'])}_{float(spec['entry_threshold']):.3f}"
+                        ),
+                        family=family,
+                        strategy_class=strategy_class,
+                        timeframe=timeframe,
+                        symbols=crypto_symbols,
+                        params=params,
+                        notes=(
+                            "Profit-moonshot MARKET_WINDOW sleeve that bypasses TimeframeAggregator "
+                            f"and targets higher participation for {timeframe} ({spec['variant']}, {sleeve})."
+                        ),
+                        tags=(
+                            "profit_moonshot_20260501",
+                            "market_window",
+                            "no_timeframe_aggregator",
+                            sleeve,
+                            "crypto",
+                        ),
+                        metadata={
+                            "timeframe": timeframe,
+                            "retune_profile": str(spec["variant"]),
+                            "symbol_scope": "crypto",
+                            "market_window_one_bar_per_decision": True,
+                        },
+                    )
 
         for timeframe in topcap_tfs:
             tf_tag = timeframe.replace("/", "-")
@@ -3114,6 +3605,7 @@ def _build_breakout_candidates(ctx: _CandidateBuildContext) -> None:
 def _build_pair_and_intermarket_candidates(ctx: _CandidateBuildContext) -> None:
     candidates = ctx.candidates
     pair_tfs = ctx.pair_tfs
+    session_pair_carry_tfs = ctx.session_pair_carry_tfs
     pairs = ctx.pairs
     lag_convergence_tfs = ctx.lag_convergence_tfs
     # Pair spread sleeve.
@@ -3270,6 +3762,61 @@ def _build_pair_and_intermarket_candidates(ctx: _CandidateBuildContext) -> None:
                         "focused_followup": True,
                     },
                 )
+
+    for timeframe in session_pair_carry_tfs:
+        if ("BNB/USDT", "TRX/USDT") not in pairs:
+            continue
+        tf_tag = timeframe.replace("/", "-")
+        for spec in _SESSION_FILTERED_PAIR_CARRY_SLICE.get(timeframe, ()):
+            params = {
+                "symbol_x": "BNB/USDT",
+                "symbol_y": "TRX/USDT",
+                "lookback_window": int(spec["lookback_window"]),
+                "hedge_window": int(spec["hedge_window"]),
+                "entry_z": float(spec["entry_z"]),
+                "exit_z": float(spec["exit_z"]),
+                "stop_z": float(spec["stop_z"]),
+                "min_correlation": float(spec["min_correlation"]),
+                "max_hold_bars": int(spec["max_hold_bars"]),
+                "cooldown_bars": int(spec["cooldown_bars"]),
+                "reentry_z_buffer": float(spec["reentry_z_buffer"]),
+                "min_z_turn": float(spec["min_z_turn"]),
+                "stop_loss_pct": float(spec["stop_loss_pct"]),
+                "take_profit_pct": float(spec["take_profit_pct"]),
+                "allowed_session_utc_hours": str(spec["allowed_session_utc_hours"]),
+                "min_expected_move_pct": float(spec["min_expected_move_pct"]),
+            }
+            _add_candidate(
+                candidates,
+                name=(
+                    f"session_filtered_pair_carry_{tf_tag}_{spec['variant']}_"
+                    f"{float(spec['entry_z']):.1f}_{float(spec['exit_z']):.2f}"
+                ),
+                family="profit_reboot_pair_carry",
+                strategy_class="SessionFilteredPairCarryStrategy",
+                timeframe=timeframe,
+                symbols=("BNB/USDT", "TRX/USDT"),
+                params=params,
+                notes=(
+                    "Profit-reboot BNB/TRX pair carry sleeve that only opens spread mean-reversion "
+                    "positions during configured UTC sessions when expected move clears fee/slippage "
+                    f"thresholds for {timeframe} ({spec['variant']})."
+                ),
+                    tags=(
+                        "profit_reboot_20260501",
+                        "profit_moonshot_20260501",
+                        "market_neutral",
+                        "pair",
+                        "session_filter",
+                    "expected_move_gate",
+                ),
+                metadata={
+                    "timeframe": timeframe,
+                    "pair": "BNB/USDT_TRX/USDT",
+                    "pair_variant": str(spec["variant"]),
+                    "session_filtered": True,
+                },
+            )
 
     for timeframe in lag_convergence_tfs:
         tf_tag = timeframe.replace("/", "-")

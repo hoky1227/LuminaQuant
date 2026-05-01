@@ -90,7 +90,20 @@ _LIVE_PORTFOLIO_MODE_ALIASES = {
     "profit_reboot_adaptive_momentum_mode",
     "profit_reboot_adaptive_momentum_defensive_mode",
     "profit_reboot_adaptive_momentum_short_bias_mode",
+    "profit_reboot_panic_rebound_mode",
+    "profit_reboot_session_pair_carry_mode",
+    "profit_reboot_compression_breakout_mode",
+    "profit_moonshot_adaptive_momentum_mode",
+    "profit_moonshot_panic_rebound_mode",
+    "profit_moonshot_session_pair_carry_mode",
+    "profit_moonshot_balanced_mode",
+    "profit_moonshot_trend_mode",
+    "profit_moonshot_breakout_mode",
+    "profit_moonshot_reversion_mode",
+    "profit_moonshot_ensemble_mode",
 }
+_PROFIT_MODE_UNBOUNDED_CHILD_TARGET_ALLOCATION = 0.02
+_PROFIT_MODE_UNBOUNDED_CHILD_MAX_ORDER_VALUE = 250.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -275,6 +288,226 @@ def _profit_reboot_adaptive_momentum_row(variant: str) -> dict[str, Any]:
     }
 
 
+def _profit_reboot_panic_rebound_row(variant: str) -> dict[str, Any]:
+    symbols = ["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "TRX/USDT"]
+    base_params: dict[str, Any] = {
+        "history_bars": 160,
+        "return_window": 32,
+        "volume_window": 32,
+        "vwap_window": 24,
+        "shock_return_z": 2.0,
+        "shock_return_pct": 0.025,
+        "volume_z": 1.0,
+        "confirmation_bars": 3,
+        "min_rebound_pct": 0.006,
+        "vwap_recovery_pct": 0.0,
+        "stop_loss_pct": 0.018,
+        "take_profit_pct": 0.035,
+        "trailing_exit_pct": 0.018,
+        "max_hold_bars": 18,
+        "target_allocation": 0.08,
+        "max_order_value": 300.0,
+        "min_price": 0.10,
+    }
+    if variant == "fast":
+        base_params.update(
+            {
+                "return_window": 18,
+                "volume_window": 18,
+                "vwap_window": 12,
+                "shock_return_z": 1.6,
+                "shock_return_pct": 0.018,
+                "confirmation_bars": 2,
+                "min_rebound_pct": 0.004,
+                "take_profit_pct": 0.025,
+                "max_hold_bars": 10,
+            }
+        )
+
+    return {
+        "candidate_id": f"profit_reboot_panic_rebound_{variant}",
+        "name": f"profit_reboot_panic_rebound_{variant}",
+        "strategy_class": "PanicReboundMeanReversionStrategy",
+        "symbols": symbols,
+        "params": base_params,
+        "weight": 1.0,
+    }
+
+
+def _profit_reboot_session_pair_carry_row(variant: str) -> dict[str, Any]:
+    base_params: dict[str, Any] = {
+        "symbol_x": "BNB/USDT",
+        "symbol_y": "TRX/USDT",
+        "lookback_window": 96,
+        "hedge_window": 192,
+        "entry_z": 2.2,
+        "exit_z": 0.50,
+        "stop_z": 3.8,
+        "min_correlation": 0.18,
+        "max_hold_bars": 72,
+        "cooldown_bars": 6,
+        "reentry_z_buffer": 0.25,
+        "min_z_turn": 0.02,
+        "stop_loss_pct": 0.020,
+        "take_profit_pct": 0.045,
+        "allowed_session_utc_hours": "0,1,8,9,13,14,15,20,21",
+        "min_expected_move_pct": 0.0015,
+    }
+    if variant == "strict":
+        base_params.update(
+            {
+                "entry_z": 2.6,
+                "exit_z": 0.65,
+                "stop_z": 4.2,
+                "min_correlation": 0.24,
+                "max_hold_bars": 48,
+                "cooldown_bars": 8,
+                "min_expected_move_pct": 0.0025,
+            }
+        )
+
+    return {
+        "candidate_id": f"profit_reboot_session_pair_carry_{variant}",
+        "name": f"profit_reboot_session_pair_carry_{variant}",
+        "strategy_class": "SessionFilteredPairCarryStrategy",
+        "symbols": ["BNB/USDT", "TRX/USDT"],
+        "params": base_params,
+        "weight": 1.0,
+    }
+
+
+def _profit_reboot_compression_breakout_row(variant: str) -> dict[str, Any]:
+    symbols = ["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "TRX/USDT"]
+    base_params: dict[str, Any] = {
+        "lookback_bars": 48,
+        "compression_window": 24,
+        "compression_history_bars": 160,
+        "compression_percentile": 0.25,
+        "breakout_buffer": 0.002,
+        "broad_lookback_bars": 24,
+        "broad_threshold": 0.0,
+        "stop_loss_pct": 0.025,
+        "take_profit_pct": 0.060,
+        "trailing_exit_pct": 0.030,
+        "max_hold_bars": 72,
+        "target_allocation": 0.10,
+        "max_order_value": 350.0,
+        "btc_symbol": "BTC/USDT",
+        "min_price": 0.10,
+    }
+    if variant == "fast":
+        base_params.update(
+            {
+                "lookback_bars": 32,
+                "compression_window": 16,
+                "compression_history_bars": 96,
+                "compression_percentile": 0.30,
+                "breakout_buffer": 0.003,
+                "broad_lookback_bars": 12,
+                "stop_loss_pct": 0.020,
+                "take_profit_pct": 0.045,
+                "max_hold_bars": 36,
+            }
+        )
+
+    return {
+        "candidate_id": f"profit_reboot_compression_breakout_{variant}",
+        "name": f"profit_reboot_compression_breakout_{variant}",
+        "strategy_class": "CompressionBreakoutContinuationStrategy",
+        "symbols": symbols,
+        "params": base_params,
+        "weight": 1.0,
+    }
+
+
+def _profit_moonshot_row(strategy: str, variant: str, weight: float = 1.0) -> dict[str, Any]:
+    symbols = ["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "TRX/USDT"]
+    class_by_strategy = {
+        "trend": "ProfitMoonshotTrendStrategy",
+        "breakout": "ProfitMoonshotBreakoutStrategy",
+        "reversion": "ProfitMoonshotReversionStrategy",
+    }
+    params: dict[str, Any] = {
+        "lookback_bars": 720,
+        "fast_lookback_bars": 120,
+        "slow_lookback_bars": 2_880,
+        "rebalance_bars": 120,
+        "entry_threshold": 0.018,
+        "exit_threshold": 0.002,
+        "max_longs": 1,
+        "max_shorts": 0,
+        "gross_exposure": 0.010,
+        "max_order_value": 150.0,
+        "stop_loss_pct": 0.018,
+        "take_profit_pct": 0.050,
+        "trailing_exit_pct": 0.020,
+        "max_hold_bars": 96,
+        "min_price": 0.10,
+        "allow_shorts": False,
+    }
+    if strategy == "trend":
+        params.update(
+            {
+                "lookback_bars": 1_440,
+                "fast_lookback_bars": 360,
+                "slow_lookback_bars": 10_080,
+                "rebalance_bars": 720,
+                "entry_threshold": 0.030,
+                "gross_exposure": 0.008,
+                "breadth_threshold": 0.004,
+                "max_hold_bars": 4_320,
+            }
+        )
+    elif strategy == "breakout":
+        params.update(
+            {
+                "lookback_bars": 360,
+                "fast_lookback_bars": 60,
+                "slow_lookback_bars": 2_880,
+                "rebalance_bars": 60,
+                "entry_threshold": 0.014,
+                "gross_exposure": 0.008,
+                "breakout_buffer": 0.004,
+                "squeeze_ratio_max": 1.20,
+                "volume_z_min": 0.25,
+                "max_hold_bars": 720,
+            }
+        )
+    elif strategy == "reversion":
+        params.update(
+            {
+                "lookback_bars": 180,
+                "fast_lookback_bars": 30,
+                "slow_lookback_bars": 1_440,
+                "rebalance_bars": 30,
+                "entry_threshold": 1.50,
+                "exit_threshold": 0.25,
+                "gross_exposure": 0.006,
+                "stop_loss_pct": 0.015,
+                "take_profit_pct": 0.035,
+                "trailing_exit_pct": 0.018,
+                "max_hold_bars": 360,
+                "return_z_min": 1.75,
+                "volume_z_min": 0.50,
+                "range_z_min": 0.50,
+            }
+        )
+    else:
+        raise ValueError(f"unsupported profit moonshot strategy: {strategy}")
+    if variant == "defensive":
+        params["gross_exposure"] = min(0.004, float(params["gross_exposure"]))
+        params["max_order_value"] = 75.0
+        params["entry_threshold"] = float(params["entry_threshold"]) * 1.25
+    return {
+        "candidate_id": f"profit_moonshot_{strategy}_{variant}",
+        "name": f"profit_moonshot_{strategy}_{variant}",
+        "strategy_class": class_by_strategy[strategy],
+        "symbols": symbols,
+        "params": params,
+        "weight": float(weight),
+    }
+
+
 def _portfolio_weight_rows(path: Path) -> list[dict[str, Any]]:
     payload = _read_json(path)
     rows = [dict(item) for item in list(payload.get("weights") or []) if isinstance(item, dict)]
@@ -398,6 +631,43 @@ def _alias_rows(token: str) -> list[dict[str, Any]] | None:
         ],
         "profit_reboot_adaptive_momentum_short_bias_mode": [
             _profit_reboot_adaptive_momentum_row("short_bias"),
+        ],
+        "profit_reboot_panic_rebound_mode": [
+            _profit_reboot_panic_rebound_row("balanced"),
+        ],
+        "profit_reboot_session_pair_carry_mode": [
+            _profit_reboot_session_pair_carry_row("balanced"),
+        ],
+        "profit_reboot_compression_breakout_mode": [
+            _profit_reboot_compression_breakout_row("balanced"),
+        ],
+        "profit_moonshot_adaptive_momentum_mode": [
+            _profit_reboot_adaptive_momentum_row("balanced"),
+        ],
+        "profit_moonshot_panic_rebound_mode": [
+            _profit_reboot_panic_rebound_row("balanced"),
+        ],
+        "profit_moonshot_session_pair_carry_mode": [
+            _profit_reboot_session_pair_carry_row("balanced"),
+        ],
+        "profit_moonshot_balanced_mode": [
+            _profit_moonshot_row("trend", "balanced", weight=0.35),
+            _profit_moonshot_row("breakout", "balanced", weight=0.35),
+            _profit_moonshot_row("reversion", "balanced", weight=0.30),
+        ],
+        "profit_moonshot_trend_mode": [
+            _profit_moonshot_row("trend", "balanced"),
+        ],
+        "profit_moonshot_breakout_mode": [
+            _profit_moonshot_row("breakout", "balanced"),
+        ],
+        "profit_moonshot_reversion_mode": [
+            _profit_moonshot_row("reversion", "balanced"),
+        ],
+        "profit_moonshot_ensemble_mode": [
+            _profit_moonshot_row("trend", "ensemble", weight=0.40),
+            _profit_moonshot_row("breakout", "ensemble", weight=0.35),
+            _profit_moonshot_row("reversion", "ensemble", weight=0.25),
         ],
     }
     if token in portfolio_paths:
@@ -691,6 +961,38 @@ class ArtifactPortfolioModeStrategy(Strategy):
 
     def _forward_child_signal(self, component: PortfolioModeComponent, signal: SignalEvent) -> None:
         metadata = dict(signal.metadata or {})
+        is_profit_mode = self.portfolio_mode.startswith(("profit_moonshot_", "profit_reboot_"))
+        child_target_allocation = _safe_float(metadata.get("target_allocation"), 0.0)
+        child_max_symbol_exposure = _safe_float(metadata.get("max_symbol_exposure_pct"), 0.0)
+        if child_target_allocation > 0.0:
+            metadata["child_target_allocation"] = child_target_allocation
+            metadata["target_allocation"] = child_target_allocation * float(component.weight)
+        elif is_profit_mode:
+            fallback_target_allocation = (
+                _PROFIT_MODE_UNBOUNDED_CHILD_TARGET_ALLOCATION * float(component.weight)
+            )
+            metadata["target_allocation"] = fallback_target_allocation
+            metadata["max_symbol_exposure_pct"] = fallback_target_allocation
+            metadata["portfolio_mode_unbounded_child_target_allocation"] = (
+                _PROFIT_MODE_UNBOUNDED_CHILD_TARGET_ALLOCATION
+            )
+
+        if child_max_symbol_exposure > 0.0:
+            metadata["child_max_symbol_exposure_pct"] = child_max_symbol_exposure
+            metadata["max_symbol_exposure_pct"] = child_max_symbol_exposure * float(component.weight)
+
+        child_max_order_value = _safe_float(metadata.get("max_order_value"), 0.0)
+        if child_max_order_value > 0.0:
+            metadata["child_max_order_value"] = child_max_order_value
+            metadata["max_order_value"] = child_max_order_value * float(component.weight)
+        elif is_profit_mode:
+            metadata["max_order_value"] = (
+                _PROFIT_MODE_UNBOUNDED_CHILD_MAX_ORDER_VALUE * float(component.weight)
+            )
+            metadata["portfolio_mode_unbounded_child_max_order_value"] = (
+                _PROFIT_MODE_UNBOUNDED_CHILD_MAX_ORDER_VALUE
+            )
+
         metadata.update(
             {
                 "portfolio_mode": self.portfolio_mode,

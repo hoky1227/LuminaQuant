@@ -9,3 +9,17 @@ def test_infer_strategy_class_name_extended_catalog():
     assert infer_strategy_class_name("vwap_reversion_topcap") == "VwapReversionStrategy"
     assert infer_strategy_class_name("lag_convergence_xau_xag") == "LagConvergenceStrategy"
     assert infer_strategy_class_name("bitcoin_buy_hold") == "BitcoinBuyHoldStrategy"
+    assert infer_strategy_class_name("panic_rebound_mr_5m") == "PanicReboundMeanReversionStrategy"
+    assert (
+        infer_strategy_class_name("session_filtered_pair_carry_1h")
+        == "SessionFilteredPairCarryStrategy"
+    )
+    assert infer_strategy_class_name("profit_moonshot_trend_1h_balanced") == "ProfitMoonshotTrendStrategy"
+    assert (
+        infer_strategy_class_name("profit_moonshot_breakout_1h_expansion")
+        == "ProfitMoonshotBreakoutStrategy"
+    )
+    assert (
+        infer_strategy_class_name("profit_moonshot_reversion_1h_shock")
+        == "ProfitMoonshotReversionStrategy"
+    )

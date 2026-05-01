@@ -13,9 +13,17 @@ from lumina_quant.tuning import ParamRegistry
 from .adaptive_regime_momentum import AdaptiveRegimeMomentumStrategy
 from .alpha101_formula import Alpha101FormulaStrategy
 from .bitcoin_buy_hold import BitcoinBuyHoldStrategy
+from .compression_breakout_continuation import CompressionBreakoutContinuationStrategy
 from .lag_convergence import LagConvergenceStrategy
 from .mean_reversion_std import MeanReversionStdStrategy
 from .pair_trading_zscore import PairTradingZScoreStrategy
+from .panic_rebound_mean_reversion import PanicReboundMeanReversionStrategy
+from .profit_moonshot import (
+    ProfitMoonshotBreakoutStrategy,
+    ProfitMoonshotReversionStrategy,
+    ProfitMoonshotTrendStrategy,
+)
+from .session_filtered_pair_carry import SessionFilteredPairCarryStrategy
 from .topcap_tsmom import TopCapTimeSeriesMomentumStrategy
 from .vwap_reversion import VwapReversionStrategy
 
@@ -82,12 +90,18 @@ _RAW_STRATEGY_MAP: dict[str, StrategyClass | None] = {
     "AdaptiveRegimeMomentumStrategy": AdaptiveRegimeMomentumStrategy,
     "Alpha101FormulaStrategy": Alpha101FormulaStrategy,
     "BitcoinBuyHoldStrategy": BitcoinBuyHoldStrategy,
+    "CompressionBreakoutContinuationStrategy": CompressionBreakoutContinuationStrategy,
     "LagConvergenceStrategy": LagConvergenceStrategy,
     "MeanReversionStdStrategy": MeanReversionStdStrategy,
+    "PanicReboundMeanReversionStrategy": PanicReboundMeanReversionStrategy,
+    "ProfitMoonshotBreakoutStrategy": ProfitMoonshotBreakoutStrategy,
+    "ProfitMoonshotReversionStrategy": ProfitMoonshotReversionStrategy,
+    "ProfitMoonshotTrendStrategy": ProfitMoonshotTrendStrategy,
     "RsiStrategy": RsiStrategy,
     "MovingAverageCrossStrategy": MovingAverageCrossStrategy,
     "PairTradingZScoreStrategy": PairTradingZScoreStrategy,
     "PairSpreadZScoreStrategy": PairSpreadZScoreStrategy,
+    "SessionFilteredPairCarryStrategy": SessionFilteredPairCarryStrategy,
     "RareEventScoreStrategy": RareEventScoreStrategy,
     "RegimeBreakoutCandidateStrategy": RegimeBreakoutCandidateStrategy,
     "RollingBreakoutStrategy": RollingBreakoutStrategy,
@@ -113,12 +127,18 @@ _STRATEGY_TIER_HINTS: dict[str, str] = {
     "AdaptiveRegimeMomentumStrategy": "live_opt_in",
     "Alpha101FormulaStrategy": "research_only",
     "BitcoinBuyHoldStrategy": "live_default",
+    "CompressionBreakoutContinuationStrategy": "live_opt_in",
     "LagConvergenceStrategy": "live_default",
     "MeanReversionStdStrategy": "live_default",
+    "PanicReboundMeanReversionStrategy": "live_opt_in",
+    "ProfitMoonshotBreakoutStrategy": "live_opt_in",
+    "ProfitMoonshotReversionStrategy": "live_opt_in",
+    "ProfitMoonshotTrendStrategy": "live_opt_in",
     "RsiStrategy": "live_default",
     "MovingAverageCrossStrategy": "live_default",
     "PairTradingZScoreStrategy": "live_default",
     "RollingBreakoutStrategy": "live_default",
+    "SessionFilteredPairCarryStrategy": "live_opt_in",
     "TopCapTimeSeriesMomentumStrategy": "live_default",
     "VwapReversionStrategy": "live_default",
     "RareEventScoreStrategy": "live_opt_in",
@@ -147,10 +167,16 @@ _OPTUNA_TRIAL_OVERRIDES: dict[str, str] = {
     "AdaptiveRegimeMomentumStrategy": "24",
     "Alpha101FormulaStrategy": "24",
     "LagConvergenceStrategy": "24",
+    "CompressionBreakoutContinuationStrategy": "20",
     "MeanReversionStdStrategy": "24",
+    "PanicReboundMeanReversionStrategy": "20",
+    "ProfitMoonshotBreakoutStrategy": "20",
+    "ProfitMoonshotReversionStrategy": "20",
+    "ProfitMoonshotTrendStrategy": "20",
     "RsiStrategy": "20",
     "MovingAverageCrossStrategy": "20",
     "PairTradingZScoreStrategy": "32",
+    "SessionFilteredPairCarryStrategy": "20",
     "PairSpreadZScoreStrategy": "24",
     "RareEventScoreStrategy": "28",
     "RollingBreakoutStrategy": "24",

@@ -1129,6 +1129,7 @@ def build_live_equivalent_revalidation(
     backtest_poll_seconds: int = 20,
     backtest_window_seconds: int = 20,
     backtest_checkpoint_path: Path | None = None,
+    portfolio_modes: list[str] | None = None,
 ) -> dict[str, Any]:
     market_root = Path(market_root or str(BaseConfig.MARKET_DATA_PARQUET_PATH))
     exchange = str(exchange or BaseConfig.MARKET_DATA_EXCHANGE).lower()
@@ -1138,7 +1139,18 @@ def build_live_equivalent_revalidation(
     full_universe = _load_full_universe(full_universe_path)
     artifact_rows = _artifact_candidate_reset_rows(full_universe)
 
-    modes = sorted(supported_portfolio_modes())
+    if portfolio_modes:
+        modes = []
+        for raw_mode in portfolio_modes:
+            mode = str(raw_mode or "").strip()
+            if not mode:
+                continue
+            if not supports_live_portfolio_mode(mode):
+                raise ValueError(f"unsupported live portfolio mode filter: {mode}")
+            modes.append(mode)
+        modes = sorted(dict.fromkeys(modes))
+    else:
+        modes = sorted(supported_portfolio_modes())
     preflights = {
         mode: _mode_preflight(
             mode=mode,
@@ -1291,6 +1303,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--backtest-window-seconds", type=int, default=20)
     parser.add_argument("--backtest-checkpoint-path", default=str(DEFAULT_BACKTEST_CHECKPOINT_PATH))
     parser.add_argument(
+        "--portfolio-modes",
+        default="",
+        help="Comma-separated live portfolio modes to revalidate; defaults to all supported modes.",
+    )
+    parser.add_argument(
         "--execute-backtests",
         action="store_true",
         help=(
@@ -1316,6 +1333,12 @@ def main(argv: list[str] | None = None) -> int:
         backtest_poll_seconds=max(1, int(args.backtest_poll_seconds)),
         backtest_window_seconds=max(1, int(args.backtest_window_seconds)),
         backtest_checkpoint_path=Path(args.backtest_checkpoint_path),
+        portfolio_modes=[
+            item.strip()
+            for item in str(args.portfolio_modes or "").split(",")
+            if item.strip()
+        ]
+        or None,
     )
     print(json.dumps(result["paths"], ensure_ascii=False, indent=2, sort_keys=True))
     return 0

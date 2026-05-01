@@ -52,6 +52,31 @@ def _feed(strategy: AdaptiveRegimeMomentumStrategy, bars: _WindowBarStore, rows)
     return _drain(strategy.events)
 
 
+def _risk_control_strategy(
+    bars: _WindowBarStore,
+    events: queue.Queue,
+    **overrides,
+) -> AdaptiveRegimeMomentumStrategy:
+    params = {
+        "lookback_bars": 4,
+        "short_lookback_bars": 1,
+        "regime_lookback_bars": 4,
+        "volatility_lookback_bars": 10,
+        "rebalance_bars": 1,
+        "signal_threshold": 0.002,
+        "max_longs": 1,
+        "max_shorts": 0,
+        "gross_exposure": 0.30,
+        "stop_loss_pct": 0.0,
+        "take_profit_pct": 0.0,
+        "trailing_exit_pct": 0.0,
+        "max_hold_bars": 0,
+        "risk_off_exit": False,
+    }
+    params.update(overrides)
+    return AdaptiveRegimeMomentumStrategy(bars, events, **params)
+
+
 def _trend_rows(length: int = 80):
     symbols = ["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "TRX/USDT"]
     prices = {
