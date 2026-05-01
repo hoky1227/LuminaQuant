@@ -92,6 +92,7 @@ def test_summary_promotes_live_equivalent_candidate_over_vector_report_only(tmp_
     assert summary["promotion_eligible_count"] == 1
     assert summary["promoted_candidate"]["candidate_id"] == "profit_moonshot_reversion_mode"
     assert summary["promoted_candidate"]["source_kind"] == "live_equivalent"
+    assert summary["best_return_candidate"]["candidate_id"] == "profit_moonshot_reversion_mode"
     assert summary["best_report_only_candidate"]["candidate_id"] == "profit_moonshot_reversion_mode"
     blocker_names = {row["blocker"] for row in summary["blocker_summary"]}
     assert "fallback_only" in blocker_names
@@ -141,6 +142,7 @@ def test_main_writes_json_and_markdown_with_required_metric_columns(tmp_path: Pa
     payload = json.loads(summary_path.read_text(encoding="utf-8"))
     markdown = markdown_path.read_text(encoding="utf-8")
     assert payload["promoted_candidate"]["candidate_id"] == "live-alpha"
+    assert payload["best_return_candidate"]["candidate_id"] == "live-alpha"
     assert "| rank | candidate | source | split | return | MDD | Sharpe | Sortino | trades | liq | final equity | blockers |" in markdown
     assert "Promoted Candidate" in markdown
     assert "live-alpha" in markdown
@@ -159,3 +161,41 @@ def test_oversized_artifact_is_skipped_with_scan_issue(tmp_path: Path) -> None:
     assert summary["candidate_count"] == 0
     assert summary["skipped_artifacts"][0]["reason"] == "skipped_max_bytes"
     assert summary["decision"] == "no_live_equivalent_promotion_candidate"
+
+
+def test_profit_moonshot_continuation_validator_requires_improvement(tmp_path: Path):
+    module_path = (
+        Path(__file__).resolve().parents[2]
+        / "scripts"
+        / "research"
+        / "validate_profit_moonshot_continuation.py"
+    )
+    spec = importlib.util.spec_from_file_location("validate_profit_moonshot_continuation", module_path)
+    validator = importlib.util.module_from_spec(spec)
+    assert spec is not None and spec.loader is not None
+    sys.modules[spec.name] = validator
+    spec.loader.exec_module(validator)
+
+    summary_path = tmp_path / "summary.json"
+    summary_path.write_text(
+        json.dumps(
+            {
+                "decision": "promoted_candidate_found",
+                "promoted_candidate": {
+                    "mode": "profit_moonshot_adaptive_momentum_boost_mode",
+                    "total_return": validator.BASELINE_VAL_RETURN + 0.001,
+                    "sharpe": 0.01,
+                    "sortino": 0.01,
+                    "trades": 10,
+                    "liquidations": 0,
+                    "blockers": [],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = validator.validate(summary_path)
+
+    assert result["passed"] is True
+    assert result["improved_over_baseline"] is True

@@ -523,6 +523,11 @@ def build_summary(
 
     ranked = sorted(candidates, key=_candidate_sort_key, reverse=True)
     promoted = next((row for row in ranked if bool(row.get("promotion_eligible"))), None)
+    best_return = max(
+        (row for row in ranked if bool(row.get("promotion_eligible"))),
+        key=lambda row: _safe_float(row.get("total_return"), 0.0),
+        default=None,
+    )
     best_report_only = ranked[0] if ranked else None
     decision = "promoted_candidate_found" if promoted else "no_live_equivalent_promotion_candidate"
     summary: dict[str, Any] = {
@@ -539,6 +544,7 @@ def build_summary(
         "skipped_artifacts": [issue.as_payload() for issue in issues],
         "blocker_summary": _summarize_blockers(candidates),
         "promoted_candidate": _round_candidate(promoted) if promoted else None,
+        "best_return_candidate": _round_candidate(best_return) if best_return else None,
         "best_report_only_candidate": _round_candidate(best_report_only) if best_report_only else None,
         "ranked_candidates": [_round_candidate(row) for row in ranked[: max(1, int(top_n))]],
     }
@@ -556,6 +562,7 @@ def _format_float(value: Any) -> str:
 def render_markdown(summary: Mapping[str, Any]) -> str:
     """Render a compact operator-facing Markdown report."""
     promoted = _as_dict(summary.get("promoted_candidate"))
+    best_return = _as_dict(summary.get("best_return_candidate"))
     best = _as_dict(summary.get("best_report_only_candidate"))
     lines = [
         "# Profit Moonshot Research Summary",
@@ -581,6 +588,20 @@ def render_markdown(summary: Mapping[str, Any]) -> str:
                 "",
             ]
         )
+        if best_return and best_return.get("candidate_id") != promoted.get("candidate_id"):
+            lines.extend(
+                [
+                    "## Best Validation Return Candidate",
+                    "",
+                    f"- Candidate: `{best_return.get('candidate_id')}`",
+                    f"- Source: `{best_return.get('source_kind')}` from `{best_return.get('source_artifact')}`",
+                    f"- {best_return.get('primary_split', 'val')} return: `{_format_pct(best_return.get('total_return'))}`",
+                    f"- max_drawdown: `{_format_pct(best_return.get('max_drawdown'))}`",
+                    f"- Sharpe / Sortino: `{_format_float(best_return.get('sharpe'))}` / `{_format_float(best_return.get('sortino'))}`",
+                    f"- trades / liquidations: `{best_return.get('trades', 0)}` / `{best_return.get('liquidations', 0)}`",
+                    "",
+                ]
+            )
     else:
         lines.extend(
             [

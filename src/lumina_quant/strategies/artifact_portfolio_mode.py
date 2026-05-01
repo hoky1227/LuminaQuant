@@ -94,6 +94,7 @@ _LIVE_PORTFOLIO_MODE_ALIASES = {
     "profit_reboot_session_pair_carry_mode",
     "profit_reboot_compression_breakout_mode",
     "profit_moonshot_adaptive_momentum_mode",
+    "profit_moonshot_adaptive_momentum_boost_mode",
     "profit_moonshot_panic_rebound_mode",
     "profit_moonshot_session_pair_carry_mode",
     "profit_moonshot_balanced_mode",
@@ -275,6 +276,19 @@ def _profit_reboot_adaptive_momentum_row(variant: str) -> dict[str, Any]:
                 "take_profit_pct": 0.0,
                 "trailing_exit_pct": 0.0,
                 "max_hold_bars": 0,
+            }
+        )
+    elif variant == "boost":
+        # Same signal logic as the current best live-equivalent moonshot
+        # candidate, but with a deliberately bounded 1.5x allocation.  Prior
+        # validation showed the balanced sleeve had positive validation PnL and
+        # enough train-MDD headroom for a small sizing step; keep the params
+        # otherwise identical so the follow-up isolates sizing from signal
+        # overfitting.
+        base_params.update(
+            {
+                "gross_exposure": 0.0075,
+                "max_order_value": 300.0,
             }
         )
 
@@ -643,6 +657,9 @@ def _alias_rows(token: str) -> list[dict[str, Any]] | None:
         ],
         "profit_moonshot_adaptive_momentum_mode": [
             _profit_reboot_adaptive_momentum_row("balanced"),
+        ],
+        "profit_moonshot_adaptive_momentum_boost_mode": [
+            _profit_reboot_adaptive_momentum_row("boost"),
         ],
         "profit_moonshot_panic_rebound_mode": [
             _profit_reboot_panic_rebound_row("balanced"),

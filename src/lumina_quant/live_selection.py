@@ -42,6 +42,7 @@ SUPPORTED_LIVE_PORTFOLIO_MODES = frozenset(
         "profit_reboot_session_pair_carry_mode",
         "profit_reboot_compression_breakout_mode",
         "profit_moonshot_adaptive_momentum_mode",
+        "profit_moonshot_adaptive_momentum_boost_mode",
         "profit_moonshot_panic_rebound_mode",
         "profit_moonshot_session_pair_carry_mode",
         "profit_moonshot_balanced_mode",
