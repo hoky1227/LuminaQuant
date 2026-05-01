@@ -35,6 +35,9 @@ SUPPORTED_LIVE_PORTFOLIO_MODES = frozenset(
         "pair_fast_exit",
         "state_vwap_pair",
         "wave2_pair",
+        "profit_reboot_adaptive_momentum_mode",
+        "profit_reboot_adaptive_momentum_defensive_mode",
+        "profit_reboot_adaptive_momentum_short_bias_mode",
     }
 )
 
@@ -147,6 +150,8 @@ def infer_strategy_class_name(candidate_name: str) -> str | None:
         return "RollingBreakoutStrategy"
     if token.startswith("topcap_tsmom"):
         return "TopCapTimeSeriesMomentumStrategy"
+    if token.startswith("adaptive_regime_momentum") or token.startswith("profit_reboot_adaptive_momentum"):
+        return "AdaptiveRegimeMomentumStrategy"
     if token.startswith("pair_"):
         return "PairTradingZScoreStrategy"
     if token.startswith("vwap_reversion"):

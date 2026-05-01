@@ -1216,6 +1216,85 @@ _TOPCAP_TSMOM_SLICE: dict[str, tuple[dict[str, Any], ...]] = {
     ),
 }
 
+_ADAPTIVE_REGIME_MOMENTUM_SLICE: dict[str, tuple[dict[str, Any], ...]] = {
+    "1h": (
+        {
+            "variant": "profit_reboot_balanced",
+            "lookback_bars": 360,
+            "short_lookback_bars": 24,
+            "regime_lookback_bars": 360,
+            "volatility_lookback_bars": 60,
+            "rebalance_bars": 72,
+            "signal_threshold": 0.040,
+            "broad_threshold": 0.0,
+            "max_longs": 1,
+            "max_shorts": 2,
+            "gross_exposure": 0.005,
+            "max_order_value": 200.0,
+            "stop_loss_pct": 0.0,
+            "take_profit_pct": 0.0,
+            "trailing_exit_pct": 0.0,
+            "max_hold_bars": 0,
+        },
+        {
+            "variant": "profit_reboot_defensive",
+            "lookback_bars": 168,
+            "short_lookback_bars": 24,
+            "regime_lookback_bars": 168,
+            "volatility_lookback_bars": 60,
+            "rebalance_bars": 360,
+            "signal_threshold": 0.080,
+            "broad_threshold": 0.0,
+            "max_longs": 1,
+            "max_shorts": 2,
+            "gross_exposure": 0.005,
+            "max_order_value": 200.0,
+            "stop_loss_pct": 0.0,
+            "take_profit_pct": 0.0,
+            "trailing_exit_pct": 0.0,
+            "max_hold_bars": 0,
+        },
+        {
+            "variant": "profit_reboot_short_bias",
+            "lookback_bars": 168,
+            "short_lookback_bars": 72,
+            "regime_lookback_bars": 168,
+            "volatility_lookback_bars": 60,
+            "rebalance_bars": 360,
+            "signal_threshold": 0.080,
+            "broad_threshold": 0.0,
+            "max_longs": 0,
+            "max_shorts": 2,
+            "gross_exposure": 0.005,
+            "max_order_value": 200.0,
+            "stop_loss_pct": 0.0,
+            "take_profit_pct": 0.0,
+            "trailing_exit_pct": 0.0,
+            "max_hold_bars": 0,
+        },
+    ),
+    "4h": (
+        {
+            "variant": "profit_reboot_slow_defensive",
+            "lookback_bars": 60,
+            "short_lookback_bars": 6,
+            "regime_lookback_bars": 60,
+            "volatility_lookback_bars": 24,
+            "rebalance_bars": 6,
+            "signal_threshold": 0.020,
+            "broad_threshold": 0.0,
+            "max_longs": 1,
+            "max_shorts": 1,
+            "gross_exposure": 0.005,
+            "max_order_value": 200.0,
+            "stop_loss_pct": 0.040,
+            "take_profit_pct": 0.090,
+            "trailing_exit_pct": 0.050,
+            "max_hold_bars": 180,
+        },
+    ),
+}
+
 _LAST_DAY_LIQUIDITY_REGIME_SLICE: dict[str, tuple[dict[str, Any], ...]] = {
     "1h": (
         {
@@ -1676,6 +1755,8 @@ def _article_pipeline_family_ids(
         return ("metals-lag-convergence",) if symbol_set.intersection(_METALS) else ()
     if strategy_token == "TopCapTimeSeriesMomentumStrategy":
         return ("topcap-rotation-relative-momentum",)
+    if strategy_token == "AdaptiveRegimeMomentumStrategy":
+        return ("profit-reboot-adaptive-regime-momentum",)
     if strategy_token == "CarryTrendFactorRotationStrategy":
         return ("carry-trend-factor-rotation",)
     if strategy_token == "Alpha101FormulaStrategy":
@@ -2503,6 +2584,60 @@ def _build_cross_sectional_rotation_candidates(ctx: _CandidateBuildContext) -> N
                         "residualize_mean": bool(spec.get("residualize_mean", False)),
                         "benchmark_drawdown_window": int(spec.get("benchmark_drawdown_window", 0) or 0),
                         "benchmark_drawdown_limit": float(spec.get("benchmark_drawdown_limit", 0.0) or 0.0),
+                    },
+                )
+
+        for timeframe in topcap_tfs:
+            tf_tag = timeframe.replace("/", "-")
+            for spec in _ADAPTIVE_REGIME_MOMENTUM_SLICE.get(timeframe, ()):
+                params = {
+                    "lookback_bars": int(spec["lookback_bars"]),
+                    "short_lookback_bars": int(spec["short_lookback_bars"]),
+                    "regime_lookback_bars": int(spec["regime_lookback_bars"]),
+                    "volatility_lookback_bars": int(spec["volatility_lookback_bars"]),
+                    "rebalance_bars": int(spec["rebalance_bars"]),
+                    "signal_threshold": float(spec["signal_threshold"]),
+                    "broad_threshold": float(spec["broad_threshold"]),
+                    "max_longs": int(spec["max_longs"]),
+                    "max_shorts": int(spec["max_shorts"]),
+                    "gross_exposure": float(spec["gross_exposure"]),
+                    "max_order_value": float(spec["max_order_value"]),
+                    "stop_loss_pct": float(spec["stop_loss_pct"]),
+                    "take_profit_pct": float(spec["take_profit_pct"]),
+                    "trailing_exit_pct": float(spec["trailing_exit_pct"]),
+                    "max_hold_bars": int(spec["max_hold_bars"]),
+                    "btc_symbol": "BTC/USDT",
+                    "min_price": 0.10,
+                    "risk_off_exit": True,
+                }
+                _add_candidate(
+                    candidates,
+                    name=(
+                        f"adaptive_regime_momentum_{tf_tag}_{spec['variant']}_"
+                        f"{int(spec['lookback_bars'])}_{int(spec['rebalance_bars'])}_{float(spec['signal_threshold']):.3f}"
+                    ),
+                    family="profit_reboot_cross_sectional",
+                    strategy_class="AdaptiveRegimeMomentumStrategy",
+                    timeframe=timeframe,
+                    symbols=crypto_symbols,
+                    params=params,
+                    notes=(
+                        "Profit-reboot adaptive regime momentum sleeve that compresses each market-window "
+                        f"decision into one bar and switches between long, short, and cash for {timeframe} "
+                        f"({spec['variant']})."
+                    ),
+                    tags=(
+                        "profit_reboot_20260501",
+                        "cross_sectional",
+                        "adaptive_regime",
+                        "momentum",
+                        "crypto",
+                    ),
+                    metadata={
+                        "timeframe": timeframe,
+                        "retune_profile": str(spec["variant"]),
+                        "symbol_scope": "crypto",
+                        "market_window_one_bar_per_decision": True,
                     },
                 )
 

@@ -47,6 +47,14 @@ OUTPUT_DIR = GROUP_ROOT / "live_equivalent_revalidation_20260426"
 LIVE_DECISION_PATH = FOLLOWUP_ROOT / "portfolio_live_readiness_decision_latest.json"
 DEFAULT_BACKTEST_CHECKPOINT_PATH = OUTPUT_DIR / "live_equivalent_backtest_checkpoint_20260426.json"
 MDD_CAP = 0.25
+ACTIVE_TRAIN_MDD_CAP = 0.20
+ACTIVE_VAL_MDD_CAP = 0.12
+MIN_ALPHA_TRAIN_TRADES = 20
+MIN_ALPHA_VAL_TRADES = 3
+MIN_ALPHA_TRAIN_TOTAL_RETURN = -0.03
+MIN_ALPHA_VAL_TOTAL_RETURN = 0.0
+MIN_ALPHA_VAL_SHARPE = 0.0
+MIN_ALPHA_VAL_SORTINO = 0.0
 METRIC_KEYS = (
     "total_return",
     "cagr",
@@ -387,6 +395,84 @@ def _score_from_split_metrics(metrics: dict[str, dict[str, Any]]) -> dict[str, f
     }
 
 
+def _split_run_by_name(result: dict[str, Any], split_name: str) -> dict[str, Any]:
+    for run in list(result.get("split_runs") or []):
+        if not isinstance(run, dict):
+            continue
+        if str(run.get("split") or "") == split_name:
+            return dict(run)
+    return {}
+
+
+def _profit_alpha_gate(
+    result: dict[str, Any],
+    preflight: ModePreflight,
+) -> dict[str, Any]:
+    """Return explicit alpha/fallback eligibility metadata.
+
+    A live-equivalent backtest with 0 trades or non-positive validation
+    performance is useful as a safety result, but it must not outrank an active
+    alpha.  Conservative cash remains a fallback only.
+    """
+    status = str(result.get("status") or preflight.status)
+    if status == "eligible_conservative_cash_fallback" or float(preflight.cash_weight) >= 0.999:
+        return {
+            "selection_role": "fallback",
+            "selection_eligible": False,
+            "fallback_eligible": True,
+            "alpha_blocking_reasons": ["conservative_cash_fallback_not_alpha"],
+        }
+
+    metrics = dict(result.get("metrics") or {})
+    scores = dict(result.get("scores") or {})
+    train = dict(metrics.get("train") or {})
+    val = dict(metrics.get("val") or {})
+    train_run = _split_run_by_name(result, "train")
+    val_run = _split_run_by_name(result, "val")
+
+    train_trade_count = int(_safe_float(train_run.get("trade_count"), 0.0))
+    val_trade_count = int(_safe_float(val_run.get("trade_count"), 0.0))
+    train_liquidation_count = int(_safe_float(train_run.get("liquidation_count"), 0.0))
+    val_liquidation_count = int(_safe_float(val_run.get("liquidation_count"), 0.0))
+
+    reasons: list[str] = []
+    if status != "live_equivalent_validated":
+        reasons.append(f"status_not_validated:{status}")
+    if not bool(scores.get("train_val_mdd_ok")):
+        reasons.append("legacy_train_val_mdd_gate_failed")
+    if _safe_float(train.get("max_drawdown"), 0.0) > ACTIVE_TRAIN_MDD_CAP:
+        reasons.append("train_mdd_above_active_cap")
+    if _safe_float(val.get("max_drawdown"), 0.0) > ACTIVE_VAL_MDD_CAP:
+        reasons.append("val_mdd_above_active_cap")
+    if train_trade_count < MIN_ALPHA_TRAIN_TRADES:
+        reasons.append("train_trade_count_below_min")
+    if val_trade_count < MIN_ALPHA_VAL_TRADES:
+        reasons.append("val_trade_count_below_min")
+    if _safe_float(train.get("total_return"), 0.0) < MIN_ALPHA_TRAIN_TOTAL_RETURN:
+        reasons.append("train_total_return_below_floor")
+    if _safe_float(val.get("total_return"), 0.0) <= MIN_ALPHA_VAL_TOTAL_RETURN:
+        reasons.append("val_total_return_not_positive")
+    if _safe_float(val.get("sharpe"), 0.0) <= MIN_ALPHA_VAL_SHARPE:
+        reasons.append("val_sharpe_not_positive")
+    if _safe_float(val.get("sortino"), 0.0) <= MIN_ALPHA_VAL_SORTINO:
+        reasons.append("val_sortino_not_positive")
+    if train_liquidation_count > 0 or val_liquidation_count > 0:
+        reasons.append("liquidation_observed")
+
+    return {
+        "selection_role": "alpha",
+        "selection_eligible": not reasons,
+        "fallback_eligible": False,
+        "alpha_blocking_reasons": reasons,
+        "train_trade_count": train_trade_count,
+        "val_trade_count": val_trade_count,
+        "train_liquidation_count": train_liquidation_count,
+        "val_liquidation_count": val_liquidation_count,
+        "train_final_equity": _safe_float(train_run.get("final_equity"), 0.0),
+        "val_final_equity": _safe_float(val_run.get("final_equity"), 0.0),
+    }
+
+
 def _split_to_datetimes(split: SplitWindow) -> tuple[datetime, datetime]:
     return (
         datetime.combine(split.start, time.min).replace(tzinfo=None),
@@ -705,15 +791,24 @@ def _mode_candidate_rows(mode_results: list[dict[str, Any]], preflights: dict[st
         preflight = preflights[mode]
         scores = dict(result.get("scores") or {})
         metrics = dict(result.get("metrics") or {})
-        eligible = str(result.get("status")) == "live_equivalent_validated"
+        gate = _profit_alpha_gate(result, preflight)
         row: dict[str, Any] = {
             "mode": mode,
             "status": str(result.get("status") or preflight.status),
-            "selection_eligible": bool(eligible),
+            "selection_role": str(gate.get("selection_role") or "alpha"),
+            "selection_eligible": bool(gate.get("selection_eligible")),
+            "fallback_eligible": bool(gate.get("fallback_eligible")),
+            "alpha_blocking_reasons": ";".join(list(gate.get("alpha_blocking_reasons") or [])[:16]),
             "selection_score": scores.get("selection_score"),
             "val_scaled_score": scores.get("val_scaled_score"),
             "train_scaled_score": scores.get("train_scaled_score"),
             "oos_scaled_score_report_only": scores.get("oos_scaled_score_report_only"),
+            "train_trade_count": int(_safe_float(gate.get("train_trade_count"), 0.0)),
+            "val_trade_count": int(_safe_float(gate.get("val_trade_count"), 0.0)),
+            "train_liquidation_count": int(_safe_float(gate.get("train_liquidation_count"), 0.0)),
+            "val_liquidation_count": int(_safe_float(gate.get("val_liquidation_count"), 0.0)),
+            "train_final_equity": _safe_float(gate.get("train_final_equity"), 0.0),
+            "val_final_equity": _safe_float(gate.get("val_final_equity"), 0.0),
             "cash_weight": float(preflight.cash_weight),
             "symbols": ",".join(preflight.symbols),
             "blocking_reasons": ";".join(preflight.blocking_reasons[:12]),
@@ -727,14 +822,16 @@ def _mode_candidate_rows(mode_results: list[dict[str, Any]], preflights: dict[st
     def _status_priority(row: dict[str, Any]) -> int:
         if bool(row.get("selection_eligible")):
             return 0
+        if str(row.get("status") or "") == "live_equivalent_validated":
+            return 1
         status = str(row.get("status") or "")
         if status == "ready_for_live_equivalent_backtest":
-            return 1
-        if status == "eligible_conservative_cash_fallback":
             return 2
-        if status == "blocked_missing_raw_first_market_data":
+        if status == "eligible_conservative_cash_fallback":
             return 3
-        return 4
+        if status == "blocked_missing_raw_first_market_data":
+            return 4
+        return 5
 
     rows.sort(
         key=lambda row: (
@@ -856,6 +953,7 @@ def _markdown_report(payload: dict[str, Any], mode_rows: list[dict[str, Any]], a
     recs = dict(payload.get("final_recommendations") or {})
     backtests_executed = bool(payload.get("backtests_executed"))
     validated_count = sum(1 for row in mode_rows if str(row.get("status") or "") == "live_equivalent_validated")
+    alpha_eligible_count = sum(1 for row in mode_rows if bool(row.get("selection_eligible")))
     ready_count = sum(1 for row in mode_rows if str(row.get("status") or "") == "ready_for_live_equivalent_backtest")
     blocked_count = sum(1 for row in mode_rows if str(row.get("status") or "") == "blocked_missing_raw_first_market_data")
     lines = [
@@ -868,7 +966,7 @@ def _markdown_report(payload: dict[str, Any], mode_rows: list[dict[str, Any]], a
         "- 기존 full-universe/legacy/HYBRID 리포트의 일별 return stream 점수는 이제 **연구 참고값**이다.",
         "- 실투자 후보는 동일한 `ArtifactPortfolioModeStrategy`를 live와 backtest가 같이 사용하고, `SimulatedExecutionHandler`/`Portfolio`를 통과한 이벤트 기반 결과만 selection eligible이다.",
         "- OOS는 계속 report-only이며, selection/tuning/health prior에는 쓰지 않는다.",
-        "- cash efficiency는 점수에 넣지 않는다. MDD 25%까지 허용한다.",
+        "- cash efficiency는 점수에 넣지 않는다. 또한 0-trade/무수익/현금성 후보는 alpha ranking에서 제외한다.",
         "",
         "## 결론",
         "",
@@ -879,7 +977,7 @@ def _markdown_report(payload: dict[str, Any], mode_rows: list[dict[str, Any]], a
     if best_live:
         lines.append(f"- Best full-universe live-equivalent candidate: `{best_live['mode']}`")
     else:
-        lines.append("- Best full-universe live-equivalent candidate: `NONE` — train/val 원시 market-data 기반 engine backtest가 완료된 후보가 없다.")
+        lines.append("- Best full-universe live-equivalent candidate: `NONE` — profit alpha gate를 통과한 후보가 없다.")
     if best_hybrid:
         lines.append(f"- Best deployable true-HYBRID candidate: `{best_hybrid['mode']}`")
     else:
@@ -895,18 +993,27 @@ def _markdown_report(payload: dict[str, Any], mode_rows: list[dict[str, Any]], a
             "",
             "## Live portfolio mode preflight / revalidation",
             "",
-            "| rank | mode | status | score | val ret | val Sharpe | val MDD | symbols/blocker |",
-            "|---:|---|---|---:|---:|---:|---:|---|",
+            "| rank | mode | status | alpha | score | val ret | val Sharpe | val MDD | trades train/val | blocker |",
+            "|---:|---|---|---|---:|---:|---:|---:|---:|---|",
         ]
     )
     for rank, row in enumerate(mode_rows[:30], start=1):
-        blocker = row.get("blocking_reasons") or row.get("symbols") or ""
+        blocker = (
+            row.get("alpha_blocking_reasons")
+            or row.get("blocking_reasons")
+            or row.get("symbols")
+            or ""
+        )
+        alpha = "yes" if bool(row.get("selection_eligible")) else str(row.get("selection_role") or "no")
         lines.append(
             f"| {rank} | `{row['mode']}` | `{row['status']}` | "
+            f"{alpha} | "
             f"{_fmt_float(row.get('selection_score'))} | "
             f"{_fmt_pct(row.get('val_total_return'))} | "
             f"{_fmt_float(row.get('val_sharpe'))} | "
-            f"{_fmt_pct(row.get('val_max_drawdown'))} | {blocker} |"
+            f"{_fmt_pct(row.get('val_max_drawdown'))} | "
+            f"{int(_safe_float(row.get('train_trade_count'), 0.0))}/{int(_safe_float(row.get('val_trade_count'), 0.0))} | "
+            f"{blocker} |"
         )
     lines.extend(
         [
@@ -922,7 +1029,12 @@ def _markdown_report(payload: dict[str, Any], mode_rows: list[dict[str, Any]], a
             f"| {row['research_rank']} | `{row['name']}` | {_fmt_float(row['previous_selection_score'])} | "
             f"`{row['mapped_live_portfolio_mode'] or '-'}` | `{row['reset_status']}` |"
         )
-    if blocked_count:
+    if alpha_eligible_count:
+        coverage_caveat = (
+            f"- `{alpha_eligible_count}`개 mode가 live-equivalent engine backtest와 profit alpha gate를 모두 통과했다. "
+            "selection eligibility는 양(+)의 validation return/Sharpe/Sortino와 active MDD/trade/liquidation gate 통과 후보에만 부여한다."
+        )
+    elif blocked_count:
         coverage_caveat = (
             f"- `{blocked_count}`개 live portfolio mode는 아직 train/val raw-first materialized coverage가 부족해서 "
             "`blocked_missing_raw_first_market_data` 상태다."
@@ -935,7 +1047,7 @@ def _markdown_report(payload: dict[str, Any], mode_rows: list[dict[str, Any]], a
     elif validated_count:
         coverage_caveat = (
             f"- `{validated_count}`개 mode가 train/val live-equivalent engine backtest를 완료했다. "
-            "selection eligibility는 이 검증 통과 후보에만 부여한다."
+            "하지만 profit alpha gate를 통과한 후보가 없어 fallback/shadow-only 상태를 유지한다."
         )
     else:
         coverage_caveat = "- train/val live-equivalent alpha 후보는 아직 selection eligible 상태가 아니다."
@@ -946,6 +1058,7 @@ def _markdown_report(payload: dict[str, Any], mode_rows: list[dict[str, Any]], a
             "",
             coverage_caveat,
             "- 이 리포트의 핵심 변경은 `좋아 보이는 연구 점수`를 promotion evidence로 쓰지 않고, live-equivalent engine path를 통과한 후보만 승격시키는 것이다.",
+            "- profit alpha gate는 val return/Sharpe/Sortino가 양수이고, train/val 거래 수와 active MDD/liquidation gate를 통과한 후보만 alpha selection eligible로 인정한다.",
             "- OOS는 report-only다. OOS raw-first coverage가 부족한 경우에도 train/val selection score에는 반영하지 않는다.",
         ]
     )
@@ -959,6 +1072,7 @@ def _write_live_decision(payload: dict[str, Any], path: Path) -> None:
     fallback = dict(payload.get("final_recommendations", {}).get("best_conservative_fallback_candidate") or {})
     mode_rows = list(payload.get("mode_candidate_rows") or [])
     ready_count = sum(1 for row in mode_rows if str(dict(row).get("status") or "") == "ready_for_live_equivalent_backtest")
+    validated_count = sum(1 for row in mode_rows if str(dict(row).get("status") or "") == "live_equivalent_validated")
     selected_mode = str(best_live.get("mode") or fallback.get("mode") or "risk_off_mode")
     if best_live:
         decision_state = "live_equivalent_validated_candidate_ready_for_review"
@@ -971,6 +1085,13 @@ def _write_live_decision(payload: dict[str, Any], path: Path) -> None:
             "live-equivalent train/val engine backtest yet."
         )
         review_status = "engine_backtest_required_before_promotion"
+    elif validated_count:
+        decision_state = "shadow_only_until_profit_alpha_gate_passes"
+        decision_reason = (
+            "Live-equivalent train/val engine backtests completed, but no alpha candidate passed positive "
+            "validation return/Sharpe/Sortino, active MDD, trade-count, and liquidation gates."
+        )
+        review_status = "fail_closed_no_profitable_alpha_candidate"
     else:
         decision_state = "shadow_only_until_live_equivalent_validation"
         decision_reason = "No alpha candidate has completed live-equivalent train/val engine backtest on committed raw-first data."
@@ -1059,7 +1180,11 @@ def build_live_equivalent_revalidation(
                 }
             )
     mode_rows = _mode_candidate_rows(mode_results, preflights)
-    best_live = _best(mode_rows, predicate=lambda row: bool(row.get("selection_eligible")))
+    best_live = _best(
+        mode_rows,
+        predicate=lambda row: bool(row.get("selection_eligible"))
+        and str(row.get("selection_role") or "") == "alpha",
+    )
     true_hybrid_modes = {
         "hybrid_guarded_mode",
         "legacy_no_highvol_hybrid_mode",
@@ -1068,6 +1193,7 @@ def build_live_equivalent_revalidation(
     best_hybrid = _best(
         mode_rows,
         predicate=lambda row: bool(row.get("selection_eligible"))
+        and str(row.get("selection_role") or "") == "alpha"
         and str(row.get("mode")) in true_hybrid_modes,
     )
     fallback = next((row for row in mode_rows if row.get("mode") == "risk_off_mode"), None)
@@ -1088,6 +1214,18 @@ def build_live_equivalent_revalidation(
             "oos_role": "report_only",
             "cash_efficiency_scored": False,
             "train_val_mdd_cap": MDD_CAP,
+            "profit_alpha_gate": {
+                "fallback_modes_excluded_from_alpha_ranking": True,
+                "active_train_mdd_cap": ACTIVE_TRAIN_MDD_CAP,
+                "active_val_mdd_cap": ACTIVE_VAL_MDD_CAP,
+                "min_train_trades": MIN_ALPHA_TRAIN_TRADES,
+                "min_val_trades": MIN_ALPHA_VAL_TRADES,
+                "min_train_total_return": MIN_ALPHA_TRAIN_TOTAL_RETURN,
+                "min_val_total_return": MIN_ALPHA_VAL_TOTAL_RETURN,
+                "min_val_sharpe": MIN_ALPHA_VAL_SHARPE,
+                "min_val_sortino": MIN_ALPHA_VAL_SORTINO,
+                "liquidations_allowed": 0,
+            },
             "score_formula": "val_scaled_score + 0.18*train_scaled_score; scaled score uses return, Sharpe, Sortino, Calmar, MDD headroom",
         },
         "split_windows": [split.as_payload() for split in splits],

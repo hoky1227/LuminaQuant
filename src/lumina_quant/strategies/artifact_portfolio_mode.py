@@ -87,6 +87,9 @@ _LIVE_PORTFOLIO_MODE_ALIASES = {
     "pair_fast_exit",
     "state_vwap_pair",
     "wave2_pair",
+    "profit_reboot_adaptive_momentum_mode",
+    "profit_reboot_adaptive_momentum_defensive_mode",
+    "profit_reboot_adaptive_momentum_short_bias_mode",
 }
 
 
@@ -204,6 +207,74 @@ def _wave2_pair_component(weight: float) -> PortfolioModeComponent:
     return _component_from_row(row, weight=weight, source="wave2_pair")
 
 
+def _profit_reboot_adaptive_momentum_row(variant: str) -> dict[str, Any]:
+    symbols = ["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "TRX/USDT"]
+    base_params: dict[str, Any] = {
+        "lookback_bars": 360,
+        "short_lookback_bars": 24,
+        "regime_lookback_bars": 360,
+        "volatility_lookback_bars": 60,
+        "rebalance_bars": 72,
+        "signal_threshold": 0.040,
+        "broad_threshold": 0.0,
+        "max_longs": 1,
+        "max_shorts": 2,
+        "gross_exposure": 0.005,
+        "max_order_value": 200.0,
+        "stop_loss_pct": 0.0,
+        "take_profit_pct": 0.0,
+        "trailing_exit_pct": 0.0,
+        "max_hold_bars": 0,
+        "max_realized_vol": 0.0,
+        "min_price": 0.10,
+        "btc_symbol": "BTC/USDT",
+        "risk_off_exit": True,
+    }
+    if variant == "defensive":
+        base_params.update(
+            {
+                "lookback_bars": 168,
+                "short_lookback_bars": 24,
+                "regime_lookback_bars": 168,
+                "rebalance_bars": 360,
+                "signal_threshold": 0.080,
+                "gross_exposure": 0.005,
+                "max_order_value": 200.0,
+                "stop_loss_pct": 0.0,
+                "take_profit_pct": 0.0,
+                "trailing_exit_pct": 0.0,
+                "max_hold_bars": 0,
+            }
+        )
+    elif variant == "short_bias":
+        base_params.update(
+            {
+                "lookback_bars": 168,
+                "short_lookback_bars": 72,
+                "regime_lookback_bars": 168,
+                "rebalance_bars": 360,
+                "signal_threshold": 0.080,
+                "max_longs": 0,
+                "max_shorts": 2,
+                "gross_exposure": 0.005,
+                "max_order_value": 200.0,
+                "stop_loss_pct": 0.0,
+                "take_profit_pct": 0.0,
+                "trailing_exit_pct": 0.0,
+                "max_hold_bars": 0,
+            }
+        )
+
+    return {
+        "candidate_id": f"profit_reboot_adaptive_momentum_{variant}",
+        "name": f"profit_reboot_adaptive_momentum_{variant}",
+        "strategy_class": "AdaptiveRegimeMomentumStrategy",
+        "symbols": symbols,
+        "params": base_params,
+        "weight": 1.0,
+    }
+
+
 def _portfolio_weight_rows(path: Path) -> list[dict[str, Any]]:
     payload = _read_json(path)
     rows = [dict(item) for item in list(payload.get("weights") or []) if isinstance(item, dict)]
@@ -318,6 +389,15 @@ def _alias_rows(token: str) -> list[dict[str, Any]] | None:
         ],
         "pair_fast_exit": [
             {"candidate_id": "pair_fast_exit_leaf", "name": "pair_fast_exit_leaf", "weight": 1.0},
+        ],
+        "profit_reboot_adaptive_momentum_mode": [
+            _profit_reboot_adaptive_momentum_row("balanced"),
+        ],
+        "profit_reboot_adaptive_momentum_defensive_mode": [
+            _profit_reboot_adaptive_momentum_row("defensive"),
+        ],
+        "profit_reboot_adaptive_momentum_short_bias_mode": [
+            _profit_reboot_adaptive_momentum_row("short_bias"),
         ],
     }
     if token in portfolio_paths:

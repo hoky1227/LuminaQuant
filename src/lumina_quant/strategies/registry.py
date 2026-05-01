@@ -10,6 +10,7 @@ from typing import Any, cast
 from lumina_quant.strategy import Strategy
 from lumina_quant.tuning import ParamRegistry
 
+from .adaptive_regime_momentum import AdaptiveRegimeMomentumStrategy
 from .alpha101_formula import Alpha101FormulaStrategy
 from .bitcoin_buy_hold import BitcoinBuyHoldStrategy
 from .lag_convergence import LagConvergenceStrategy
@@ -78,6 +79,7 @@ StrategyClass = type[Strategy]
 DEFAULT_STRATEGY_NAME = "RsiStrategy" if RsiStrategy is not None else "MeanReversionStdStrategy"
 
 _RAW_STRATEGY_MAP: dict[str, StrategyClass | None] = {
+    "AdaptiveRegimeMomentumStrategy": AdaptiveRegimeMomentumStrategy,
     "Alpha101FormulaStrategy": Alpha101FormulaStrategy,
     "BitcoinBuyHoldStrategy": BitcoinBuyHoldStrategy,
     "LagConvergenceStrategy": LagConvergenceStrategy,
@@ -108,6 +110,7 @@ _STRATEGY_MAP: dict[str, StrategyClass] = {
 }
 
 _STRATEGY_TIER_HINTS: dict[str, str] = {
+    "AdaptiveRegimeMomentumStrategy": "live_opt_in",
     "Alpha101FormulaStrategy": "research_only",
     "BitcoinBuyHoldStrategy": "live_default",
     "LagConvergenceStrategy": "live_default",
@@ -141,6 +144,7 @@ _STRATEGY_METADATA: dict[str, dict[str, Any]] = {
 }
 
 _OPTUNA_TRIAL_OVERRIDES: dict[str, str] = {
+    "AdaptiveRegimeMomentumStrategy": "24",
     "Alpha101FormulaStrategy": "24",
     "LagConvergenceStrategy": "24",
     "MeanReversionStdStrategy": "24",
