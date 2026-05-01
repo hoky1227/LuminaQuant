@@ -4,7 +4,8 @@ Generated: `2026-05-01T13:23:00Z`
 Repo: `/home/hoky/Quants-agent/LuminaQuant`
 Branch: `private-main`
 Remote target: `private main`
-Latest pushed commit at handoff: `ba084d724de93401739e16680dc8dbf2f2e1d9b6`
+Code/evidence commit before this plan: `ba084d724de93401739e16680dc8dbf2f2e1d9b6`
+Plan storage: this file is committed after the code/evidence commit; in a new session treat `private/main` HEAD as authoritative.
 
 ## Current conclusion
 
