@@ -1,9 +1,9 @@
 # Profit Moonshot Research Summary
 
-Generated: `2026-05-01T13:15:36.816961Z`
+Generated: `2026-05-02T06:30:32.563510Z`
 Decision: `promoted_candidate_found`
-Candidates scanned: `7`
-Promotion-eligible candidates: `3`
+Candidates scanned: `10`
+Promotion-eligible candidates: `6`
 
 ## Promoted Candidate
 
@@ -30,11 +30,14 @@ Promotion-eligible candidates: `3`
 | ---: | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
 | 1 | `profit_moonshot_adaptive_momentum_mode` | `live_equivalent` | `val` | 0.26% | 0.75% | 0.012 | 0.012 | 52 | 0 | 10026.530 | - |
 | 2 | `profit_moonshot_adaptive_momentum_boost_mode` | `live_equivalent` | `val` | 0.51% | 1.36% | 0.015 | 0.015 | 56 | 0 | 10051.054 | - |
-| 3 | `profit_moonshot_trend_mode` | `live_equivalent` | `val` | 0.01% | 0.03% | 0.017 | 0.004 | 6 | 0 | 10000.904 | - |
-| 4 | `profit_moonshot_balanced_mode` | `live_equivalent` | `val` | -0.01% | 0.04% | -0.010 | -0.006 | 112 | 0 | 9999.449 | val_total_return_not_positive, val_sharpe_not_positive, val_sortino_not_positive |
-| 5 | `profit_moonshot_reversion_mode` | `live_equivalent` | `val` | -0.03% | 0.13% | -0.017 | -0.010 | 106 | 0 | 9997.233 | val_total_return_not_positive, val_sharpe_not_positive, val_sortino_not_positive |
-| 6 | `profit_reboot_compression_breakout_mode` | `live_equivalent` | `val` | -1.03% | 1.04% | -0.114 | -0.050 | 38 | 0 | 9897.479 | val_total_return_not_positive, val_sharpe_not_positive, val_sortino_not_positive |
-| 7 | `profit_moonshot_breakout_mode` | `live_equivalent` | `val` | 0.00% | 0.00% | 0.000 | 0.000 | 0 | 0 | 10000.000 | train_trade_count_below_min, val_trade_count_below_min, val_total_return_not_positive, val_sharpe_not_positive, val_sortino_not_positive |
+| 3 | `profit_moonshot_adaptive_momentum_120_mode` | `live_equivalent` | `val` | 0.33% | 0.93% | 0.013 | 0.012 | 52 | 0 | 10032.962 | - |
+| 4 | `profit_moonshot_adaptive_momentum_130_mode` | `live_equivalent` | `val` | 0.33% | 1.06% | 0.011 | 0.011 | 53 | 0 | 10033.283 | - |
+| 5 | `profit_moonshot_adaptive_momentum_governed_mode` | `live_equivalent` | `val` | 0.17% | 1.16% | 0.006 | 0.006 | 51 | 0 | 10016.980 | - |
+| 6 | `profit_moonshot_trend_mode` | `live_equivalent` | `val` | 0.01% | 0.03% | 0.017 | 0.004 | 6 | 0 | 10000.904 | - |
+| 7 | `profit_moonshot_balanced_mode` | `live_equivalent` | `val` | -0.01% | 0.04% | -0.010 | -0.006 | 112 | 0 | 9999.449 | val_total_return_not_positive, val_sharpe_not_positive, val_sortino_not_positive |
+| 8 | `profit_moonshot_reversion_mode` | `live_equivalent` | `val` | -0.03% | 0.13% | -0.017 | -0.010 | 106 | 0 | 9997.233 | val_total_return_not_positive, val_sharpe_not_positive, val_sortino_not_positive |
+| 9 | `profit_reboot_compression_breakout_mode` | `live_equivalent` | `val` | -1.03% | 1.04% | -0.114 | -0.050 | 38 | 0 | 9897.479 | val_total_return_not_positive, val_sharpe_not_positive, val_sortino_not_positive |
+| 10 | `profit_moonshot_breakout_mode` | `live_equivalent` | `val` | 0.00% | 0.00% | 0.000 | 0.000 | 0 | 0 | 10000.000 | train_trade_count_below_min, val_trade_count_below_min, val_total_return_not_positive, val_sharpe_not_positive, val_sortino_not_positive |
 
 ## Blocker Summary
 

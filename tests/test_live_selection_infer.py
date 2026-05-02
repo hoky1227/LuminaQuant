@@ -23,3 +23,7 @@ def test_infer_strategy_class_name_extended_catalog():
         infer_strategy_class_name("profit_moonshot_reversion_1h_shock")
         == "ProfitMoonshotReversionStrategy"
     )
+    assert (
+        infer_strategy_class_name("profit_moonshot_perp_crowding_carry")
+        == "PerpCrowdingCarryStrategy"
+    )

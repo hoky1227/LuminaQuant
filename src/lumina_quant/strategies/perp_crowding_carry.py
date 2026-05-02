@@ -24,11 +24,16 @@ class _State:
     mode: str = "OUT"
     entry_price: float | None = None
     bars_held: int = 0
+    ticks_seen: int = 0
     last_time_key: str = ""
 
 
 class PerpCrowdingCarryStrategy(Strategy):
     """Carry/crowding sleeve with risk-off fades on extreme positioning."""
+
+    decision_cadence_seconds = 60
+    preferred_contract = "market_window"
+    uses_timeframe_aggregator = False
 
     @classmethod
     def get_param_schema(cls) -> dict[str, HyperParam]:
@@ -53,6 +58,15 @@ class PerpCrowdingCarryStrategy(Strategy):
             "stop_loss_pct": HyperParam.floating("stop_loss_pct", default=0.02, low=0.001, high=0.5),
             "max_hold_bars": HyperParam.integer("max_hold_bars", default=72, low=1, high=100_000),
             "allow_short": HyperParam.boolean("allow_short", default=True, grid=[True, False]),
+            "target_allocation": HyperParam.floating(
+                "target_allocation", default=0.02, low=0.0, high=2.0, tunable=False
+            ),
+            "max_order_value": HyperParam.floating(
+                "max_order_value", default=250.0, low=0.0, high=1_000_000.0, tunable=False
+            ),
+            "evaluation_cadence_bars": HyperParam.integer(
+                "evaluation_cadence_bars", default=1, low=1, high=10_080, tunable=False
+            ),
         }
 
     def __init__(
@@ -67,6 +81,9 @@ class PerpCrowdingCarryStrategy(Strategy):
         stop_loss_pct: float = 0.02,
         max_hold_bars: int = 72,
         allow_short: bool = True,
+        target_allocation: float = 0.02,
+        max_order_value: float = 250.0,
+        evaluation_cadence_bars: int = 1,
     ):
         self.bars = bars
         self.events = events
@@ -83,6 +100,9 @@ class PerpCrowdingCarryStrategy(Strategy):
                 "stop_loss_pct": stop_loss_pct,
                 "max_hold_bars": max_hold_bars,
                 "allow_short": allow_short,
+                "target_allocation": target_allocation,
+                "max_order_value": max_order_value,
+                "evaluation_cadence_bars": evaluation_cadence_bars,
             },
             keep_unknown=False,
         )
@@ -95,6 +115,9 @@ class PerpCrowdingCarryStrategy(Strategy):
         self.stop_loss_pct = float(resolved["stop_loss_pct"])
         self.max_hold_bars = int(resolved["max_hold_bars"])
         self.allow_short = bool(resolved["allow_short"])
+        self.target_allocation = max(0.0, float(resolved["target_allocation"]))
+        self.max_order_value = max(0.0, float(resolved["max_order_value"]))
+        self.evaluation_cadence_bars = max(1, int(resolved["evaluation_cadence_bars"]))
 
         size = self.window + 8
         self._state = {
@@ -120,6 +143,7 @@ class PerpCrowdingCarryStrategy(Strategy):
                     "mode": item.mode,
                     "entry_price": item.entry_price,
                     "bars_held": int(item.bars_held),
+                    "ticks_seen": int(item.ticks_seen),
                     "last_time_key": item.last_time_key,
                 }
                 for symbol, item in self._state.items()
@@ -157,6 +181,10 @@ class PerpCrowdingCarryStrategy(Strategy):
                 item.bars_held = max(0, int(payload.get("bars_held", 0)))
             except Exception:
                 item.bars_held = 0
+            try:
+                item.ticks_seen = max(0, int(payload.get("ticks_seen", 0)))
+            except Exception:
+                item.ticks_seen = 0
             item.last_time_key = str(payload.get("last_time_key", ""))
 
     def _extract_feature(self, event: Any, symbol: str, field: str) -> float | None:
@@ -178,7 +206,27 @@ class PerpCrowdingCarryStrategy(Strategy):
             value = None
         return safe_float(value)
 
+    @staticmethod
+    def _window_close(event: Any, symbol: str) -> float | None:
+        bars_1s = dict(getattr(event, "bars_1s", {}) or {})
+        rows = list(bars_1s.get(symbol) or [])
+        if not rows:
+            return None
+        row = rows[-1]
+        if isinstance(row, dict):
+            return safe_float(row.get("close"))
+        if isinstance(row, (tuple, list)) and len(row) >= 5:
+            return safe_float(row[4])
+        return None
+
     def _emit(self, symbol, event_time, signal_type, *, strength=1.0, stop_loss=None, metadata=None):
+        metadata = dict(metadata or {})
+        if str(signal_type).upper() in {"LONG", "SHORT"}:
+            if self.target_allocation > 0.0:
+                metadata["target_allocation"] = float(self.target_allocation)
+                metadata["max_symbol_exposure_pct"] = float(self.target_allocation)
+            if self.max_order_value > 0.0:
+                metadata["max_order_value"] = float(self.max_order_value)
         self.events.put(
             SignalEvent(
                 strategy_id="perp_crowding_carry",
@@ -191,25 +239,24 @@ class PerpCrowdingCarryStrategy(Strategy):
             )
         )
 
-    def calculate_signals(self, event):
-        if str(getattr(event, "type", "")).upper() != "MARKET":
-            return
-
-        symbol = str(getattr(event, "symbol", ""))
-        if symbol not in self._state:
-            return
-
+    def _process_symbol(self, event: Any, symbol: str, *, close_override: float | None = None) -> None:
         item = self._state[symbol]
         key = time_key(getattr(event, "time", getattr(event, "datetime", None)))
         if key and key == item.last_time_key:
             return
         item.last_time_key = key
 
-        close = self._extract_feature(event, symbol, "close")
+        close = close_override
+        if close is None:
+            close = self._extract_feature(event, symbol, "close")
         if close is None:
             close = safe_float(getattr(event, "close", None))
         if close is not None:
             item.closes.append(float(close))
+
+        item.ticks_seen += 1
+        if self.evaluation_cadence_bars > 1 and item.ticks_seen % self.evaluation_cadence_bars:
+            return
 
         feature_map = {
             "funding_rate": self._extract_feature(event, symbol, "funding_rate"),
@@ -344,3 +391,25 @@ class PerpCrowdingCarryStrategy(Strategy):
             item.mode = "LONG"
             item.entry_price = close_value if close_value > 0 else None
             item.bars_held = 0
+
+    def calculate_signals_window(self, event: Any, aggregator: Any) -> None:
+        _ = aggregator
+        if str(getattr(event, "type", "")).upper() != "MARKET_WINDOW":
+            self.calculate_signals(event)
+            return
+        for symbol in self.symbol_list:
+            if symbol not in self._state:
+                continue
+            self._process_symbol(event, symbol, close_override=self._window_close(event, symbol))
+
+    def calculate_signals(self, event):
+        if str(getattr(event, "type", "")).upper() == "MARKET_WINDOW":
+            self.calculate_signals_window(event, aggregator=None)
+            return
+        if str(getattr(event, "type", "")).upper() != "MARKET":
+            return
+
+        symbol = str(getattr(event, "symbol", ""))
+        if symbol not in self._state:
+            return
+        self._process_symbol(event, symbol)

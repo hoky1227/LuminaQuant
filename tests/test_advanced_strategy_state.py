@@ -3,7 +3,7 @@ from __future__ import annotations
 import queue
 from dataclasses import dataclass
 
-from lumina_quant.core.events import MarketEvent
+from lumina_quant.core.events import MarketEvent, MarketWindowEvent
 from lumina_quant.strategies import composite_trend as composite_trend_module
 from lumina_quant.strategies.candidate_vol_compression_reversion import (
     VolatilityCompressionReversionStrategy,
@@ -217,3 +217,52 @@ def test_perp_crowding_state_roundtrip():
     clone.set_state(state)
 
     assert clone.get_state() == state
+
+
+def test_perp_crowding_market_window_path_emits_sized_signal():
+    bars = _BarsMock(["BTC/USDT"])
+    events = queue.Queue()
+    strategy = PerpCrowdingCarryStrategy(
+        bars,
+        events,
+        window=16,
+        mild_funding=0.00030,
+        entry_threshold=0.10,
+        exit_threshold=0.05,
+        target_allocation=0.006,
+        max_order_value=240.0,
+        allow_short=False,
+    )
+
+    for idx in range(32):
+        close = 100.0 + (idx * 0.02)
+        funding = 0.00005 + (idx * 0.000005)
+        bars.set_bar(
+            "BTC/USDT",
+            {
+                "datetime": idx,
+                "close": close,
+                "funding_rate": funding,
+                "open_interest": 1_000_000.0,
+                "liquidation_long_notional": 0.0,
+                "liquidation_short_notional": 0.0,
+            },
+        )
+        strategy.calculate_signals_window(
+            MarketWindowEvent(
+                time=idx,
+                window_seconds=60,
+                bars_1s={"BTC/USDT": ((idx, close, close, close, close, 100.0),)},
+            ),
+            aggregator=None,
+        )
+
+    signals = []
+    while not events.empty():
+        signals.append(events.get())
+
+    assert any(signal.signal_type == "LONG" for signal in signals)
+    long_signal = next(signal for signal in signals if signal.signal_type == "LONG")
+    assert long_signal.metadata["target_allocation"] == 0.006
+    assert long_signal.metadata["max_order_value"] == 240.0
+    assert long_signal.metadata["reason"] == "carry_long_entry"

@@ -94,7 +94,11 @@ _LIVE_PORTFOLIO_MODE_ALIASES = {
     "profit_reboot_session_pair_carry_mode",
     "profit_reboot_compression_breakout_mode",
     "profit_moonshot_adaptive_momentum_mode",
+    "profit_moonshot_adaptive_momentum_120_mode",
+    "profit_moonshot_adaptive_momentum_130_mode",
+    "profit_moonshot_adaptive_momentum_140_mode",
     "profit_moonshot_adaptive_momentum_boost_mode",
+    "profit_moonshot_adaptive_momentum_governed_mode",
     "profit_moonshot_panic_rebound_mode",
     "profit_moonshot_session_pair_carry_mode",
     "profit_moonshot_balanced_mode",
@@ -300,6 +304,29 @@ def _profit_reboot_adaptive_momentum_row(variant: str) -> dict[str, Any]:
         "params": base_params,
         "weight": 1.0,
     }
+
+
+def _profit_moonshot_adaptive_momentum_scaled_row(
+    label: str,
+    *,
+    gross_exposure: float,
+    max_order_value: float,
+    extra_params: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    row = _profit_reboot_adaptive_momentum_row("balanced")
+    row["candidate_id"] = f"profit_moonshot_adaptive_momentum_{label}"
+    row["name"] = f"profit_moonshot_adaptive_momentum_{label}"
+    params = dict(row.get("params") or {})
+    params.update(
+        {
+            "gross_exposure": float(gross_exposure),
+            "max_order_value": float(max_order_value),
+        }
+    )
+    if extra_params:
+        params.update(dict(extra_params))
+    row["params"] = params
+    return row
 
 
 def _profit_reboot_panic_rebound_row(variant: str) -> dict[str, Any]:
@@ -658,8 +685,35 @@ def _alias_rows(token: str) -> list[dict[str, Any]] | None:
         "profit_moonshot_adaptive_momentum_mode": [
             _profit_reboot_adaptive_momentum_row("balanced"),
         ],
+        "profit_moonshot_adaptive_momentum_120_mode": [
+            _profit_moonshot_adaptive_momentum_scaled_row(
+                "120", gross_exposure=0.0060, max_order_value=240.0
+            ),
+        ],
+        "profit_moonshot_adaptive_momentum_130_mode": [
+            _profit_moonshot_adaptive_momentum_scaled_row(
+                "130", gross_exposure=0.0065, max_order_value=260.0
+            ),
+        ],
+        "profit_moonshot_adaptive_momentum_140_mode": [
+            _profit_moonshot_adaptive_momentum_scaled_row(
+                "140", gross_exposure=0.0070, max_order_value=280.0
+            ),
+        ],
         "profit_moonshot_adaptive_momentum_boost_mode": [
             _profit_reboot_adaptive_momentum_row("boost"),
+        ],
+        "profit_moonshot_adaptive_momentum_governed_mode": [
+            _profit_moonshot_adaptive_momentum_scaled_row(
+                "governed",
+                gross_exposure=0.0070,
+                max_order_value=280.0,
+                extra_params={
+                    "broad_threshold": 0.0015,
+                    "max_realized_vol": 0.0035,
+                    "rebalance_bars": 96,
+                },
+            ),
         ],
         "profit_moonshot_panic_rebound_mode": [
             _profit_reboot_panic_rebound_row("balanced"),

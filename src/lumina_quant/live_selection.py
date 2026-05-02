@@ -42,7 +42,11 @@ SUPPORTED_LIVE_PORTFOLIO_MODES = frozenset(
         "profit_reboot_session_pair_carry_mode",
         "profit_reboot_compression_breakout_mode",
         "profit_moonshot_adaptive_momentum_mode",
+        "profit_moonshot_adaptive_momentum_120_mode",
+        "profit_moonshot_adaptive_momentum_130_mode",
+        "profit_moonshot_adaptive_momentum_140_mode",
         "profit_moonshot_adaptive_momentum_boost_mode",
+        "profit_moonshot_adaptive_momentum_governed_mode",
         "profit_moonshot_panic_rebound_mode",
         "profit_moonshot_session_pair_carry_mode",
         "profit_moonshot_balanced_mode",
@@ -180,6 +184,8 @@ def infer_strategy_class_name(candidate_name: str) -> str | None:
         or token.startswith("profit_moonshot_session_pair_carry")
     ):
         return "SessionFilteredPairCarryStrategy"
+    if token.startswith("profit_moonshot_perp_crowding") or token.startswith("perp_crowding"):
+        return "PerpCrowdingCarryStrategy"
     if token.startswith("profit_moonshot_trend"):
         return "ProfitMoonshotTrendStrategy"
     if token.startswith("profit_moonshot_breakout"):

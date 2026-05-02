@@ -116,7 +116,7 @@ _RAW_STRATEGY_MAP: dict[str, StrategyClass | None] = {
     "LastDayLiquidityRegimeStrategy": LastDayLiquidityRegimeStrategy,
     "MicroRangeExpansion1sStrategy": MicroRangeExpansion1sStrategy,
 }
-if _has_perp_support_data():
+if PerpCrowdingCarryStrategy is not None:
     _RAW_STRATEGY_MAP["PerpCrowdingCarryStrategy"] = PerpCrowdingCarryStrategy
 
 _STRATEGY_MAP: dict[str, StrategyClass] = {

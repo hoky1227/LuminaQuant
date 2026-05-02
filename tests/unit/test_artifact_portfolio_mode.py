@@ -450,13 +450,21 @@ def test_resolve_portfolio_mode_definition_supports_recursive_allocator_sleeves(
     assert "retuned_live_portfolio_hybrid_mode" in MODULE.supported_portfolio_modes()
     assert "profit_reboot_panic_rebound_mode" in MODULE.supported_portfolio_modes()
     assert "profit_reboot_session_pair_carry_mode" in MODULE.supported_portfolio_modes()
+    assert "profit_moonshot_adaptive_momentum_120_mode" in MODULE.supported_portfolio_modes()
+    assert "profit_moonshot_adaptive_momentum_130_mode" in MODULE.supported_portfolio_modes()
+    assert "profit_moonshot_adaptive_momentum_140_mode" in MODULE.supported_portfolio_modes()
     assert "profit_moonshot_adaptive_momentum_boost_mode" in MODULE.supported_portfolio_modes()
+    assert "profit_moonshot_adaptive_momentum_governed_mode" in MODULE.supported_portfolio_modes()
     assert "profit_moonshot_ensemble_mode" in MODULE.supported_portfolio_modes()
     assert supports_live_portfolio_mode("legacy_no_highvol_hybrid_mode")
     assert supports_live_portfolio_mode("retuned_live_portfolio_hybrid_mode")
     assert supports_live_portfolio_mode("profit_reboot_panic_rebound_mode")
     assert supports_live_portfolio_mode("profit_reboot_session_pair_carry_mode")
+    assert supports_live_portfolio_mode("profit_moonshot_adaptive_momentum_120_mode")
+    assert supports_live_portfolio_mode("profit_moonshot_adaptive_momentum_130_mode")
+    assert supports_live_portfolio_mode("profit_moonshot_adaptive_momentum_140_mode")
     assert supports_live_portfolio_mode("profit_moonshot_adaptive_momentum_boost_mode")
+    assert supports_live_portfolio_mode("profit_moonshot_adaptive_momentum_governed_mode")
     assert supports_live_portfolio_mode("profit_moonshot_ensemble_mode")
 
 
@@ -479,6 +487,10 @@ def test_profit_reboot_synthetic_modes_resolve_new_strategy_families() -> None:
 
 def test_profit_moonshot_synthetic_modes_resolve_no_aggregator_strategy_families() -> None:
     boost = MODULE.resolve_portfolio_mode_definition("profit_moonshot_adaptive_momentum_boost_mode")
+    ladder_120 = MODULE.resolve_portfolio_mode_definition("profit_moonshot_adaptive_momentum_120_mode")
+    ladder_130 = MODULE.resolve_portfolio_mode_definition("profit_moonshot_adaptive_momentum_130_mode")
+    ladder_140 = MODULE.resolve_portfolio_mode_definition("profit_moonshot_adaptive_momentum_140_mode")
+    governed = MODULE.resolve_portfolio_mode_definition("profit_moonshot_adaptive_momentum_governed_mode")
     trend = MODULE.resolve_portfolio_mode_definition("profit_moonshot_trend_mode")
     breakout = MODULE.resolve_portfolio_mode_definition("profit_moonshot_breakout_mode")
     reversion = MODULE.resolve_portfolio_mode_definition("profit_moonshot_reversion_mode")
@@ -487,6 +499,14 @@ def test_profit_moonshot_synthetic_modes_resolve_no_aggregator_strategy_families
     assert boost.components[0].strategy_class == "AdaptiveRegimeMomentumStrategy"
     assert boost.components[0].params["gross_exposure"] == 0.0075
     assert boost.components[0].params["max_order_value"] == 300.0
+    assert ladder_120.components[0].params["gross_exposure"] == 0.006
+    assert ladder_120.components[0].params["max_order_value"] == 240.0
+    assert ladder_130.components[0].params["gross_exposure"] == 0.0065
+    assert ladder_130.components[0].params["max_order_value"] == 260.0
+    assert ladder_140.components[0].params["gross_exposure"] == 0.007
+    assert ladder_140.components[0].params["max_order_value"] == 280.0
+    assert governed.components[0].params["max_realized_vol"] == 0.0035
+    assert governed.components[0].params["broad_threshold"] == 0.0015
     assert trend.components[0].strategy_class == "ProfitMoonshotTrendStrategy"
     assert breakout.components[0].strategy_class == "ProfitMoonshotBreakoutStrategy"
     assert reversion.components[0].strategy_class == "ProfitMoonshotReversionStrategy"
@@ -504,7 +524,7 @@ def test_profit_moonshot_synthetic_modes_resolve_no_aggregator_strategy_families
         "ProfitMoonshotReversionStrategy",
     }
     assert sum(component.weight for component in ensemble.components) == 1.0
-    for definition in (boost, trend, breakout, reversion, ensemble):
+    for definition in (boost, ladder_120, ladder_130, ladder_140, governed, trend, breakout, reversion, ensemble):
         strategy = MODULE.ArtifactPortfolioModeStrategy(
             bars=SimpleNamespace(
                 symbol_list=definition.symbols,
