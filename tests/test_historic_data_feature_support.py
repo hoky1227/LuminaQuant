@@ -15,7 +15,12 @@ def test_historic_handler_exposes_feature_points_from_sidecar_store(tmp_path):
         symbol="BTC/USDT",
         rows=[
             {"timestamp_ms": 1_700_000_000_000, "funding_rate": 0.0002},
-            {"timestamp_ms": 1_700_000_060_000, "open_interest": 2_000_000.0},
+            {
+                "timestamp_ms": 1_700_000_060_000,
+                "open_interest": 2_000_000.0,
+                "taker_buy_quote_volume": 700_000.0,
+                "taker_sell_quote_volume": 300_000.0,
+            },
         ],
     )
 
@@ -40,3 +45,5 @@ def test_historic_handler_exposes_feature_points_from_sidecar_store(tmp_path):
     handler.update_bars()
     assert handler.get_latest_feature_value("BTC/USDT", "open_interest") == 2_000_000.0
     assert handler.get_latest_bar_value("BTC/USDT", "open_interest") == 2_000_000.0
+    assert handler.get_latest_feature_value("BTC/USDT", "taker_buy_quote_volume") == 700_000.0
+    assert handler.get_latest_bar_value("BTC/USDT", "taker_sell_quote_volume") == 300_000.0

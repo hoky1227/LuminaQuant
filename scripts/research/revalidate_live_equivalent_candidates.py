@@ -473,6 +473,30 @@ def _profit_alpha_gate(
     }
 
 
+def _train_fail_fast_reasons(split_run: dict[str, Any]) -> list[str]:
+    """Return train-only reasons that make later val/OOS replay wasteful.
+
+    Validation is still the primary selection split, but active alpha promotion
+    also requires minimum train return, train trade count, train MDD, and zero
+    train liquidations.  Once a candidate violates those train-only invariants,
+    additional 1s live-equivalent replay cannot make it deployable.  Full audit
+    metrics remain available by leaving fail-fast disabled.
+    """
+    metrics = dict(split_run.get("metrics") or {})
+    reasons: list[str] = []
+    if str(split_run.get("status") or "completed") != "completed":
+        reasons.append(f"train_status_not_completed:{split_run.get('status')}")
+    if int(_safe_float(split_run.get("trade_count"), 0.0)) < MIN_ALPHA_TRAIN_TRADES:
+        reasons.append("train_trade_count_below_min")
+    if int(_safe_float(split_run.get("liquidation_count"), 0.0)) > 0:
+        reasons.append("train_liquidation_observed")
+    if _safe_float(metrics.get("total_return"), 0.0) < MIN_ALPHA_TRAIN_TOTAL_RETURN:
+        reasons.append("train_total_return_below_floor")
+    if _safe_float(metrics.get("max_drawdown"), 0.0) > ACTIVE_TRAIN_MDD_CAP:
+        reasons.append("train_mdd_above_active_cap")
+    return reasons
+
+
 def _split_to_datetimes(split: SplitWindow) -> tuple[datetime, datetime]:
     return (
         datetime.combine(split.start, time.min).replace(tzinfo=None),
@@ -591,6 +615,7 @@ def _run_mode_backtests(
     checkpoint: dict[str, Any] | None = None,
     checkpoint_path: Path | None = None,
     equivalence_cache: dict[tuple[str, str], dict[str, Any]] | None = None,
+    fail_fast_alpha_gate: bool = False,
 ) -> dict[str, Any]:
     if preflight.status == "eligible_conservative_cash_fallback":
         metrics = {split.name: _empty_metrics() for split in splits}
@@ -719,10 +744,38 @@ def _run_mode_backtests(
             trade_count=completed_run.get("trade_count"),
             final_equity=completed_run.get("final_equity"),
         )
+        if fail_fast_alpha_gate and split.name == "train":
+            train_fail_reasons = _train_fail_fast_reasons(completed_run)
+            if train_fail_reasons:
+                _progress_event(
+                    "live_equivalent_fail_fast_skip",
+                    mode=preflight.mode,
+                    split=split.name,
+                    reasons=train_fail_reasons,
+                )
+                for remaining in splits:
+                    if remaining.name in metrics:
+                        continue
+                    metrics[remaining.name] = _empty_metrics()
+                    split_runs.append(
+                        {
+                            "split": remaining.name,
+                            "status": "skipped_train_alpha_gate_failed",
+                            "skip_reasons": train_fail_reasons,
+                        }
+                    )
+                break
     for split in splits:
         metrics.setdefault(split.name, _empty_metrics())
     scores = _score_from_split_metrics(metrics)
-    status = "live_equivalent_validated" if bool(scores.get("train_val_mdd_ok")) else "failed_train_val_mdd_gate"
+    skipped_by_train_gate = any(
+        str(run.get("status") or "") == "skipped_train_alpha_gate_failed"
+        for run in split_runs
+    )
+    if skipped_by_train_gate:
+        status = "failed_train_alpha_gate"
+    else:
+        status = "live_equivalent_validated" if bool(scores.get("train_val_mdd_ok")) else "failed_train_val_mdd_gate"
     return {
         "mode": preflight.mode,
         "status": status,
@@ -1130,6 +1183,7 @@ def build_live_equivalent_revalidation(
     backtest_window_seconds: int = 20,
     backtest_checkpoint_path: Path | None = None,
     portfolio_modes: list[str] | None = None,
+    fail_fast_alpha_gate: bool = False,
 ) -> dict[str, Any]:
     market_root = Path(market_root or str(BaseConfig.MARKET_DATA_PARQUET_PATH))
     exchange = str(exchange or BaseConfig.MARKET_DATA_EXCHANGE).lower()
@@ -1178,6 +1232,7 @@ def build_live_equivalent_revalidation(
                     checkpoint=checkpoint,
                     checkpoint_path=checkpoint_path,
                     equivalence_cache=equivalence_cache,
+                    fail_fast_alpha_gate=fail_fast_alpha_gate,
                 )
             )
         else:
@@ -1254,6 +1309,7 @@ def build_live_equivalent_revalidation(
             "backtest_poll_seconds": int(backtest_poll_seconds),
             "backtest_window_seconds": int(backtest_window_seconds),
             "backtest_checkpoint_path": str(checkpoint_path) if execute_backtests else "",
+            "fail_fast_alpha_gate": bool(fail_fast_alpha_gate),
         },
         "preflights": {mode: preflight.as_payload() for mode, preflight in preflights.items()},
         "mode_results": mode_results,
@@ -1316,6 +1372,15 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument("--no-live-decision-update", action="store_true")
+    parser.add_argument(
+        "--fail-fast-alpha-gate",
+        action="store_true",
+        help=(
+            "Stop a mode after the train split when train-only alpha-gate "
+            "requirements already fail. Use for research iteration; omit when "
+            "a full train/val/OOS audit is required."
+        ),
+    )
     return parser
 
 
@@ -1339,6 +1404,7 @@ def main(argv: list[str] | None = None) -> int:
             if item.strip()
         ]
         or None,
+        fail_fast_alpha_gate=bool(args.fail_fast_alpha_gate),
     )
     print(json.dumps(result["paths"], ensure_ascii=False, indent=2, sort_keys=True))
     return 0

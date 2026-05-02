@@ -27,3 +27,11 @@ def test_infer_strategy_class_name_extended_catalog():
         infer_strategy_class_name("profit_moonshot_perp_crowding_carry")
         == "PerpCrowdingCarryStrategy"
     )
+    assert (
+        infer_strategy_class_name("dfse_15m_top5_exhaustion_plus_flow")
+        == "DerivativesFlowSqueezeStrategy"
+    )
+    assert (
+        infer_strategy_class_name("derivatives_flow_squeeze_mode")
+        == "DerivativesFlowSqueezeStrategy"
+    )

@@ -81,6 +81,9 @@ MicroRangeExpansion1sStrategy = _optional_strategy_class(
 PerpCrowdingCarryStrategy = _optional_strategy_class(
     "perp_crowding_carry", "PerpCrowdingCarryStrategy"
 )
+DerivativesFlowSqueezeStrategy = _optional_strategy_class(
+    "derivatives_flow_squeeze", "DerivativesFlowSqueezeStrategy"
+)
 
 StrategyClass = type[Strategy]
 
@@ -118,6 +121,8 @@ _RAW_STRATEGY_MAP: dict[str, StrategyClass | None] = {
 }
 if PerpCrowdingCarryStrategy is not None:
     _RAW_STRATEGY_MAP["PerpCrowdingCarryStrategy"] = PerpCrowdingCarryStrategy
+if DerivativesFlowSqueezeStrategy is not None:
+    _RAW_STRATEGY_MAP["DerivativesFlowSqueezeStrategy"] = DerivativesFlowSqueezeStrategy
 
 _STRATEGY_MAP: dict[str, StrategyClass] = {
     name: cast(StrategyClass, cls) for name, cls in _RAW_STRATEGY_MAP.items() if cls is not None
@@ -150,6 +155,7 @@ _STRATEGY_TIER_HINTS: dict[str, str] = {
     "AbnormalReturnContinuationStrategy": "live_opt_in",
     "LastDayLiquidityRegimeStrategy": "live_opt_in",
     "PerpCrowdingCarryStrategy": "live_opt_in",
+    "DerivativesFlowSqueezeStrategy": "live_opt_in",
     "RegimeBreakoutCandidateStrategy": "research_only",
     "VolatilityCompressionReversionStrategy": "research_only",
     "MicroRangeExpansion1sStrategy": "research_only",
@@ -190,6 +196,7 @@ _OPTUNA_TRIAL_OVERRIDES: dict[str, str] = {
     "AbnormalReturnContinuationStrategy": "20",
     "LastDayLiquidityRegimeStrategy": "24",
     "PerpCrowdingCarryStrategy": "16",
+    "DerivativesFlowSqueezeStrategy": "16",
     "MicroRangeExpansion1sStrategy": "16",
 }
 

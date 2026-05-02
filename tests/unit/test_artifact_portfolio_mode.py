@@ -195,6 +195,23 @@ def test_profit_portfolio_mode_caps_unbounded_child_signals(monkeypatch) -> None
     assert signal.metadata["portfolio_mode_unbounded_child_max_order_value"] == 250.0
 
 
+def test_derivatives_flow_squeeze_mode_resolves_new_alpha_components() -> None:
+    definition = MODULE.resolve_portfolio_mode_definition("derivatives_flow_squeeze_mode")
+
+    assert supports_live_portfolio_mode("derivatives_flow_squeeze_mode")
+    assert definition.cash_weight == 0.0
+    assert [component.component_id for component in definition.components] == [
+        "dfse_top5_exhaustion_plus_flow",
+        "dfse_fast_liquidation_reversal",
+        "dfse_basis_flow_continuation",
+    ]
+    assert [component.weight for component in definition.components] == [0.55, 0.25, 0.2]
+    assert {component.strategy_class for component in definition.components} == {
+        "DerivativesFlowSqueezeStrategy"
+    }
+    assert "derivatives_flow_squeeze_manifest_path" in definition.source_artifacts
+
+
 def test_resolve_portfolio_mode_definition_supports_recursive_allocator_sleeves(monkeypatch, tmp_path: Path) -> None:
     def _write(path: Path, payload: dict) -> Path:
         path.write_text(json.dumps(payload), encoding="utf-8")

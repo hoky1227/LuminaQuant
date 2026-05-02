@@ -59,6 +59,12 @@ STRICT_AUTORESEARCH_1X_PATH = (
     / "strict_autoresearch_portfolio_current"
     / "strict_autoresearch_portfolio_latest.json"
 )
+DERIVATIVES_FLOW_SQUEEZE_MANIFEST_PATH = (
+    Path("var")
+    / "reports"
+    / "derivatives_flow_squeeze_20260502"
+    / "derivatives_flow_squeeze_candidates.json"
+)
 
 _LIVE_PORTFOLIO_MODE_ALIASES = {
     "aggressive_realized_mode",
@@ -110,6 +116,7 @@ _LIVE_PORTFOLIO_MODE_ALIASES = {
     "profit_moonshot_breakout_mode",
     "profit_moonshot_reversion_mode",
     "profit_moonshot_ensemble_mode",
+    "derivatives_flow_squeeze_mode",
 }
 _PROFIT_MODE_UNBOUNDED_CHILD_TARGET_ALLOCATION = 0.02
 _PROFIT_MODE_UNBOUNDED_CHILD_MAX_ORDER_VALUE = 250.0
@@ -553,6 +560,108 @@ def _profit_moonshot_row(strategy: str, variant: str, weight: float = 1.0) -> di
     }
 
 
+def _derivatives_flow_squeeze_row(variant: str, weight: float) -> dict[str, Any]:
+    symbols = ["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "TRX/USDT"]
+    params: dict[str, Any] = {
+        "lookback_bars": 192,
+        "momentum_lookback_bars": 45,
+        "short_reclaim_bars": 6,
+        "flow_lookback_bars": 90,
+        "oi_lookback_bars": 90,
+        "liquidation_window_bars": 192,
+        "volatility_lookback_bars": 180,
+        "evaluation_cadence_bars": 45,
+        "continuation_momentum_min": 0.0012,
+        "flow_imbalance_min": 0.045,
+        "oi_delta_min": 0.00005,
+        "oi_delta_z_min": -0.75,
+        "max_abs_continuation_funding": 0.0018,
+        "liquidation_z_min": 1.8,
+        "liquidation_notional_min": 1.0,
+        "price_shock_min": 0.0025,
+        "reclaim_min": 0.00045,
+        "target_allocation": 0.030,
+        "max_order_value": 500.0,
+        "volatility_target_per_bar": 0.00115,
+        "min_volatility_multiplier": 0.50,
+        "max_volatility_multiplier": 1.0,
+        "volatility_hard_cap": 0.012,
+        "funding_overheat_abs": 0.0040,
+        "stop_loss_pct": 0.010,
+        "take_profit_pct": 0.025,
+        "trailing_exit_pct": 0.010,
+        "max_hold_bars": 96,
+        "min_price": 0.10,
+        "allow_short": True,
+        "enable_continuation": True,
+        "enable_exhaustion": True,
+        "allow_ohlcv_flow_proxy": True,
+        "allow_volume_oi_proxy": True,
+    }
+    if variant == "fast_liquidation_reversal":
+        params.update(
+            {
+                "lookback_bars": 96,
+                "momentum_lookback_bars": 18,
+                "short_reclaim_bars": 3,
+                "flow_lookback_bars": 45,
+                "oi_lookback_bars": 45,
+                "liquidation_window_bars": 96,
+                "volatility_lookback_bars": 90,
+                "evaluation_cadence_bars": 15,
+                "enable_continuation": False,
+                "enable_exhaustion": True,
+                "liquidation_z_min": 1.45,
+                "price_shock_min": 0.0018,
+                "reclaim_min": 0.00030,
+                "target_allocation": 0.025,
+                "max_order_value": 350.0,
+                "volatility_target_per_bar": 0.0010,
+                "min_volatility_multiplier": 0.50,
+                "stop_loss_pct": 0.012,
+                "take_profit_pct": 0.025,
+                "trailing_exit_pct": 0.012,
+                "max_hold_bars": 96,
+            }
+        )
+    elif variant == "basis_flow_continuation":
+        params.update(
+            {
+                "lookback_bars": 360,
+                "momentum_lookback_bars": 180,
+                "short_reclaim_bars": 18,
+                "flow_lookback_bars": 180,
+                "oi_lookback_bars": 180,
+                "volatility_lookback_bars": 360,
+                "evaluation_cadence_bars": 180,
+                "continuation_momentum_min": 0.0020,
+                "flow_imbalance_min": 0.035,
+                "oi_delta_min": 0.00010,
+                "oi_delta_z_min": -0.85,
+                "enable_continuation": True,
+                "enable_exhaustion": False,
+                "target_allocation": 0.030,
+                "max_order_value": 500.0,
+                "volatility_target_per_bar": 0.00135,
+                "min_volatility_multiplier": 0.50,
+                "stop_loss_pct": 0.014,
+                "take_profit_pct": 0.035,
+                "trailing_exit_pct": 0.014,
+                "max_hold_bars": 144,
+            }
+        )
+    elif variant != "top5_exhaustion_plus_flow":
+        raise ValueError(f"unsupported derivatives-flow squeeze variant: {variant}")
+    return {
+        "candidate_id": f"dfse_{variant}",
+        "name": f"dfse_{variant}",
+        "strategy_class": "DerivativesFlowSqueezeStrategy",
+        "symbols": symbols,
+        "params": params,
+        "weight": float(weight),
+    }
+
+
 def _portfolio_weight_rows(path: Path) -> list[dict[str, Any]]:
     payload = _read_json(path)
     rows = [dict(item) for item in list(payload.get("weights") or []) if isinstance(item, dict)]
@@ -819,6 +928,11 @@ def _alias_rows(token: str) -> list[dict[str, Any]] | None:
             _profit_moonshot_row("breakout", "ensemble", weight=0.35),
             _profit_moonshot_row("reversion", "ensemble", weight=0.25),
         ],
+        "derivatives_flow_squeeze_mode": [
+            _derivatives_flow_squeeze_row("top5_exhaustion_plus_flow", weight=0.55),
+            _derivatives_flow_squeeze_row("fast_liquidation_reversal", weight=0.25),
+            _derivatives_flow_squeeze_row("basis_flow_continuation", weight=0.20),
+        ],
     }
     if token in portfolio_paths:
         return _portfolio_weight_rows(portfolio_paths[token])
@@ -940,6 +1054,9 @@ def resolve_portfolio_mode_definition(portfolio_mode: str) -> PortfolioModeDefin
         "state_vwap_pair_path": str(STATE_VWAP_PAIR_PATH.resolve()),
         "wave2_pair_path": str(WAVE2_PAIR_PATH.resolve()),
         "strict_autoresearch_1x_path": str(STRICT_AUTORESEARCH_1X_PATH.resolve()),
+        "derivatives_flow_squeeze_manifest_path": str(
+            DERIVATIVES_FLOW_SQUEEZE_MANIFEST_PATH.resolve()
+        ),
     }
 
     components: list[PortfolioModeComponent] = []

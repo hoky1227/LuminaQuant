@@ -116,3 +116,68 @@ def test_revalidation_defaults_to_preflight_not_full_backtest(monkeypatch, tmp_p
 
     assert calls["backtests"] == 0
     assert result["payload"]["final_recommendations"]["best_full_universe_live_equivalent_candidate"] is None
+
+
+def test_fail_fast_alpha_gate_skips_val_after_train_floor_failure(monkeypatch, tmp_path: Path) -> None:
+    calls: list[str] = []
+    splits = [
+        reval.SplitWindow("train", date(2025, 1, 1), date(2025, 1, 1), "sanity_filter"),
+        reval.SplitWindow("val", date(2026, 1, 1), date(2026, 1, 1), "primary_selection"),
+        reval.SplitWindow("oos", date(2026, 3, 1), date(2026, 3, 1), "report_only"),
+    ]
+    preflight = reval.ModePreflight(
+        mode="derivatives_flow_squeeze_mode",
+        symbols=["BTC/USDT"],
+        cash_weight=0.0,
+        component_count=1,
+        component_summary=[],
+        coverage={"BTC/USDT": {"oos": {"complete_raw_first": True}}},
+        status="ready_for_live_equivalent_backtest",
+        blocking_reasons=[],
+    )
+
+    monkeypatch.setattr(reval, "_mode_equivalence_key", lambda _mode: "same-graph")
+
+    def _fake_split(**kwargs):
+        split = kwargs["split"].name
+        calls.append(split)
+        if split != "train":
+            raise AssertionError("fail-fast should not run validation/OOS splits")
+        return {
+            "split": "train",
+            "equivalence_key": "same-graph",
+            "metrics": {
+                "total_return": -0.20,
+                "cagr": 0.0,
+                "sharpe": 0.0,
+                "sortino": 0.0,
+                "calmar": 0.0,
+                "max_drawdown": 0.05,
+                "volatility": 0.0,
+            },
+            "trade_count": 30,
+            "final_equity": 8000.0,
+            "liquidation_count": 0,
+        }
+
+    monkeypatch.setattr(reval, "_run_live_equivalent_split", _fake_split)
+
+    result = reval._run_mode_backtests(
+        preflight=preflight,
+        market_root=tmp_path,
+        exchange="binance",
+        timeframe="1s",
+        splits=splits,
+        chunk_days=7,
+        backtest_poll_seconds=1,
+        backtest_window_seconds=1,
+        fail_fast_alpha_gate=True,
+    )
+
+    assert calls == ["train"]
+    assert result["status"] == "failed_train_alpha_gate"
+    assert [run["status"] for run in result["split_runs"]] == [
+        "completed",
+        "skipped_train_alpha_gate_failed",
+        "skipped_train_alpha_gate_failed",
+    ]
