@@ -109,6 +109,9 @@ _LIVE_PORTFOLIO_MODE_ALIASES = {
     "profit_moonshot_adaptive_momentum_vol_target_132_mode",
     "profit_moonshot_adaptive_momentum_asym_dynamic_mode",
     "profit_moonshot_adaptive_momentum_volume_guard_mode",
+    "profit_moonshot_momentum_hybrid_return_mode",
+    "profit_moonshot_momentum_hybrid_safe_mode",
+    "profit_moonshot_momentum_hybrid_core_mode",
     "profit_moonshot_panic_rebound_mode",
     "profit_moonshot_session_pair_carry_mode",
     "profit_moonshot_balanced_mode",
@@ -902,6 +905,56 @@ def _alias_rows(token: str) -> list[dict[str, Any]] | None:
                     "min_entry_volume_z": -0.75,
                 },
             ),
+        ],
+        "profit_moonshot_momentum_hybrid_return_mode": [
+            {
+                "candidate_id": "profit_moonshot_adaptive_momentum_boost_mode",
+                "weight": 0.60,
+            },
+            {
+                "candidate_id": "profit_moonshot_adaptive_momentum_vol_target_132_mode",
+                "weight": 0.25,
+            },
+            {
+                "candidate_id": "profit_moonshot_adaptive_momentum_governed_mode",
+                "weight": 0.15,
+            },
+        ],
+        "profit_moonshot_momentum_hybrid_safe_mode": [
+            {
+                "candidate_id": "profit_moonshot_adaptive_momentum_boost_mode",
+                "weight": 0.35,
+            },
+            {
+                "candidate_id": "profit_moonshot_adaptive_momentum_vol_target_132_mode",
+                "weight": 0.35,
+            },
+            {
+                "candidate_id": "profit_moonshot_adaptive_momentum_governed_mode",
+                "weight": 0.20,
+            },
+            {
+                "candidate_id": "profit_moonshot_adaptive_momentum_asym_dynamic_mode",
+                "weight": 0.10,
+            },
+        ],
+        "profit_moonshot_momentum_hybrid_core_mode": [
+            {
+                "candidate_id": "profit_moonshot_adaptive_momentum_boost_mode",
+                "weight": 0.40,
+            },
+            {
+                "candidate_id": "profit_moonshot_adaptive_momentum_vol_target_132_mode",
+                "weight": 0.40,
+            },
+            {
+                "candidate_id": "profit_moonshot_adaptive_momentum_governed_mode",
+                "weight": 0.15,
+            },
+            {
+                "candidate_id": "profit_moonshot_adaptive_momentum_asym_dynamic_mode",
+                "weight": 0.05,
+            },
         ],
         "profit_moonshot_panic_rebound_mode": [
             _profit_reboot_panic_rebound_row("balanced"),

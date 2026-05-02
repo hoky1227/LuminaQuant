@@ -476,6 +476,9 @@ def test_resolve_portfolio_mode_definition_supports_recursive_allocator_sleeves(
     assert "profit_moonshot_adaptive_momentum_vol_target_132_mode" in MODULE.supported_portfolio_modes()
     assert "profit_moonshot_adaptive_momentum_asym_dynamic_mode" in MODULE.supported_portfolio_modes()
     assert "profit_moonshot_adaptive_momentum_volume_guard_mode" in MODULE.supported_portfolio_modes()
+    assert "profit_moonshot_momentum_hybrid_return_mode" in MODULE.supported_portfolio_modes()
+    assert "profit_moonshot_momentum_hybrid_safe_mode" in MODULE.supported_portfolio_modes()
+    assert "profit_moonshot_momentum_hybrid_core_mode" in MODULE.supported_portfolio_modes()
     assert "profit_moonshot_ensemble_mode" in MODULE.supported_portfolio_modes()
     assert supports_live_portfolio_mode("legacy_no_highvol_hybrid_mode")
     assert supports_live_portfolio_mode("retuned_live_portfolio_hybrid_mode")
@@ -490,6 +493,9 @@ def test_resolve_portfolio_mode_definition_supports_recursive_allocator_sleeves(
     assert supports_live_portfolio_mode("profit_moonshot_adaptive_momentum_vol_target_132_mode")
     assert supports_live_portfolio_mode("profit_moonshot_adaptive_momentum_asym_dynamic_mode")
     assert supports_live_portfolio_mode("profit_moonshot_adaptive_momentum_volume_guard_mode")
+    assert supports_live_portfolio_mode("profit_moonshot_momentum_hybrid_return_mode")
+    assert supports_live_portfolio_mode("profit_moonshot_momentum_hybrid_safe_mode")
+    assert supports_live_portfolio_mode("profit_moonshot_momentum_hybrid_core_mode")
     assert supports_live_portfolio_mode("profit_moonshot_ensemble_mode")
 
 
@@ -528,6 +534,9 @@ def test_profit_moonshot_synthetic_modes_resolve_no_aggregator_strategy_families
     volume_guard = MODULE.resolve_portfolio_mode_definition(
         "profit_moonshot_adaptive_momentum_volume_guard_mode"
     )
+    hybrid_return = MODULE.resolve_portfolio_mode_definition("profit_moonshot_momentum_hybrid_return_mode")
+    hybrid_safe = MODULE.resolve_portfolio_mode_definition("profit_moonshot_momentum_hybrid_safe_mode")
+    hybrid_core = MODULE.resolve_portfolio_mode_definition("profit_moonshot_momentum_hybrid_core_mode")
     trend = MODULE.resolve_portfolio_mode_definition("profit_moonshot_trend_mode")
     breakout = MODULE.resolve_portfolio_mode_definition("profit_moonshot_breakout_mode")
     reversion = MODULE.resolve_portfolio_mode_definition("profit_moonshot_reversion_mode")
@@ -557,6 +566,14 @@ def test_profit_moonshot_synthetic_modes_resolve_no_aggregator_strategy_families
     assert asym_dynamic.components[0].params["volatility_trailing_multiplier"] == 7.0
     assert volume_guard.components[0].params["long_exposure_multiplier"] == 1.15
     assert volume_guard.components[0].params["short_exposure_multiplier"] == 0.25
+    assert [component.component_id for component in hybrid_return.components] == [
+        "profit_reboot_adaptive_momentum_boost",
+        "profit_moonshot_adaptive_momentum_vol_target_132",
+        "profit_moonshot_adaptive_momentum_governed",
+    ]
+    assert [component.weight for component in hybrid_return.components] == [0.6, 0.25, 0.15]
+    assert sum(component.weight for component in hybrid_safe.components) == 1.0
+    assert [component.weight for component in hybrid_core.components] == [0.4, 0.4, 0.15, 0.05]
     assert trend.components[0].strategy_class == "ProfitMoonshotTrendStrategy"
     assert breakout.components[0].strategy_class == "ProfitMoonshotBreakoutStrategy"
     assert reversion.components[0].strategy_class == "ProfitMoonshotReversionStrategy"
@@ -580,6 +597,9 @@ def test_profit_moonshot_synthetic_modes_resolve_no_aggregator_strategy_families
         ladder_130,
         ladder_140,
         governed,
+        hybrid_return,
+        hybrid_safe,
+        hybrid_core,
         asym_dynamic,
         volume_guard,
         trend,
