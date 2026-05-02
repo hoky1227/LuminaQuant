@@ -139,7 +139,7 @@ def test_market_window_path_generates_one_bar_per_decision_and_long_signal() -> 
         gross_exposure=0.50,
         stop_loss_pct=0.03,
         take_profit_pct=0.0,
-        trailing_exit_pct=0.0,
+        trailing_exit_pct=0.012,
         max_hold_bars=0,
     )
 
@@ -149,6 +149,76 @@ def test_market_window_path_generates_one_bar_per_decision_and_long_signal() -> 
     long_signal = next(signal for signal in signals if signal.signal_type == "LONG")
     assert long_signal.symbol == "ETH/USDT"
     assert long_signal.metadata["target_allocation"] == 0.50
+    assert strategy._quote_volume_history["BTC/USDT"]
+
+
+def test_asymmetric_dynamic_risk_controls_scale_long_exposure_and_trailing() -> None:
+    symbols, rows = _trend_rows()
+    bars = _WindowBarStore(symbols)
+    events = queue.Queue()
+    strategy = AdaptiveRegimeMomentumStrategy(
+        bars,
+        events,
+        lookback_bars=8,
+        short_lookback_bars=3,
+        regime_lookback_bars=8,
+        volatility_lookback_bars=8,
+        rebalance_bars=2,
+        signal_threshold=0.004,
+        max_longs=1,
+        max_shorts=1,
+        gross_exposure=0.50,
+        long_exposure_multiplier=0.70,
+        short_exposure_multiplier=0.20,
+        stop_loss_pct=0.0,
+        take_profit_pct=0.0,
+        trailing_exit_pct=0.012,
+        volatility_trailing_multiplier=5.0,
+        min_dynamic_trailing_pct=0.01,
+        max_dynamic_trailing_pct=0.03,
+        volume_weighted_broad=True,
+        min_entry_volume_z=-999.0,
+        max_hold_bars=0,
+    )
+
+    signals = _feed(strategy, bars, rows)
+
+    long_signal = next(signal for signal in signals if signal.signal_type == "LONG")
+    assert long_signal.metadata["target_allocation"] == 0.35
+    assert 0.01 <= long_signal.metadata["effective_trailing_pct"] <= 0.03
+
+
+def test_volatility_targeting_scales_entry_allocation_without_changing_signal() -> None:
+    symbols, rows = _trend_rows()
+    bars = _WindowBarStore(symbols)
+    events = queue.Queue()
+    strategy = AdaptiveRegimeMomentumStrategy(
+        bars,
+        events,
+        lookback_bars=8,
+        short_lookback_bars=3,
+        regime_lookback_bars=8,
+        volatility_lookback_bars=8,
+        rebalance_bars=2,
+        signal_threshold=0.004,
+        max_longs=1,
+        max_shorts=1,
+        gross_exposure=0.50,
+        volatility_target_per_bar=0.0005,
+        min_volatility_exposure_multiplier=0.25,
+        max_volatility_exposure_multiplier=0.80,
+        stop_loss_pct=0.0,
+        take_profit_pct=0.0,
+        trailing_exit_pct=0.0,
+        max_hold_bars=0,
+    )
+
+    signals = _feed(strategy, bars, rows)
+
+    long_signal = next(signal for signal in signals if signal.signal_type == "LONG")
+    assert long_signal.symbol == "ETH/USDT"
+    assert 0.125 <= long_signal.metadata["target_allocation"] <= 0.40
+    assert long_signal.metadata["volatility_exposure_multiplier"] <= 0.80
 
 
 def test_regime_flip_can_exit_longs_and_enter_short() -> None:

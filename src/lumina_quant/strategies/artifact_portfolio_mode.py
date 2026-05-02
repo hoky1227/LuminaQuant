@@ -99,6 +99,10 @@ _LIVE_PORTFOLIO_MODE_ALIASES = {
     "profit_moonshot_adaptive_momentum_140_mode",
     "profit_moonshot_adaptive_momentum_boost_mode",
     "profit_moonshot_adaptive_momentum_governed_mode",
+    "profit_moonshot_adaptive_momentum_vol_target_mode",
+    "profit_moonshot_adaptive_momentum_vol_target_132_mode",
+    "profit_moonshot_adaptive_momentum_asym_dynamic_mode",
+    "profit_moonshot_adaptive_momentum_volume_guard_mode",
     "profit_moonshot_panic_rebound_mode",
     "profit_moonshot_session_pair_carry_mode",
     "profit_moonshot_balanced_mode",
@@ -712,6 +716,81 @@ def _alias_rows(token: str) -> list[dict[str, Any]] | None:
                     "broad_threshold": 0.0015,
                     "max_realized_vol": 0.0035,
                     "rebalance_bars": 96,
+                },
+            ),
+        ],
+        "profit_moonshot_adaptive_momentum_vol_target_mode": [
+            _profit_moonshot_adaptive_momentum_scaled_row(
+                "vol_target",
+                gross_exposure=0.0075,
+                max_order_value=300.0,
+                extra_params={
+                    # Keep the boost alpha untouched but volatility-manage
+                    # sizing during high-realized-volatility decision bars.
+                    # This is intentionally a risk governor rather than
+                    # another exposure-only ladder step.
+                    "volatility_target_per_bar": 0.00125,
+                    "min_volatility_exposure_multiplier": 0.55,
+                    "max_volatility_exposure_multiplier": 1.0,
+                },
+            ),
+        ],
+        "profit_moonshot_adaptive_momentum_vol_target_132_mode": [
+            _profit_moonshot_adaptive_momentum_scaled_row(
+                "vol_target_132",
+                gross_exposure=0.0075,
+                max_order_value=300.0,
+                extra_params={
+                    # Slightly less conservative than vol_target_mode.  The
+                    # 1.32 bp/minute target keeps the train drawdown governor
+                    # active but aims to clear the +0.40% validation-return
+                    # research hurdle without reverting to exposure-only
+                    # sizing.
+                    "volatility_target_per_bar": 0.00132,
+                    "min_volatility_exposure_multiplier": 0.55,
+                    "max_volatility_exposure_multiplier": 1.0,
+                },
+            ),
+        ],
+        "profit_moonshot_adaptive_momentum_asym_dynamic_mode": [
+            _profit_moonshot_adaptive_momentum_scaled_row(
+                "asym_dynamic",
+                gross_exposure=0.0075,
+                max_order_value=300.0,
+                extra_params={
+                    "long_exposure_multiplier": 1.0,
+                    "short_exposure_multiplier": 0.35,
+                    "stop_loss_pct": 0.018,
+                    "take_profit_pct": 0.055,
+                    "trailing_exit_pct": 0.0,
+                    "volatility_trailing_multiplier": 7.0,
+                    "min_dynamic_trailing_pct": 0.010,
+                    "max_dynamic_trailing_pct": 0.040,
+                    "max_hold_bars": 1_440,
+                    "volume_lookback_bars": 90,
+                    "volume_weighted_broad": True,
+                    "min_entry_volume_z": -0.50,
+                },
+            ),
+        ],
+        "profit_moonshot_adaptive_momentum_volume_guard_mode": [
+            _profit_moonshot_adaptive_momentum_scaled_row(
+                "volume_guard",
+                gross_exposure=0.0065,
+                max_order_value=260.0,
+                extra_params={
+                    "long_exposure_multiplier": 1.15,
+                    "short_exposure_multiplier": 0.25,
+                    "stop_loss_pct": 0.015,
+                    "take_profit_pct": 0.050,
+                    "trailing_exit_pct": 0.0,
+                    "volatility_trailing_multiplier": 6.0,
+                    "min_dynamic_trailing_pct": 0.008,
+                    "max_dynamic_trailing_pct": 0.035,
+                    "max_hold_bars": 1_440,
+                    "volume_lookback_bars": 90,
+                    "volume_weighted_broad": True,
+                    "min_entry_volume_z": -0.75,
                 },
             ),
         ],

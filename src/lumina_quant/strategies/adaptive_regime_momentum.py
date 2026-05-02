@@ -72,6 +72,12 @@ class AdaptiveRegimeMomentumStrategy(Strategy):
             "gross_exposure": HyperParam.floating(
                 "gross_exposure", default=0.70, low=0.0, high=2.0, tunable=False
             ),
+            "long_exposure_multiplier": HyperParam.floating(
+                "long_exposure_multiplier", default=1.0, low=0.0, high=5.0, tunable=False
+            ),
+            "short_exposure_multiplier": HyperParam.floating(
+                "short_exposure_multiplier", default=1.0, low=0.0, high=5.0, tunable=False
+            ),
             "max_order_value": HyperParam.floating(
                 "max_order_value", default=1500.0, low=0.0, high=1000000.0, tunable=False
             ),
@@ -89,6 +95,41 @@ class AdaptiveRegimeMomentumStrategy(Strategy):
             ),
             "max_realized_vol": HyperParam.floating(
                 "max_realized_vol", default=0.0, low=0.0, high=1.0, tunable=False
+            ),
+            "volatility_target_per_bar": HyperParam.floating(
+                "volatility_target_per_bar", default=0.0, low=0.0, high=1.0, tunable=False
+            ),
+            "min_volatility_exposure_multiplier": HyperParam.floating(
+                "min_volatility_exposure_multiplier",
+                default=0.0,
+                low=0.0,
+                high=5.0,
+                tunable=False,
+            ),
+            "max_volatility_exposure_multiplier": HyperParam.floating(
+                "max_volatility_exposure_multiplier",
+                default=5.0,
+                low=0.0,
+                high=5.0,
+                tunable=False,
+            ),
+            "volatility_trailing_multiplier": HyperParam.floating(
+                "volatility_trailing_multiplier", default=0.0, low=0.0, high=100.0, tunable=False
+            ),
+            "min_dynamic_trailing_pct": HyperParam.floating(
+                "min_dynamic_trailing_pct", default=0.0, low=0.0, high=1.0, tunable=False
+            ),
+            "max_dynamic_trailing_pct": HyperParam.floating(
+                "max_dynamic_trailing_pct", default=1.0, low=0.0, high=1.0, tunable=False
+            ),
+            "volume_lookback_bars": HyperParam.integer(
+                "volume_lookback_bars", default=60, low=2, high=1440, tunable=False
+            ),
+            "volume_weighted_broad": HyperParam.boolean(
+                "volume_weighted_broad", default=False, tunable=False
+            ),
+            "min_entry_volume_z": HyperParam.floating(
+                "min_entry_volume_z", default=-999.0, low=-999.0, high=20.0, tunable=False
             ),
             "min_price": HyperParam.floating(
                 "min_price", default=0.10, low=0.0, high=1_000_000.0, tunable=False
@@ -113,12 +154,23 @@ class AdaptiveRegimeMomentumStrategy(Strategy):
         max_longs: int = 1,
         max_shorts: int = 1,
         gross_exposure: float = 0.70,
+        long_exposure_multiplier: float = 1.0,
+        short_exposure_multiplier: float = 1.0,
         max_order_value: float = 1500.0,
         stop_loss_pct: float = 0.035,
         take_profit_pct: float = 0.070,
         trailing_exit_pct: float = 0.045,
         max_hold_bars: int = 720,
         max_realized_vol: float = 0.0,
+        volatility_target_per_bar: float = 0.0,
+        min_volatility_exposure_multiplier: float = 0.0,
+        max_volatility_exposure_multiplier: float = 5.0,
+        volatility_trailing_multiplier: float = 0.0,
+        min_dynamic_trailing_pct: float = 0.0,
+        max_dynamic_trailing_pct: float = 1.0,
+        volume_lookback_bars: int = 60,
+        volume_weighted_broad: bool = False,
+        min_entry_volume_z: float = -999.0,
         min_price: float = 0.10,
         btc_symbol: str | None = None,
         risk_off_exit: bool = True,
@@ -142,12 +194,23 @@ class AdaptiveRegimeMomentumStrategy(Strategy):
                 "max_longs": max_longs,
                 "max_shorts": max_shorts,
                 "gross_exposure": gross_exposure,
+                "long_exposure_multiplier": long_exposure_multiplier,
+                "short_exposure_multiplier": short_exposure_multiplier,
                 "max_order_value": max_order_value,
                 "stop_loss_pct": stop_loss_pct,
                 "take_profit_pct": take_profit_pct,
                 "trailing_exit_pct": trailing_exit_pct,
                 "max_hold_bars": max_hold_bars,
                 "max_realized_vol": max_realized_vol,
+                "volatility_target_per_bar": volatility_target_per_bar,
+                "min_volatility_exposure_multiplier": min_volatility_exposure_multiplier,
+                "max_volatility_exposure_multiplier": max_volatility_exposure_multiplier,
+                "volatility_trailing_multiplier": volatility_trailing_multiplier,
+                "min_dynamic_trailing_pct": min_dynamic_trailing_pct,
+                "max_dynamic_trailing_pct": max_dynamic_trailing_pct,
+                "volume_lookback_bars": volume_lookback_bars,
+                "volume_weighted_broad": volume_weighted_broad,
+                "min_entry_volume_z": min_entry_volume_z,
                 "min_price": min_price,
                 "btc_symbol": btc_symbol,
                 "risk_off_exit": risk_off_exit,
@@ -165,12 +228,35 @@ class AdaptiveRegimeMomentumStrategy(Strategy):
         self.max_longs = max(0, int(resolved["max_longs"]))
         self.max_shorts = max(0, int(resolved["max_shorts"]))
         self.gross_exposure = max(0.0, float(resolved["gross_exposure"]))
+        self.long_exposure_multiplier = max(0.0, float(resolved["long_exposure_multiplier"]))
+        self.short_exposure_multiplier = max(0.0, float(resolved["short_exposure_multiplier"]))
         self.max_order_value = max(0.0, float(resolved["max_order_value"]))
         self.stop_loss_pct = max(0.0, float(resolved["stop_loss_pct"]))
         self.take_profit_pct = max(0.0, float(resolved["take_profit_pct"]))
         self.trailing_exit_pct = max(0.0, float(resolved["trailing_exit_pct"]))
         self.max_hold_bars = max(0, int(resolved["max_hold_bars"]))
         self.max_realized_vol = max(0.0, float(resolved["max_realized_vol"]))
+        self.volatility_target_per_bar = max(0.0, float(resolved["volatility_target_per_bar"]))
+        self.min_volatility_exposure_multiplier = max(
+            0.0,
+            float(resolved["min_volatility_exposure_multiplier"]),
+        )
+        self.max_volatility_exposure_multiplier = max(
+            self.min_volatility_exposure_multiplier,
+            float(resolved["max_volatility_exposure_multiplier"]),
+        )
+        self.volatility_trailing_multiplier = max(
+            0.0,
+            float(resolved["volatility_trailing_multiplier"]),
+        )
+        self.min_dynamic_trailing_pct = max(0.0, float(resolved["min_dynamic_trailing_pct"]))
+        self.max_dynamic_trailing_pct = max(
+            self.min_dynamic_trailing_pct,
+            float(resolved["max_dynamic_trailing_pct"]),
+        )
+        self.volume_lookback_bars = max(2, int(resolved["volume_lookback_bars"]))
+        self.volume_weighted_broad = bool(resolved["volume_weighted_broad"])
+        self.min_entry_volume_z = float(resolved["min_entry_volume_z"])
         self.min_price = max(0.0, float(resolved["min_price"]))
         self.risk_off_exit = bool(resolved["risk_off_exit"])
 
@@ -183,8 +269,12 @@ class AdaptiveRegimeMomentumStrategy(Strategy):
             self.short_lookback_bars,
             self.regime_lookback_bars,
             self.volatility_lookback_bars + 1,
+            self.volume_lookback_bars + 1,
         ) + 2
         self._price_history: dict[str, deque[float]] = {
+            symbol: deque(maxlen=history_len) for symbol in self.symbol_list
+        }
+        self._quote_volume_history: dict[str, deque[float]] = {
             symbol: deque(maxlen=history_len) for symbol in self.symbol_list
         }
         self._last_symbol_time_key = dict.fromkeys(self.symbol_list, "")
@@ -208,6 +298,9 @@ class AdaptiveRegimeMomentumStrategy(Strategy):
             "tick": int(self._tick),
             "price_history": {
                 symbol: list(history) for symbol, history in self._price_history.items()
+            },
+            "quote_volume_history": {
+                symbol: list(history) for symbol, history in self._quote_volume_history.items()
             },
         }
 
@@ -243,17 +336,30 @@ class AdaptiveRegimeMomentumStrategy(Strategy):
         self._tick = max(0, safe_int(state.get("tick", 0), 0))
 
         raw_history = state.get("price_history")
-        if not isinstance(raw_history, dict):
+        if isinstance(raw_history, dict):
+            for symbol, values in raw_history.items():
+                if symbol not in self._price_history or not isinstance(values, list):
+                    continue
+                history = self._price_history[symbol]
+                history.clear()
+                keep = int(history.maxlen) if history.maxlen is not None else len(values)
+                for value in values[-keep:]:
+                    parsed = safe_float(value)
+                    if parsed is not None and parsed > 0.0:
+                        history.append(float(parsed))
+
+        raw_volume_history = state.get("quote_volume_history")
+        if not isinstance(raw_volume_history, dict):
             return
-        for symbol, values in raw_history.items():
-            if symbol not in self._price_history or not isinstance(values, list):
+        for symbol, values in raw_volume_history.items():
+            if symbol not in self._quote_volume_history or not isinstance(values, list):
                 continue
-            history = self._price_history[symbol]
+            history = self._quote_volume_history[symbol]
             history.clear()
             keep = int(history.maxlen) if history.maxlen is not None else len(values)
             for value in values[-keep:]:
                 parsed = safe_float(value)
-                if parsed is not None and parsed > 0.0:
+                if parsed is not None and parsed >= 0.0:
                     history.append(float(parsed))
 
     def _latest_bar_close(self, symbol: str, row: Any | None = None) -> float | None:
@@ -270,7 +376,45 @@ class AdaptiveRegimeMomentumStrategy(Strategy):
             return None
         return float(parsed)
 
-    def _append_close(self, symbol: str, event_time_key: str, close_price: float) -> bool:
+    @staticmethod
+    def _row_close_and_quote_volume(row: Any) -> tuple[float | None, float | None]:
+        close = None
+        volume = None
+        if isinstance(row, dict):
+            close = safe_float(row.get("close"))
+            volume = safe_float(row.get("volume"))
+        elif isinstance(row, (tuple, list)):
+            if len(row) >= 5:
+                close = safe_float(row[4])
+            if len(row) >= 6:
+                volume = safe_float(row[5])
+        if close is None or close <= 0.0:
+            return None, None
+        quote_volume = None
+        if volume is not None and volume >= 0.0:
+            quote_volume = float(close) * float(volume)
+        return float(close), quote_volume
+
+    def _window_close_and_quote_volume(self, rows: list[Any]) -> tuple[float | None, float | None]:
+        close = None
+        quote_volume = 0.0
+        volume_seen = False
+        for row in rows:
+            row_close, row_quote_volume = self._row_close_and_quote_volume(row)
+            if row_close is not None:
+                close = float(row_close)
+            if row_quote_volume is not None:
+                quote_volume += float(row_quote_volume)
+                volume_seen = True
+        return close, (quote_volume if volume_seen else None)
+
+    def _append_close(
+        self,
+        symbol: str,
+        event_time_key: str,
+        close_price: float,
+        quote_volume: float | None = None,
+    ) -> bool:
         if symbol not in self._price_history:
             return False
         if not event_time_key or self._last_symbol_time_key.get(symbol) == event_time_key:
@@ -279,6 +423,10 @@ class AdaptiveRegimeMomentumStrategy(Strategy):
             return False
         self._last_symbol_time_key[symbol] = event_time_key
         self._price_history[symbol].append(float(close_price))
+        parsed_volume = safe_float(quote_volume)
+        self._quote_volume_history[symbol].append(
+            float(parsed_volume) if parsed_volume is not None and parsed_volume >= 0.0 else 0.0
+        )
         return True
 
     def _momentum(self, symbol: str, lookback: int) -> float | None:
@@ -304,17 +452,56 @@ class AdaptiveRegimeMomentumStrategy(Strategy):
             return 0.0
         return float(stdev(returns))
 
+    def _avg_quote_volume(self, symbol: str) -> float:
+        history = self._quote_volume_history.get(symbol)
+        if history is None or not history:
+            return 0.0
+        values = [float(value) for value in list(history)[-self.volume_lookback_bars :] if value >= 0.0]
+        if not values:
+            return 0.0
+        return float(mean(values))
+
+    def _volume_z(self, symbol: str) -> float:
+        history = self._quote_volume_history.get(symbol)
+        if history is None or len(history) <= self.volume_lookback_bars:
+            return 0.0
+        values = [float(value) for value in list(history)[-(self.volume_lookback_bars + 1) :] if value >= 0.0]
+        if len(values) <= 2:
+            return 0.0
+        latest = values[-1]
+        baseline = values[:-1]
+        sigma = stdev(baseline) if len(baseline) > 1 else 0.0
+        if sigma <= 1e-12:
+            return 0.0
+        return float((latest - mean(baseline)) / sigma)
+
+    def _entry_volume_ok(self, symbol: str) -> bool:
+        if self.min_entry_volume_z <= -998.0:
+            return True
+        return self._volume_z(symbol) >= self.min_entry_volume_z
+
     def _regime(self) -> tuple[str, float]:
         btc_momentum = self._momentum(self.btc_symbol, self.regime_lookback_bars)
         if btc_momentum is None:
             return "WARMUP", 0.0
 
-        broad_momenta = [
-            momentum
-            for symbol in self.symbol_list
-            if (momentum := self._momentum(symbol, self.regime_lookback_bars)) is not None
-        ]
-        broad_mean = mean(broad_momenta) if broad_momenta else btc_momentum
+        broad_momenta: list[float] = []
+        weighted_sum = 0.0
+        total_weight = 0.0
+        for symbol in self.symbol_list:
+            momentum = self._momentum(symbol, self.regime_lookback_bars)
+            if momentum is None:
+                continue
+            broad_momenta.append(float(momentum))
+            if self.volume_weighted_broad:
+                weight = max(0.0, self._avg_quote_volume(symbol))
+                if weight > 0.0:
+                    weighted_sum += float(momentum) * weight
+                    total_weight += weight
+        if self.volume_weighted_broad and total_weight > 0.0:
+            broad_mean = weighted_sum / total_weight
+        else:
+            broad_mean = mean(broad_momenta) if broad_momenta else btc_momentum
         broad_score = 0.70 * float(btc_momentum) + 0.30 * float(broad_mean)
         if broad_score >= self.broad_threshold:
             return "RISK_ON", broad_score
@@ -322,10 +509,32 @@ class AdaptiveRegimeMomentumStrategy(Strategy):
             return "RISK_OFF", broad_score
         return "NEUTRAL", broad_score
 
-    def _target_allocation(self, target_count: int) -> float:
+    def _target_allocation(self, target_count: int, side: str) -> float:
         if target_count <= 0:
             return 0.0
-        return max(0.0, float(self.gross_exposure) / float(target_count))
+        multiplier = (
+            self.long_exposure_multiplier
+            if str(side).upper() == "LONG"
+            else self.short_exposure_multiplier
+        )
+        return max(0.0, float(self.gross_exposure) * float(multiplier) / float(target_count))
+
+    def _volatility_exposure_multiplier(self, symbol: str) -> float:
+        if self.volatility_target_per_bar <= 0.0:
+            return 1.0
+        realized = self._realized_vol(symbol)
+        if realized <= 1e-12:
+            return min(1.0, float(self.max_volatility_exposure_multiplier))
+        multiplier = float(self.volatility_target_per_bar) / float(realized)
+        multiplier = max(float(self.min_volatility_exposure_multiplier), multiplier)
+        multiplier = min(float(self.max_volatility_exposure_multiplier), multiplier)
+        return max(0.0, float(multiplier))
+
+    def _target_allocation_for_symbol(self, symbol: str, target_count: int, side: str) -> float:
+        base = self._target_allocation(target_count, side)
+        if base <= 0.0:
+            return 0.0
+        return base * self._volatility_exposure_multiplier(symbol)
 
     def _build_targets(self) -> tuple[dict[str, str], dict[str, float], str, float, dict[str, float]]:
         regime, broad_score = self._regime()
@@ -353,24 +562,46 @@ class AdaptiveRegimeMomentumStrategy(Strategy):
                 for symbol, momentum in sorted(
                     momentum_map.items(), key=lambda item: item[1], reverse=True
                 )
-                if momentum >= self.signal_threshold and short_map.get(symbol, 0.0) > 0.0
+                if momentum >= self.signal_threshold
+                and short_map.get(symbol, 0.0) > 0.0
+                and self._entry_volume_ok(symbol)
             ][: self.max_longs]
-            allocation = self._target_allocation(len(longs))
             for symbol in longs:
                 targets[symbol] = "LONG"
-                target_allocations[symbol] = allocation
+                target_allocations[symbol] = self._target_allocation_for_symbol(
+                    symbol,
+                    len(longs),
+                    "LONG",
+                )
         elif regime == "RISK_OFF" and self.max_shorts > 0:
             shorts = [
                 symbol
                 for symbol, momentum in sorted(momentum_map.items(), key=lambda item: item[1])
-                if momentum <= -self.signal_threshold and short_map.get(symbol, 0.0) < 0.0
+                if momentum <= -self.signal_threshold
+                and short_map.get(symbol, 0.0) < 0.0
+                and self._entry_volume_ok(symbol)
             ][: self.max_shorts]
-            allocation = self._target_allocation(len(shorts))
             for symbol in shorts:
                 targets[symbol] = "SHORT"
-                target_allocations[symbol] = allocation
+                target_allocations[symbol] = self._target_allocation_for_symbol(
+                    symbol,
+                    len(shorts),
+                    "SHORT",
+                )
 
         return targets, momentum_map, regime, broad_score, target_allocations
+
+    def _effective_trailing_pct(self, symbol: str) -> float:
+        base = float(self.trailing_exit_pct)
+        if self.volatility_trailing_multiplier <= 0.0:
+            return max(0.0, base)
+        realized = self._realized_vol(symbol)
+        if realized <= 0.0:
+            return max(0.0, base)
+        dynamic = float(realized) * float(self.volatility_trailing_multiplier)
+        dynamic = max(float(self.min_dynamic_trailing_pct), dynamic)
+        dynamic = min(float(self.max_dynamic_trailing_pct), dynamic)
+        return max(0.0, dynamic)
 
     def _emit_signal(
         self,
@@ -388,20 +619,21 @@ class AdaptiveRegimeMomentumStrategy(Strategy):
         stop_loss = None
         take_profit = None
         trailing_percent = None
+        effective_trailing_pct = self._effective_trailing_pct(symbol)
         if signal_type == "LONG":
             if self.stop_loss_pct > 0.0:
                 stop_loss = price * (1.0 - self.stop_loss_pct)
             if self.take_profit_pct > 0.0:
                 take_profit = price * (1.0 + self.take_profit_pct)
-            if self.trailing_exit_pct > 0.0:
-                trailing_percent = self.trailing_exit_pct
+            if effective_trailing_pct > 0.0:
+                trailing_percent = effective_trailing_pct
         elif signal_type == "SHORT":
             if self.stop_loss_pct > 0.0:
                 stop_loss = price * (1.0 + self.stop_loss_pct)
             if self.take_profit_pct > 0.0:
                 take_profit = price * (1.0 - self.take_profit_pct)
-            if self.trailing_exit_pct > 0.0:
-                trailing_percent = self.trailing_exit_pct
+            if effective_trailing_pct > 0.0:
+                trailing_percent = effective_trailing_pct
 
         metadata: dict[str, Any] = {
             "strategy": "AdaptiveRegimeMomentumStrategy",
@@ -413,7 +645,16 @@ class AdaptiveRegimeMomentumStrategy(Strategy):
             "regime_lookback_bars": int(self.regime_lookback_bars),
             "signal_threshold": float(self.signal_threshold),
             "gross_exposure": float(self.gross_exposure),
+            "long_exposure_multiplier": float(self.long_exposure_multiplier),
+            "short_exposure_multiplier": float(self.short_exposure_multiplier),
             "max_order_value": float(self.max_order_value),
+            "volatility_target_per_bar": float(self.volatility_target_per_bar),
+            "volatility_exposure_multiplier": float(
+                self._volatility_exposure_multiplier(symbol)
+            ),
+            "effective_trailing_pct": float(effective_trailing_pct),
+            "volume_z": float(self._volume_z(symbol)),
+            "volume_weighted_broad": bool(self.volume_weighted_broad),
         }
         if target_allocation > 0.0:
             metadata["target_allocation"] = float(target_allocation)
@@ -481,9 +722,9 @@ class AdaptiveRegimeMomentumStrategy(Strategy):
             if self.take_profit_pct > 0.0 and price >= entry_price * (1.0 + self.take_profit_pct):
                 return "take_profit"
             if (
-                self.trailing_exit_pct > 0.0
+                (trailing_pct := self._effective_trailing_pct(symbol)) > 0.0
                 and self._high_watermark[symbol] > entry_price
-                and price <= self._high_watermark[symbol] * (1.0 - self.trailing_exit_pct)
+                and price <= self._high_watermark[symbol] * (1.0 - trailing_pct)
             ):
                 return "trailing_exit"
         elif state == "SHORT":
@@ -494,9 +735,9 @@ class AdaptiveRegimeMomentumStrategy(Strategy):
             if self.take_profit_pct > 0.0 and price <= entry_price * (1.0 - self.take_profit_pct):
                 return "take_profit"
             if (
-                self.trailing_exit_pct > 0.0
+                (trailing_pct := self._effective_trailing_pct(symbol)) > 0.0
                 and self._low_watermark[symbol] < entry_price
-                and price >= self._low_watermark[symbol] * (1.0 + self.trailing_exit_pct)
+                and price >= self._low_watermark[symbol] * (1.0 + trailing_pct)
             ):
                 return "trailing_exit"
 
@@ -605,10 +846,12 @@ class AdaptiveRegimeMomentumStrategy(Strategy):
             rows = list(bars_1s.get(symbol) or [])
             if not rows:
                 continue
-            close_price = self._latest_bar_close(symbol, rows[-1])
+            close_price, quote_volume = self._window_close_and_quote_volume(rows)
+            if close_price is None:
+                close_price = self._latest_bar_close(symbol, rows[-1])
             if close_price is None:
                 continue
-            self._append_close(symbol, event_time_key, close_price)
+            self._append_close(symbol, event_time_key, close_price, quote_volume)
 
         self._process_decision_bar(event_time, event_time_key)
 
@@ -623,7 +866,9 @@ class AdaptiveRegimeMomentumStrategy(Strategy):
         close_price = self._latest_bar_close(event_symbol, event)
         if not event_time_key or close_price is None:
             return
-        if not self._append_close(event_symbol, event_time_key, close_price):
+        raw_volume = safe_float(getattr(event, "volume", None))
+        quote_volume = close_price * raw_volume if raw_volume is not None and raw_volume >= 0.0 else None
+        if not self._append_close(event_symbol, event_time_key, close_price, quote_volume):
             return
         self._process_decision_bar(event_time, event_time_key)
 
