@@ -68,6 +68,8 @@ class HistoricCSVDataHandler(DataHandler):
         self._feature_lookup = self._build_feature_lookup(
             db_path=feature_db_path,
             exchange=feature_exchange,
+            start_date=start_date,
+            end_date=end_date,
         )
 
         self.symbol_rows: dict[str, tuple[tuple[Any, ...], ...]] = {}
@@ -99,6 +101,8 @@ class HistoricCSVDataHandler(DataHandler):
         *,
         db_path: str | None,
         exchange: str | None,
+        start_date: Any = None,
+        end_date: Any = None,
     ) -> FeaturePointLookup:
         resolved_db_path = db_path
         resolved_exchange = exchange
@@ -116,6 +120,8 @@ class HistoricCSVDataHandler(DataHandler):
         return FeaturePointLookup(
             db_path=resolved_db_path,
             exchange=str(resolved_exchange or "binance"),
+            start_date=start_date,
+            end_date=end_date,
         )
 
     @staticmethod

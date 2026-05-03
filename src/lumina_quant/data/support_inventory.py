@@ -17,6 +17,12 @@ _LIQUIDATION_COLUMNS: tuple[str, ...] = (
     "liquidation_long_notional",
     "liquidation_short_notional",
 )
+_TAKER_FLOW_COLUMNS: tuple[str, ...] = (
+    "taker_buy_base_volume",
+    "taker_sell_base_volume",
+    "taker_buy_quote_volume",
+    "taker_sell_quote_volume",
+)
 
 INVENTORY_NOTES: dict[str, str | bool] = {
     "canonical_inventory": True,
@@ -107,17 +113,23 @@ def build_strategy_support_inventory(
                     "mark_rows": 0,
                     "index_rows": 0,
                     "open_interest_rows": 0,
+                    "taker_flow_rows": 0,
                     "liquidation_rows": 0,
                     "oi_first_timestamp_ms": None,
                     "oi_last_timestamp_ms": None,
+                    "taker_flow_first_timestamp_ms": None,
+                    "taker_flow_last_timestamp_ms": None,
                     "first_timestamp_utc": None,
                     "last_timestamp_utc": None,
                     "oi_first_timestamp_utc": None,
                     "oi_last_timestamp_utc": None,
+                    "taker_flow_first_timestamp_utc": None,
+                    "taker_flow_last_timestamp_utc": None,
                     "has_funding_fee": False,
                     "has_mark": False,
                     "has_index": False,
                     "has_open_interest": False,
+                    "has_taker_flow": False,
                     "has_liquidation": False,
                 }
             )
@@ -132,6 +144,7 @@ def build_strategy_support_inventory(
                 "mark_price",
                 "index_price",
                 "open_interest",
+                *_TAKER_FLOW_COLUMNS,
                 *_LIQUIDATION_COLUMNS,
             ]
         ).sort("timestamp_ms")
@@ -152,10 +165,17 @@ def build_strategy_support_inventory(
         mark_rows = _column_count(cleaned, "mark_price")
         index_rows = _column_count(cleaned, "index_price")
         open_interest_rows = _column_count(cleaned, "open_interest")
+        taker_flow_expr = pl.lit(False)
+        for column in _TAKER_FLOW_COLUMNS:
+            taker_flow_expr = taker_flow_expr | pl.col(column).is_not_null()
+        taker_flow_rows = int(cleaned.select(taker_flow_expr.sum().alias("count")).item())
         liquidation_rows = int(cleaned.select(liquidation_expr.sum().alias("count")).item())
         oi_present = pl.col("open_interest").is_not_null()
+        taker_flow_present = taker_flow_expr
         oi_first_timestamp_ms = _min_timestamp_for(cleaned, oi_present)
         oi_last_timestamp_ms = _max_timestamp_for(cleaned, oi_present)
+        taker_flow_first_timestamp_ms = _min_timestamp_for(cleaned, taker_flow_present)
+        taker_flow_last_timestamp_ms = _max_timestamp_for(cleaned, taker_flow_present)
 
         inventory_rows.append(
             {
@@ -168,17 +188,23 @@ def build_strategy_support_inventory(
                 "mark_rows": mark_rows,
                 "index_rows": index_rows,
                 "open_interest_rows": open_interest_rows,
+                "taker_flow_rows": taker_flow_rows,
                 "liquidation_rows": liquidation_rows,
                 "oi_first_timestamp_ms": oi_first_timestamp_ms,
                 "oi_last_timestamp_ms": oi_last_timestamp_ms,
+                "taker_flow_first_timestamp_ms": taker_flow_first_timestamp_ms,
+                "taker_flow_last_timestamp_ms": taker_flow_last_timestamp_ms,
                 "first_timestamp_utc": _iso_utc(first_timestamp_ms),
                 "last_timestamp_utc": _iso_utc(last_timestamp_ms),
                 "oi_first_timestamp_utc": _iso_utc(oi_first_timestamp_ms),
                 "oi_last_timestamp_utc": _iso_utc(oi_last_timestamp_ms),
+                "taker_flow_first_timestamp_utc": _iso_utc(taker_flow_first_timestamp_ms),
+                "taker_flow_last_timestamp_utc": _iso_utc(taker_flow_last_timestamp_ms),
                 "has_funding_fee": funding_fee_rows > 0,
                 "has_mark": mark_rows > 0,
                 "has_index": index_rows > 0,
                 "has_open_interest": open_interest_rows > 0,
+                "has_taker_flow": taker_flow_rows > 0,
                 "has_liquidation": liquidation_rows > 0,
             }
         )

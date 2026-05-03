@@ -22,6 +22,8 @@ def test_build_strategy_support_inventory_counts_feature_groups(tmp_path):
             {
                 "timestamp_ms": 1_700_000_120_000,
                 "open_interest": 12_345.0,
+                "taker_buy_quote_volume": 70_000.0,
+                "taker_sell_quote_volume": 30_000.0,
                 "liquidation_long_qty": 2.0,
                 "liquidation_long_notional": 4_100.0,
             },
@@ -45,11 +47,13 @@ def test_build_strategy_support_inventory_counts_feature_groups(tmp_path):
     assert xau_row["mark_rows"] == 1
     assert xau_row["index_rows"] == 1
     assert xau_row["open_interest_rows"] == 1
+    assert xau_row["taker_flow_rows"] == 1
     assert xau_row["liquidation_rows"] == 1
     assert xau_row["has_funding_fee"] is True
     assert xau_row["has_mark"] is True
     assert xau_row["has_index"] is True
     assert xau_row["has_open_interest"] is True
+    assert xau_row["has_taker_flow"] is True
     assert xau_row["has_liquidation"] is True
     assert xau_row["oi_first_timestamp_ms"] == 1_700_000_120_000
     assert xau_row["oi_last_timestamp_ms"] == 1_700_000_120_000
@@ -58,3 +62,4 @@ def test_build_strategy_support_inventory_counts_feature_groups(tmp_path):
     assert btc_row["rows"] == 0
     assert btc_row["has_funding_fee"] is False
     assert btc_row["has_mark"] is False
+    assert btc_row["has_taker_flow"] is False

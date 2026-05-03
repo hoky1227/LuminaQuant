@@ -212,6 +212,36 @@ def test_derivatives_flow_squeeze_mode_resolves_new_alpha_components() -> None:
     assert "derivatives_flow_squeeze_manifest_path" in definition.source_artifacts
 
 
+def test_profit_moonshot_derivatives_taker_flow_mode_uses_strict_raw_taker_replay() -> None:
+    definition = MODULE.resolve_portfolio_mode_definition("profit_moonshot_derivatives_taker_flow_mode")
+
+    assert supports_live_portfolio_mode("profit_moonshot_derivatives_taker_flow_mode")
+    assert [component.component_id for component in definition.components] == [
+        "profit_moonshot_dfse_top3_taker_flow_continuation",
+        "profit_moonshot_dfse_top3_liquidation_gap_probe",
+    ]
+    assert definition.symbols == ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
+    assert {component.strategy_class for component in definition.components} == {
+        "DerivativesFlowSqueezeStrategy"
+    }
+    assert all(component.params["allow_ohlcv_flow_proxy"] is False for component in definition.components)
+    assert definition.components[0].params["enable_continuation"] is True
+    assert definition.components[1].params["enable_exhaustion"] is True
+
+
+def test_profit_moonshot_derivatives_sparse_mode_reduces_overtrading_without_exposure_increase() -> None:
+    definition = MODULE.resolve_portfolio_mode_definition("profit_moonshot_derivatives_taker_flow_sparse_mode")
+
+    assert supports_live_portfolio_mode("profit_moonshot_derivatives_taker_flow_sparse_mode")
+    assert definition.symbols == ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
+    component = definition.components[0]
+    assert component.component_id == "profit_moonshot_dfse_top3_sparse_taker_flow"
+    assert component.params["allow_ohlcv_flow_proxy"] is False
+    assert component.params["evaluation_cadence_bars"] == 360
+    assert component.params["flow_imbalance_min"] == 0.055
+    assert component.params["target_allocation"] == 0.008
+
+
 def test_resolve_portfolio_mode_definition_supports_recursive_allocator_sleeves(monkeypatch, tmp_path: Path) -> None:
     def _write(path: Path, payload: dict) -> Path:
         path.write_text(json.dumps(payload), encoding="utf-8")
@@ -480,6 +510,8 @@ def test_resolve_portfolio_mode_definition_supports_recursive_allocator_sleeves(
     assert "profit_moonshot_momentum_hybrid_safe_mode" in MODULE.supported_portfolio_modes()
     assert "profit_moonshot_momentum_hybrid_core_mode" in MODULE.supported_portfolio_modes()
     assert "profit_moonshot_ensemble_mode" in MODULE.supported_portfolio_modes()
+    assert "profit_moonshot_derivatives_taker_flow_mode" in MODULE.supported_portfolio_modes()
+    assert "profit_moonshot_derivatives_taker_flow_sparse_mode" in MODULE.supported_portfolio_modes()
     assert supports_live_portfolio_mode("legacy_no_highvol_hybrid_mode")
     assert supports_live_portfolio_mode("retuned_live_portfolio_hybrid_mode")
     assert supports_live_portfolio_mode("profit_reboot_panic_rebound_mode")
@@ -497,6 +529,8 @@ def test_resolve_portfolio_mode_definition_supports_recursive_allocator_sleeves(
     assert supports_live_portfolio_mode("profit_moonshot_momentum_hybrid_safe_mode")
     assert supports_live_portfolio_mode("profit_moonshot_momentum_hybrid_core_mode")
     assert supports_live_portfolio_mode("profit_moonshot_ensemble_mode")
+    assert supports_live_portfolio_mode("profit_moonshot_derivatives_taker_flow_mode")
+    assert supports_live_portfolio_mode("profit_moonshot_derivatives_taker_flow_sparse_mode")
 
 
 def test_profit_reboot_synthetic_modes_resolve_new_strategy_families() -> None:

@@ -35,3 +35,11 @@ def test_infer_strategy_class_name_extended_catalog():
         infer_strategy_class_name("derivatives_flow_squeeze_mode")
         == "DerivativesFlowSqueezeStrategy"
     )
+    assert (
+        infer_strategy_class_name("profit_moonshot_derivatives_taker_flow_mode")
+        == "DerivativesFlowSqueezeStrategy"
+    )
+    assert (
+        infer_strategy_class_name("profit_moonshot_derivatives_taker_flow_sparse_mode")
+        == "DerivativesFlowSqueezeStrategy"
+    )

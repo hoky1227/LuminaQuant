@@ -6,7 +6,7 @@ import math
 from bisect import bisect_right
 from dataclasses import dataclass
 from threading import Lock
-from typing import Final
+from typing import Any, Final
 
 import polars as pl
 
@@ -40,9 +40,18 @@ class _FeatureCache:
 class FeaturePointLookup:
     """Lazy, per-symbol lookup for latest feature values at or before a timestamp."""
 
-    def __init__(self, *, db_path: str | None, exchange: str = "binance") -> None:
+    def __init__(
+        self,
+        *,
+        db_path: str | None,
+        exchange: str = "binance",
+        start_date: Any = None,
+        end_date: Any = None,
+    ) -> None:
         self.db_path = str(db_path or "").strip()
         self.exchange = str(exchange or "binance").strip().lower() or "binance"
+        self.start_date = start_date
+        self.end_date = end_date
         self._cache: dict[str, _FeatureCache] = {}
         self._lock = Lock()
 
@@ -96,6 +105,8 @@ class FeaturePointLookup:
             self.db_path,
             exchange=self.exchange,
             symbol=symbol,
+            start_date=self.start_date,
+            end_date=self.end_date,
         )
         if frame.is_empty():
             return _FeatureCache(timestamps_ms=[], columns={field: [] for field in FEATURE_COLUMNS})

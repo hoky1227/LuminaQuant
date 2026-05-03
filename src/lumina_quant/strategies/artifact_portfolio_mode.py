@@ -120,6 +120,8 @@ _LIVE_PORTFOLIO_MODE_ALIASES = {
     "profit_moonshot_reversion_mode",
     "profit_moonshot_ensemble_mode",
     "derivatives_flow_squeeze_mode",
+    "profit_moonshot_derivatives_taker_flow_mode",
+    "profit_moonshot_derivatives_taker_flow_sparse_mode",
 }
 _PROFIT_MODE_UNBOUNDED_CHILD_TARGET_ALLOCATION = 0.02
 _PROFIT_MODE_UNBOUNDED_CHILD_MAX_ORDER_VALUE = 250.0
@@ -563,8 +565,15 @@ def _profit_moonshot_row(strategy: str, variant: str, weight: float = 1.0) -> di
     }
 
 
-def _derivatives_flow_squeeze_row(variant: str, weight: float) -> dict[str, Any]:
-    symbols = ["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "TRX/USDT"]
+def _derivatives_flow_squeeze_row(
+    variant: str,
+    weight: float,
+    *,
+    symbols: list[str] | None = None,
+    candidate_id: str | None = None,
+    params_override: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    resolved_symbols = symbols or ["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "TRX/USDT"]
     params: dict[str, Any] = {
         "lookback_bars": 192,
         "momentum_lookback_bars": 45,
@@ -655,11 +664,14 @@ def _derivatives_flow_squeeze_row(variant: str, weight: float) -> dict[str, Any]
         )
     elif variant != "top5_exhaustion_plus_flow":
         raise ValueError(f"unsupported derivatives-flow squeeze variant: {variant}")
+    if params_override:
+        params.update(dict(params_override))
+    resolved_candidate_id = candidate_id or f"dfse_{variant}"
     return {
-        "candidate_id": f"dfse_{variant}",
-        "name": f"dfse_{variant}",
+        "candidate_id": resolved_candidate_id,
+        "name": resolved_candidate_id,
         "strategy_class": "DerivativesFlowSqueezeStrategy",
-        "symbols": symbols,
+        "symbols": resolved_symbols,
         "params": params,
         "weight": float(weight),
     }
@@ -985,6 +997,84 @@ def _alias_rows(token: str) -> list[dict[str, Any]] | None:
             _derivatives_flow_squeeze_row("top5_exhaustion_plus_flow", weight=0.55),
             _derivatives_flow_squeeze_row("fast_liquidation_reversal", weight=0.25),
             _derivatives_flow_squeeze_row("basis_flow_continuation", weight=0.20),
+        ],
+        "profit_moonshot_derivatives_taker_flow_mode": [
+            _derivatives_flow_squeeze_row(
+                "basis_flow_continuation",
+                weight=0.80,
+                symbols=["BTC/USDT", "ETH/USDT", "SOL/USDT"],
+                candidate_id="profit_moonshot_dfse_top3_taker_flow_continuation",
+                params_override={
+                    # New alpha evidence must come from raw aggTrade taker-flow
+                    # sidecar replay, not an OHLCV directional proxy.
+                    "allow_ohlcv_flow_proxy": False,
+                    # OI is still unavailable before 2026-03 in Binance history;
+                    # retain the documented volume proxy for train/val, while
+                    # OOS uses true OI where the feature inventory supports it.
+                    "allow_volume_oi_proxy": True,
+                    "flow_imbalance_min": 0.025,
+                    "oi_delta_min": 0.0,
+                    "oi_delta_z_min": -1.25,
+                    "target_allocation": 0.012,
+                    "max_order_value": 250.0,
+                    "volatility_target_per_bar": 0.00105,
+                    "min_volatility_multiplier": 0.45,
+                    "stop_loss_pct": 0.010,
+                    "take_profit_pct": 0.028,
+                    "trailing_exit_pct": 0.010,
+                    "max_hold_bars": 96,
+                    "enable_continuation": True,
+                    "enable_exhaustion": False,
+                },
+            ),
+            _derivatives_flow_squeeze_row(
+                "fast_liquidation_reversal",
+                weight=0.20,
+                symbols=["BTC/USDT", "ETH/USDT", "SOL/USDT"],
+                candidate_id="profit_moonshot_dfse_top3_liquidation_gap_probe",
+                params_override={
+                    "allow_ohlcv_flow_proxy": False,
+                    "allow_volume_oi_proxy": True,
+                    "target_allocation": 0.006,
+                    "max_order_value": 125.0,
+                    "liquidation_z_min": 1.25,
+                    "enable_continuation": False,
+                    "enable_exhaustion": True,
+                },
+            ),
+        ],
+        "profit_moonshot_derivatives_taker_flow_sparse_mode": [
+            _derivatives_flow_squeeze_row(
+                "basis_flow_continuation",
+                weight=1.0,
+                symbols=["BTC/USDT", "ETH/USDT", "SOL/USDT"],
+                candidate_id="profit_moonshot_dfse_top3_sparse_taker_flow",
+                params_override={
+                    # Stricter cadence/threshold candidate to test whether the
+                    # raw taker-flow alpha survives costs when overtrading is
+                    # reduced. This is deliberately not an exposure increase.
+                    "allow_ohlcv_flow_proxy": False,
+                    "allow_volume_oi_proxy": True,
+                    "evaluation_cadence_bars": 360,
+                    "momentum_lookback_bars": 240,
+                    "flow_lookback_bars": 240,
+                    "oi_lookback_bars": 240,
+                    "continuation_momentum_min": 0.0030,
+                    "flow_imbalance_min": 0.055,
+                    "oi_delta_min": 0.0,
+                    "oi_delta_z_min": -0.50,
+                    "target_allocation": 0.008,
+                    "max_order_value": 175.0,
+                    "volatility_target_per_bar": 0.00095,
+                    "min_volatility_multiplier": 0.45,
+                    "stop_loss_pct": 0.012,
+                    "take_profit_pct": 0.030,
+                    "trailing_exit_pct": 0.012,
+                    "max_hold_bars": 72,
+                    "enable_continuation": True,
+                    "enable_exhaustion": False,
+                },
+            ),
         ],
     }
     if token in portfolio_paths:

@@ -1,66 +1,21 @@
 # Profit Moonshot Research Summary
 
-Generated: `2026-05-03T06:15:35.740790Z`
-Decision: `promoted_candidate_found`
-Candidates scanned: `36`
-Promotion-eligible candidates: `24`
+Generated: `2026-05-03T07:36:41.813258Z`
+Decision: `no_deployment_ready_candidate`
 
-## Promoted Candidate
+## Current best
 
-- Candidate: `profit_moonshot_momentum_hybrid_safe_mode`
-- Source: `live_equivalent` from `var/reports/profit_moonshot_20260501/hybrid/profit_moonshot_momentum_hybrid_safe_mode/live_equivalent_revalidation_latest.json`
-- val return: `0.28%`
-- max_drawdown: `1.04%`
-- Sharpe / Sortino: `0.010` / `0.010`
-- trades / liquidations: `183` / `0`
-- final_equity: `10028.407`
+- Best new OOS-positive candidate: `profit_moonshot_derivatives_taker_flow_sparse_mode` (`shadow_review_only`).
+- Conservative research baseline retained: `profit_moonshot_momentum_hybrid_safe_mode`.
+- Deployment-ready: `false` because liquidation replay is absent, OI train/val relies on proxy, and the OOS edge is tiny.
+- Latest tail refresh cutoff: `2026-05-03T04:10:03Z`.
 
-## Best Validation Return Candidate
+## Strict raw-first table
 
-- Candidate: `profit_moonshot_adaptive_momentum_boost_mode`
-- Source: `live_equivalent` from `var/reports/profit_moonshot_20260501/continuation/adaptive_boost/live_equivalent_revalidation_latest.json`
-- val return: `0.51%`
-- max_drawdown: `1.36%`
-- Sharpe / Sortino: `0.015` / `0.015`
-- trades / liquidations: `56` / `0`
+| mode | train ret | val ret | OOS ret | OOS MDD | OOS Sharpe | strict status |
+|---|---:|---:|---:|---:|---:|---|
+| `profit_moonshot_momentum_hybrid_safe_mode` | -1.3551% | +0.2837% | -0.3832% | +3.3917% | -0.003750 | 보수 연구 후보 유지 / OOS 실패 |
+| `profit_moonshot_derivatives_taker_flow_mode` | -1.4181% | -0.1302% | -0.0059% | +1.1541% | 0.000136 | 실패: val/OOS 약함 |
+| `profit_moonshot_derivatives_taker_flow_sparse_mode` | -0.3765% | +0.0799% | +0.0247% | +0.8590% | 0.001444 | 최고 신규 shadow 후보 / deployment 불가 |
 
-## Top Ranked Candidates
-
-| rank | candidate | source | split | return | MDD | Sharpe | Sortino | trades | liq | final equity | blockers |
-| ---: | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| 1 | `profit_moonshot_momentum_hybrid_safe_mode` | `live_equivalent` | `val` | 0.28% | 1.04% | 0.010 | 0.010 | 183 | 0 | 10028.407 | - |
-| 2 | `profit_moonshot_momentum_hybrid_safe_mode` | `live_equivalent` | `val` | 0.28% | 1.04% | 0.010 | 0.010 | 183 | 0 | 10028.407 | - |
-| 3 | `profit_moonshot_momentum_hybrid_core_mode` | `live_equivalent` | `val` | 0.25% | 1.01% | 0.009 | 0.009 | 138 | 0 | 10025.524 | - |
-| 4 | `profit_moonshot_momentum_hybrid_return_mode` | `live_equivalent` | `val` | 0.27% | 1.01% | 0.010 | 0.009 | 134 | 0 | 10026.897 | - |
-| 5 | `profit_moonshot_adaptive_momentum_asym_dynamic_mode` | `live_equivalent` | `val` | 0.00% | 0.07% | 0.000 | 0.000 | 102 | 0 | 10000.001 | - |
-| 6 | `profit_moonshot_adaptive_momentum_asym_dynamic_mode` | `live_equivalent` | `val` | 0.00% | 0.07% | 0.000 | 0.000 | 102 | 0 | 0.000 | - |
-| 7 | `profit_moonshot_adaptive_momentum_mode` | `live_equivalent` | `val` | 0.26% | 0.75% | 0.012 | 0.012 | 52 | 0 | 0.000 | - |
-| 8 | `profit_moonshot_adaptive_momentum_mode` | `live_equivalent` | `val` | 0.26% | 0.75% | 0.012 | 0.012 | 52 | 0 | 10026.530 | - |
-| 9 | `profit_moonshot_adaptive_momentum_boost_mode` | `live_equivalent` | `val` | 0.51% | 1.36% | 0.015 | 0.015 | 56 | 0 | 10051.054 | - |
-| 10 | `profit_moonshot_adaptive_momentum_boost_mode` | `live_equivalent` | `val` | 0.51% | 1.36% | 0.015 | 0.015 | 56 | 0 | 0.000 | - |
-| 11 | `profit_moonshot_adaptive_momentum_boost_mode` | `live_equivalent` | `val` | 0.51% | 1.36% | 0.015 | 0.015 | 56 | 0 | 10051.054 | - |
-| 12 | `profit_moonshot_adaptive_momentum_120_mode` | `live_equivalent` | `val` | 0.33% | 0.93% | 0.013 | 0.012 | 52 | 0 | 0.000 | - |
-| 13 | `profit_moonshot_adaptive_momentum_120_mode` | `live_equivalent` | `val` | 0.33% | 0.93% | 0.013 | 0.012 | 52 | 0 | 10032.962 | - |
-| 14 | `profit_moonshot_adaptive_momentum_vol_target_mode` | `live_equivalent` | `val` | 0.40% | 1.13% | 0.013 | 0.013 | 54 | 0 | 10039.730 | - |
-| 15 | `profit_moonshot_adaptive_momentum_vol_target_mode` | `live_equivalent` | `val` | 0.40% | 1.13% | 0.013 | 0.013 | 54 | 0 | 0.000 | - |
-| 16 | `profit_moonshot_adaptive_momentum_vol_target_132_mode` | `live_equivalent` | `val` | 0.42% | 1.19% | 0.013 | 0.013 | 54 | 0 | 10041.849 | - |
-| 17 | `profit_moonshot_adaptive_momentum_vol_target_132_mode` | `live_equivalent` | `val` | 0.42% | 1.19% | 0.013 | 0.013 | 54 | 0 | 0.000 | - |
-| 18 | `profit_moonshot_adaptive_momentum_vol_target_132_mode` | `live_equivalent` | `val` | 0.42% | 1.19% | 0.013 | 0.013 | 54 | 0 | 10041.849 | - |
-| 19 | `profit_moonshot_adaptive_momentum_130_mode` | `live_equivalent` | `val` | 0.33% | 1.06% | 0.011 | 0.011 | 53 | 0 | 0.000 | - |
-| 20 | `profit_moonshot_adaptive_momentum_130_mode` | `live_equivalent` | `val` | 0.33% | 1.06% | 0.011 | 0.011 | 53 | 0 | 10033.283 | - |
-| 21 | `profit_moonshot_adaptive_momentum_governed_mode` | `live_equivalent` | `val` | 0.17% | 1.16% | 0.006 | 0.006 | 51 | 0 | 0.000 | - |
-| 22 | `profit_moonshot_adaptive_momentum_governed_mode` | `live_equivalent` | `val` | 0.17% | 1.16% | 0.006 | 0.006 | 51 | 0 | 10016.980 | - |
-| 23 | `profit_moonshot_trend_mode` | `live_equivalent` | `val` | 0.01% | 0.03% | 0.017 | 0.004 | 6 | 0 | 0.000 | - |
-| 24 | `profit_moonshot_trend_mode` | `live_equivalent` | `val` | 0.01% | 0.03% | 0.017 | 0.004 | 6 | 0 | 10000.904 | - |
-| 25 | `profit_moonshot_balanced_mode` | `live_equivalent` | `val` | -0.01% | 0.04% | -0.010 | -0.006 | 112 | 0 | 0.000 | - |
-
-## Blocker Summary
-
-- `val_sharpe_not_positive`: 7
-- `val_sortino_not_positive`: 7
-- `val_total_return_not_positive`: 7
-- `train_trade_count_below_min`: 3
-- `val_trade_count_below_min`: 3
-- `legacy_train_val_mdd_gate_failed`: 2
-- `status=ready_for_live_equivalent_backtest`: 2
-- `status_not_validated:ready_for_live_equivalent_backtest`: 2
+Session report: `var/reports/profit_moonshot_20260501/derivatives_oos/session_derivatives_taker_flow_report_20260503.json`
