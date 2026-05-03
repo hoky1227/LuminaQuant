@@ -64,6 +64,7 @@ SUPPORTED_LIVE_PORTFOLIO_MODES = frozenset(
         "derivatives_flow_squeeze_mode",
         "profit_moonshot_derivatives_taker_flow_mode",
         "profit_moonshot_derivatives_taker_flow_sparse_mode",
+        "profit_moonshot_leadlag_slow_diffusion_mode",
     }
 )
 
@@ -203,6 +204,10 @@ def infer_strategy_class_name(candidate_name: str) -> str | None:
         or token.startswith("profit_moonshot_derivatives")
     ):
         return "DerivativesFlowSqueezeStrategy"
+    if token.startswith("profit_moonshot_leadlag_slow_diffusion") or token.startswith(
+        "cross_crypto_slow_diffusion"
+    ):
+        return "CrossCryptoSlowDiffusionStrategy"
     if token.startswith("profit_moonshot_trend"):
         return "ProfitMoonshotTrendStrategy"
     if token.startswith("profit_moonshot_breakout"):

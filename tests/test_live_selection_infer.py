@@ -43,3 +43,10 @@ def test_infer_strategy_class_name_extended_catalog():
         infer_strategy_class_name("profit_moonshot_derivatives_taker_flow_sparse_mode")
         == "DerivativesFlowSqueezeStrategy"
     )
+
+
+def test_infer_strategy_class_name_leadlag_slow_diffusion_mode():
+    assert (
+        infer_strategy_class_name("profit_moonshot_leadlag_slow_diffusion_mode")
+        == "CrossCryptoSlowDiffusionStrategy"
+    )

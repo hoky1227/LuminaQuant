@@ -122,6 +122,7 @@ _LIVE_PORTFOLIO_MODE_ALIASES = {
     "derivatives_flow_squeeze_mode",
     "profit_moonshot_derivatives_taker_flow_mode",
     "profit_moonshot_derivatives_taker_flow_sparse_mode",
+    "profit_moonshot_leadlag_slow_diffusion_mode",
 }
 _PROFIT_MODE_UNBOUNDED_CHILD_TARGET_ALLOCATION = 0.02
 _PROFIT_MODE_UNBOUNDED_CHILD_MAX_ORDER_VALUE = 250.0
@@ -992,6 +993,32 @@ def _alias_rows(token: str) -> list[dict[str, Any]] | None:
             _profit_moonshot_row("trend", "ensemble", weight=0.40),
             _profit_moonshot_row("breakout", "ensemble", weight=0.35),
             _profit_moonshot_row("reversion", "ensemble", weight=0.25),
+        ],
+        "profit_moonshot_leadlag_slow_diffusion_mode": [
+            {
+                "candidate_id": "profit_moonshot_leadlag_btc_eth_2h_8h_slow_diffusion",
+                "name": "profit_moonshot_leadlag_btc_eth_2h_8h_slow_diffusion",
+                "strategy_class": "CrossCryptoSlowDiffusionStrategy",
+                "symbols": ["BTC/USDT", "ETH/USDT"],
+                "params": {
+                    # Raw-first screen survivor: BTC/USDT -> ETH/USDT, 2h leader
+                    # move threshold, 8h fixed hold. Keep sizing conservative;
+                    # this is a new alpha-family validation, not a gross-exposure bump.
+                    "leader_symbol": "BTC/USDT",
+                    "target_symbol": "ETH/USDT",
+                    "timeframe": "1h",
+                    "lag_bars": 2,
+                    "leader_abs_ret_min": 0.015,
+                    "target_underreaction_cap": 999.0,
+                    "max_hold_bars": 8,
+                    "target_allocation": 0.008,
+                    "max_order_value": 175.0,
+                    "stop_loss_pct": 0.0,
+                    "take_profit_pct": 0.0,
+                    "allow_short": True,
+                },
+                "weight": 1.0,
+            },
         ],
         "derivatives_flow_squeeze_mode": [
             _derivatives_flow_squeeze_row("top5_exhaustion_plus_flow", weight=0.55),

@@ -242,6 +242,22 @@ def test_profit_moonshot_derivatives_sparse_mode_reduces_overtrading_without_exp
     assert component.params["target_allocation"] == 0.008
 
 
+def test_profit_moonshot_leadlag_slow_diffusion_mode_uses_screened_btc_eth_candidate() -> None:
+    definition = MODULE.resolve_portfolio_mode_definition("profit_moonshot_leadlag_slow_diffusion_mode")
+
+    assert supports_live_portfolio_mode("profit_moonshot_leadlag_slow_diffusion_mode")
+    assert definition.symbols == ["BTC/USDT", "ETH/USDT"]
+    component = definition.components[0]
+    assert component.strategy_class == "CrossCryptoSlowDiffusionStrategy"
+    assert component.component_id == "profit_moonshot_leadlag_btc_eth_2h_8h_slow_diffusion"
+    assert component.params["leader_symbol"] == "BTC/USDT"
+    assert component.params["target_symbol"] == "ETH/USDT"
+    assert component.params["lag_bars"] == 2
+    assert component.params["leader_abs_ret_min"] == 0.015
+    assert component.params["max_hold_bars"] == 8
+    assert component.params["target_allocation"] == 0.008
+
+
 def test_resolve_portfolio_mode_definition_supports_recursive_allocator_sleeves(monkeypatch, tmp_path: Path) -> None:
     def _write(path: Path, payload: dict) -> Path:
         path.write_text(json.dumps(payload), encoding="utf-8")
