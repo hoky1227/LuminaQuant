@@ -401,10 +401,18 @@ def _run_materializer_guarded(
                 ensure_ascii=False,
             )
         )
+    materializer_success = bool(payload.get("success")) if isinstance(payload, dict) else None
+    materializer_statuses: list[str] = []
+    if isinstance(payload, dict):
+        for item in payload.get("symbols") or []:
+            if isinstance(item, dict):
+                materializer_statuses.append(str(item.get("status") or ""))
     return {
         **run.as_payload(),
         "elapsed_sec": round(elapsed, 3),
         "peak_rss_mb": round(peak_rss_kb / 1024, 3),
+        "materializer_success": materializer_success,
+        "materializer_statuses": materializer_statuses,
         "stdout_tail": stdout[-2000:],
         "stderr_tail": stderr[-2000:],
     }

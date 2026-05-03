@@ -119,8 +119,18 @@ def _today_utc() -> date:
     return datetime.now(UTC).date()
 
 
+def _latest_complete_utc_day() -> date:
+    configured = str(getattr(BacktestConfig, "END_DATE", "") or "").strip()
+    if configured:
+        try:
+            return datetime.fromisoformat(configured).date()
+        except Exception:
+            pass
+    return datetime.now(UTC).date() - timedelta(days=1)
+
+
 def _split_windows(oos_end: date | None = None) -> list[SplitWindow]:
-    resolved_oos_end = oos_end or _today_utc()
+    resolved_oos_end = oos_end or _latest_complete_utc_day()
     if resolved_oos_end < date(2026, 3, 1):
         resolved_oos_end = date(2026, 3, 1)
     return [

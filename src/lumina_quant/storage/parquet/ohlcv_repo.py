@@ -473,7 +473,11 @@ class ParquetMarketDataRepository:
 
     @staticmethod
     def _raw_part_paths(partition_root: Path) -> list[Path]:
-        return sorted(partition_root.glob("part-*.parquet"))
+        return sorted(
+            path
+            for path in partition_root.glob("part-*.parquet")
+            if _RAW_PART_PATTERN.fullmatch(path.name) is not None
+        )
 
     @staticmethod
     def _next_raw_part_path(partition_root: Path) -> Path:
@@ -878,7 +882,11 @@ class ParquetMarketDataRepository:
         if not root.exists():
             return self._empty_raw_aggtrades_frame()
 
-        candidates = sorted(root.glob("date=*/part-*.parquet"))
+        candidates = sorted(
+            path
+            for path in root.glob("date=*/part-*.parquet")
+            if _RAW_PART_PATTERN.fullmatch(path.name) is not None
+        )
         if not candidates:
             return self._empty_raw_aggtrades_frame()
 

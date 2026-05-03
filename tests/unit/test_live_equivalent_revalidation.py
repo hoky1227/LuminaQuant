@@ -118,6 +118,15 @@ def test_revalidation_defaults_to_preflight_not_full_backtest(monkeypatch, tmp_p
     assert result["payload"]["final_recommendations"]["best_full_universe_live_equivalent_candidate"] is None
 
 
+def test_split_windows_default_uses_latest_complete_utc_day(monkeypatch) -> None:
+    monkeypatch.setattr(reval, "_latest_complete_utc_day", lambda: date(2026, 5, 2))
+
+    splits = reval._split_windows()
+
+    assert splits[-1].name == "oos"
+    assert splits[-1].end == date(2026, 5, 2)
+
+
 def test_fail_fast_alpha_gate_skips_val_after_train_floor_failure(monkeypatch, tmp_path: Path) -> None:
     calls: list[str] = []
     splits = [

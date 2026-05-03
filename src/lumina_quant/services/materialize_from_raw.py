@@ -103,10 +103,11 @@ def _load_raw_and_1s(
         )
 
     checkpoint = repo.read_raw_checkpoint(exchange=exchange, symbol=symbol)
+    raw_start_ms = int(raw["timestamp_ms"].min() or 0)
     complete_through_ms = int(raw["timestamp_ms"].max() or 0)
     observed_until_ms = _coerce_timestamp_ms(checkpoint.get("observed_until_ms"))
     requested_end_ms = _coerce_timestamp_ms(end_date)
-    if observed_until_ms is not None:
+    if observed_until_ms is not None and int(observed_until_ms) >= int(raw_start_ms):
         complete_through_ms = min(int(complete_through_ms), int(observed_until_ms))
     if requested_end_ms is not None:
         complete_through_ms = min(int(complete_through_ms), int(requested_end_ms))
