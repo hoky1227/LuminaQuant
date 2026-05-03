@@ -50,3 +50,7 @@ def test_infer_strategy_class_name_leadlag_slow_diffusion_mode():
         infer_strategy_class_name("profit_moonshot_leadlag_slow_diffusion_mode")
         == "CrossCryptoSlowDiffusionStrategy"
     )
+    assert (
+        infer_strategy_class_name("profit_moonshot_leadlag_slow_diffusion_ensemble_mode")
+        == "CrossCryptoSlowDiffusionStrategy"
+    )

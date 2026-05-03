@@ -45,3 +45,7 @@
 - The earlier funding/taker implementation attempt was aborted before completion after the user correction; it is not counted as evidence.
 - Funding/taker-flow looked attractive in validation for some thresholds, but failed OOS post-cost checks or had no/too few OOS events, so no full backtest was run for that family.
 - Existing `hybrid_safe` remains the conservative fallback, but it lacks this new candidate’s complete OOS/raw-first validation.
+
+## Follow-up: same-risk leadlag ensemble rejected
+
+A second full run was limited to one mode: `profit_moonshot_leadlag_slow_diffusion_ensemble_mode`, adding the raw-first SOL→ETH survivor as a 40% sleeve while reducing BTC→ETH to 60% so total ETH target allocation stayed 0.8%. It is **not promoted**: OOS return was `-0.3059%`, OOS Sharpe `-0.037976`, OOS Sortino `-0.044528`, with 0 liquidations and max RSS 2,501,688 KB. The promoted external-alpha decision therefore remains `profit_moonshot_leadlag_slow_diffusion_mode`. Detailed failure evidence: `var/reports/profit_moonshot_20260501/external_alpha/leadlag_ensemble_followup_report_20260503.md`.

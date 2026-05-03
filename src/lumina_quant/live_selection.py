@@ -65,6 +65,7 @@ SUPPORTED_LIVE_PORTFOLIO_MODES = frozenset(
         "profit_moonshot_derivatives_taker_flow_mode",
         "profit_moonshot_derivatives_taker_flow_sparse_mode",
         "profit_moonshot_leadlag_slow_diffusion_mode",
+        "profit_moonshot_leadlag_slow_diffusion_ensemble_mode",
     }
 )
 

@@ -9,6 +9,31 @@
   },
   "conservative_fallback": "profit_moonshot_momentum_hybrid_safe_mode",
   "decision": "profit_moonshot_leadlag_slow_diffusion_mode_live_equivalent_validated",
+  "followup_20260503_leadlag_ensemble": {
+    "decision": "reject_leadlag_ensemble_keep_single_leadlag",
+    "ensemble_oos": {
+      "liquidation_count": 0,
+      "max_drawdown": 0.007261214250762898,
+      "sharpe": -0.037976420780159205,
+      "sortino": -0.0445279365001917,
+      "total_return": -0.0030592742009190044,
+      "trade_count": 72
+    },
+    "ensemble_resource_evidence": {
+      "elapsed": "20:12.32",
+      "max_rss_kb_from_time_log": 2501688,
+      "single_mode_full_backtest": true
+    },
+    "promoted_mode_remains": "profit_moonshot_leadlag_slow_diffusion_mode",
+    "rejected_mode": "profit_moonshot_leadlag_slow_diffusion_ensemble_mode",
+    "rejection_reasons": [
+      "OOS total_return is negative (-0.3059%) under the user-mandated OOS gate.",
+      "OOS Sharpe and Sortino are negative, despite zero liquidations.",
+      "Validation return (+0.1924%) and validation Sharpe are worse than the single BTC->ETH leadlag mode.",
+      "The added SOL->ETH sleeve increased train trades but did not survive live-equivalent OOS execution."
+    ],
+    "report_path": "var/reports/profit_moonshot_20260501/external_alpha/leadlag_ensemble_followup_report_20260503.json"
+  },
   "generated_at": "2026-05-03T08:56:33.067842+00:00",
   "refresh_evidence": {
     "collection_cutoff_utc": "2026-05-03T08:32:27Z",
