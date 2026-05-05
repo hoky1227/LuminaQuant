@@ -1,38 +1,44 @@
-# Profit Moonshot continuation — Sharpe follow-up
+# Profit Moonshot continuation — new alpha follow-up
 
-Generated: `2026-05-05T11:25:43Z`
+Generated: `2026-05-05T12:10:46.009037Z`
 
 ## Current state
 
-- Latest `private/main` base before this follow-up: `54baf68600f8767908df4c067f25d4ee36f26a7f`.
-- Latest data tail remains refreshed through `2026-05-05T04:14:33Z`; OOS materialized coverage is complete through `2026-05-04`.
-- OOS-return best is still `profit_moonshot_hourly_shock_reversion_eth_12h_mode`: return `+0.8284%`, MDD `0.2819%`, Sharpe `0.100651`, Sortino `0.128321`.
-- New Sharpe/MDD shadow is `profit_moonshot_hourly_shock_reversion_eth_12h_funding_guard_mode`: return `+0.7206%`, MDD `0.1778%`, Sharpe `0.111225`, Sortino `0.135831`.
-- No candidate reached Sharpe `1.0`; do not call this deployment-ready.
-- Conservative `profit_moonshot_momentum_hybrid_safe_mode` remains fallback only and OOS-negative.
+- Latest `private/main` base before this follow-up: `bbb736eb7fb74c76d81fb6723edff69828cd68c7`.
+- Built and tested new `TakerFlowExhaustionReversalStrategy`; no variant passed live-equivalent train/val/OOS gates.
+- OOS-return best remains `profit_moonshot_hourly_shock_reversion_eth_12h_mode`: OOS `+0.8284%`, MDD `0.2819%`, Sharpe `0.100651`.
+- Risk-adjusted shadow remains `profit_moonshot_hourly_shock_reversion_eth_12h_funding_guard_mode`: OOS `+0.7206%`, MDD `0.1778%`, Sharpe `0.111225`.
+- No candidate is deployment-ready under Sharpe `1.0`; do not promote sub-1 Sharpe as success.
 
-## Fresh Sharpe follow-up table
-
-| mode | train ret | train MDD | val ret | OOS ret | OOS MDD | OOS Sharpe | user decision |
-|---|---:|---:|---:|---:|---:|---:|---|
-| `profit_moonshot_hourly_shock_reversion_eth_12h_mode` | +2.4523% | 2.1092% | +0.6323% | +0.8284% | 0.2819% | 0.100651 | current OOS-return best / deployment-review only |
-| `profit_moonshot_hourly_shock_reversion_eth_12h_funding_guard_mode` | +1.3945% | 2.2014% | +0.5023% | +0.7206% | 0.1778% | 0.111225 | new Sharpe/MDD-improved shadow |
-| `profit_moonshot_hourly_shock_reversion_eth_12h_dense_mode` | +0.5103% | 2.5341% | +0.6329% | +0.4702% | 0.1668% | 0.078533 | rejected dense trigger |
-| `profit_moonshot_filtered_shock_reversion_diversified_mode` | +0.6525% | 2.7466% | +0.0858% | +0.4849% | 1.4491% | 0.014267 | rejected diversified filtered sleeve |
-| `profit_moonshot_momentum_hybrid_safe_mode` | -1.3551% | 12.3695% | +0.2837% | -0.3342% | 3.4942% | -0.001411 | conservative fallback only / OOS failed |
+## New alpha family results
+| mode | train ret / MDD / trades | val ret / MDD / trades | OOS ret / MDD / Sharpe / trades | decision |
+|---|---:|---:|---:|---|
+| `profit_moonshot_taker_flow_exhaustion_eth_mode` | +0.0089% / 0.0048% / 4 | +0.0000% / 0.0000% / 0 | +0.0000% / 0.0000% / 0.000000 / 0 | Rejected: 7-day live-equivalent chunk phase left val/OOS with zero trades; raw cadence screen was not live-equivalent. |
+| `profit_moonshot_taker_flow_exhaustion_eth_reactive_mode` | -0.0019% / 0.0753% / 147 | +0.0210% / 0.0134% / 18 | -0.0291% / 0.0364% / -0.085988 / 32 | Rejected: validation was barely positive, but train and OOS were negative after fees/one-position realism. |
+| `profit_moonshot_taker_flow_exhaustion_eth_hold_mode` | -1.3901% / 1.6426% / 119 | -0.0041% / 0.0408% / 16 | -0.0875% / 0.1860% / -0.031058 / 23 | Rejected: wider exits increased train loss and kept val/OOS negative. |
+| `profit_moonshot_taker_flow_exhaustion_eth_slow_momentum_mode` | -0.2422% / 0.7383% / 103 | -0.3210% / 0.3237% / 18 | -0.0507% / 0.1051% / -0.036304 / 16 | Rejected: cooldown reduced churn but train/val/OOS all remained negative. |
 
 ## Key artifacts
 
+- `var/reports/profit_moonshot_20260501/current_tail_20260505/taker_flow_exhaustion_new_alpha_report_20260505.md`
+- `var/reports/profit_moonshot_20260501/current_tail_20260505/taker_flow_exhaustion_screen/taker_flow_exhaustion_screen_20260505.json`
 - `var/reports/profit_moonshot_20260501/current_tail_20260505/session_current_tail_oos_report_20260505.md`
 - `var/reports/profit_moonshot_20260501/current_tail_20260505/session_current_tail_oos_report_20260505.json`
-- `var/reports/profit_moonshot_20260501/current_tail_20260505/filtered_hourly_shock_screen/stage_filtered_reversion_screen_20260505.json`
-- `var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_hourly_shock_reversion_eth_12h_funding_guard_mode/live_equivalent_revalidation_latest.json`
-- `var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_hourly_shock_reversion_eth_12h_dense_mode/live_equivalent_revalidation_latest.json`
-- `var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_filtered_shock_reversion_diversified_mode/live_equivalent_revalidation_latest.json`
 - `var/reports/profit_moonshot_20260501/profit_moonshot_summary_latest.json`
+- `var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_taker_flow_exhaustion_eth_mode/live_equivalent_revalidation_latest.json`
+- `var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_taker_flow_exhaustion_eth_reactive_mode/live_equivalent_revalidation_latest.json`
+- `var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_taker_flow_exhaustion_eth_hold_mode/live_equivalent_revalidation_latest.json`
+- `var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_taker_flow_exhaustion_eth_slow_momentum_mode/live_equivalent_revalidation_latest.json`
 
 ## Next priority
 
-1. Beat OOS Sharpe `0.111225` and preferably return `+0.8284%` without changing gross exposure.
-2. Do not reuse BNB/TRX taker-flow rows until support inventory shows nonzero flow coverage.
-3. OI/funding/liquidation family needs enough train/val/OOS replay coverage before another full backtest.
+1. Do not spend another full backtest on overlapping-event raw screens without a stateful/non-overlap replay first.
+2. Benchmark against OOS Sharpe `0.111225` and OOS return `+0.8284%`; lower numbers are not better.
+3. Next viable direction: regime-aware ETH shock model or true OI/funding replay once train/val/OOS feature history exists.
+
+## Verification
+
+- Full repo ruff passed.
+- Compileall passed.
+- Targeted pytest passed: `51 passed in 0.22s`.
+- Continuation validator passed: `var/reports/profit_moonshot_20260501/current_tail_20260505/continuation_validation_20260505_new_alpha.json`.

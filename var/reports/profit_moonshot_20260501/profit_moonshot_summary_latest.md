@@ -75,3 +75,18 @@ Promotion-eligible candidates by generated val-ranker: `35`
 - `legacy_train_val_mdd_gate_failed`: 4
 - `status=ready_for_live_equivalent_backtest`: 4
 - `status_not_validated:ready_for_live_equivalent_backtest`: 4
+
+## New alpha follow-up — taker-flow exhaustion
+
+- Implemented `TakerFlowExhaustionReversalStrategy` with true taker-flow feature requirement, funding cap, realized-vol cap, UTC session filter, same `target_allocation=0.008` / `max_order_value=175.0`, and a cooldown risk-control variant.
+- Screen artifact: `var/reports/profit_moonshot_20260501/current_tail_20260505/taker_flow_exhaustion_screen/taker_flow_exhaustion_screen_20260505.json` (`1,296,000` combinations, `506` survivors, peak RSS `2577.43 MiB`).
+- Full live-equivalent verdict: **no variant promoted**. Raw overlapping-event edge did not survive one-position/fee/partial-fill path realism.
+
+| mode | train ret | val ret | OOS ret | OOS Sharpe | decision |
+|---|---:|---:|---:|---:|---|
+| `profit_moonshot_taker_flow_exhaustion_eth_mode` | +0.0089% | +0.0000% | +0.0000% | 0.000000 | rejected: zero val/OOS coverage after cadence/chunk phase |
+| `profit_moonshot_taker_flow_exhaustion_eth_reactive_mode` | -0.0019% | +0.0210% | -0.0291% | -0.085988 | rejected: train/OOS negative |
+| `profit_moonshot_taker_flow_exhaustion_eth_hold_mode` | -1.3901% | -0.0041% | -0.0875% | -0.031058 | rejected: wider hold worsened train and kept val/OOS negative |
+| `profit_moonshot_taker_flow_exhaustion_eth_slow_momentum_mode` | -0.2422% | -0.3210% | -0.0507% | -0.036304 | rejected: cooldown risk control still failed all splits |
+
+Detailed report: `var/reports/profit_moonshot_20260501/current_tail_20260505/taker_flow_exhaustion_new_alpha_report_20260505.md`.

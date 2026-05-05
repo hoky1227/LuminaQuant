@@ -384,6 +384,10 @@ def test_profit_moonshot_filtered_shock_reversion_diversified_mode_keeps_gross_c
     )
 
     assert supports_live_portfolio_mode("profit_moonshot_filtered_shock_reversion_diversified_mode")
+    assert supports_live_portfolio_mode("profit_moonshot_taker_flow_exhaustion_eth_mode")
+    assert supports_live_portfolio_mode("profit_moonshot_taker_flow_exhaustion_eth_reactive_mode")
+    assert supports_live_portfolio_mode("profit_moonshot_taker_flow_exhaustion_eth_hold_mode")
+    assert supports_live_portfolio_mode("profit_moonshot_taker_flow_exhaustion_eth_slow_momentum_mode")
     assert definition.symbols == ["ETH/USDT", "SOL/USDT"]
     assert [component.strategy_class for component in definition.components] == [
         "HourlyShockReversionStrategy",
@@ -398,6 +402,24 @@ def test_profit_moonshot_filtered_shock_reversion_diversified_mode_keeps_gross_c
         item for item in definition.components if item.params["target_symbol"] == "SOL/USDT"
     )
     assert sol_component.params["entry_hours_utc"] == "2,3,4,10,11,12,18,19,20"
+
+
+def test_profit_moonshot_taker_flow_exhaustion_eth_mode_uses_same_risk_cap() -> None:
+    definition = MODULE.resolve_portfolio_mode_definition(
+        "profit_moonshot_taker_flow_exhaustion_eth_mode"
+    )
+
+    assert supports_live_portfolio_mode("profit_moonshot_taker_flow_exhaustion_eth_mode")
+    assert definition.symbols == ["ETH/USDT"]
+    component = definition.components[0]
+    assert component.strategy_class == "TakerFlowExhaustionReversalStrategy"
+    assert component.params["flow_imbalance_min"] == 0.14
+    assert component.params["funding_abs_cap"] == 0.00015
+    assert component.params["max_realized_volatility"] == 0.008
+    assert component.params["entry_hours_utc"] == "13,14,15,16,17,18,19,20"
+    assert component.params["target_allocation"] == 0.008
+    assert component.params["max_order_value"] == 175.0
+    assert component.weight == 1.0
 
 
 def test_resolve_portfolio_mode_definition_supports_recursive_allocator_sleeves(monkeypatch, tmp_path: Path) -> None:
@@ -680,6 +702,13 @@ def test_resolve_portfolio_mode_definition_supports_recursive_allocator_sleeves(
         in MODULE.supported_portfolio_modes()
     )
     assert "profit_moonshot_filtered_shock_reversion_diversified_mode" in MODULE.supported_portfolio_modes()
+    assert "profit_moonshot_taker_flow_exhaustion_eth_mode" in MODULE.supported_portfolio_modes()
+    assert "profit_moonshot_taker_flow_exhaustion_eth_reactive_mode" in MODULE.supported_portfolio_modes()
+    assert "profit_moonshot_taker_flow_exhaustion_eth_hold_mode" in MODULE.supported_portfolio_modes()
+    assert (
+        "profit_moonshot_taker_flow_exhaustion_eth_slow_momentum_mode"
+        in MODULE.supported_portfolio_modes()
+    )
     assert supports_live_portfolio_mode("legacy_no_highvol_hybrid_mode")
     assert supports_live_portfolio_mode("retuned_live_portfolio_hybrid_mode")
     assert supports_live_portfolio_mode("profit_reboot_panic_rebound_mode")
@@ -829,3 +858,48 @@ def test_profit_moonshot_synthetic_modes_resolve_no_aggregator_strategy_families
         )
         assert strategy.uses_timeframe_aggregator is False
         assert strategy.required_timeframes == ()
+
+
+def test_profit_moonshot_taker_flow_exhaustion_reactive_mode_evaluates_every_window() -> None:
+    definition = MODULE.resolve_portfolio_mode_definition(
+        "profit_moonshot_taker_flow_exhaustion_eth_reactive_mode"
+    )
+
+    assert supports_live_portfolio_mode("profit_moonshot_taker_flow_exhaustion_eth_reactive_mode")
+    component = definition.components[0]
+    assert component.strategy_class == "TakerFlowExhaustionReversalStrategy"
+    assert component.params["evaluation_cadence_bars"] == 1
+    assert component.params["target_allocation"] == 0.008
+    assert component.params["max_order_value"] == 175.0
+
+
+def test_profit_moonshot_taker_flow_exhaustion_hold_mode_widens_exits_only() -> None:
+    definition = MODULE.resolve_portfolio_mode_definition(
+        "profit_moonshot_taker_flow_exhaustion_eth_hold_mode"
+    )
+
+    assert supports_live_portfolio_mode("profit_moonshot_taker_flow_exhaustion_eth_hold_mode")
+    component = definition.components[0]
+    assert component.strategy_class == "TakerFlowExhaustionReversalStrategy"
+    assert component.params["evaluation_cadence_bars"] == 1
+    assert component.params["stop_loss_pct"] == 0.050
+    assert component.params["take_profit_pct"] == 0.100
+    assert component.params["trailing_exit_pct"] == 0.0
+    assert component.params["target_allocation"] == 0.008
+    assert component.params["max_order_value"] == 175.0
+
+
+def test_profit_moonshot_taker_flow_exhaustion_slow_momentum_mode_adds_cooldown() -> None:
+    definition = MODULE.resolve_portfolio_mode_definition(
+        "profit_moonshot_taker_flow_exhaustion_eth_slow_momentum_mode"
+    )
+
+    assert supports_live_portfolio_mode(
+        "profit_moonshot_taker_flow_exhaustion_eth_slow_momentum_mode"
+    )
+    component = definition.components[0]
+    assert component.strategy_class == "TakerFlowExhaustionReversalStrategy"
+    assert component.params["momentum_lookback_bars"] == 360
+    assert component.params["cooldown_bars"] == 2160
+    assert component.params["target_allocation"] == 0.008
+    assert component.params["max_order_value"] == 175.0

@@ -69,3 +69,10 @@ def test_infer_strategy_class_name_hourly_shock_reversion_mode():
         infer_strategy_class_name("profit_moonshot_hourly_shock_reversion_eth_12h_mode")
         == "HourlyShockReversionStrategy"
     )
+
+
+def test_infer_taker_flow_exhaustion_strategy_name() -> None:
+    assert (
+        infer_strategy_class_name("profit_moonshot_taker_flow_exhaustion_eth_mode")
+        == "TakerFlowExhaustionReversalStrategy"
+    )

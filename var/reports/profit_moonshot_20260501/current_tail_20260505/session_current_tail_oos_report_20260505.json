@@ -16,7 +16,12 @@
     "hourly_shock_stateful_screen_json": "var/reports/profit_moonshot_20260501/current_tail_20260505/simple_hourly_alpha_screen/stateful_reversion_screen_20260505.json",
     "hybrid_live_json": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_momentum_hybrid_safe_mode/live_equivalent_revalidation_latest.json",
     "leadlag_live_json": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_leadlag_slow_diffusion_mode/live_equivalent_revalidation_latest.json",
-    "materialize_log": "var/reports/profit_moonshot_20260501/current_tail_20260505/materialize_oos_20260503_04/run.log"
+    "materialize_log": "var/reports/profit_moonshot_20260501/current_tail_20260505/materialize_oos_20260503_04/run.log",
+    "taker_flow_exhaustion_eth_live_json": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_taker_flow_exhaustion_eth_mode/live_equivalent_revalidation_latest.json",
+    "taker_flow_exhaustion_hold_live_json": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_taker_flow_exhaustion_eth_hold_mode/live_equivalent_revalidation_latest.json",
+    "taker_flow_exhaustion_reactive_live_json": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_taker_flow_exhaustion_eth_reactive_mode/live_equivalent_revalidation_latest.json",
+    "taker_flow_exhaustion_screen_json": "var/reports/profit_moonshot_20260501/current_tail_20260505/taker_flow_exhaustion_screen/taker_flow_exhaustion_screen_20260505.json",
+    "taker_flow_exhaustion_slow_momentum_live_json": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_taker_flow_exhaustion_eth_slow_momentum_mode/live_equivalent_revalidation_latest.json"
   },
   "base_commit": "54baf68600f8767908df4c067f25d4ee36f26a7f",
   "base_ref": "private/main",
@@ -54,8 +59,15 @@
       "profit_moonshot_hourly_shock_reversion_eth_12h_dense_mode",
       "profit_moonshot_filtered_shock_reversion_diversified_mode",
       "funding_taker_flow_family_without_nonzero_flow_coverage",
-      "leadlag_same_risk_ensemble"
+      "leadlag_same_risk_ensemble",
+      "profit_moonshot_taker_flow_exhaustion_eth_mode",
+      "profit_moonshot_taker_flow_exhaustion_eth_reactive_mode",
+      "profit_moonshot_taker_flow_exhaustion_eth_hold_mode",
+      "profit_moonshot_taker_flow_exhaustion_eth_slow_momentum_mode"
     ],
+    "new_alpha_family_candidate": "taker_flow_exhaustion_reversal",
+    "new_alpha_family_decision": "No taker-flow exhaustion variant passed live-equivalent train/val/OOS gate; do not promote.",
+    "new_alpha_family_user_oos_gate_pass": false,
     "notes": [
       "No full-engine candidate achieved Sharpe >= 1; this is recorded as a failure to meet the stricter user demand, not papered over.",
       "Best OOS-return candidate remains the ETH 12h shock incumbent at +0.8284% OOS.",
@@ -204,7 +216,7 @@
     ],
     "thesis": "External microstructure-informed filter screen: taker-flow exhaustion/reversal, funding crowding, OI expansion, BTC counter-trend guard, funding-hour exclusion, and realized-vol cap layered on hourly shock reversion."
   },
-  "generated_at": "2026-05-05T11:25:43Z",
+  "generated_at": "2026-05-05T12:11:30.773720Z",
   "hourly_shock_reversion_screen": {
     "implemented_modes": [
       "profit_moonshot_hourly_shock_reversion_eth_mode",
@@ -1600,6 +1612,122 @@
         }
       },
       "status": "live_equivalent_validated"
+    },
+    "profit_moonshot_taker_flow_exhaustion_eth_hold_mode": {
+      "oos": {
+        "final_equity": 9991.205162861103,
+        "liquidations": 0,
+        "max_drawdown": 0.0018602273239919794,
+        "sharpe": -0.03105759703329994,
+        "sortino": -0.03211058606792423,
+        "total_return": -0.0008751997138897183,
+        "trades": 23
+      },
+      "train": {
+        "final_equity": 9860.996038937943,
+        "liquidations": 0,
+        "max_drawdown": 0.01642562395277046,
+        "sharpe": -0.03330623953791509,
+        "sortino": -0.03500755951871664,
+        "total_return": -0.01390058510620562,
+        "trades": 119
+      },
+      "val": {
+        "final_equity": 9999.585700918278,
+        "liquidations": 0,
+        "max_drawdown": 0.000407757838236747,
+        "sharpe": -0.005562372754250299,
+        "sortino": -0.003906450730457239,
+        "total_return": -4.1429908172130325e-05,
+        "trades": 16
+      }
+    },
+    "profit_moonshot_taker_flow_exhaustion_eth_mode": {
+      "oos": {
+        "final_equity": 10000.0,
+        "liquidations": 0,
+        "max_drawdown": 0.0,
+        "sharpe": 0.0,
+        "sortino": 0.0,
+        "total_return": 0.0,
+        "trades": 0
+      },
+      "train": {
+        "final_equity": 10000.889753189327,
+        "liquidations": 0,
+        "max_drawdown": 4.8026418662407765e-05,
+        "sharpe": 0.026952421993404724,
+        "sortino": 0.0024000807589889804,
+        "total_return": 8.897531893281574e-05,
+        "trades": 4
+      },
+      "val": {
+        "final_equity": 10000.0,
+        "liquidations": 0,
+        "max_drawdown": 0.0,
+        "sharpe": 0.0,
+        "sortino": 0.0,
+        "total_return": 0.0,
+        "trades": 0
+      }
+    },
+    "profit_moonshot_taker_flow_exhaustion_eth_reactive_mode": {
+      "oos": {
+        "final_equity": 9997.088925813097,
+        "liquidations": 0,
+        "max_drawdown": 0.0003643545294444239,
+        "sharpe": -0.0859876215252113,
+        "sortino": -0.03355154441144862,
+        "total_return": -0.0002911074186903173,
+        "trades": 32
+      },
+      "train": {
+        "final_equity": 9999.809739859862,
+        "liquidations": 0,
+        "max_drawdown": 0.0007530249408183768,
+        "sharpe": -0.0009756435789554665,
+        "sortino": -0.00040533354794691496,
+        "total_return": -1.90260140138232e-05,
+        "trades": 147
+      },
+      "val": {
+        "final_equity": 10002.09878135243,
+        "liquidations": 0,
+        "max_drawdown": 0.0001344801256089147,
+        "sharpe": 0.07647220839700275,
+        "sortino": 0.02851015635809605,
+        "total_return": 0.00020987813524286913,
+        "trades": 18
+      }
+    },
+    "profit_moonshot_taker_flow_exhaustion_eth_slow_momentum_mode": {
+      "oos": {
+        "final_equity": 9994.906450327951,
+        "liquidations": 0,
+        "max_drawdown": 0.001051094834494988,
+        "sharpe": -0.03630438213258195,
+        "sortino": -0.035671862509068904,
+        "total_return": -0.0005069579672050128,
+        "trades": 16
+      },
+      "train": {
+        "final_equity": 9975.783008186461,
+        "liquidations": 0,
+        "max_drawdown": 0.007383031805906116,
+        "sharpe": -0.01074079310770599,
+        "sortino": -0.011639095226375113,
+        "total_return": -0.0024216991813538202,
+        "trades": 103
+      },
+      "val": {
+        "final_equity": 9967.899358848115,
+        "liquidations": 0,
+        "max_drawdown": 0.003236735785141186,
+        "sharpe": -0.13500262977519106,
+        "sortino": -0.12285251792545365,
+        "total_return": -0.003210064115188427,
+        "trades": 18
+      }
     }
   },
   "materialized_oos_committed_days": {
@@ -1623,6 +1751,428 @@
       "2026-05-03": 86400,
       "2026-05-04": 86397
     }
+  },
+  "new_alpha_followup": {
+    "decision": "No taker-flow exhaustion variant passed live-equivalent train/val/OOS gate; do not promote.",
+    "external_basis": [
+      "Binance taker buy/sell quote volume feature replay",
+      "Binance funding-rate cap and settlement-hour risk filters",
+      "Perpetual futures crowding/order-flow reversal background literature"
+    ],
+    "failure_explanations": {
+      "profit_moonshot_taker_flow_exhaustion_eth_hold_mode": "Rejected: wider exits increased train loss and kept val/OOS negative.",
+      "profit_moonshot_taker_flow_exhaustion_eth_mode": "Rejected: 7-day live-equivalent chunk phase left val/OOS with zero trades; raw cadence screen was not live-equivalent.",
+      "profit_moonshot_taker_flow_exhaustion_eth_reactive_mode": "Rejected: validation was barely positive, but train and OOS were negative after fees/one-position realism.",
+      "profit_moonshot_taker_flow_exhaustion_eth_slow_momentum_mode": "Rejected: cooldown reduced churn but train/val/OOS all remained negative."
+    },
+    "family": "taker_flow_exhaustion_reversal",
+    "generated_at": "2026-05-05T12:10:46.009037Z",
+    "implemented_modes": {
+      "profit_moonshot_taker_flow_exhaustion_eth_hold_mode": {
+        "alpha_blocking_reasons": "val_total_return_not_positive;val_sharpe_not_positive;val_sortino_not_positive",
+        "label": "12h hold replay",
+        "path": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_taker_flow_exhaustion_eth_hold_mode/live_equivalent_revalidation_latest.json",
+        "resource": {
+          "elapsed": "5:47.85",
+          "exit_status": 0,
+          "log": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_taker_flow_exhaustion_eth_hold_mode/run.log",
+          "max_rss_kb": 1317468,
+          "max_rss_mib": 1286.58984375
+        },
+        "selection_eligible": false,
+        "splits": {
+          "oos": {
+            "final_equity": 9991.205162861103,
+            "liquidations": 0,
+            "max_drawdown": 0.0018602273239919794,
+            "sharpe": -0.03105759703329994,
+            "sortino": -0.03211058606792423,
+            "total_return": -0.0008751997138897183,
+            "trades": 23
+          },
+          "train": {
+            "final_equity": 9860.996038937943,
+            "liquidations": 0,
+            "max_drawdown": 0.01642562395277046,
+            "sharpe": -0.03330623953791509,
+            "sortino": -0.03500755951871664,
+            "total_return": -0.01390058510620562,
+            "trades": 119
+          },
+          "val": {
+            "final_equity": 9999.585700918278,
+            "liquidations": 0,
+            "max_drawdown": 0.000407757838236747,
+            "sharpe": -0.005562372754250299,
+            "sortino": -0.003906450730457239,
+            "total_return": -4.1429908172130325e-05,
+            "trades": 16
+          }
+        },
+        "status": "live_equivalent_validated"
+      },
+      "profit_moonshot_taker_flow_exhaustion_eth_mode": {
+        "alpha_blocking_reasons": "train_trade_count_below_min;val_trade_count_below_min;val_total_return_not_positive;val_sharpe_not_positive;val_sortino_not_positive",
+        "label": "cadence-locked screen replay",
+        "path": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_taker_flow_exhaustion_eth_mode/live_equivalent_revalidation_latest.json",
+        "resource": {
+          "elapsed": "3:45.82",
+          "exit_status": 0,
+          "log": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_taker_flow_exhaustion_eth_mode/run.log",
+          "max_rss_kb": 1308796,
+          "max_rss_mib": 1278.12109375
+        },
+        "selection_eligible": false,
+        "splits": {
+          "oos": {
+            "final_equity": 10000.0,
+            "liquidations": 0,
+            "max_drawdown": 0.0,
+            "sharpe": 0.0,
+            "sortino": 0.0,
+            "total_return": 0.0,
+            "trades": 0
+          },
+          "train": {
+            "final_equity": 10000.889753189327,
+            "liquidations": 0,
+            "max_drawdown": 4.8026418662407765e-05,
+            "sharpe": 0.026952421993404724,
+            "sortino": 0.0024000807589889804,
+            "total_return": 8.897531893281574e-05,
+            "trades": 4
+          },
+          "val": {
+            "final_equity": 10000.0,
+            "liquidations": 0,
+            "max_drawdown": 0.0,
+            "sharpe": 0.0,
+            "sortino": 0.0,
+            "total_return": 0.0,
+            "trades": 0
+          }
+        },
+        "status": "live_equivalent_validated"
+      },
+      "profit_moonshot_taker_flow_exhaustion_eth_reactive_mode": {
+        "alpha_blocking_reasons": "",
+        "label": "every-window replay",
+        "path": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_taker_flow_exhaustion_eth_reactive_mode/live_equivalent_revalidation_latest.json",
+        "resource": {
+          "elapsed": "5:06.60",
+          "exit_status": 0,
+          "log": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_taker_flow_exhaustion_eth_reactive_mode/run.log",
+          "max_rss_kb": 1315116,
+          "max_rss_mib": 1284.29296875
+        },
+        "selection_eligible": true,
+        "splits": {
+          "oos": {
+            "final_equity": 9997.088925813097,
+            "liquidations": 0,
+            "max_drawdown": 0.0003643545294444239,
+            "sharpe": -0.0859876215252113,
+            "sortino": -0.03355154441144862,
+            "total_return": -0.0002911074186903173,
+            "trades": 32
+          },
+          "train": {
+            "final_equity": 9999.809739859862,
+            "liquidations": 0,
+            "max_drawdown": 0.0007530249408183768,
+            "sharpe": -0.0009756435789554665,
+            "sortino": -0.00040533354794691496,
+            "total_return": -1.90260140138232e-05,
+            "trades": 147
+          },
+          "val": {
+            "final_equity": 10002.09878135243,
+            "liquidations": 0,
+            "max_drawdown": 0.0001344801256089147,
+            "sharpe": 0.07647220839700275,
+            "sortino": 0.02851015635809605,
+            "total_return": 0.00020987813524286913,
+            "trades": 18
+          }
+        },
+        "status": "live_equivalent_validated"
+      },
+      "profit_moonshot_taker_flow_exhaustion_eth_slow_momentum_mode": {
+        "alpha_blocking_reasons": "val_total_return_not_positive;val_sharpe_not_positive;val_sortino_not_positive",
+        "label": "6h momentum + 12h cooldown risk control",
+        "path": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_taker_flow_exhaustion_eth_slow_momentum_mode/live_equivalent_revalidation_latest.json",
+        "resource": {
+          "elapsed": "6:57.31",
+          "exit_status": 0,
+          "log": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_taker_flow_exhaustion_eth_slow_momentum_mode/run.log",
+          "max_rss_kb": 1314468,
+          "max_rss_mib": 1283.66015625
+        },
+        "selection_eligible": false,
+        "splits": {
+          "oos": {
+            "final_equity": 9994.906450327951,
+            "liquidations": 0,
+            "max_drawdown": 0.001051094834494988,
+            "sharpe": -0.03630438213258195,
+            "sortino": -0.035671862509068904,
+            "total_return": -0.0005069579672050128,
+            "trades": 16
+          },
+          "train": {
+            "final_equity": 9975.783008186461,
+            "liquidations": 0,
+            "max_drawdown": 0.007383031805906116,
+            "sharpe": -0.01074079310770599,
+            "sortino": -0.011639095226375113,
+            "total_return": -0.0024216991813538202,
+            "trades": 103
+          },
+          "val": {
+            "final_equity": 9967.899358848115,
+            "liquidations": 0,
+            "max_drawdown": 0.003236735785141186,
+            "sharpe": -0.13500262977519106,
+            "sortino": -0.12285251792545365,
+            "total_return": -0.003210064115188427,
+            "trades": 18
+          }
+        },
+        "status": "live_equivalent_validated"
+      }
+    },
+    "risk_controls_added": [
+      "true taker-flow feature required; no OHLCV proxy fallback for promotion claims",
+      "funding_abs_cap gate",
+      "realized-volatility cap",
+      "UTC session filter",
+      "volatility-scaled target allocation under the same 0.8% / $175 cap",
+      "wide 12h hold replay and 12h cooldown variant tested to reduce churn/fee risk"
+    ],
+    "screen": {
+      "checked": 1296000,
+      "path": "var/reports/profit_moonshot_20260501/current_tail_20260505/taker_flow_exhaustion_screen/taker_flow_exhaustion_screen_20260505.json",
+      "rss_mib": 2577.42578125,
+      "survivor_count": 506,
+      "top_rows": [
+        {
+          "family": "taker_flow_exhaustion_reversal",
+          "metrics": {
+            "oos": {
+              "count": 13,
+              "edge": 0.010923119039358916,
+              "hit": 0.8461538461538461,
+              "mdd": 0.004580207372190975,
+              "sum_edge": 0.1420005475116659,
+              "trade_sharpe": 1.923084668756402
+            },
+            "train": {
+              "count": 75,
+              "edge": 0.0022438927986837475,
+              "hit": 0.5333333333333333,
+              "mdd": 0.13863548077570884,
+              "sum_edge": 0.16829195990128107,
+              "trade_sharpe": 0.8829244587865652
+            },
+            "val": {
+              "count": 10,
+              "edge": 0.006467029549882576,
+              "hit": 0.6,
+              "mdd": 0.05721049309151616,
+              "sum_edge": 0.06467029549882576,
+              "trade_sharpe": 0.8907947224377837
+            }
+          },
+          "params": {
+            "cadence": 180,
+            "flow_abs": 0.14,
+            "flow_lb": 90,
+            "funding_cap": 0.00015,
+            "horizon": "12h",
+            "hour_profile": "us_eu_overlap",
+            "mom_lb": 180,
+            "shock_abs": 0.006,
+            "vol_cap": 0.008,
+            "vol_lb": 180
+          },
+          "score": 0.008904024183675308,
+          "symbol": "ETH/USDT"
+        },
+        {
+          "family": "taker_flow_exhaustion_reversal",
+          "metrics": {
+            "oos": {
+              "count": 15,
+              "edge": 0.00888478394363713,
+              "hit": 0.8,
+              "mdd": 0.010480980213006114,
+              "sum_edge": 0.13327175915455697,
+              "trade_sharpe": 1.7340769134432714
+            },
+            "train": {
+              "count": 75,
+              "edge": 0.0022438927986837475,
+              "hit": 0.5333333333333333,
+              "mdd": 0.13863548077570884,
+              "sum_edge": 0.16829195990128107,
+              "trade_sharpe": 0.8829244587865652
+            },
+            "val": {
+              "count": 10,
+              "edge": 0.006467029549882576,
+              "hit": 0.6,
+              "mdd": 0.05721049309151616,
+              "sum_edge": 0.06467029549882576,
+              "trade_sharpe": 0.8907947224377837
+            }
+          },
+          "params": {
+            "cadence": 180,
+            "flow_abs": 0.14,
+            "flow_lb": 90,
+            "funding_cap": 0.0003,
+            "horizon": "12h",
+            "hour_profile": "us_eu_overlap",
+            "mom_lb": 180,
+            "shock_abs": 0.006,
+            "vol_cap": 0.008,
+            "vol_lb": 180
+          },
+          "score": 0.007797765635287374,
+          "symbol": "ETH/USDT"
+        },
+        {
+          "family": "taker_flow_exhaustion_reversal",
+          "metrics": {
+            "oos": {
+              "count": 15,
+              "edge": 0.00888478394363713,
+              "hit": 0.8,
+              "mdd": 0.010480980213006114,
+              "sum_edge": 0.13327175915455697,
+              "trade_sharpe": 1.7340769134432714
+            },
+            "train": {
+              "count": 75,
+              "edge": 0.0022438927986837475,
+              "hit": 0.5333333333333333,
+              "mdd": 0.13863548077570884,
+              "sum_edge": 0.16829195990128107,
+              "trade_sharpe": 0.8829244587865652
+            },
+            "val": {
+              "count": 10,
+              "edge": 0.006467029549882576,
+              "hit": 0.6,
+              "mdd": 0.05721049309151616,
+              "sum_edge": 0.06467029549882576,
+              "trade_sharpe": 0.8907947224377837
+            }
+          },
+          "params": {
+            "cadence": 180,
+            "flow_abs": 0.14,
+            "flow_lb": 90,
+            "funding_cap": 0.0006,
+            "horizon": "12h",
+            "hour_profile": "us_eu_overlap",
+            "mom_lb": 180,
+            "shock_abs": 0.006,
+            "vol_cap": 0.008,
+            "vol_lb": 180
+          },
+          "score": 0.007797765635287374,
+          "symbol": "ETH/USDT"
+        },
+        {
+          "family": "taker_flow_exhaustion_reversal",
+          "metrics": {
+            "oos": {
+              "count": 15,
+              "edge": 0.00888478394363713,
+              "hit": 0.8,
+              "mdd": 0.010480980213006114,
+              "sum_edge": 0.13327175915455697,
+              "trade_sharpe": 1.7340769134432714
+            },
+            "train": {
+              "count": 75,
+              "edge": 0.0022438927986837475,
+              "hit": 0.5333333333333333,
+              "mdd": 0.13863548077570884,
+              "sum_edge": 0.16829195990128107,
+              "trade_sharpe": 0.8829244587865652
+            },
+            "val": {
+              "count": 10,
+              "edge": 0.006467029549882576,
+              "hit": 0.6,
+              "mdd": 0.05721049309151616,
+              "sum_edge": 0.06467029549882576,
+              "trade_sharpe": 0.8907947224377837
+            }
+          },
+          "params": {
+            "cadence": 180,
+            "flow_abs": 0.14,
+            "flow_lb": 90,
+            "funding_cap": 999.0,
+            "horizon": "12h",
+            "hour_profile": "us_eu_overlap",
+            "mom_lb": 180,
+            "shock_abs": 0.006,
+            "vol_cap": 0.008,
+            "vol_lb": 180
+          },
+          "score": 0.007797765635287374,
+          "symbol": "ETH/USDT"
+        },
+        {
+          "family": "taker_flow_exhaustion_reversal",
+          "metrics": {
+            "oos": {
+              "count": 12,
+              "edge": 0.007225258456755059,
+              "hit": 0.75,
+              "mdd": 0.02347402824209572,
+              "sum_edge": 0.08670310148106071,
+              "trade_sharpe": 1.4344358783136
+            },
+            "train": {
+              "count": 64,
+              "edge": 0.0029738716049837093,
+              "hit": 0.578125,
+              "mdd": 0.1280462054152891,
+              "sum_edge": 0.1903277827189574,
+              "trade_sharpe": 0.9871048643174872
+            },
+            "val": {
+              "count": 8,
+              "edge": 0.00855573571165624,
+              "hit": 0.75,
+              "mdd": 0.01167047492527393,
+              "sum_edge": 0.06844588569324991,
+              "trade_sharpe": 1.8588295023097023
+            }
+          },
+          "params": {
+            "cadence": 360,
+            "flow_abs": 0.04,
+            "flow_lb": 720,
+            "funding_cap": 0.00015,
+            "horizon": "12h",
+            "hour_profile": "us_eu_overlap",
+            "mom_lb": 180,
+            "shock_abs": 0.004,
+            "vol_cap": 0.008,
+            "vol_lb": 180
+          },
+          "score": 0.0074195104327641785,
+          "symbol": "ETH/USDT"
+        }
+      ]
+    },
+    "thesis": "Taker-flow exhaustion reversal: fade same-direction price extension and aggressive taker imbalance only under funding/volatility/session risk filters. Inspired by order-flow predictability/reversal literature and Binance taker-flow/funding fields."
   },
   "resources": [
     {
@@ -1736,6 +2286,36 @@
       "max_rss_mib": 1303.140625,
       "operation": "hourly_shock_reversion_eth_12h_dense_live_equivalent",
       "status": 0
+    },
+    {
+      "elapsed": "2:20.04",
+      "exit": 0,
+      "max_rss_mib": 2577.42578125,
+      "operation": "taker_flow_exhaustion_screen"
+    },
+    {
+      "elapsed": "3:45.82",
+      "exit": 0,
+      "max_rss_mib": 1278.12109375,
+      "operation": "taker_flow_exhaustion_eth_mode_live_equivalent"
+    },
+    {
+      "elapsed": "5:06.60",
+      "exit": 0,
+      "max_rss_mib": 1284.29296875,
+      "operation": "taker_flow_exhaustion_eth_reactive_mode_live_equivalent"
+    },
+    {
+      "elapsed": "5:47.85",
+      "exit": 0,
+      "max_rss_mib": 1286.58984375,
+      "operation": "taker_flow_exhaustion_eth_hold_mode_live_equivalent"
+    },
+    {
+      "elapsed": "6:57.31",
+      "exit": 0,
+      "max_rss_mib": 1283.66015625,
+      "operation": "taker_flow_exhaustion_eth_slow_momentum_mode_live_equivalent"
     }
   ],
   "sharpe_followup": {
@@ -1797,6 +2377,27 @@
       "path": "var/reports/profit_moonshot_20260501/current_tail_20260505/continuation_validation_20260505.json",
       "status": "passed"
     },
+    "continuation_validator_new_alpha": {
+      "baseline_mode": "profit_moonshot_adaptive_momentum_mode",
+      "baseline_val_return": 0.0026493262,
+      "blockers": [],
+      "candidate_liquidations": 0,
+      "candidate_mode": "profit_moonshot_hourly_shock_reversion_eth_12h_mode",
+      "candidate_primary_split": "oos",
+      "candidate_sharpe": 0.10065076094708575,
+      "candidate_sortino": 0.12832138288955808,
+      "candidate_trades": 30,
+      "candidate_val_return": 0.008284409681674987,
+      "generated_at": "2026-05-05T12:11:17.345417Z",
+      "improved_candidate_count": 18,
+      "improved_over_baseline": true,
+      "operator_oos_override_active": true,
+      "passed": true,
+      "promoted_by_summary": "profit_moonshot_momentum_hybrid_safe_mode",
+      "status": "passed",
+      "summary": "profit_moonshot_hourly_shock_reversion_eth_12h_mode oos_return=0.008284 vs baseline 0.002649; passed=True",
+      "summary_path": "var/reports/profit_moonshot_20260501/profit_moonshot_summary_latest.json"
+    },
     "continuation_validator_sharpe_followup": {
       "baseline_mode": "profit_moonshot_adaptive_momentum_mode",
       "baseline_val_return": 0.0026493262,
@@ -1825,12 +2426,19 @@
       "status": "passed"
     },
     "duplicate_backtest_process_check": "passed before/after runs; no duplicate revalidate/backtest process remained active",
+    "final_compileall_new_alpha": "passed: uv run python -m compileall -q src tests",
     "final_ruff_check": "passed full repo: uv run ruff check",
+    "final_ruff_check_new_alpha": "passed full repo: uv run ruff check",
     "final_targeted_pytest": {
       "command": "uv run pytest tests/unit/test_hourly_shock_reversion_strategy.py tests/unit/test_artifact_portfolio_mode.py tests/test_live_selection_infer.py tests/unit/test_live_equivalent_revalidation.py tests/unit/test_derivatives_flow_squeeze_strategy.py tests/unit/test_profit_moonshot_research.py tests/test_screen_profit_moonshot_external_alpha.py -q",
       "output": "43 passed in 0.15s",
       "status": "passed",
       "tests": 43
+    },
+    "final_targeted_pytest_new_alpha": {
+      "command": "uv run pytest tests/unit/test_taker_flow_exhaustion_reversal_strategy.py tests/unit/test_artifact_portfolio_mode.py tests/test_live_selection_infer.py tests/unit/test_hourly_shock_reversion_strategy.py tests/unit/test_live_equivalent_revalidation.py tests/unit/test_derivatives_flow_squeeze_strategy.py tests/unit/test_profit_moonshot_research.py tests/test_screen_profit_moonshot_external_alpha.py -q",
+      "passed": 51,
+      "status": "passed"
     },
     "hourly_shock_reversion_live_equivalent": {
       "best_mode": "profit_moonshot_hourly_shock_reversion_eth_12h_mode",
@@ -1840,6 +2448,7 @@
       "failed_probe_oos_total_return": 0.0027163895640469615,
       "status": "passed_oos_gate_for_best_mode"
     },
+    "new_alpha_targeted_ruff_pytest": "passed before full backtests: ruff check + targeted pytest 29 passed",
     "profit_moonshot_research_summary": "passed max_files=650 generated_at=2026-05-05T10:10:00Z with operator_oos_override_candidate_found",
     "ruff_check": "passed full repo after validator override",
     "sharpe_followup_live_equivalent": {

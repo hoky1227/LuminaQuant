@@ -130,6 +130,10 @@ _LIVE_PORTFOLIO_MODE_ALIASES = {
     "profit_moonshot_hourly_shock_reversion_eth_12h_dense_mode",
     "profit_moonshot_hourly_shock_reversion_eth_12h_funding_guard_mode",
     "profit_moonshot_filtered_shock_reversion_diversified_mode",
+    "profit_moonshot_taker_flow_exhaustion_eth_mode",
+    "profit_moonshot_taker_flow_exhaustion_eth_reactive_mode",
+    "profit_moonshot_taker_flow_exhaustion_eth_hold_mode",
+    "profit_moonshot_taker_flow_exhaustion_eth_slow_momentum_mode",
 }
 _PROFIT_MODE_UNBOUNDED_CHILD_TARGET_ALLOCATION = 0.02
 _PROFIT_MODE_UNBOUNDED_CHILD_MAX_ORDER_VALUE = 250.0
@@ -1255,6 +1259,146 @@ def _alias_rows(token: str) -> list[dict[str, Any]] | None:
                     "entry_hours_utc": "2,3,4,10,11,12,18,19,20",
                 },
                 "weight": 0.40,
+            },
+        ],
+        "profit_moonshot_taker_flow_exhaustion_eth_mode": [
+            {
+                "candidate_id": "profit_moonshot_taker_flow_exhaustion_eth_12h_us_eu_vol_guard",
+                "name": "profit_moonshot_taker_flow_exhaustion_eth_12h_us_eu_vol_guard",
+                "strategy_class": "TakerFlowExhaustionReversalStrategy",
+                "symbols": ["ETH/USDT"],
+                "params": {
+                    # New alpha family after Sharpe<1 pushback: fade extreme
+                    # same-direction ETH taker-flow/price extensions only
+                    # during US/EU overlap hours, with funding and realized-vol
+                    # gates. Same 0.8% / $175 risk caps; no exposure-only lift.
+                    "target_symbol": "ETH/USDT",
+                    "flow_lookback_bars": 90,
+                    "momentum_lookback_bars": 180,
+                    "volatility_lookback_bars": 180,
+                    "evaluation_cadence_bars": 180,
+                    "flow_imbalance_min": 0.14,
+                    "price_extension_min": 0.006,
+                    "funding_abs_cap": 0.00015,
+                    "max_realized_volatility": 0.008,
+                    "entry_hours_utc": "13,14,15,16,17,18,19,20",
+                    "target_allocation": 0.008,
+                    "max_order_value": 175.0,
+                    "volatility_target_per_bar": 0.0011,
+                    "min_volatility_multiplier": 0.35,
+                    "max_volatility_multiplier": 1.0,
+                    "stop_loss_pct": 0.025,
+                    "take_profit_pct": 0.050,
+                    "trailing_exit_pct": 0.018,
+                    "max_hold_bars": 2160,
+                    "allow_short": True,
+                },
+                "weight": 1.0,
+            },
+        ],
+        "profit_moonshot_taker_flow_exhaustion_eth_reactive_mode": [
+            {
+                "candidate_id": "profit_moonshot_taker_flow_exhaustion_eth_reactive_us_eu_vol_guard",
+                "name": "profit_moonshot_taker_flow_exhaustion_eth_reactive_us_eu_vol_guard",
+                "strategy_class": "TakerFlowExhaustionReversalStrategy",
+                "symbols": ["ETH/USDT"],
+                "params": {
+                    # Same flow-exhaustion alpha, but evaluate every market
+                    # window so 7-day live-equivalent chunks cannot shift the
+                    # hourly cadence away from all validation/OOS events.
+                    "target_symbol": "ETH/USDT",
+                    "flow_lookback_bars": 90,
+                    "momentum_lookback_bars": 180,
+                    "volatility_lookback_bars": 180,
+                    "evaluation_cadence_bars": 1,
+                    "flow_imbalance_min": 0.14,
+                    "price_extension_min": 0.006,
+                    "funding_abs_cap": 0.00015,
+                    "max_realized_volatility": 0.008,
+                    "entry_hours_utc": "13,14,15,16,17,18,19,20",
+                    "target_allocation": 0.008,
+                    "max_order_value": 175.0,
+                    "volatility_target_per_bar": 0.0011,
+                    "min_volatility_multiplier": 0.35,
+                    "max_volatility_multiplier": 1.0,
+                    "stop_loss_pct": 0.025,
+                    "take_profit_pct": 0.050,
+                    "trailing_exit_pct": 0.018,
+                    "max_hold_bars": 2160,
+                    "allow_short": True,
+                },
+                "weight": 1.0,
+            },
+        ],
+        "profit_moonshot_taker_flow_exhaustion_eth_hold_mode": [
+            {
+                "candidate_id": "profit_moonshot_taker_flow_exhaustion_eth_12h_hold_us_eu_vol_guard",
+                "name": "profit_moonshot_taker_flow_exhaustion_eth_12h_hold_us_eu_vol_guard",
+                "strategy_class": "TakerFlowExhaustionReversalStrategy",
+                "symbols": ["ETH/USDT"],
+                "params": {
+                    # Same alpha as the reactive probe, but align exits to the
+                    # 12h raw screen horizon; wide stop/take only protects tail
+                    # risk without cutting ordinary mean-reversion paths.
+                    "target_symbol": "ETH/USDT",
+                    "flow_lookback_bars": 90,
+                    "momentum_lookback_bars": 180,
+                    "volatility_lookback_bars": 180,
+                    "evaluation_cadence_bars": 1,
+                    "flow_imbalance_min": 0.14,
+                    "price_extension_min": 0.006,
+                    "funding_abs_cap": 0.00015,
+                    "max_realized_volatility": 0.008,
+                    "entry_hours_utc": "13,14,15,16,17,18,19,20",
+                    "target_allocation": 0.008,
+                    "max_order_value": 175.0,
+                    "volatility_target_per_bar": 0.0011,
+                    "min_volatility_multiplier": 0.35,
+                    "max_volatility_multiplier": 1.0,
+                    "stop_loss_pct": 0.050,
+                    "take_profit_pct": 0.100,
+                    "trailing_exit_pct": 0.0,
+                    "max_hold_bars": 2160,
+                    "allow_short": True,
+                },
+                "weight": 1.0,
+            },
+        ],
+        "profit_moonshot_taker_flow_exhaustion_eth_slow_momentum_mode": [
+            {
+                "candidate_id": "profit_moonshot_taker_flow_exhaustion_eth_6h_mom_cooldown_guard",
+                "name": "profit_moonshot_taker_flow_exhaustion_eth_6h_mom_cooldown_guard",
+                "strategy_class": "TakerFlowExhaustionReversalStrategy",
+                "symbols": ["ETH/USDT"],
+                "params": {
+                    # Cost-aware replay of the strongest raw train/val/OOS
+                    # survivor using a slower 6h price-extension window.  The
+                    # 12h post-exit cooldown is a risk control, not an exposure
+                    # increase: it prevents repeated fills while one exhaustion
+                    # episode is still resolving.
+                    "target_symbol": "ETH/USDT",
+                    "flow_lookback_bars": 90,
+                    "momentum_lookback_bars": 360,
+                    "volatility_lookback_bars": 180,
+                    "evaluation_cadence_bars": 1,
+                    "flow_imbalance_min": 0.14,
+                    "price_extension_min": 0.006,
+                    "funding_abs_cap": 0.00015,
+                    "max_realized_volatility": 0.008,
+                    "entry_hours_utc": "13,14,15,16,17,18,19,20",
+                    "target_allocation": 0.008,
+                    "max_order_value": 175.0,
+                    "volatility_target_per_bar": 0.0011,
+                    "min_volatility_multiplier": 0.35,
+                    "max_volatility_multiplier": 1.0,
+                    "stop_loss_pct": 0.050,
+                    "take_profit_pct": 0.100,
+                    "trailing_exit_pct": 0.0,
+                    "max_hold_bars": 2160,
+                    "cooldown_bars": 2160,
+                    "allow_short": True,
+                },
+                "weight": 1.0,
             },
         ],
         "derivatives_flow_squeeze_mode": [
