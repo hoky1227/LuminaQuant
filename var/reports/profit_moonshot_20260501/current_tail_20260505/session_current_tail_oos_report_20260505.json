@@ -1,0 +1,409 @@
+{
+  "artifact_kind": "profit_moonshot_current_tail_oos_report",
+  "artifacts": {
+    "data_refresh_json": "var/reports/profit_moonshot_20260501/current_tail_20260505/data_refresh_20260505.json",
+    "data_refresh_md": "var/reports/profit_moonshot_20260501/current_tail_20260505/data_refresh_20260505.md",
+    "external_screen_json": "var/reports/profit_moonshot_20260501/current_tail_20260505/external_alpha_screen/external_alpha_screen_20260505.json",
+    "external_screen_md": "var/reports/profit_moonshot_20260501/current_tail_20260505/external_alpha_screen/external_alpha_screen_20260505.md",
+    "hybrid_live_json": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_momentum_hybrid_safe_mode/live_equivalent_revalidation_latest.json",
+    "leadlag_live_json": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_leadlag_slow_diffusion_mode/live_equivalent_revalidation_latest.json",
+    "materialize_log": "var/reports/profit_moonshot_20260501/current_tail_20260505/materialize_oos_20260503_04/run.log"
+  },
+  "base_commit": "20ce7529b404fcbbf0d3158cb6b747d59da2b0b3",
+  "base_ref": "private/main",
+  "data_refresh": {
+    "aggregation_backend_resolved": "rust:/home/hoky/Quants-agent/LuminaQuant/native/rust_rawfirst/target/release/liblumina_rawfirst.so",
+    "canonical_source": "binance_raw_aggtrades",
+    "collection_cutoff_utc": "2026-05-05T04:14:33Z",
+    "feature_symbols": [
+      "BTC/USDT",
+      "ETH/USDT",
+      "BNB/USDT",
+      "SOL/USDT",
+      "TRX/USDT"
+    ],
+    "portfolio_symbols": [
+      "BTC/USDT",
+      "ETH/USDT",
+      "BNB/USDT",
+      "SOL/USDT",
+      "TRX/USDT"
+    ],
+    "status": "completed"
+  },
+  "decision": {
+    "conservative_fallback_retained": "profit_moonshot_momentum_hybrid_safe_mode",
+    "conservative_fallback_user_oos_gate_pass": false,
+    "deployment_review_candidate": "profit_moonshot_leadlag_slow_diffusion_mode",
+    "deployment_review_candidate_user_gate_pass": true,
+    "do_not_promote": [
+      "profit_moonshot_momentum_hybrid_safe_mode",
+      "funding_taker_flow_family",
+      "leadlag_same_risk_ensemble"
+    ],
+    "notes": [
+      "Framework status is train/val-based; this report applies the user-required OOS gate separately.",
+      "No gross exposure increase was used.",
+      "Backtests were executed one portfolio mode at a time."
+    ]
+  },
+  "external_alpha_screen": {
+    "funding_survivors": 0,
+    "leadlag_survivors": [
+      {
+        "candidate": "BTC/USDT\u2192ETH/USDT lag=2h horizon=8h params={'leader_abs_ret_min': 0.015, 'target_underreaction_cap': 999.0}",
+        "oos_count": 63,
+        "oos_edge": 0.00045614676300959923,
+        "oos_hit": 0.5238095238095238,
+        "train_count": 359,
+        "train_edge": 0.0005908338965098787,
+        "val_count": 93,
+        "val_edge": 0.0010473792653951479
+      },
+      {
+        "candidate": "SOL/USDT\u2192ETH/USDT lag=1h horizon=8h params={'leader_abs_ret_min': 0.015, 'target_underreaction_cap': 999.0}",
+        "oos_count": 49,
+        "oos_edge": 0.00037639479108365556,
+        "oos_hit": 0.5714285714285714,
+        "train_count": 700,
+        "train_edge": 0.0003716226508642304,
+        "val_count": 95,
+        "val_edge": 0.0005396585102402009
+      }
+    ],
+    "peak_rss_mib": 2286.20703125,
+    "selection_contract": {
+      "full_backtest_rule": "exactly_one_mode_after_raw_first_screen_survival",
+      "memory_rule": "RSS must stay below 8GB",
+      "rejected_backtest_policy": "save rejected hypothesis and reason; do not threshold-mine in full backtest"
+    }
+  },
+  "generated_at": "2026-05-05T06:30:00Z",
+  "live_equivalent": {
+    "profit_moonshot_leadlag_slow_diffusion_mode": {
+      "mode": "profit_moonshot_leadlag_slow_diffusion_mode",
+      "oos_coverage": {
+        "BTC/USDT": {
+          "oos": {
+            "committed_day_count": 65,
+            "complete_raw_first": true,
+            "missing_day_count": 0,
+            "required_day_count": 65
+          },
+          "train": {
+            "committed_day_count": 365,
+            "complete_raw_first": true,
+            "missing_day_count": 0,
+            "required_day_count": 365
+          },
+          "val": {
+            "committed_day_count": 59,
+            "complete_raw_first": true,
+            "missing_day_count": 0,
+            "required_day_count": 59
+          }
+        },
+        "ETH/USDT": {
+          "oos": {
+            "committed_day_count": 65,
+            "complete_raw_first": true,
+            "missing_day_count": 0,
+            "required_day_count": 65
+          },
+          "train": {
+            "committed_day_count": 365,
+            "complete_raw_first": true,
+            "missing_day_count": 0,
+            "required_day_count": 365
+          },
+          "val": {
+            "committed_day_count": 59,
+            "complete_raw_first": true,
+            "missing_day_count": 0,
+            "required_day_count": 59
+          }
+        }
+      },
+      "oos_scaled_score_report_only": 7.687908337245262,
+      "selection_score": 12.96471842249209,
+      "splits": {
+        "oos": {
+          "cagr": 7.823428646913655e-06,
+          "calmar": 0.00011047339409859917,
+          "final_equity": 10029.278473147682,
+          "liquidation_count": 0,
+          "max_drawdown": 0.07081731045514114,
+          "sharpe": 0.0040594379996532585,
+          "sortino": 0.004141570987630415,
+          "status": "completed",
+          "total_return": 0.0029099973147681535,
+          "trade_count": 40,
+          "volatility": 0.005002301338796817
+        },
+        "train": {
+          "cagr": 1.4767949819027848e-05,
+          "calmar": 0.0001617479679754174,
+          "final_equity": 10312.765352275144,
+          "liquidation_count": 0,
+          "max_drawdown": 0.09130222780463179,
+          "sharpe": 0.006797828179471699,
+          "sortino": 0.006916989401422137,
+          "status": "completed",
+          "total_return": 0.031274183227514296,
+          "trade_count": 176,
+          "volatility": 0.0027131155876595637
+        },
+        "val": {
+          "cagr": 2.0200882644427764e-05,
+          "calmar": 0.0016031702194711406,
+          "final_equity": 10068.49060830639,
+          "liquidation_count": 0,
+          "max_drawdown": 0.01260058501529033,
+          "sharpe": 0.02829260456497342,
+          "sortino": 0.02853711998689675,
+          "status": "completed",
+          "total_return": 0.006833193830638962,
+          "trade_count": 40,
+          "volatility": 0.0007232355221644315
+        }
+      },
+      "status": "live_equivalent_validated"
+    },
+    "profit_moonshot_momentum_hybrid_safe_mode": {
+      "mode": "profit_moonshot_momentum_hybrid_safe_mode",
+      "oos_coverage": {
+        "BNB/USDT": {
+          "oos": {
+            "committed_day_count": 65,
+            "complete_raw_first": true,
+            "missing_day_count": 0,
+            "required_day_count": 65
+          },
+          "train": {
+            "committed_day_count": 365,
+            "complete_raw_first": true,
+            "missing_day_count": 0,
+            "required_day_count": 365
+          },
+          "val": {
+            "committed_day_count": 59,
+            "complete_raw_first": true,
+            "missing_day_count": 0,
+            "required_day_count": 59
+          }
+        },
+        "BTC/USDT": {
+          "oos": {
+            "committed_day_count": 65,
+            "complete_raw_first": true,
+            "missing_day_count": 0,
+            "required_day_count": 65
+          },
+          "train": {
+            "committed_day_count": 365,
+            "complete_raw_first": true,
+            "missing_day_count": 0,
+            "required_day_count": 365
+          },
+          "val": {
+            "committed_day_count": 59,
+            "complete_raw_first": true,
+            "missing_day_count": 0,
+            "required_day_count": 59
+          }
+        },
+        "ETH/USDT": {
+          "oos": {
+            "committed_day_count": 65,
+            "complete_raw_first": true,
+            "missing_day_count": 0,
+            "required_day_count": 65
+          },
+          "train": {
+            "committed_day_count": 365,
+            "complete_raw_first": true,
+            "missing_day_count": 0,
+            "required_day_count": 365
+          },
+          "val": {
+            "committed_day_count": 59,
+            "complete_raw_first": true,
+            "missing_day_count": 0,
+            "required_day_count": 59
+          }
+        },
+        "SOL/USDT": {
+          "oos": {
+            "committed_day_count": 65,
+            "complete_raw_first": true,
+            "missing_day_count": 0,
+            "required_day_count": 65
+          },
+          "train": {
+            "committed_day_count": 365,
+            "complete_raw_first": true,
+            "missing_day_count": 0,
+            "required_day_count": 365
+          },
+          "val": {
+            "committed_day_count": 59,
+            "complete_raw_first": true,
+            "missing_day_count": 0,
+            "required_day_count": 59
+          }
+        },
+        "TRX/USDT": {
+          "oos": {
+            "committed_day_count": 65,
+            "complete_raw_first": true,
+            "missing_day_count": 0,
+            "required_day_count": 65
+          },
+          "train": {
+            "committed_day_count": 365,
+            "complete_raw_first": true,
+            "missing_day_count": 0,
+            "required_day_count": 365
+          },
+          "val": {
+            "committed_day_count": 59,
+            "complete_raw_first": true,
+            "missing_day_count": 0,
+            "required_day_count": 59
+          }
+        }
+      },
+      "oos_scaled_score_report_only": 8.033063592061787,
+      "selection_score": 10.6542297994982,
+      "splits": {
+        "oos": {
+          "cagr": -9.011633402167263e-06,
+          "calmar": -0.00025790235171118276,
+          "final_equity": 9966.54015331788,
+          "liquidation_count": 0,
+          "max_drawdown": 0.03494203655908933,
+          "sharpe": -0.0014105326084949065,
+          "sortino": -0.0014164076710275531,
+          "status": "completed",
+          "total_return": -0.003341526314212029,
+          "trade_count": 136,
+          "volatility": 0.0030634955203091207
+        },
+        "train": {
+          "cagr": -6.542949715915292e-06,
+          "calmar": -5.289583699882014e-05,
+          "final_equity": 9864.467075039582,
+          "liquidation_count": 0,
+          "max_drawdown": 0.1236949840884687,
+          "sharpe": 0.004175236857947524,
+          "sortino": 0.004367273527303323,
+          "status": "completed",
+          "total_return": -0.013551486496041987,
+          "trade_count": 1185,
+          "volatility": 0.009733907879882611
+        },
+        "val": {
+          "cagr": 8.403884874219614e-06,
+          "calmar": 0.0008051134934472035,
+          "final_equity": 10028.407172179252,
+          "liquidation_count": 0,
+          "max_drawdown": 0.010438136911899503,
+          "sharpe": 0.010167858124343822,
+          "sortino": 0.009833095226985623,
+          "status": "completed",
+          "total_return": 0.002837148217925023,
+          "trade_count": 183,
+          "volatility": 0.0008631453963458669
+        }
+      },
+      "status": "live_equivalent_validated"
+    }
+  },
+  "materialized_oos_committed_days": {
+    "BNB/USDT": {
+      "2026-05-03": 86400,
+      "2026-05-04": 86398
+    },
+    "BTC/USDT": {
+      "2026-05-03": 86400,
+      "2026-05-04": 86398
+    },
+    "ETH/USDT": {
+      "2026-05-03": 86399,
+      "2026-05-04": 86398
+    },
+    "SOL/USDT": {
+      "2026-05-03": 86400,
+      "2026-05-04": 86398
+    },
+    "TRX/USDT": {
+      "2026-05-03": 86400,
+      "2026-05-04": 86397
+    }
+  },
+  "resources": [
+    {
+      "elapsed": "41:19.30",
+      "max_rss_kb": 4699216,
+      "max_rss_mib": 4589.078125,
+      "operation": "data_tail_refresh",
+      "status": 0
+    },
+    {
+      "elapsed": "0:12.20",
+      "max_rss_kb": 1792948,
+      "max_rss_mib": 1750.92578125,
+      "operation": "materialize_oos_2026_05_03_04",
+      "status": 0
+    },
+    {
+      "elapsed": "19:58.35",
+      "max_rss_kb": 1950460,
+      "max_rss_mib": 1904.74609375,
+      "operation": "leadlag_first_run_train_val_oos_skipped",
+      "status": 0
+    },
+    {
+      "elapsed": "3:21.15",
+      "max_rss_kb": 1800912,
+      "max_rss_mib": 1758.703125,
+      "operation": "leadlag_oos_rerun_after_materialization",
+      "status": 0
+    },
+    {
+      "elapsed": "50:45.56",
+      "max_rss_kb": 3564432,
+      "max_rss_mib": 3480.890625,
+      "operation": "hybrid_safe_live_equivalent",
+      "status": 0
+    },
+    {
+      "elapsed": "0:54.90",
+      "max_rss_kb": 2341204,
+      "max_rss_mib": 2286.33203125,
+      "operation": "external_alpha_screen",
+      "status": 0
+    }
+  ],
+  "source_branch": "private-main",
+  "support_inventory_notes": {
+    "canonical_inventory": true,
+    "index_price": "Collector now uses pair param for indexPriceKlines; older sparse symbols reflect Binance response history or earlier collector state.",
+    "liquidation": "Rows may be zero where Binance futures liquidation endpoint is unavailable/returns HTTP 400.",
+    "open_interest": "Long-range chunking and empty-window skip are applied; rows reflect what Binance currently returns for each symbol."
+  },
+  "verification": {
+    "continuation_validator": {
+      "candidate_mode": "profit_moonshot_leadlag_slow_diffusion_mode",
+      "path": "var/reports/profit_moonshot_20260501/current_tail_20260505/continuation_validation_20260505.json",
+      "status": "passed"
+    },
+    "profit_moonshot_research_summary": "passed",
+    "ruff_check": "passed",
+    "targeted_pytest": {
+      "elapsed": "4.07s",
+      "status": "passed",
+      "tests": 73
+    }
+  }
+}

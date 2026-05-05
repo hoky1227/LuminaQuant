@@ -142,13 +142,6 @@
   "decision": "promoted_candidate_found",
   "generated_at": "2026-05-05T06:35:00Z",
   "input_dir": "var/reports/profit_moonshot_20260501",
-  "operator_oos_gate_override": {
-    "evidence_report": "var/reports/profit_moonshot_20260501/current_tail_20260505/session_current_tail_oos_report_20260505.md",
-    "generated_at": "2026-05-05T06:35:00Z",
-    "oos_gate_failed_candidate": "profit_moonshot_momentum_hybrid_safe_mode",
-    "oos_gate_pass_candidate": "profit_moonshot_leadlag_slow_diffusion_mode",
-    "rule": "User task requires complete positive raw-first OOS evidence before success/deployment claims; val-ranked promoted_candidate alone is insufficient."
-  },
   "output_dir": "var/reports/profit_moonshot_20260501",
   "promoted_candidate": {
     "artifact_kind": "live_equivalent_revalidation",
