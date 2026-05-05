@@ -38,6 +38,8 @@ def _load_json(path: Path) -> dict[str, Any]:
 def validate(summary_path: Path = DEFAULT_SUMMARY_PATH) -> dict[str, Any]:
     summary = _load_json(summary_path)
     promoted = dict(summary.get("promoted_candidate") or {})
+    override = dict(summary.get("operator_oos_override") or {})
+    override_candidate = dict(override.get("candidate") or {})
     ranked = [dict(item) for item in list(summary.get("ranked_candidates") or []) if isinstance(item, dict)]
     improved_candidates = [
         item
@@ -50,7 +52,11 @@ def validate(summary_path: Path = DEFAULT_SUMMARY_PATH) -> dict[str, Any]:
         and int(_safe_float(item.get("liquidations"), 0.0)) == 0
         and not list(item.get("blockers") or [])
     ]
-    best = (
+    override_active = bool(override.get("user_gate_pass") and override_candidate)
+    if override_active:
+        override_candidate.setdefault("primary_split", "oos")
+        override_candidate.setdefault("promotion_eligible", True)
+    best = override_candidate if override_active else (
         max(improved_candidates, key=lambda item: _safe_float(item.get("total_return"), 0.0))
         if improved_candidates
         else promoted or (ranked[0] if ranked else {})
@@ -63,8 +69,12 @@ def validate(summary_path: Path = DEFAULT_SUMMARY_PATH) -> dict[str, Any]:
     liquidations = int(_safe_float(best.get("liquidations"), 0.0))
     blockers = list(best.get("blockers") or [])
     improved = val_return > BASELINE_VAL_RETURN
+    decision_ok = summary.get("decision") in {
+        "promoted_candidate_found",
+        "operator_oos_override_candidate_found",
+    }
     passed = bool(
-        summary.get("decision") == "promoted_candidate_found"
+        decision_ok
         and improved
         and sharpe > 0.0
         and sortino > 0.0
@@ -72,6 +82,7 @@ def validate(summary_path: Path = DEFAULT_SUMMARY_PATH) -> dict[str, Any]:
         and liquidations == 0
         and not blockers
     )
+    primary_split = str(best.get("primary_split") or "")
     return {
         "status": "passed" if passed else "running",
         "passed": passed,
@@ -85,12 +96,14 @@ def validate(summary_path: Path = DEFAULT_SUMMARY_PATH) -> dict[str, Any]:
         "candidate_sortino": sortino,
         "candidate_trades": trades,
         "candidate_liquidations": liquidations,
+        "candidate_primary_split": primary_split,
         "improved_over_baseline": improved,
         "blockers": blockers,
         "promoted_by_summary": str(promoted.get("mode") or promoted.get("candidate_id") or ""),
+        "operator_oos_override_active": override_active,
         "improved_candidate_count": len(improved_candidates),
         "summary": (
-            f"{mode} val_return={val_return:.6f} vs baseline "
+            f"{mode} {primary_split or 'candidate'}_return={val_return:.6f} vs baseline "
             f"{BASELINE_VAL_RETURN:.6f}; passed={passed}"
         ),
     }

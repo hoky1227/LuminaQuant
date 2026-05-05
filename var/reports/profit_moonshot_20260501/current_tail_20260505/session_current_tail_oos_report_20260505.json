@@ -5,11 +5,15 @@
     "data_refresh_md": "var/reports/profit_moonshot_20260501/current_tail_20260505/data_refresh_20260505.md",
     "external_screen_json": "var/reports/profit_moonshot_20260501/current_tail_20260505/external_alpha_screen/external_alpha_screen_20260505.json",
     "external_screen_md": "var/reports/profit_moonshot_20260501/current_tail_20260505/external_alpha_screen/external_alpha_screen_20260505.md",
+    "hourly_shock_12h_live_json": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_hourly_shock_reversion_eth_12h_mode/live_equivalent_revalidation_latest.json",
+    "hourly_shock_4h_live_json": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_hourly_shock_reversion_eth_mode/live_equivalent_revalidation_latest.json",
+    "hourly_shock_overlap_screen_json": "var/reports/profit_moonshot_20260501/current_tail_20260505/simple_hourly_alpha_screen/simple_hourly_alpha_screen_20260505.json",
+    "hourly_shock_stateful_screen_json": "var/reports/profit_moonshot_20260501/current_tail_20260505/simple_hourly_alpha_screen/stateful_reversion_screen_20260505.json",
     "hybrid_live_json": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_momentum_hybrid_safe_mode/live_equivalent_revalidation_latest.json",
     "leadlag_live_json": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_leadlag_slow_diffusion_mode/live_equivalent_revalidation_latest.json",
     "materialize_log": "var/reports/profit_moonshot_20260501/current_tail_20260505/materialize_oos_20260503_04/run.log"
   },
-  "base_commit": "20ce7529b404fcbbf0d3158cb6b747d59da2b0b3",
+  "base_commit": "933442026ecc006f833087dd6164f51e62923e2a",
   "base_ref": "private/main",
   "data_refresh": {
     "aggregation_backend_resolved": "rust:/home/hoky/Quants-agent/LuminaQuant/native/rust_rawfirst/target/release/liblumina_rawfirst.so",
@@ -34,19 +38,21 @@
   "decision": {
     "conservative_fallback_retained": "profit_moonshot_momentum_hybrid_safe_mode",
     "conservative_fallback_user_oos_gate_pass": false,
-    "deployment_review_candidate": null,
-    "deployment_review_candidate_user_gate_pass": false,
+    "deployment_review_candidate": "profit_moonshot_hourly_shock_reversion_eth_12h_mode",
+    "deployment_review_candidate_reason": "Complete raw-first train/val/OOS coverage; train/val/OOS returns positive; OOS +0.8284% beats the prior +0.2910% weak shadow; OOS Sharpe/Sortino positive; zero liquidations; no gross exposure increase.",
+    "deployment_review_candidate_user_gate_pass": true,
     "do_not_promote": [
       "profit_moonshot_momentum_hybrid_safe_mode",
+      "profit_moonshot_leadlag_slow_diffusion_sol_eth_mode",
+      "profit_moonshot_hourly_shock_reversion_eth_mode",
       "funding_taker_flow_family",
-      "leadlag_same_risk_ensemble",
-      "profit_moonshot_leadlag_slow_diffusion_sol_eth_mode"
+      "leadlag_same_risk_ensemble"
     ],
     "notes": [
       "Framework status is train/val-based; this report applies the user-required OOS gate separately.",
-      "No gross exposure increase was used.",
-      "Backtests were executed one portfolio mode at a time.",
-      "User challenge accepted: +0.2910% OOS is too weak for deployment-ready status."
+      "No gross exposure increase was used; the new candidate keeps target_allocation=0.008 and max_order_value=175.",
+      "Backtests were executed one portfolio mode at a time; no duplicate full backtest process was present before launches.",
+      "User challenge accepted: +0.2910% OOS was too weak; the new best current-tail OOS is +0.8284%."
     ],
     "weak_positive_shadow_baseline": "profit_moonshot_leadlag_slow_diffusion_mode"
   },
@@ -87,8 +93,498 @@
     "note": "Corrected flow denominator guard removes missing-flow/NaN funding survivors for BNB/TRX/TRX-like no-flow rows.",
     "peak_rss_mib": 2619.10546875
   },
-  "generated_at": "2026-05-05T06:30:00Z",
+  "generated_at": "2026-05-05T10:05:00Z",
+  "hourly_shock_reversion_screen": {
+    "implemented_modes": [
+      "profit_moonshot_hourly_shock_reversion_eth_mode",
+      "profit_moonshot_hourly_shock_reversion_eth_12h_mode"
+    ],
+    "selection_contract": {
+      "full_backtest_rule": "one mode at a time after stateful raw-first screen survival",
+      "promotion_gate": "complete train/val/OOS raw-first coverage, positive train/val/OOS, OOS > prior +0.2910%, positive OOS Sharpe/Sortino, zero liquidations",
+      "sizing_rule": "target_allocation held at 0.008; max_order_value held at 175"
+    },
+    "simple_overlap_screen_json": "var/reports/profit_moonshot_20260501/current_tail_20260505/simple_hourly_alpha_screen/simple_hourly_alpha_screen_20260505.json",
+    "stateful_rows_total": 2711,
+    "stateful_screen_json": "var/reports/profit_moonshot_20260501/current_tail_20260505/simple_hourly_alpha_screen/stateful_reversion_screen_20260505.json",
+    "stateful_screen_peak_rss_mib": 2889.76171875,
+    "top_stateful_candidates": [
+      {
+        "family": "reversion",
+        "hold": 48,
+        "lookback": 4,
+        "metrics": {
+          "oos": {
+            "count": 37,
+            "edge": 0.014345681104572086,
+            "hit": 0.5945945945945946,
+            "sum_edge": 0.5307902008691672,
+            "t": 2.1931304600057926
+          },
+          "train": {
+            "count": 264,
+            "edge": 0.002140316462727097,
+            "hit": 0.4128787878787879,
+            "sum_edge": 0.5650435461599536,
+            "t": 0.7432761460719978
+          },
+          "val": {
+            "count": 37,
+            "edge": 0.012535708744314653,
+            "hit": 0.5135135135135135,
+            "sum_edge": 0.46382122353964217,
+            "t": 1.6435649768938292
+          }
+        },
+        "sample_trades": [
+          {
+            "dir": 1,
+            "edge": 0.03331428423063223,
+            "entry_ts": 1735707580000,
+            "exit_ts": 1735880380000,
+            "raw": 0.03511428423063223,
+            "reason": "hold",
+            "split": "train"
+          },
+          {
+            "dir": 1,
+            "edge": 0.055815226145906414,
+            "entry_ts": 1735891180000,
+            "exit_ts": 1736063980000,
+            "raw": 0.05761522614590642,
+            "reason": "hold",
+            "split": "train"
+          },
+          {
+            "dir": 1,
+            "edge": 0.013221744073574484,
+            "entry_ts": 1736067580000,
+            "exit_ts": 1736240380000,
+            "raw": 0.015021744073574483,
+            "reason": "hold",
+            "split": "train"
+          }
+        ],
+        "score": 0.8192051672549836,
+        "side": "both",
+        "stop": 0.02,
+        "symbol": "ETH/USDT",
+        "take": 0,
+        "threshold": 0.006,
+        "valid": true
+      },
+      {
+        "family": "reversion",
+        "hold": 72,
+        "lookback": 12,
+        "metrics": {
+          "oos": {
+            "count": 22,
+            "edge": 0.02362731861523634,
+            "hit": 0.7272727272727273,
+            "sum_edge": 0.5198010095351995,
+            "t": 2.251742330806093
+          },
+          "train": {
+            "count": 151,
+            "edge": 0.0032213916793920787,
+            "hit": 0.5099337748344371,
+            "sum_edge": 0.48643014358820386,
+            "t": 0.6536445509674375
+          },
+          "val": {
+            "count": 26,
+            "edge": 0.008867312516118664,
+            "hit": 0.5384615384615384,
+            "sum_edge": 0.23055012541908526,
+            "t": 0.6802909745017616
+          }
+        },
+        "sample_trades": [
+          {
+            "dir": -1,
+            "edge": -0.0602742528625728,
+            "entry_ts": 1735768780000,
+            "exit_ts": 1735919980000,
+            "raw": -0.058474252862572795,
+            "reason": "stop",
+            "split": "train"
+          },
+          {
+            "dir": -1,
+            "edge": -0.036852613359370935,
+            "entry_ts": 1735923580000,
+            "exit_ts": 1736182780000,
+            "raw": -0.03505261335937093,
+            "reason": "hold",
+            "split": "train"
+          },
+          {
+            "dir": -1,
+            "edge": 0.10080229236369756,
+            "entry_ts": 1736193580000,
+            "exit_ts": 1736319580000,
+            "raw": 0.10260229236369756,
+            "reason": "take",
+            "split": "train"
+          }
+        ],
+        "score": 0.6837190866035625,
+        "side": "both",
+        "stop": 0.05,
+        "symbol": "ETH/USDT",
+        "take": 0.1,
+        "threshold": 0.01,
+        "valid": true
+      },
+      {
+        "family": "reversion",
+        "hold": 48,
+        "lookback": 72,
+        "metrics": {
+          "oos": {
+            "count": 29,
+            "edge": 0.013123630086042946,
+            "hit": 0.6206896551724138,
+            "sum_edge": 0.38058527249524543,
+            "t": 1.9103889642470102
+          },
+          "train": {
+            "count": 169,
+            "edge": 0.004824835249550448,
+            "hit": 0.5798816568047337,
+            "sum_edge": 0.8153971571740258,
+            "t": 1.0901091429005312
+          },
+          "val": {
+            "count": 27,
+            "edge": 0.007432495637805142,
+            "hit": 0.5185185185185185,
+            "sum_edge": 0.20067738222073883,
+            "t": 0.6709279632887175
+          }
+        },
+        "sample_trades": [
+          {
+            "dir": -1,
+            "edge": -0.006973312086685699,
+            "entry_ts": 1735952380000,
+            "exit_ts": 1736125180000,
+            "raw": -0.0051733120866857,
+            "reason": "hold",
+            "split": "train"
+          },
+          {
+            "dir": -1,
+            "edge": 0.06895918097117718,
+            "entry_ts": 1736128780000,
+            "exit_ts": 1736301580000,
+            "raw": 0.07075918097117717,
+            "reason": "hold",
+            "split": "train"
+          },
+          {
+            "dir": 1,
+            "edge": -0.043669825197957014,
+            "entry_ts": 1736305180000,
+            "exit_ts": 1736477980000,
+            "raw": -0.04186982519795701,
+            "reason": "hold",
+            "split": "train"
+          }
+        ],
+        "score": 0.5624636793230174,
+        "side": "both",
+        "stop": 0,
+        "symbol": "ETH/USDT",
+        "take": 0,
+        "threshold": 0.02,
+        "valid": true
+      },
+      {
+        "family": "momentum",
+        "hold": 48,
+        "lookback": 4,
+        "metrics": {
+          "oos": {
+            "count": 31,
+            "edge": 0.010821746164996515,
+            "hit": 0.6129032258064516,
+            "sum_edge": 0.33547413111489194,
+            "t": 1.6897039407174614
+          },
+          "train": {
+            "count": 175,
+            "edge": 0.002987233175229945,
+            "hit": 0.48,
+            "sum_edge": 0.5227658056652403,
+            "t": 0.7353002081313678
+          },
+          "val": {
+            "count": 28,
+            "edge": 0.009237815655361597,
+            "hit": 0.5357142857142857,
+            "sum_edge": 0.2586588383501247,
+            "t": 1.0177851269727092
+          }
+        },
+        "sample_trades": [
+          {
+            "dir": -1,
+            "edge": -0.036914284230632234,
+            "entry_ts": 1735707580000,
+            "exit_ts": 1735880380000,
+            "raw": -0.03511428423063223,
+            "reason": "hold",
+            "split": "train"
+          },
+          {
+            "dir": -1,
+            "edge": -0.05870643057282641,
+            "entry_ts": 1735887580000,
+            "exit_ts": 1736060380000,
+            "raw": -0.056906430572826405,
+            "reason": "hold",
+            "split": "train"
+          },
+          {
+            "dir": -1,
+            "edge": -0.016821744073574483,
+            "entry_ts": 1736067580000,
+            "exit_ts": 1736240380000,
+            "raw": -0.015021744073574483,
+            "reason": "hold",
+            "split": "train"
+          }
+        ],
+        "score": 0.5170801308564783,
+        "side": "both",
+        "stop": 0,
+        "symbol": "ETH/USDT",
+        "take": 0,
+        "threshold": 0.004,
+        "valid": true
+      },
+      {
+        "family": "reversion",
+        "hold": 72,
+        "lookback": 8,
+        "metrics": {
+          "oos": {
+            "count": 13,
+            "edge": 0.020205561217157938,
+            "hit": 0.6923076923076923,
+            "sum_edge": 0.2626722958230532,
+            "t": 1.8324247813181567
+          },
+          "train": {
+            "count": 150,
+            "edge": 0.008055900114760239,
+            "hit": 0.5333333333333333,
+            "sum_edge": 1.2083850172140358,
+            "t": 1.4962776006944711
+          },
+          "val": {
+            "count": 21,
+            "edge": 0.012090345386925442,
+            "hit": 0.47619047619047616,
+            "sum_edge": 0.25389725312543426,
+            "t": 0.7719601003607863
+          }
+        },
+        "sample_trades": [
+          {
+            "dir": -1,
+            "edge": -0.056508916084800444,
+            "entry_ts": 1735783180000,
+            "exit_ts": 1735819180000,
+            "raw": -0.05470891608480044,
+            "reason": "stop",
+            "split": "train"
+          },
+          {
+            "dir": -1,
+            "edge": -0.009975747290530388,
+            "entry_ts": 1735905580000,
+            "exit_ts": 1736164780000,
+            "raw": -0.008175747290530389,
+            "reason": "hold",
+            "split": "train"
+          },
+          {
+            "dir": -1,
+            "edge": 0.0987036322300612,
+            "entry_ts": 1736182780000,
+            "exit_ts": 1736308780000,
+            "raw": 0.1005036322300612,
+            "reason": "take",
+            "split": "train"
+          }
+        ],
+        "score": 0.5104594241071738,
+        "side": "both",
+        "stop": 0.05,
+        "symbol": "SOL/USDT",
+        "take": 0.1,
+        "threshold": 0.03,
+        "valid": true
+      }
+    ]
+  },
   "live_equivalent": {
+    "profit_moonshot_hourly_shock_reversion_eth_12h_mode": {
+      "component_summary": [
+        {
+          "component_id": "profit_moonshot_hourly_shock_reversion_eth_12h_72h_stop5_take10",
+          "label": "profit_moonshot_hourly_shock_reversion_eth_12h_72h_stop5_take10",
+          "strategy_class": "HourlyShockReversionStrategy",
+          "symbols": [
+            "ETH/USDT"
+          ],
+          "weight": 1.0
+        }
+      ],
+      "mode": "profit_moonshot_hourly_shock_reversion_eth_12h_mode",
+      "oos_coverage": {
+        "ETH/USDT": {
+          "oos": {
+            "committed_day_count": 65,
+            "complete_raw_first": true,
+            "missing_day_count": 0,
+            "required_day_count": 65
+          },
+          "train": {
+            "committed_day_count": 365,
+            "complete_raw_first": true,
+            "missing_day_count": 0,
+            "required_day_count": 365
+          },
+          "val": {
+            "committed_day_count": 59,
+            "complete_raw_first": true,
+            "missing_day_count": 0,
+            "required_day_count": 59
+          }
+        }
+      },
+      "oos_scaled_score_report_only": 12.18358261630005,
+      "promotion_role": "current best deployment-review candidate",
+      "selection_score": 13.946967703830367,
+      "splits": {
+        "oos": {
+          "cagr": 2.230644305400986e-05,
+          "calmar": 0.007911579902341726,
+          "final_equity": 10082.856846816749,
+          "liquidation_count": 0,
+          "max_drawdown": 0.0028194675816150755,
+          "sharpe": 0.10065076094708575,
+          "sortino": 0.12832138288955808,
+          "status": "completed",
+          "total_return": 0.008284409681674987,
+          "trade_count": 30,
+          "volatility": 0.0002218642578021208
+        },
+        "train": {
+          "cagr": 1.1642601424499688e-05,
+          "calmar": 0.0005519930708375277,
+          "final_equity": 10245.240276559154,
+          "liquidation_count": 0,
+          "max_drawdown": 0.021091934010755986,
+          "sharpe": 0.034278913698055795,
+          "sortino": 0.04009322705943599,
+          "status": "completed",
+          "total_return": 0.02452295665591553,
+          "trade_count": 264,
+          "volatility": 0.00034134074141711947
+        },
+        "val": {
+          "cagr": 1.869877573756895e-05,
+          "calmar": 0.004272209394318601,
+          "final_equity": 10063.26941036365,
+          "liquidation_count": 0,
+          "max_drawdown": 0.0043768397125935644,
+          "sharpe": 0.0709462598133011,
+          "sortino": 0.08088629030043226,
+          "status": "completed",
+          "total_return": 0.00632341503636491,
+          "trade_count": 47,
+          "volatility": 0.0002640514532260825
+        }
+      },
+      "status": "live_equivalent_validated",
+      "user_gate_pass": true
+    },
+    "profit_moonshot_hourly_shock_reversion_eth_mode": {
+      "mode": "profit_moonshot_hourly_shock_reversion_eth_mode",
+      "oos_coverage": {
+        "ETH/USDT": {
+          "oos": {
+            "committed_day_count": 65,
+            "complete_raw_first": true,
+            "missing_day_count": 0,
+            "required_day_count": 65
+          },
+          "train": {
+            "committed_day_count": 365,
+            "complete_raw_first": true,
+            "missing_day_count": 0,
+            "required_day_count": 365
+          },
+          "val": {
+            "committed_day_count": 59,
+            "complete_raw_first": true,
+            "missing_day_count": 0,
+            "required_day_count": 59
+          }
+        }
+      },
+      "oos_scaled_score_report_only": 10.40991059485405,
+      "reject_reason": "Positive but weaker than the existing +0.2910% OOS shadow baseline (+0.2716% OOS).",
+      "selection_score": 13.923290611953725,
+      "splits": {
+        "oos": {
+          "cagr": 7.334341479703355e-06,
+          "calmar": 0.0012986713678348188,
+          "final_equity": 10027.23274564047,
+          "liquidation_count": 0,
+          "max_drawdown": 0.005647573097673951,
+          "sharpe": 0.020248079649452307,
+          "sortino": 0.02481082639270178,
+          "status": "completed",
+          "total_return": 0.0027163895640469615,
+          "trade_count": 69,
+          "volatility": 0.0003655219116246641
+        },
+        "train": {
+          "cagr": 3.6090431441149207e-06,
+          "calmar": 0.00029155135892194417,
+          "final_equity": 10075.403986119385,
+          "liquidation_count": 0,
+          "max_drawdown": 0.01237875603619174,
+          "sharpe": 0.014637058681152925,
+          "sortino": 0.01693439430097542,
+          "status": "completed",
+          "total_return": 0.007538361611938438,
+          "trade_count": 451,
+          "volatility": 0.0002486809563174808
+        },
+        "val": {
+          "cagr": 3.0755104318158644e-05,
+          "calmar": 0.0035148274715379613,
+          "final_equity": 10104.250560710048,
+          "liquidation_count": 0,
+          "max_drawdown": 0.008750103544826717,
+          "sharpe": 0.06555029869823413,
+          "sortino": 0.06846143659073292,
+          "status": "completed",
+          "total_return": 0.010421659071004896,
+          "trade_count": 66,
+          "volatility": 0.0004708672998332423
+        }
+      },
+      "status": "live_equivalent_validated",
+      "user_gate_pass": false
+    },
     "profit_moonshot_leadlag_slow_diffusion_mode": {
       "mode": "profit_moonshot_leadlag_slow_diffusion_mode",
       "oos_coverage": {
@@ -451,6 +947,34 @@
       "max_rss_mib": 2619.10546875,
       "operation": "external_alpha_screen_all5_corrected",
       "status": 0
+    },
+    {
+      "elapsed": "5:59.38",
+      "max_rss_kb": 2862792,
+      "max_rss_mib": 2795.6953125,
+      "operation": "simple_hourly_alpha_overlap_screen",
+      "status": 0
+    },
+    {
+      "elapsed": "2:12.29",
+      "max_rss_kb": 2960012,
+      "max_rss_mib": 2890.63671875,
+      "operation": "stateful_hourly_shock_reversion_screen",
+      "status": 0
+    },
+    {
+      "elapsed": "8:07.00",
+      "max_rss_kb": 1338900,
+      "max_rss_mib": 1307.51953125,
+      "operation": "hourly_shock_reversion_eth_4h_live_equivalent",
+      "status": 0
+    },
+    {
+      "elapsed": "8:02.04",
+      "max_rss_kb": 1331376,
+      "max_rss_mib": 1300.171875,
+      "operation": "hourly_shock_reversion_eth_12h_live_equivalent",
+      "status": 0
     }
   ],
   "source_branch": "private-main",
@@ -462,7 +986,10 @@
   },
   "verification": {
     "continuation_validator": {
-      "operator_override": "no deployment-ready candidate",
+      "candidate_mode": "profit_moonshot_hourly_shock_reversion_eth_12h_mode",
+      "candidate_oos_return": 0.008284409681674987,
+      "candidate_primary_split": "oos",
+      "operator_oos_override_active": true,
       "path": "var/reports/profit_moonshot_20260501/current_tail_20260505/continuation_validation_20260505.json",
       "status": "passed"
     },
@@ -472,12 +999,21 @@
       "peak_rss_mib": 2619.11,
       "status": "passed"
     },
-    "profit_moonshot_research_summary": "passed max_files=400 generated_at=2026-05-05T09:10:00Z",
-    "ruff_check": "passed",
+    "hourly_shock_reversion_live_equivalent": {
+      "best_mode": "profit_moonshot_hourly_shock_reversion_eth_12h_mode",
+      "best_oos_sharpe": 0.10065076094708575,
+      "best_oos_total_return": 0.008284409681674987,
+      "failed_probe": "profit_moonshot_hourly_shock_reversion_eth_mode",
+      "failed_probe_oos_total_return": 0.0027163895640469615,
+      "status": "passed_oos_gate_for_best_mode"
+    },
+    "profit_moonshot_research_summary": "passed max_files=650 generated_at=2026-05-05T10:10:00Z with operator_oos_override_candidate_found",
+    "ruff_check": "passed full repo after validator override",
     "targeted_pytest": {
-      "elapsed": "3.16s",
+      "elapsed": "1.44s",
+      "includes": "artifact portfolio mode, hourly shock strategy, research summary/validator, live selection, strategy factory, live-equivalent revalidation, derivatives-flow screen, historic data support, materialization",
       "status": "passed",
-      "tests": 75
+      "tests": 81
     }
   }
 }

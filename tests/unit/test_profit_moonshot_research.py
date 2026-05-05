@@ -199,3 +199,68 @@ def test_profit_moonshot_continuation_validator_requires_improvement(tmp_path: P
 
     assert result["passed"] is True
     assert result["improved_over_baseline"] is True
+
+
+def test_profit_moonshot_continuation_validator_prefers_oos_operator_override(tmp_path: Path):
+    module_path = (
+        Path(__file__).resolve().parents[2]
+        / "scripts"
+        / "research"
+        / "validate_profit_moonshot_continuation.py"
+    )
+    spec = importlib.util.spec_from_file_location("validate_profit_moonshot_continuation", module_path)
+    validator = importlib.util.module_from_spec(spec)
+    assert spec is not None and spec.loader is not None
+    sys.modules[spec.name] = validator
+    spec.loader.exec_module(validator)
+
+    summary_path = tmp_path / "summary.json"
+    summary_path.write_text(
+        json.dumps(
+            {
+                "decision": "operator_oos_override_candidate_found",
+                "promoted_candidate": {
+                    "mode": "val_only_winner",
+                    "total_return": 0.012,
+                    "sharpe": 0.02,
+                    "sortino": 0.02,
+                    "trades": 20,
+                    "liquidations": 0,
+                    "blockers": [],
+                },
+                "operator_oos_override": {
+                    "user_gate_pass": True,
+                    "candidate": {
+                        "mode": "oos_winner",
+                        "primary_split": "oos",
+                        "total_return": validator.BASELINE_VAL_RETURN + 0.002,
+                        "sharpe": 0.10,
+                        "sortino": 0.12,
+                        "trades": 30,
+                        "liquidations": 0,
+                        "blockers": [],
+                    },
+                },
+                "ranked_candidates": [
+                    {
+                        "mode": "val_only_winner",
+                        "promotion_eligible": True,
+                        "total_return": 0.012,
+                        "sharpe": 0.02,
+                        "sortino": 0.02,
+                        "trades": 20,
+                        "liquidations": 0,
+                        "blockers": [],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = validator.validate(summary_path)
+
+    assert result["passed"] is True
+    assert result["candidate_mode"] == "oos_winner"
+    assert result["candidate_primary_split"] == "oos"
+    assert result["operator_oos_override_active"] is True

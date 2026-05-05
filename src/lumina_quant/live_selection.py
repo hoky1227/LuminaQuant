@@ -67,6 +67,8 @@ SUPPORTED_LIVE_PORTFOLIO_MODES = frozenset(
         "profit_moonshot_leadlag_slow_diffusion_mode",
         "profit_moonshot_leadlag_slow_diffusion_sol_eth_mode",
         "profit_moonshot_leadlag_slow_diffusion_ensemble_mode",
+        "profit_moonshot_hourly_shock_reversion_eth_mode",
+        "profit_moonshot_hourly_shock_reversion_eth_12h_mode",
     }
 )
 
@@ -210,6 +212,10 @@ def infer_strategy_class_name(candidate_name: str) -> str | None:
         "cross_crypto_slow_diffusion"
     ):
         return "CrossCryptoSlowDiffusionStrategy"
+    if token.startswith("profit_moonshot_hourly_shock_reversion") or token.startswith(
+        "hourly_shock_reversion"
+    ):
+        return "HourlyShockReversionStrategy"
     if token.startswith("profit_moonshot_trend"):
         return "ProfitMoonshotTrendStrategy"
     if token.startswith("profit_moonshot_breakout"):

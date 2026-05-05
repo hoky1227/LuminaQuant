@@ -58,3 +58,14 @@ def test_infer_strategy_class_name_leadlag_slow_diffusion_mode():
         infer_strategy_class_name("profit_moonshot_leadlag_slow_diffusion_sol_eth_mode")
         == "CrossCryptoSlowDiffusionStrategy"
     )
+
+
+def test_infer_strategy_class_name_hourly_shock_reversion_mode():
+    assert (
+        infer_strategy_class_name("profit_moonshot_hourly_shock_reversion_eth_mode")
+        == "HourlyShockReversionStrategy"
+    )
+    assert (
+        infer_strategy_class_name("profit_moonshot_hourly_shock_reversion_eth_12h_mode")
+        == "HourlyShockReversionStrategy"
+    )

@@ -87,6 +87,9 @@ DerivativesFlowSqueezeStrategy = _optional_strategy_class(
 CrossCryptoSlowDiffusionStrategy = _optional_strategy_class(
     "cross_crypto_slow_diffusion", "CrossCryptoSlowDiffusionStrategy"
 )
+HourlyShockReversionStrategy = _optional_strategy_class(
+    "hourly_shock_reversion", "HourlyShockReversionStrategy"
+)
 
 StrategyClass = type[Strategy]
 
@@ -128,6 +131,8 @@ if DerivativesFlowSqueezeStrategy is not None:
     _RAW_STRATEGY_MAP["DerivativesFlowSqueezeStrategy"] = DerivativesFlowSqueezeStrategy
 if CrossCryptoSlowDiffusionStrategy is not None:
     _RAW_STRATEGY_MAP["CrossCryptoSlowDiffusionStrategy"] = CrossCryptoSlowDiffusionStrategy
+if HourlyShockReversionStrategy is not None:
+    _RAW_STRATEGY_MAP["HourlyShockReversionStrategy"] = HourlyShockReversionStrategy
 
 _STRATEGY_MAP: dict[str, StrategyClass] = {
     name: cast(StrategyClass, cls) for name, cls in _RAW_STRATEGY_MAP.items() if cls is not None
@@ -162,6 +167,7 @@ _STRATEGY_TIER_HINTS: dict[str, str] = {
     "PerpCrowdingCarryStrategy": "live_opt_in",
     "DerivativesFlowSqueezeStrategy": "live_opt_in",
     "CrossCryptoSlowDiffusionStrategy": "live_opt_in",
+    "HourlyShockReversionStrategy": "live_opt_in",
     "RegimeBreakoutCandidateStrategy": "research_only",
     "VolatilityCompressionReversionStrategy": "research_only",
     "MicroRangeExpansion1sStrategy": "research_only",
@@ -204,6 +210,7 @@ _OPTUNA_TRIAL_OVERRIDES: dict[str, str] = {
     "PerpCrowdingCarryStrategy": "16",
     "DerivativesFlowSqueezeStrategy": "16",
     "CrossCryptoSlowDiffusionStrategy": "16",
+    "HourlyShockReversionStrategy": "16",
     "MicroRangeExpansion1sStrategy": "16",
 }
 

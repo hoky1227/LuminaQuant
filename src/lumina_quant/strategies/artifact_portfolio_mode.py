@@ -125,6 +125,8 @@ _LIVE_PORTFOLIO_MODE_ALIASES = {
     "profit_moonshot_leadlag_slow_diffusion_mode",
     "profit_moonshot_leadlag_slow_diffusion_sol_eth_mode",
     "profit_moonshot_leadlag_slow_diffusion_ensemble_mode",
+    "profit_moonshot_hourly_shock_reversion_eth_mode",
+    "profit_moonshot_hourly_shock_reversion_eth_12h_mode",
 }
 _PROFIT_MODE_UNBOUNDED_CHILD_TARGET_ALLOCATION = 0.02
 _PROFIT_MODE_UNBOUNDED_CHILD_MAX_ORDER_VALUE = 250.0
@@ -1095,6 +1097,58 @@ def _alias_rows(token: str) -> list[dict[str, Any]] | None:
                     "allow_short": True,
                 },
                 "weight": 0.40,
+            },
+        ],
+        "profit_moonshot_hourly_shock_reversion_eth_mode": [
+            {
+                "candidate_id": "profit_moonshot_hourly_shock_reversion_eth_4h_48h_stop2",
+                "name": "profit_moonshot_hourly_shock_reversion_eth_4h_48h_stop2",
+                "strategy_class": "HourlyShockReversionStrategy",
+                "symbols": ["ETH/USDT"],
+                "params": {
+                    # Stateful raw-first screen survivor: fade ETH 4h shocks
+                    # on completed 1h bars, hold up to 48h, and cap downside
+                    # at 2%.  Sizing stays at the same conservative 0.8%
+                    # target allocation as the weak slow-diffusion sleeve.
+                    "target_symbol": "ETH/USDT",
+                    "timeframe": "1h",
+                    "lookback_bars": 4,
+                    "return_threshold": 0.006,
+                    "max_hold_bars": 48,
+                    "target_allocation": 0.008,
+                    "max_order_value": 175.0,
+                    "stop_loss_pct": 0.02,
+                    "take_profit_pct": 0.0,
+                    "allow_long": True,
+                    "allow_short": True,
+                },
+                "weight": 1.0,
+            },
+        ],
+        "profit_moonshot_hourly_shock_reversion_eth_12h_mode": [
+            {
+                "candidate_id": "profit_moonshot_hourly_shock_reversion_eth_12h_72h_stop5_take10",
+                "name": "profit_moonshot_hourly_shock_reversion_eth_12h_72h_stop5_take10",
+                "strategy_class": "HourlyShockReversionStrategy",
+                "symbols": ["ETH/USDT"],
+                "params": {
+                    # Second stateful screen survivor: fewer ETH events, wider
+                    # 12h shock lookback, 72h hold, 5% stop and 10% take-profit.
+                    # Keep the same 0.8% allocation cap instead of increasing
+                    # gross exposure.
+                    "target_symbol": "ETH/USDT",
+                    "timeframe": "1h",
+                    "lookback_bars": 12,
+                    "return_threshold": 0.01,
+                    "max_hold_bars": 72,
+                    "target_allocation": 0.008,
+                    "max_order_value": 175.0,
+                    "stop_loss_pct": 0.05,
+                    "take_profit_pct": 0.10,
+                    "allow_long": True,
+                    "allow_short": True,
+                },
+                "weight": 1.0,
             },
         ],
         "derivatives_flow_squeeze_mode": [
