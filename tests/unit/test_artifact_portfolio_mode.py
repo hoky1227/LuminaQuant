@@ -345,6 +345,61 @@ def test_profit_moonshot_hourly_shock_reversion_eth_12h_mode_uses_second_survivo
     assert component.params["take_profit_pct"] == 0.10
 
 
+def test_profit_moonshot_hourly_shock_reversion_dense_mode_lowers_threshold_only() -> None:
+    definition = MODULE.resolve_portfolio_mode_definition(
+        "profit_moonshot_hourly_shock_reversion_eth_12h_dense_mode"
+    )
+
+    assert supports_live_portfolio_mode("profit_moonshot_hourly_shock_reversion_eth_12h_dense_mode")
+    assert definition.symbols == ["ETH/USDT"]
+    component = definition.components[0]
+    assert component.strategy_class == "HourlyShockReversionStrategy"
+    assert component.params["lookback_bars"] == 12
+    assert component.params["return_threshold"] == 0.008
+    assert component.params["max_hold_bars"] == 72
+    assert component.params["target_allocation"] == 0.008
+    assert component.params["max_order_value"] == 175.0
+
+
+def test_profit_moonshot_hourly_shock_reversion_funding_guard_mode_filters_hours() -> None:
+    definition = MODULE.resolve_portfolio_mode_definition(
+        "profit_moonshot_hourly_shock_reversion_eth_12h_funding_guard_mode"
+    )
+
+    assert supports_live_portfolio_mode(
+        "profit_moonshot_hourly_shock_reversion_eth_12h_funding_guard_mode"
+    )
+    assert definition.symbols == ["ETH/USDT"]
+    component = definition.components[0]
+    assert component.strategy_class == "HourlyShockReversionStrategy"
+    assert component.params["return_threshold"] == 0.008
+    assert component.params["excluded_entry_hours_utc"] == "0,1,8,9,16,17"
+    assert component.params["target_allocation"] == 0.008
+    assert component.weight == 1.0
+
+
+def test_profit_moonshot_filtered_shock_reversion_diversified_mode_keeps_gross_cap() -> None:
+    definition = MODULE.resolve_portfolio_mode_definition(
+        "profit_moonshot_filtered_shock_reversion_diversified_mode"
+    )
+
+    assert supports_live_portfolio_mode("profit_moonshot_filtered_shock_reversion_diversified_mode")
+    assert definition.symbols == ["ETH/USDT", "SOL/USDT"]
+    assert [component.strategy_class for component in definition.components] == [
+        "HourlyShockReversionStrategy",
+        "HourlyShockReversionStrategy",
+    ]
+    assert sum(component.weight for component in definition.components) == 1.0
+    assert (
+        sum(component.weight * component.params["target_allocation"] for component in definition.components)
+        == 0.008
+    )
+    sol_component = next(
+        item for item in definition.components if item.params["target_symbol"] == "SOL/USDT"
+    )
+    assert sol_component.params["entry_hours_utc"] == "2,3,4,10,11,12,18,19,20"
+
+
 def test_resolve_portfolio_mode_definition_supports_recursive_allocator_sleeves(monkeypatch, tmp_path: Path) -> None:
     def _write(path: Path, payload: dict) -> Path:
         path.write_text(json.dumps(payload), encoding="utf-8")
@@ -619,6 +674,12 @@ def test_resolve_portfolio_mode_definition_supports_recursive_allocator_sleeves(
     assert "profit_moonshot_leadlag_slow_diffusion_ensemble_mode" in MODULE.supported_portfolio_modes()
     assert "profit_moonshot_hourly_shock_reversion_eth_mode" in MODULE.supported_portfolio_modes()
     assert "profit_moonshot_hourly_shock_reversion_eth_12h_mode" in MODULE.supported_portfolio_modes()
+    assert "profit_moonshot_hourly_shock_reversion_eth_12h_dense_mode" in MODULE.supported_portfolio_modes()
+    assert (
+        "profit_moonshot_hourly_shock_reversion_eth_12h_funding_guard_mode"
+        in MODULE.supported_portfolio_modes()
+    )
+    assert "profit_moonshot_filtered_shock_reversion_diversified_mode" in MODULE.supported_portfolio_modes()
     assert supports_live_portfolio_mode("legacy_no_highvol_hybrid_mode")
     assert supports_live_portfolio_mode("retuned_live_portfolio_hybrid_mode")
     assert supports_live_portfolio_mode("profit_reboot_panic_rebound_mode")
@@ -642,6 +703,11 @@ def test_resolve_portfolio_mode_definition_supports_recursive_allocator_sleeves(
     assert supports_live_portfolio_mode("profit_moonshot_leadlag_slow_diffusion_ensemble_mode")
     assert supports_live_portfolio_mode("profit_moonshot_hourly_shock_reversion_eth_mode")
     assert supports_live_portfolio_mode("profit_moonshot_hourly_shock_reversion_eth_12h_mode")
+    assert supports_live_portfolio_mode("profit_moonshot_hourly_shock_reversion_eth_12h_dense_mode")
+    assert supports_live_portfolio_mode(
+        "profit_moonshot_hourly_shock_reversion_eth_12h_funding_guard_mode"
+    )
+    assert supports_live_portfolio_mode("profit_moonshot_filtered_shock_reversion_diversified_mode")
 
 
 def test_profit_reboot_synthetic_modes_resolve_new_strategy_families() -> None:

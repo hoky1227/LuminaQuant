@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
+import math
 from typing import Any
 
 from lumina_quant.core.events import SignalEvent
@@ -51,6 +53,23 @@ class HourlyShockReversionStrategy(Strategy):
             ),
             "allow_long": HyperParam.boolean("allow_long", default=True, grid=[True, False]),
             "allow_short": HyperParam.boolean("allow_short", default=True, grid=[True, False]),
+            "entry_hours_utc": HyperParam.string("entry_hours_utc", default="", tunable=False),
+            "excluded_entry_hours_utc": HyperParam.string(
+                "excluded_entry_hours_utc", default="", tunable=False
+            ),
+            "regime_symbol": HyperParam.string("regime_symbol", default="", tunable=False),
+            "regime_lookback_bars": HyperParam.integer(
+                "regime_lookback_bars", default=24, low=1, high=240, tunable=False
+            ),
+            "counterguard_return_threshold": HyperParam.floating(
+                "counterguard_return_threshold", default=0.0, low=0.0, high=1.0, tunable=False
+            ),
+            "volatility_lookback_bars": HyperParam.integer(
+                "volatility_lookback_bars", default=0, low=0, high=240, tunable=False
+            ),
+            "max_realized_volatility": HyperParam.floating(
+                "max_realized_volatility", default=0.0, low=0.0, high=1.0, tunable=False
+            ),
         }
 
     def __init__(
@@ -68,6 +87,13 @@ class HourlyShockReversionStrategy(Strategy):
         take_profit_pct: float = 0.0,
         allow_long: bool = True,
         allow_short: bool = True,
+        entry_hours_utc: str | list[int] | tuple[int, ...] = "",
+        excluded_entry_hours_utc: str | list[int] | tuple[int, ...] = "",
+        regime_symbol: str = "",
+        regime_lookback_bars: int = 24,
+        counterguard_return_threshold: float = 0.0,
+        volatility_lookback_bars: int = 0,
+        max_realized_volatility: float = 0.0,
     ) -> None:
         self.bars = bars
         self.events = events
@@ -85,6 +111,13 @@ class HourlyShockReversionStrategy(Strategy):
                 "take_profit_pct": take_profit_pct,
                 "allow_long": allow_long,
                 "allow_short": allow_short,
+                "entry_hours_utc": entry_hours_utc,
+                "excluded_entry_hours_utc": excluded_entry_hours_utc,
+                "regime_symbol": regime_symbol,
+                "regime_lookback_bars": regime_lookback_bars,
+                "counterguard_return_threshold": counterguard_return_threshold,
+                "volatility_lookback_bars": volatility_lookback_bars,
+                "max_realized_volatility": max_realized_volatility,
             },
             keep_unknown=False,
         )
@@ -99,6 +132,16 @@ class HourlyShockReversionStrategy(Strategy):
         self.take_profit_pct = max(0.0, float(resolved["take_profit_pct"]))
         self.allow_long = bool(resolved["allow_long"])
         self.allow_short = bool(resolved["allow_short"])
+        self.entry_hours_utc = self._parse_hours(resolved["entry_hours_utc"])
+        self.excluded_entry_hours_utc = self._parse_hours(resolved["excluded_entry_hours_utc"])
+        raw_regime_symbol = str(resolved["regime_symbol"] or "").strip()
+        self.regime_symbol = canonical_symbol(raw_regime_symbol) if raw_regime_symbol else ""
+        self.regime_lookback_bars = max(1, int(resolved["regime_lookback_bars"]))
+        self.counterguard_return_threshold = max(
+            0.0, float(resolved["counterguard_return_threshold"])
+        )
+        self.volatility_lookback_bars = max(0, int(resolved["volatility_lookback_bars"]))
+        self.max_realized_volatility = max(0.0, float(resolved["max_realized_volatility"]))
         self._state = _PositionState()
 
     def get_state(self) -> dict[str, Any]:
@@ -147,7 +190,144 @@ class HourlyShockReversionStrategy(Strategy):
             return str(bar.get("time") or bar.get("datetime") or "")
         return ""
 
-    def _metadata(self, *, shock_return: float, reason: str) -> dict[str, Any]:
+    @staticmethod
+    def _parse_hours(raw: Any) -> frozenset[int]:
+        if raw is None:
+            return frozenset()
+        if isinstance(raw, str):
+            tokens = [item.strip() for item in raw.replace(";", ",").split(",")]
+        else:
+            try:
+                tokens = list(raw)
+            except TypeError:
+                tokens = [raw]
+        hours: set[int] = set()
+        for token in tokens:
+            if token == "" or token is None:
+                continue
+            try:
+                hour = int(token)
+            except Exception:
+                continue
+            if 0 <= hour <= 23:
+                hours.add(hour)
+        return frozenset(hours)
+
+    @staticmethod
+    def _bar_hour_utc(bar: Any) -> int | None:
+        raw = None
+        if isinstance(bar, (tuple, list)) and bar:
+            raw = bar[0]
+        elif isinstance(bar, dict):
+            raw = bar.get("time") or bar.get("datetime")
+        if raw is None:
+            return None
+        if isinstance(raw, datetime):
+            value = raw
+            if value.tzinfo is not None:
+                value = value.astimezone(UTC)
+            return int(value.hour)
+        if isinstance(raw, (int, float)):
+            ts = float(raw)
+            if abs(ts) > 100_000_000_000:
+                ts /= 1000.0
+            return int(datetime.fromtimestamp(ts, tz=UTC).hour)
+        text = str(raw).strip()
+        if not text:
+            return None
+        try:
+            value = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except Exception:
+            return None
+        if value.tzinfo is not None:
+            value = value.astimezone(UTC)
+        return int(value.hour)
+
+    @staticmethod
+    def _realized_volatility(bars: list[Any], lookback: int) -> float:
+        if lookback <= 1 or len(bars) < 3:
+            return 0.0
+        subset = bars[-max(2, lookback) :]
+        returns: list[float] = []
+        previous = HourlyShockReversionStrategy._close(subset[0])
+        for bar in subset[1:]:
+            current = HourlyShockReversionStrategy._close(bar)
+            if previous is not None and current is not None and previous > 0.0 and current > 0.0:
+                returns.append(math.log(float(current) / float(previous)))
+            previous = current
+        if not returns:
+            return 0.0
+        return math.sqrt(sum(value * value for value in returns) / len(returns))
+
+    def _entry_filters_pass(
+        self,
+        *,
+        aggregator: Any,
+        latest_bar: Any,
+        signal_type: str,
+        target_bars: list[Any],
+    ) -> tuple[bool, dict[str, Any]]:
+        metadata: dict[str, Any] = {}
+        hour = self._bar_hour_utc(latest_bar)
+        if self.entry_hours_utc:
+            metadata["entry_hours_utc"] = sorted(self.entry_hours_utc)
+            if hour is None or hour not in self.entry_hours_utc:
+                metadata["filter_reject"] = "entry_hour_not_allowed"
+                metadata["entry_hour_utc"] = hour
+                return False, metadata
+        if self.excluded_entry_hours_utc:
+            metadata["excluded_entry_hours_utc"] = sorted(self.excluded_entry_hours_utc)
+            if hour is not None and hour in self.excluded_entry_hours_utc:
+                metadata["filter_reject"] = "entry_hour_excluded"
+                metadata["entry_hour_utc"] = hour
+                return False, metadata
+        if hour is not None:
+            metadata["entry_hour_utc"] = hour
+
+        if self.max_realized_volatility > 0.0 and self.volatility_lookback_bars > 1:
+            realized_volatility = self._realized_volatility(target_bars, self.volatility_lookback_bars)
+            metadata["realized_volatility"] = float(realized_volatility)
+            metadata["max_realized_volatility"] = float(self.max_realized_volatility)
+            if realized_volatility > self.max_realized_volatility:
+                metadata["filter_reject"] = "realized_volatility_too_high"
+                return False, metadata
+
+        if self.regime_symbol and self.counterguard_return_threshold > 0.0:
+            regime_bars = self._completed_bars(
+                aggregator,
+                self.regime_symbol,
+                self.timeframe,
+                self.regime_lookback_bars + 2,
+            )
+            if len(regime_bars) <= self.regime_lookback_bars:
+                metadata["filter_reject"] = "regime_history_missing"
+                return False, metadata
+            latest = self._close(regime_bars[-1])
+            base = self._close(regime_bars[-1 - self.regime_lookback_bars])
+            if latest is None or base is None or latest <= 0.0 or base <= 0.0:
+                metadata["filter_reject"] = "regime_price_missing"
+                return False, metadata
+            regime_return = float(latest / base - 1.0)
+            metadata["regime_symbol"] = self.regime_symbol
+            metadata["regime_lookback_bars"] = int(self.regime_lookback_bars)
+            metadata["regime_return"] = regime_return
+            metadata["counterguard_return_threshold"] = float(self.counterguard_return_threshold)
+            if signal_type == "LONG" and regime_return <= -self.counterguard_return_threshold:
+                metadata["filter_reject"] = "counterguard_downtrend"
+                return False, metadata
+            if signal_type == "SHORT" and regime_return >= self.counterguard_return_threshold:
+                metadata["filter_reject"] = "counterguard_uptrend"
+                return False, metadata
+
+        return True, metadata
+
+    def _metadata(
+        self,
+        *,
+        shock_return: float,
+        reason: str,
+        filter_metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         return {
             "strategy": "HourlyShockReversionStrategy",
             "reason": reason,
@@ -159,6 +339,7 @@ class HourlyShockReversionStrategy(Strategy):
             "target_allocation": float(self.target_allocation),
             "max_symbol_exposure_pct": float(self.target_allocation),
             "max_order_value": float(self.max_order_value),
+            **dict(filter_metadata or {}),
         }
 
     def _emit(
@@ -285,11 +466,24 @@ class HourlyShockReversionStrategy(Strategy):
         else:
             return
 
+        filters_pass, filter_metadata = self._entry_filters_pass(
+            aggregator=aggregator,
+            latest_bar=latest_bar,
+            signal_type=signal_type,
+            target_bars=bars,
+        )
+        if not filters_pass:
+            return
+
         self._emit(
             event_time=event_time,
             signal_type=signal_type,
             price=float(latest_close),
-            metadata=self._metadata(shock_return=shock_return, reason=reason),
+            metadata=self._metadata(
+                shock_return=shock_return,
+                reason=reason,
+                filter_metadata=filter_metadata,
+            ),
         )
         self._state.mode = signal_type
         self._state.entry_price = float(latest_close)

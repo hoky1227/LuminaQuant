@@ -1,54 +1,5 @@
 {
   "artifact_kind": "profit_moonshot_research_summary",
-  "best_oos_candidate": {
-    "artifact_kind": "live_equivalent_revalidation",
-    "blockers": [],
-    "candidate_id": "profit_moonshot_hourly_shock_reversion_eth_12h_mode",
-    "final_equity": 10082.856846816749,
-    "liquidations": 0,
-    "max_drawdown": 0.0028194675816150755,
-    "mode": "profit_moonshot_hourly_shock_reversion_eth_12h_mode",
-    "name": "profit_moonshot_hourly_shock_reversion_eth_12h_mode",
-    "primary_split": "oos",
-    "promotion_eligible": true,
-    "selection_role": "alpha",
-    "sharpe": 0.10065076094708575,
-    "sortino": 0.12832138288955808,
-    "source_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_hourly_shock_reversion_eth_12h_mode/live_equivalent_revalidation_latest.json",
-    "source_kind": "live_equivalent",
-    "split_metrics": {
-      "oos": {
-        "final_equity": 10082.856846816749,
-        "liquidations": 0.0,
-        "max_drawdown": 0.0028194675816150755,
-        "sharpe": 0.10065076094708575,
-        "sortino": 0.12832138288955808,
-        "total_return": 0.008284409681674987,
-        "trades": 30.0
-      },
-      "train": {
-        "final_equity": 10245.240276559154,
-        "liquidations": 0.0,
-        "max_drawdown": 0.021091934010755986,
-        "sharpe": 0.034278913698055795,
-        "sortino": 0.04009322705943599,
-        "total_return": 0.02452295665591553,
-        "trades": 264.0
-      },
-      "val": {
-        "final_equity": 10063.26941036365,
-        "liquidations": 0.0,
-        "max_drawdown": 0.0043768397125935644,
-        "sharpe": 0.0709462598133011,
-        "sortino": 0.08088629030043226,
-        "total_return": 0.00632341503636491,
-        "trades": 47.0
-      }
-    },
-    "status": "live_equivalent_validated",
-    "total_return": 0.008284409681674987,
-    "trades": 30
-  },
   "best_report_only_candidate": {
     "artifact_kind": "live_equivalent_revalidation",
     "blockers": [],
@@ -187,11 +138,43 @@
       "count": 4
     }
   ],
-  "candidate_count": 547,
+  "candidate_count": 1050,
   "decision": "operator_oos_override_candidate_found",
-  "generated_at": "2026-05-05T10:10:00Z",
+  "deployment_readiness": {
+    "best_oos_return_mode": "profit_moonshot_hourly_shock_reversion_eth_12h_mode",
+    "best_oos_return_sharpe": 0.10065076094708575,
+    "best_oos_sharpe": 0.11122460571327704,
+    "best_oos_sharpe_mode": "profit_moonshot_hourly_shock_reversion_eth_12h_funding_guard_mode",
+    "deployment_ready": false,
+    "reason": "No live-equivalent/raw-first full-engine candidate reached Sharpe >= 1.",
+    "sharpe_threshold_requested": 1.0
+  },
+  "external_sources": [
+    {
+      "title": "Binance USDⓈ-M Futures: Open Interest Statistics",
+      "url": "https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Open-Interest-Statistics",
+      "use": "Confirmed OI replay is an external derivative-state feature family, but current train/val history is too short for old claims."
+    },
+    {
+      "title": "Binance USDⓈ-M Futures: Taker Buy/Sell Volume",
+      "url": "https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Taker-BuySell-Volume",
+      "use": "Used to constrain taker-flow ideas to symbols with nonzero raw feature support; BNB/TRX missing flow were rejected."
+    },
+    {
+      "title": "Binance USDⓈ-M Futures: Funding Rate History",
+      "url": "https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Get-Funding-Rate-History",
+      "use": "Informed funding-settlement-hour entry exclusions around 00/08/16 UTC and adjacent windows."
+    },
+    {
+      "title": "arXiv 2212.06888: Crypto perpetual futures / funding context",
+      "url": "https://arxiv.org/abs/2212.06888",
+      "use": "Background support for funding/crowding/perpetual-market alpha families; not used as promotion evidence."
+    }
+  ],
+  "generated_at": "2026-05-05T11:25:00Z",
   "input_dir": "var/reports/profit_moonshot_20260501",
   "operator_oos_override": {
+    "applied_at": "2026-05-05T11:25:43Z",
     "candidate": {
       "artifact_kind": "live_equivalent_revalidation",
       "blockers": [],
@@ -207,199 +190,98 @@
       "sharpe": 0.10065076094708575,
       "sortino": 0.12832138288955808,
       "source_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_hourly_shock_reversion_eth_12h_mode/live_equivalent_revalidation_latest.json",
-      "source_kind": "live_equivalent",
+      "source_kind": "operator_oos_override",
       "split_metrics": {
         "oos": {
           "final_equity": 10082.856846816749,
-          "liquidations": 0.0,
+          "liquidations": 0,
           "max_drawdown": 0.0028194675816150755,
           "sharpe": 0.10065076094708575,
           "sortino": 0.12832138288955808,
           "total_return": 0.008284409681674987,
-          "trades": 30.0
+          "trades": 30
         },
         "train": {
           "final_equity": 10245.240276559154,
-          "liquidations": 0.0,
+          "liquidations": 0,
           "max_drawdown": 0.021091934010755986,
           "sharpe": 0.034278913698055795,
           "sortino": 0.04009322705943599,
           "total_return": 0.02452295665591553,
-          "trades": 264.0
+          "trades": 264
         },
         "val": {
           "final_equity": 10063.26941036365,
-          "liquidations": 0.0,
+          "liquidations": 0,
           "max_drawdown": 0.0043768397125935644,
           "sharpe": 0.0709462598133011,
           "sortino": 0.08088629030043226,
           "total_return": 0.00632341503636491,
-          "trades": 47.0
+          "trades": 47
         }
       },
       "status": "live_equivalent_validated",
       "total_return": 0.008284409681674987,
       "trades": 30
     },
-    "prior_weak_oos_return": 0.0029099973147681535,
-    "reason": "User-required OOS gate supersedes val-only ranking; 12h hourly shock reversion beats prior +0.2910% OOS bar while 4h val winner is weaker on OOS.",
-    "user_gate_pass": true,
-    "val_only_best_return_candidate": {
-      "artifact_kind": "live_equivalent_revalidation",
-      "blockers": [],
-      "candidate_id": "profit_moonshot_hourly_shock_reversion_eth_mode",
-      "family": "",
-      "final_equity": 10104.25056071,
-      "liquidations": 0,
-      "max_drawdown": 0.0087501035,
-      "mode": "profit_moonshot_hourly_shock_reversion_eth_mode",
-      "name": "profit_moonshot_hourly_shock_reversion_eth_mode",
-      "primary_split": "val",
-      "promotion_eligible": true,
-      "ranking_score": 106.4642227638,
-      "selection_role": "alpha",
-      "sharpe": 0.0655502987,
-      "sortino": 0.0684614366,
-      "source_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_hourly_shock_reversion_eth_mode/live_equivalent_revalidation_latest.json",
-      "source_kind": "live_equivalent",
-      "split_metrics": {
-        "oos": {
-          "final_equity": 0.0,
-          "liquidations": 0.0,
-          "max_drawdown": 0.005647573097673951,
-          "sharpe": 0.020248079649452307,
-          "sortino": 0.02481082639270178,
-          "total_return": 0.0027163895640469615,
-          "trades": 0.0
-        },
-        "train": {
-          "final_equity": 10075.403986119385,
-          "liquidations": 0.0,
-          "max_drawdown": 0.01237875603619174,
-          "sharpe": 0.014637058681152925,
-          "sortino": 0.01693439430097542,
-          "total_return": 0.007538361611938438,
-          "trades": 451.0
-        },
-        "val": {
-          "final_equity": 10104.250560710048,
-          "liquidations": 0.0,
-          "max_drawdown": 0.008750103544826717,
-          "sharpe": 0.06555029869823413,
-          "sortino": 0.06846143659073292,
-          "total_return": 0.010421659071004896,
-          "trades": 66.0
-        }
-      },
-      "status": "live_equivalent_validated",
-      "strategy_class": "",
-      "total_return": 0.0104216591,
-      "trades": 66
-    },
-    "val_only_promoted_candidate": {
-      "artifact_kind": "live_equivalent_revalidation",
-      "blockers": [],
-      "candidate_id": "profit_moonshot_momentum_hybrid_safe_mode",
-      "family": "",
-      "final_equity": 10028.4071721793,
-      "liquidations": 0,
-      "max_drawdown": 0.0104381369,
-      "mode": "profit_moonshot_momentum_hybrid_safe_mode",
-      "name": "profit_moonshot_momentum_hybrid_safe_mode",
-      "primary_split": "val",
-      "promotion_eligible": true,
-      "ranking_score": 106.6219767877,
-      "selection_role": "alpha",
-      "sharpe": 0.0101678581,
-      "sortino": 0.0098330952,
-      "source_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_momentum_hybrid_safe_mode/live_equivalent_revalidation_latest.json",
-      "source_kind": "live_equivalent",
-      "split_metrics": {
-        "oos": {
-          "final_equity": 0.0,
-          "liquidations": 0.0,
-          "max_drawdown": 0.03494203655908933,
-          "sharpe": -0.0014105326084949065,
-          "sortino": -0.0014164076710275531,
-          "total_return": -0.003341526314212029,
-          "trades": 0.0
-        },
-        "train": {
-          "final_equity": 9864.467075039582,
-          "liquidations": 0.0,
-          "max_drawdown": 0.1236949840884687,
-          "sharpe": 0.004175236857947524,
-          "sortino": 0.004367273527303323,
-          "total_return": -0.013551486496041987,
-          "trades": 1185.0
-        },
-        "val": {
-          "final_equity": 10028.407172179252,
-          "liquidations": 0.0,
-          "max_drawdown": 0.010438136911899503,
-          "sharpe": 0.010167858124343822,
-          "sortino": 0.009833095226985623,
-          "total_return": 0.002837148217925023,
-          "trades": 183.0
-        }
-      },
-      "status": "live_equivalent_validated",
-      "strategy_class": "",
-      "total_return": 0.0028371482,
-      "trades": 183
-    }
+    "not_deployment_ready_reason": "OOS Sharpe is 0.100651, below the user-demanded Sharpe 1 threshold.",
+    "reason": "User requires live-equivalent/OOS raw-first evidence; generated ranker is validation-split biased. This candidate remains the OOS-return best but is not deployment-ready under the later Sharpe>=1 complaint.",
+    "user_gate_pass": true
   },
   "output_dir": "var/reports/profit_moonshot_20260501",
   "promoted_candidate": {
     "artifact_kind": "live_equivalent_revalidation",
     "blockers": [],
-    "candidate_id": "profit_moonshot_hourly_shock_reversion_eth_12h_mode",
-    "final_equity": 10082.856846816749,
+    "candidate_id": "profit_moonshot_momentum_hybrid_safe_mode",
+    "family": "",
+    "final_equity": 10028.4071721793,
     "liquidations": 0,
-    "max_drawdown": 0.0028194675816150755,
-    "mode": "profit_moonshot_hourly_shock_reversion_eth_12h_mode",
-    "name": "profit_moonshot_hourly_shock_reversion_eth_12h_mode",
-    "primary_split": "oos",
+    "max_drawdown": 0.0104381369,
+    "mode": "profit_moonshot_momentum_hybrid_safe_mode",
+    "name": "profit_moonshot_momentum_hybrid_safe_mode",
+    "primary_split": "val",
     "promotion_eligible": true,
+    "ranking_score": 106.6219767877,
     "selection_role": "alpha",
-    "sharpe": 0.10065076094708575,
-    "sortino": 0.12832138288955808,
-    "source_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_hourly_shock_reversion_eth_12h_mode/live_equivalent_revalidation_latest.json",
+    "sharpe": 0.0101678581,
+    "sortino": 0.0098330952,
+    "source_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_momentum_hybrid_safe_mode/live_equivalent_revalidation_latest.json",
     "source_kind": "live_equivalent",
     "split_metrics": {
       "oos": {
-        "final_equity": 10082.856846816749,
+        "final_equity": 0.0,
         "liquidations": 0.0,
-        "max_drawdown": 0.0028194675816150755,
-        "sharpe": 0.10065076094708575,
-        "sortino": 0.12832138288955808,
-        "total_return": 0.008284409681674987,
-        "trades": 30.0
+        "max_drawdown": 0.03494203655908933,
+        "sharpe": -0.0014105326084949065,
+        "sortino": -0.0014164076710275531,
+        "total_return": -0.003341526314212029,
+        "trades": 0.0
       },
       "train": {
-        "final_equity": 10245.240276559154,
+        "final_equity": 9864.467075039582,
         "liquidations": 0.0,
-        "max_drawdown": 0.021091934010755986,
-        "sharpe": 0.034278913698055795,
-        "sortino": 0.04009322705943599,
-        "total_return": 0.02452295665591553,
-        "trades": 264.0
+        "max_drawdown": 0.1236949840884687,
+        "sharpe": 0.004175236857947524,
+        "sortino": 0.004367273527303323,
+        "total_return": -0.013551486496041987,
+        "trades": 1185.0
       },
       "val": {
-        "final_equity": 10063.26941036365,
+        "final_equity": 10028.407172179252,
         "liquidations": 0.0,
-        "max_drawdown": 0.0043768397125935644,
-        "sharpe": 0.0709462598133011,
-        "sortino": 0.08088629030043226,
-        "total_return": 0.00632341503636491,
-        "trades": 47.0
+        "max_drawdown": 0.010438136911899503,
+        "sharpe": 0.010167858124343822,
+        "sortino": 0.009833095226985623,
+        "total_return": 0.002837148217925023,
+        "trades": 183.0
       }
     },
     "status": "live_equivalent_validated",
-    "total_return": 0.008284409681674987,
-    "trades": 30
+    "strategy_class": "",
+    "total_return": 0.0028371482,
+    "trades": 183
   },
-  "promotion_eligible_count": 32,
+  "promotion_eligible_count": 35,
   "ranked_candidates": [
     {
       "artifact_kind": "live_equivalent_revalidation",
@@ -664,6 +546,58 @@
     {
       "artifact_kind": "live_equivalent_revalidation",
       "blockers": [],
+      "candidate_id": "profit_moonshot_filtered_shock_reversion_diversified_mode",
+      "family": "",
+      "final_equity": 10008.5802707458,
+      "liquidations": 0,
+      "max_drawdown": 0.0133843989,
+      "mode": "profit_moonshot_filtered_shock_reversion_diversified_mode",
+      "name": "profit_moonshot_filtered_shock_reversion_diversified_mode",
+      "primary_split": "val",
+      "promotion_eligible": true,
+      "ranking_score": 106.2453685613,
+      "selection_role": "alpha",
+      "sharpe": 0.0029598084,
+      "sortino": 0.0028790818,
+      "source_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_filtered_shock_reversion_diversified_mode/live_equivalent_revalidation_latest.json",
+      "source_kind": "live_equivalent",
+      "split_metrics": {
+        "oos": {
+          "final_equity": 0.0,
+          "liquidations": 0.0,
+          "max_drawdown": 0.014490611882353642,
+          "sharpe": 0.014267229916707036,
+          "sortino": 0.014228420401172353,
+          "total_return": 0.004849223558702764,
+          "trades": 0.0
+        },
+        "train": {
+          "final_equity": 10065.262334060193,
+          "liquidations": 0.0,
+          "max_drawdown": 0.027465595551426344,
+          "sharpe": 0.004041960531262683,
+          "sortino": 0.004081116002005728,
+          "total_return": 0.0065253724060194696,
+          "trades": 1157.0
+        },
+        "val": {
+          "final_equity": 10008.580270745795,
+          "liquidations": 0.0,
+          "max_drawdown": 0.01338439889550506,
+          "sharpe": 0.002959808400867562,
+          "sortino": 0.002879081848444251,
+          "total_return": 0.0008578980745794773,
+          "trades": 182.0
+        }
+      },
+      "status": "live_equivalent_validated",
+      "strategy_class": "",
+      "total_return": 0.0008578981,
+      "trades": 182
+    },
+    {
+      "artifact_kind": "live_equivalent_revalidation",
+      "blockers": [],
       "candidate_id": "profit_moonshot_momentum_hybrid_core_mode",
       "family": "",
       "final_equity": 10025.5242689944,
@@ -768,6 +702,58 @@
     {
       "artifact_kind": "live_equivalent_revalidation",
       "blockers": [],
+      "candidate_id": "profit_moonshot_hourly_shock_reversion_eth_12h_dense_mode",
+      "family": "",
+      "final_equity": 10063.3263003672,
+      "liquidations": 0,
+      "max_drawdown": 0.0043774092,
+      "mode": "profit_moonshot_hourly_shock_reversion_eth_12h_dense_mode",
+      "name": "profit_moonshot_hourly_shock_reversion_eth_12h_dense_mode",
+      "primary_split": "val",
+      "promotion_eligible": true,
+      "ranking_score": 106.1171378252,
+      "selection_role": "alpha",
+      "sharpe": 0.0710143699,
+      "sortino": 0.0810691405,
+      "source_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_hourly_shock_reversion_eth_12h_dense_mode/live_equivalent_revalidation_latest.json",
+      "source_kind": "live_equivalent",
+      "split_metrics": {
+        "oos": {
+          "final_equity": 0.0,
+          "liquidations": 0.0,
+          "max_drawdown": 0.001667522620219976,
+          "sharpe": 0.07853349461421114,
+          "sortino": 0.09861851034713494,
+          "total_return": 0.004702083645554245,
+          "trades": 0.0
+        },
+        "train": {
+          "final_equity": 10051.017311149535,
+          "liquidations": 0.0,
+          "max_drawdown": 0.025340887698874683,
+          "sharpe": 0.006417306351014732,
+          "sortino": 0.007663560125867508,
+          "total_return": 0.005102718114953442,
+          "trades": 261.0
+        },
+        "val": {
+          "final_equity": 10063.326300367247,
+          "liquidations": 0.0,
+          "max_drawdown": 0.004377409175074087,
+          "sharpe": 0.07101436989195989,
+          "sortino": 0.08106914051384081,
+          "total_return": 0.006329104036724598,
+          "trades": 48.0
+        }
+      },
+      "status": "live_equivalent_validated",
+      "strategy_class": "",
+      "total_return": 0.006329104,
+      "trades": 48
+    },
+    {
+      "artifact_kind": "live_equivalent_revalidation",
+      "blockers": [],
       "candidate_id": "profit_moonshot_hourly_shock_reversion_eth_12h_mode",
       "family": "",
       "final_equity": 10063.2694103636,
@@ -815,6 +801,58 @@
       "status": "live_equivalent_validated",
       "strategy_class": "",
       "total_return": 0.006323415,
+      "trades": 47
+    },
+    {
+      "artifact_kind": "live_equivalent_revalidation",
+      "blockers": [],
+      "candidate_id": "profit_moonshot_hourly_shock_reversion_eth_12h_funding_guard_mode",
+      "family": "",
+      "final_equity": 10050.2347288241,
+      "liquidations": 0,
+      "max_drawdown": 0.0026816608,
+      "mode": "profit_moonshot_hourly_shock_reversion_eth_12h_funding_guard_mode",
+      "name": "profit_moonshot_hourly_shock_reversion_eth_12h_funding_guard_mode",
+      "primary_split": "val",
+      "promotion_eligible": true,
+      "ranking_score": 106.0362701645,
+      "selection_role": "alpha",
+      "sharpe": 0.0630193105,
+      "sortino": 0.0719887957,
+      "source_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_hourly_shock_reversion_eth_12h_funding_guard_mode/live_equivalent_revalidation_latest.json",
+      "source_kind": "live_equivalent",
+      "split_metrics": {
+        "oos": {
+          "final_equity": 0.0,
+          "liquidations": 0.0,
+          "max_drawdown": 0.0017781136575592284,
+          "sharpe": 0.11122460571327704,
+          "sortino": 0.13583082076772565,
+          "total_return": 0.007206268626472667,
+          "trades": 0.0
+        },
+        "train": {
+          "final_equity": 10139.462393707918,
+          "liquidations": 0.0,
+          "max_drawdown": 0.02201425634062293,
+          "sharpe": 0.024520188999535644,
+          "sortino": 0.02793272159664743,
+          "total_return": 0.013944685370791632,
+          "trades": 254.0
+        },
+        "val": {
+          "final_equity": 10050.234728824056,
+          "liquidations": 0.0,
+          "max_drawdown": 0.0026816608109860754,
+          "sharpe": 0.06301931052712983,
+          "sortino": 0.07198879570642576,
+          "total_return": 0.005023257882405652,
+          "trades": 47.0
+        }
+      },
+      "status": "live_equivalent_validated",
+      "strategy_class": "",
+      "total_return": 0.0050232579,
       "trades": 47
     },
     {
@@ -1544,167 +1582,11 @@
       "strategy_class": "",
       "total_return": 0.0041759138,
       "trades": 54
-    },
-    {
-      "artifact_kind": "session_research_report_20260502_round2",
-      "blockers": [],
-      "candidate_id": "profit_moonshot_adaptive_momentum_vol_target_132_mode",
-      "family": "",
-      "final_equity": 0.0,
-      "liquidations": 0,
-      "max_drawdown": 0.0119113411,
-      "mode": "profit_moonshot_adaptive_momentum_vol_target_132_mode",
-      "name": "profit_moonshot_adaptive_momentum_vol_target_132_mode",
-      "primary_split": "val",
-      "promotion_eligible": true,
-      "ranking_score": 105.4008209563,
-      "selection_role": "",
-      "sharpe": 0.0130679441,
-      "sortino": 0.0126607436,
-      "source_artifact": "var/reports/profit_moonshot_20260501/latest/session_research_report_20260502_round2.json",
-      "source_kind": "live_equivalent",
-      "split_metrics": {
-        "oos": {
-          "final_equity": 0.0,
-          "liquidations": 0.0,
-          "max_drawdown": 0.0,
-          "sharpe": 0.0,
-          "sortino": 0.0,
-          "total_return": 0.0,
-          "trades": 0.0
-        },
-        "train": {
-          "final_equity": 0.0,
-          "liquidations": 0.0,
-          "max_drawdown": 0.1409003884761726,
-          "sharpe": 0.004968583255203795,
-          "sortino": 0.005250448786616857,
-          "total_return": -0.021161320975395026,
-          "trades": 361.0
-        },
-        "val": {
-          "final_equity": 0.0,
-          "liquidations": 0.0,
-          "max_drawdown": 0.01191134114891354,
-          "sharpe": 0.013067944076798019,
-          "sortino": 0.012660743582919977,
-          "total_return": 0.004175913820192889,
-          "trades": 54.0
-        }
-      },
-      "status": "live_equivalent_validated",
-      "strategy_class": "",
-      "total_return": 0.0041759138,
-      "trades": 54
-    },
-    {
-      "artifact_kind": "live_equivalent_revalidation",
-      "blockers": [],
-      "candidate_id": "profit_moonshot_adaptive_momentum_vol_target_132_mode",
-      "family": "",
-      "final_equity": 10041.8491482019,
-      "liquidations": 0,
-      "max_drawdown": 0.0119113411,
-      "mode": "profit_moonshot_adaptive_momentum_vol_target_132_mode",
-      "name": "profit_moonshot_adaptive_momentum_vol_target_132_mode",
-      "primary_split": "val",
-      "promotion_eligible": true,
-      "ranking_score": 105.4008209563,
-      "selection_role": "alpha",
-      "sharpe": 0.0130679441,
-      "sortino": 0.0126607436,
-      "source_artifact": "var/reports/profit_moonshot_20260501/oos_full/profit_moonshot_adaptive_momentum_vol_target_132_mode/live_equivalent_revalidation_latest.json",
-      "source_kind": "live_equivalent",
-      "split_metrics": {
-        "oos": {
-          "final_equity": 0.0,
-          "liquidations": 0.0,
-          "max_drawdown": 0.0432586717310817,
-          "sharpe": -0.0031348508725288814,
-          "sortino": -0.003162596597670614,
-          "total_return": -0.004719683883217307,
-          "trades": 0.0
-        },
-        "train": {
-          "final_equity": 9788.36894024605,
-          "liquidations": 0.0,
-          "max_drawdown": 0.1409003884761726,
-          "sharpe": 0.004968583255203795,
-          "sortino": 0.005250448786616857,
-          "total_return": -0.021161320975395026,
-          "trades": 361.0
-        },
-        "val": {
-          "final_equity": 10041.849148201929,
-          "liquidations": 0.0,
-          "max_drawdown": 0.01191134114891354,
-          "sharpe": 0.013067944076798019,
-          "sortino": 0.012660743582919977,
-          "total_return": 0.004175913820192889,
-          "trades": 54.0
-        }
-      },
-      "status": "live_equivalent_validated",
-      "strategy_class": "",
-      "total_return": 0.0041759138,
-      "trades": 54
-    },
-    {
-      "artifact_kind": "session_research_report_20260502_round2",
-      "blockers": [],
-      "candidate_id": "profit_moonshot_adaptive_momentum_130_mode",
-      "family": "",
-      "final_equity": 0.0,
-      "liquidations": 0,
-      "max_drawdown": 0.0106219225,
-      "mode": "profit_moonshot_adaptive_momentum_130_mode",
-      "name": "profit_moonshot_adaptive_momentum_130_mode",
-      "primary_split": "val",
-      "promotion_eligible": true,
-      "ranking_score": 105.3651010868,
-      "selection_role": "",
-      "sharpe": 0.0114665756,
-      "sortino": 0.0111649624,
-      "source_artifact": "var/reports/profit_moonshot_20260501/latest/session_research_report_20260502_round2.json",
-      "source_kind": "live_equivalent",
-      "split_metrics": {
-        "oos": {
-          "final_equity": 0.0,
-          "liquidations": 0.0,
-          "max_drawdown": 0.0,
-          "sharpe": 0.0,
-          "sortino": 0.0,
-          "total_return": 0.0,
-          "trades": 0.0
-        },
-        "train": {
-          "final_equity": 0.0,
-          "liquidations": 0.0,
-          "max_drawdown": 0.15676295344164706,
-          "sharpe": 0.006028144765040079,
-          "sortino": 0.0064350795760198184,
-          "total_return": -0.024063860859136144,
-          "trades": 360.0
-        },
-        "val": {
-          "final_equity": 0.0,
-          "liquidations": 0.0,
-          "max_drawdown": 0.010621922547171175,
-          "sharpe": 0.011466575559780947,
-          "sortino": 0.01116496239437976,
-          "total_return": 0.0033209910066693826,
-          "trades": 53.0
-        }
-      },
-      "status": "live_equivalent_validated",
-      "strategy_class": "",
-      "total_return": 0.003320991,
-      "trades": 53
     }
   ],
   "scan_limits": {
-    "max_bytes": 18000000,
-    "max_files": 650,
+    "max_bytes": 22000000,
+    "max_files": 800,
     "top_n": 25
   },
   "scanned_artifacts": [
@@ -1737,6 +1619,41 @@
       "artifact_kind": "profit_moonshot_external_alpha_ex_ante_screen",
       "candidate_rows": 0,
       "path": "var/reports/profit_moonshot_20260501/current_tail_20260505/external_alpha_screen_all5/external_alpha_screen_all5_20260505.json"
+    },
+    {
+      "artifact_kind": "stage_filtered_reversion_screen_20260505",
+      "candidate_rows": 500,
+      "path": "var/reports/profit_moonshot_20260501/current_tail_20260505/filtered_hourly_shock_screen/stage_filtered_reversion_screen_20260505.json"
+    },
+    {
+      "artifact_kind": "live_equivalent_revalidation",
+      "candidate_rows": 1,
+      "path": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_filtered_shock_reversion_diversified_mode/live_equivalent_revalidation_latest.json"
+    },
+    {
+      "artifact_kind": "live_equivalent_backtest_checkpoint",
+      "candidate_rows": 0,
+      "path": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_filtered_shock_reversion_diversified_mode_checkpoint.json"
+    },
+    {
+      "artifact_kind": "live_equivalent_revalidation",
+      "candidate_rows": 1,
+      "path": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_hourly_shock_reversion_eth_12h_dense_mode/live_equivalent_revalidation_latest.json"
+    },
+    {
+      "artifact_kind": "live_equivalent_backtest_checkpoint",
+      "candidate_rows": 0,
+      "path": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_hourly_shock_reversion_eth_12h_dense_mode_checkpoint.json"
+    },
+    {
+      "artifact_kind": "live_equivalent_revalidation",
+      "candidate_rows": 1,
+      "path": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_hourly_shock_reversion_eth_12h_funding_guard_mode/live_equivalent_revalidation_latest.json"
+    },
+    {
+      "artifact_kind": "live_equivalent_backtest_checkpoint",
+      "candidate_rows": 0,
+      "path": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_hourly_shock_reversion_eth_12h_funding_guard_mode_checkpoint.json"
     },
     {
       "artifact_kind": "live_equivalent_revalidation",
@@ -2104,113 +2021,68 @@
       "path": "var/reports/profit_moonshot_20260501/worker5_strategy_family_evidence_latest.json"
     }
   ],
+  "sharpe_focused_shadow": {
+    "candidate": {
+      "artifact_kind": "live_equivalent_revalidation",
+      "blockers": [],
+      "candidate_id": "profit_moonshot_hourly_shock_reversion_eth_12h_funding_guard_mode",
+      "final_equity": 10072.072886264728,
+      "liquidations": 0,
+      "max_drawdown": 0.0017781136575592284,
+      "mode": "profit_moonshot_hourly_shock_reversion_eth_12h_funding_guard_mode",
+      "name": "profit_moonshot_hourly_shock_reversion_eth_12h_funding_guard_mode",
+      "primary_split": "oos",
+      "promotion_eligible": true,
+      "selection_role": "alpha",
+      "sharpe": 0.11122460571327704,
+      "sortino": 0.13583082076772565,
+      "source_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_hourly_shock_reversion_eth_12h_funding_guard_mode/live_equivalent_revalidation_latest.json",
+      "source_kind": "operator_sharpe_shadow",
+      "split_metrics": {
+        "oos": {
+          "final_equity": 10072.072886264728,
+          "liquidations": 0,
+          "max_drawdown": 0.0017781136575592284,
+          "sharpe": 0.11122460571327704,
+          "sortino": 0.13583082076772565,
+          "total_return": 0.007206268626472667,
+          "trades": 34
+        },
+        "train": {
+          "final_equity": 10139.462393707918,
+          "liquidations": 0,
+          "max_drawdown": 0.02201425634062293,
+          "sharpe": 0.024520188999535644,
+          "sortino": 0.02793272159664743,
+          "total_return": 0.013944685370791632,
+          "trades": 254
+        },
+        "val": {
+          "final_equity": 10050.234728824056,
+          "liquidations": 0,
+          "max_drawdown": 0.0026816608109860754,
+          "sharpe": 0.06301931052712983,
+          "sortino": 0.07198879570642576,
+          "total_return": 0.005023257882405652,
+          "trades": 47
+        }
+      },
+      "status": "live_equivalent_validated",
+      "total_return": 0.007206268626472667,
+      "trades": 34
+    },
+    "reason": "Funding-window entry exclusion improved OOS Sharpe and drawdown versus incumbent at identical cap, but lowered OOS return and still far below Sharpe 1.",
+    "user_gate_pass": true,
+    "versus_oos_return_best": {
+      "oos_mdd_reduction_pct": 36.93441736469012,
+      "oos_return_relative_change_pct": -13.014096316206503,
+      "oos_sharpe_relative_improvement_pct": 10.505479210187186,
+      "oos_sortino_relative_improvement_pct": 5.85205498029171
+    }
+  },
   "skipped_artifacts": [],
   "source_counts": {
-    "live_equivalent": 47,
-    "unknown": 500
-  },
-  "val_only_best_return_candidate": {
-    "artifact_kind": "live_equivalent_revalidation",
-    "blockers": [],
-    "candidate_id": "profit_moonshot_hourly_shock_reversion_eth_mode",
-    "family": "",
-    "final_equity": 10104.25056071,
-    "liquidations": 0,
-    "max_drawdown": 0.0087501035,
-    "mode": "profit_moonshot_hourly_shock_reversion_eth_mode",
-    "name": "profit_moonshot_hourly_shock_reversion_eth_mode",
-    "primary_split": "val",
-    "promotion_eligible": true,
-    "ranking_score": 106.4642227638,
-    "selection_role": "alpha",
-    "sharpe": 0.0655502987,
-    "sortino": 0.0684614366,
-    "source_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_hourly_shock_reversion_eth_mode/live_equivalent_revalidation_latest.json",
-    "source_kind": "live_equivalent",
-    "split_metrics": {
-      "oos": {
-        "final_equity": 0.0,
-        "liquidations": 0.0,
-        "max_drawdown": 0.005647573097673951,
-        "sharpe": 0.020248079649452307,
-        "sortino": 0.02481082639270178,
-        "total_return": 0.0027163895640469615,
-        "trades": 0.0
-      },
-      "train": {
-        "final_equity": 10075.403986119385,
-        "liquidations": 0.0,
-        "max_drawdown": 0.01237875603619174,
-        "sharpe": 0.014637058681152925,
-        "sortino": 0.01693439430097542,
-        "total_return": 0.007538361611938438,
-        "trades": 451.0
-      },
-      "val": {
-        "final_equity": 10104.250560710048,
-        "liquidations": 0.0,
-        "max_drawdown": 0.008750103544826717,
-        "sharpe": 0.06555029869823413,
-        "sortino": 0.06846143659073292,
-        "total_return": 0.010421659071004896,
-        "trades": 66.0
-      }
-    },
-    "status": "live_equivalent_validated",
-    "strategy_class": "",
-    "total_return": 0.0104216591,
-    "trades": 66
-  },
-  "val_only_promoted_candidate": {
-    "artifact_kind": "live_equivalent_revalidation",
-    "blockers": [],
-    "candidate_id": "profit_moonshot_momentum_hybrid_safe_mode",
-    "family": "",
-    "final_equity": 10028.4071721793,
-    "liquidations": 0,
-    "max_drawdown": 0.0104381369,
-    "mode": "profit_moonshot_momentum_hybrid_safe_mode",
-    "name": "profit_moonshot_momentum_hybrid_safe_mode",
-    "primary_split": "val",
-    "promotion_eligible": true,
-    "ranking_score": 106.6219767877,
-    "selection_role": "alpha",
-    "sharpe": 0.0101678581,
-    "sortino": 0.0098330952,
-    "source_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_momentum_hybrid_safe_mode/live_equivalent_revalidation_latest.json",
-    "source_kind": "live_equivalent",
-    "split_metrics": {
-      "oos": {
-        "final_equity": 0.0,
-        "liquidations": 0.0,
-        "max_drawdown": 0.03494203655908933,
-        "sharpe": -0.0014105326084949065,
-        "sortino": -0.0014164076710275531,
-        "total_return": -0.003341526314212029,
-        "trades": 0.0
-      },
-      "train": {
-        "final_equity": 9864.467075039582,
-        "liquidations": 0.0,
-        "max_drawdown": 0.1236949840884687,
-        "sharpe": 0.004175236857947524,
-        "sortino": 0.004367273527303323,
-        "total_return": -0.013551486496041987,
-        "trades": 1185.0
-      },
-      "val": {
-        "final_equity": 10028.407172179252,
-        "liquidations": 0.0,
-        "max_drawdown": 0.010438136911899503,
-        "sharpe": 0.010167858124343822,
-        "sortino": 0.009833095226985623,
-        "total_return": 0.002837148217925023,
-        "trades": 183.0
-      }
-    },
-    "status": "live_equivalent_validated",
-    "strategy_class": "",
-    "total_return": 0.0028371482,
-    "trades": 183
+    "live_equivalent": 50,
+    "unknown": 1000
   }
 }

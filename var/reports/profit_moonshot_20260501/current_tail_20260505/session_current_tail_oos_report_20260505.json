@@ -3,8 +3,13 @@
   "artifacts": {
     "data_refresh_json": "var/reports/profit_moonshot_20260501/current_tail_20260505/data_refresh_20260505.json",
     "data_refresh_md": "var/reports/profit_moonshot_20260501/current_tail_20260505/data_refresh_20260505.md",
+    "dense_live_json": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_hourly_shock_reversion_eth_12h_dense_mode/live_equivalent_revalidation_latest.json",
+    "diversified_live_json": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_filtered_shock_reversion_diversified_mode/live_equivalent_revalidation_latest.json",
     "external_screen_json": "var/reports/profit_moonshot_20260501/current_tail_20260505/external_alpha_screen/external_alpha_screen_20260505.json",
     "external_screen_md": "var/reports/profit_moonshot_20260501/current_tail_20260505/external_alpha_screen/external_alpha_screen_20260505.md",
+    "filtered_stage_screen_json": "var/reports/profit_moonshot_20260501/current_tail_20260505/filtered_hourly_shock_screen/stage_filtered_reversion_screen_20260505.json",
+    "filtered_stage_screen_log": "var/reports/profit_moonshot_20260501/current_tail_20260505/filtered_hourly_shock_screen/stage_filtered_reversion_screen_20260505.log",
+    "funding_guard_live_json": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_hourly_shock_reversion_eth_12h_funding_guard_mode/live_equivalent_revalidation_latest.json",
     "hourly_shock_12h_live_json": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_hourly_shock_reversion_eth_12h_mode/live_equivalent_revalidation_latest.json",
     "hourly_shock_4h_live_json": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_hourly_shock_reversion_eth_mode/live_equivalent_revalidation_latest.json",
     "hourly_shock_overlap_screen_json": "var/reports/profit_moonshot_20260501/current_tail_20260505/simple_hourly_alpha_screen/simple_hourly_alpha_screen_20260505.json",
@@ -13,7 +18,7 @@
     "leadlag_live_json": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_leadlag_slow_diffusion_mode/live_equivalent_revalidation_latest.json",
     "materialize_log": "var/reports/profit_moonshot_20260501/current_tail_20260505/materialize_oos_20260503_04/run.log"
   },
-  "base_commit": "933442026ecc006f833087dd6164f51e62923e2a",
+  "base_commit": "54baf68600f8767908df4c067f25d4ee36f26a7f",
   "base_ref": "private/main",
   "data_refresh": {
     "aggregation_backend_resolved": "rust:/home/hoky/Quants-agent/LuminaQuant/native/rust_rawfirst/target/release/liblumina_rawfirst.so",
@@ -38,29 +43,38 @@
   "decision": {
     "conservative_fallback_retained": "profit_moonshot_momentum_hybrid_safe_mode",
     "conservative_fallback_user_oos_gate_pass": false,
+    "deployment_ready_under_user_sharpe_complaint": false,
     "deployment_review_candidate": "profit_moonshot_hourly_shock_reversion_eth_12h_mode",
-    "deployment_review_candidate_reason": "Complete raw-first train/val/OOS coverage; train/val/OOS returns positive; OOS +0.8284% beats the prior +0.2910% weak shadow; OOS Sharpe/Sortino positive; zero liquidations; no gross exposure increase.",
-    "deployment_review_candidate_user_gate_pass": true,
+    "deployment_review_candidate_reason": "Highest current-tail OOS return after full live-equivalent validation; still Sharpe<1, so not deployment-ready under the new Sharpe complaint.",
+    "deployment_review_candidate_user_oos_gate_pass": true,
     "do_not_promote": [
       "profit_moonshot_momentum_hybrid_safe_mode",
       "profit_moonshot_leadlag_slow_diffusion_sol_eth_mode",
       "profit_moonshot_hourly_shock_reversion_eth_mode",
-      "funding_taker_flow_family",
+      "profit_moonshot_hourly_shock_reversion_eth_12h_dense_mode",
+      "profit_moonshot_filtered_shock_reversion_diversified_mode",
+      "funding_taker_flow_family_without_nonzero_flow_coverage",
       "leadlag_same_risk_ensemble"
     ],
     "notes": [
-      "Framework status is train/val-based; this report applies the user-required OOS gate separately.",
-      "No gross exposure increase was used; the new candidate keeps target_allocation=0.008 and max_order_value=175.",
-      "Backtests were executed one portfolio mode at a time; no duplicate full backtest process was present before launches.",
-      "User challenge accepted: +0.2910% OOS was too weak; the new best current-tail OOS is +0.8284%."
+      "No full-engine candidate achieved Sharpe >= 1; this is recorded as a failure to meet the stricter user demand, not papered over.",
+      "Best OOS-return candidate remains the ETH 12h shock incumbent at +0.8284% OOS.",
+      "Funding-hour guard improved OOS Sharpe by 10.51% and reduced OOS MDD by 36.93% versus incumbent, but OOS return fell by 13.01%.",
+      "No gross exposure increase was used; all new modes keep the same 0.8% target allocation cap / $175 max order cap, with diversified mode weights summing to 1.0.",
+      "Backtests were executed one portfolio mode at a time; no duplicate full backtest process was present before launches."
     ],
+    "sharpe_focused_shadow_candidate": "profit_moonshot_hourly_shock_reversion_eth_12h_funding_guard_mode",
+    "sharpe_focused_shadow_reason": "Funding-window entry exclusion improved OOS Sharpe and drawdown versus incumbent at identical cap, but lowered OOS return and still far below Sharpe 1.",
+    "sharpe_focused_shadow_user_oos_gate_pass": true,
+    "sharpe_target_met": false,
+    "sharpe_target_threshold": 1.0,
     "weak_positive_shadow_baseline": "profit_moonshot_leadlag_slow_diffusion_mode"
   },
   "external_alpha_screen": {
     "funding_survivors": 0,
     "leadlag_survivors": [
       {
-        "candidate": "BTC/USDT\u2192ETH/USDT lag=2h horizon=8h params={'leader_abs_ret_min': 0.015, 'target_underreaction_cap': 999.0}",
+        "candidate": "BTC/USDT→ETH/USDT lag=2h horizon=8h params={'leader_abs_ret_min': 0.015, 'target_underreaction_cap': 999.0}",
         "oos_count": 63,
         "oos_edge": 0.00045614676300959923,
         "oos_hit": 0.5238095238095238,
@@ -70,7 +84,7 @@
         "val_edge": 0.0010473792653951479
       },
       {
-        "candidate": "SOL/USDT\u2192ETH/USDT lag=1h horizon=8h params={'leader_abs_ret_min': 0.015, 'target_underreaction_cap': 999.0}",
+        "candidate": "SOL/USDT→ETH/USDT lag=1h horizon=8h params={'leader_abs_ret_min': 0.015, 'target_underreaction_cap': 999.0}",
         "oos_count": 49,
         "oos_edge": 0.00037639479108365556,
         "oos_hit": 0.5714285714285714,
@@ -93,7 +107,104 @@
     "note": "Corrected flow denominator guard removes missing-flow/NaN funding survivors for BNB/TRX/TRX-like no-flow rows.",
     "peak_rss_mib": 2619.10546875
   },
-  "generated_at": "2026-05-05T10:05:00Z",
+  "external_sources": [
+    {
+      "title": "Binance USDⓈ-M Futures: Open Interest Statistics",
+      "url": "https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Open-Interest-Statistics",
+      "use": "Confirmed OI replay is an external derivative-state feature family, but current train/val history is too short for old claims."
+    },
+    {
+      "title": "Binance USDⓈ-M Futures: Taker Buy/Sell Volume",
+      "url": "https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Taker-BuySell-Volume",
+      "use": "Used to constrain taker-flow ideas to symbols with nonzero raw feature support; BNB/TRX missing flow were rejected."
+    },
+    {
+      "title": "Binance USDⓈ-M Futures: Funding Rate History",
+      "url": "https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Get-Funding-Rate-History",
+      "use": "Informed funding-settlement-hour entry exclusions around 00/08/16 UTC and adjacent windows."
+    },
+    {
+      "title": "arXiv 2212.06888: Crypto perpetual futures / funding context",
+      "url": "https://arxiv.org/abs/2212.06888",
+      "use": "Background support for funding/crowding/perpetual-market alpha families; not used as promotion evidence."
+    }
+  ],
+  "filtered_hourly_shock_reversion_screen": {
+    "checked": 105300,
+    "interpretation": "Raw trade-level Sharpe was useful only for screening; promotion was decided by full live-equivalent engine Sharpe/OOS evidence.",
+    "rows_saved": 19491,
+    "rss_mib": 2091.6015625,
+    "screen_json": "var/reports/profit_moonshot_20260501/current_tail_20260505/filtered_hourly_shock_screen/stage_filtered_reversion_screen_20260505.json",
+    "screen_log": "var/reports/profit_moonshot_20260501/current_tail_20260505/filtered_hourly_shock_screen/stage_filtered_reversion_screen_20260505.log",
+    "selected_eth_12h_08_stop5_take10_rows": [
+      {
+        "oos_count": 16,
+        "oos_sum_edge": 0.46092709712260566,
+        "oos_trade_sharpe": 9.08606405844488,
+        "profile": "no_funding_hours",
+        "profile_params": {
+          "hours": "exclude"
+        },
+        "train_count": 125,
+        "train_sum_edge": 0.7208172844299084,
+        "val_count": 18,
+        "val_sum_edge": 0.35062018318529453
+      },
+      {
+        "oos_count": 22,
+        "oos_sum_edge": 0.5664971240593508,
+        "oos_trade_sharpe": 8.545338550156012,
+        "profile": "plain",
+        "profile_params": {},
+        "train_count": 149,
+        "train_sum_edge": 0.5668842789531339,
+        "val_count": 26,
+        "val_sum_edge": 0.2243025893914633
+      },
+      {
+        "oos_count": 7,
+        "oos_sum_edge": 0.16000113304825486,
+        "oos_trade_sharpe": 8.519592980849147,
+        "profile": "post_funding",
+        "profile_params": {
+          "hours": "post"
+        },
+        "train_count": 58,
+        "train_sum_edge": 0.7655818001854494,
+        "val_count": 9,
+        "val_sum_edge": 0.09582954782611075
+      },
+      {
+        "oos_count": 10,
+        "oos_sum_edge": 0.2902189944872624,
+        "oos_trade_sharpe": 7.891709506455932,
+        "profile": "btc_counterguard_no_funding_hours",
+        "profile_params": {
+          "hours": "exclude",
+          "regime": "counter"
+        },
+        "train_count": 64,
+        "train_sum_edge": 0.18234233192782076,
+        "val_count": 7,
+        "val_sum_edge": 0.12041888743099266
+      },
+      {
+        "oos_count": 13,
+        "oos_sum_edge": 0.36368464027606506,
+        "oos_trade_sharpe": 8.684032019948809,
+        "profile": "btc_counterguard",
+        "profile_params": {
+          "regime": "counter"
+        },
+        "train_count": 74,
+        "train_sum_edge": 0.13398772585879482,
+        "val_count": 8,
+        "val_sum_edge": 0.05599496083006326
+      }
+    ],
+    "thesis": "External microstructure-informed filter screen: taker-flow exhaustion/reversal, funding crowding, OI expansion, BTC counter-trend guard, funding-hour exclusion, and realized-vol cap layered on hourly shock reversion."
+  },
+  "generated_at": "2026-05-05T11:25:43Z",
   "hourly_shock_reversion_screen": {
     "implemented_modes": [
       "profit_moonshot_hourly_shock_reversion_eth_mode",
@@ -432,6 +543,362 @@
     ]
   },
   "live_equivalent": {
+    "profit_moonshot_filtered_shock_reversion_diversified_mode": {
+      "component_summary": [
+        {
+          "component_id": "profit_moonshot_filtered_eth_12h_funding_guard",
+          "label": "profit_moonshot_filtered_eth_12h_funding_guard",
+          "strategy_class": "HourlyShockReversionStrategy",
+          "symbols": [
+            "ETH/USDT"
+          ],
+          "weight": 0.6
+        },
+        {
+          "component_id": "profit_moonshot_filtered_sol_post_funding_reversion",
+          "label": "profit_moonshot_filtered_sol_post_funding_reversion",
+          "strategy_class": "HourlyShockReversionStrategy",
+          "symbols": [
+            "SOL/USDT"
+          ],
+          "weight": 0.4
+        }
+      ],
+      "decision_reason": "SOL post-funding sleeve did not survive engine realism; partial fills/turnover caused weak OOS Sharpe and higher MDD.",
+      "label": "rejected diversified filtered sleeve",
+      "mode": "profit_moonshot_filtered_shock_reversion_diversified_mode",
+      "oos_coverage": {
+        "ETH/USDT": {
+          "oos": {
+            "committed_day_count": 65,
+            "complete_raw_first": true,
+            "first_missing_days": [],
+            "legacy_monthly_files": [
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-03.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-04.parquet"
+            ],
+            "legacy_monthly_files_present": 2,
+            "missing_day_count": 0,
+            "required_day_count": 65
+          },
+          "train": {
+            "committed_day_count": 365,
+            "complete_raw_first": true,
+            "first_missing_days": [],
+            "legacy_monthly_files": [
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2025-01.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2025-02.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2025-03.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2025-04.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2025-05.parquet"
+            ],
+            "legacy_monthly_files_present": 12,
+            "missing_day_count": 0,
+            "required_day_count": 365
+          },
+          "val": {
+            "committed_day_count": 59,
+            "complete_raw_first": true,
+            "first_missing_days": [],
+            "legacy_monthly_files": [
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-01.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-02.parquet"
+            ],
+            "legacy_monthly_files_present": 2,
+            "missing_day_count": 0,
+            "required_day_count": 59
+          }
+        },
+        "SOL/USDT": {
+          "oos": {
+            "committed_day_count": 65,
+            "complete_raw_first": true,
+            "first_missing_days": [],
+            "legacy_monthly_files": [
+              "data/market_parquet/market_ohlcv_1s/binance/SOLUSDT/2026-03.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/SOLUSDT/2026-04.parquet"
+            ],
+            "legacy_monthly_files_present": 2,
+            "missing_day_count": 0,
+            "required_day_count": 65
+          },
+          "train": {
+            "committed_day_count": 365,
+            "complete_raw_first": true,
+            "first_missing_days": [],
+            "legacy_monthly_files": [
+              "data/market_parquet/market_ohlcv_1s/binance/SOLUSDT/2025-01.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/SOLUSDT/2025-02.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/SOLUSDT/2025-03.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/SOLUSDT/2025-04.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/SOLUSDT/2025-05.parquet"
+            ],
+            "legacy_monthly_files_present": 12,
+            "missing_day_count": 0,
+            "required_day_count": 365
+          },
+          "val": {
+            "committed_day_count": 59,
+            "complete_raw_first": true,
+            "first_missing_days": [],
+            "legacy_monthly_files": [
+              "data/market_parquet/market_ohlcv_1s/binance/SOLUSDT/2026-01.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/SOLUSDT/2026-02.parquet"
+            ],
+            "legacy_monthly_files_present": 2,
+            "missing_day_count": 0,
+            "required_day_count": 59
+          }
+        }
+      },
+      "source_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_filtered_shock_reversion_diversified_mode/live_equivalent_revalidation_latest.json",
+      "splits": {
+        "oos": {
+          "cagr": 1.307904949676697e-05,
+          "calmar": 0.0009025877998081197,
+          "final_equity": 10048.497845587028,
+          "liquidation_count": 0,
+          "max_drawdown": 0.014490611882353642,
+          "sharpe": 0.014267229916707036,
+          "sortino": 0.014228420401172353,
+          "status": "completed",
+          "total_return": 0.004849223558702764,
+          "trade_count": 144,
+          "volatility": 0.0009482211097126162
+        },
+        "train": {
+          "cagr": 3.1256164121362673e-06,
+          "calmar": 0.0001138011519278324,
+          "final_equity": 10065.262334060193,
+          "liquidation_count": 0,
+          "max_drawdown": 0.027465595551426344,
+          "sharpe": 0.004041960531262683,
+          "sortino": 0.004081116002005728,
+          "status": "completed",
+          "total_return": 0.0065253724060194696,
+          "trade_count": 1157,
+          "volatility": 0.0008660636624676994
+        },
+        "val": {
+          "cagr": 2.5437348654122616e-06,
+          "calmar": 0.00019005223060607787,
+          "final_equity": 10008.580270745795,
+          "liquidation_count": 0,
+          "max_drawdown": 0.01338439889550506,
+          "sharpe": 0.002959808400867562,
+          "sortino": 0.002879081848444251,
+          "status": "completed",
+          "total_return": 0.0008578980745794773,
+          "trade_count": 182,
+          "volatility": 0.0010432756803100155
+        }
+      },
+      "status": "live_equivalent_validated"
+    },
+    "profit_moonshot_hourly_shock_reversion_eth_12h_dense_mode": {
+      "component_summary": [
+        {
+          "component_id": "profit_moonshot_hourly_shock_reversion_eth_12h_72h_stop5_take10_dense08",
+          "label": "profit_moonshot_hourly_shock_reversion_eth_12h_72h_stop5_take10_dense08",
+          "strategy_class": "HourlyShockReversionStrategy",
+          "symbols": [
+            "ETH/USDT"
+          ],
+          "weight": 1.0
+        }
+      ],
+      "decision_reason": "Lower 0.8% trigger matched validation but diluted train/OOS edge; OOS return and Sharpe below incumbent.",
+      "label": "rejected dense trigger",
+      "mode": "profit_moonshot_hourly_shock_reversion_eth_12h_dense_mode",
+      "oos_coverage": {
+        "ETH/USDT": {
+          "oos": {
+            "committed_day_count": 65,
+            "complete_raw_first": true,
+            "first_missing_days": [],
+            "legacy_monthly_files": [
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-03.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-04.parquet"
+            ],
+            "legacy_monthly_files_present": 2,
+            "missing_day_count": 0,
+            "required_day_count": 65
+          },
+          "train": {
+            "committed_day_count": 365,
+            "complete_raw_first": true,
+            "first_missing_days": [],
+            "legacy_monthly_files": [
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2025-01.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2025-02.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2025-03.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2025-04.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2025-05.parquet"
+            ],
+            "legacy_monthly_files_present": 12,
+            "missing_day_count": 0,
+            "required_day_count": 365
+          },
+          "val": {
+            "committed_day_count": 59,
+            "complete_raw_first": true,
+            "first_missing_days": [],
+            "legacy_monthly_files": [
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-01.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-02.parquet"
+            ],
+            "legacy_monthly_files_present": 2,
+            "missing_day_count": 0,
+            "required_day_count": 59
+          }
+        }
+      },
+      "source_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_hourly_shock_reversion_eth_12h_dense_mode/live_equivalent_revalidation_latest.json",
+      "splits": {
+        "oos": {
+          "cagr": 1.2683255037782004e-05,
+          "calmar": 0.007606046769014058,
+          "final_equity": 10047.012166455543,
+          "liquidation_count": 0,
+          "max_drawdown": 0.001667522620219976,
+          "sharpe": 0.07853349461421114,
+          "sortino": 0.09861851034713494,
+          "status": "completed",
+          "total_return": 0.004702083645554245,
+          "trade_count": 38,
+          "volatility": 0.0001616665955551285
+        },
+        "train": {
+          "cagr": 2.4459217324857008e-06,
+          "calmar": 9.652075971254619e-05,
+          "final_equity": 10051.017311149535,
+          "liquidation_count": 0,
+          "max_drawdown": 0.025340887698874683,
+          "sharpe": 0.006417306351014732,
+          "sortino": 0.007663560125867508,
+          "status": "completed",
+          "total_return": 0.005102718114953442,
+          "trade_count": 261,
+          "volatility": 0.00039318950045162134
+        },
+        "val": {
+          "cagr": 1.8715545704761638e-05,
+          "calmar": 0.004275484643138228,
+          "final_equity": 10063.326300367247,
+          "liquidation_count": 0,
+          "max_drawdown": 0.004377409175074087,
+          "sharpe": 0.07101436989195989,
+          "sortino": 0.08106914051384081,
+          "status": "completed",
+          "total_return": 0.006329104036724598,
+          "trade_count": 48,
+          "volatility": 0.00026403428143496064
+        }
+      },
+      "status": "live_equivalent_validated"
+    },
+    "profit_moonshot_hourly_shock_reversion_eth_12h_funding_guard_mode": {
+      "component_summary": [
+        {
+          "component_id": "profit_moonshot_hourly_shock_reversion_eth_12h_72h_stop5_take10_no_funding_hours",
+          "label": "profit_moonshot_hourly_shock_reversion_eth_12h_72h_stop5_take10_no_funding_hours",
+          "strategy_class": "HourlyShockReversionStrategy",
+          "symbols": [
+            "ETH/USDT"
+          ],
+          "weight": 1.0
+        }
+      ],
+      "decision_reason": "Funding-window entry exclusion improved OOS Sharpe and drawdown versus incumbent at identical cap, but lowered OOS return and still far below Sharpe 1.",
+      "label": "new Sharpe/MDD-improved shadow",
+      "mode": "profit_moonshot_hourly_shock_reversion_eth_12h_funding_guard_mode",
+      "oos_coverage": {
+        "ETH/USDT": {
+          "oos": {
+            "committed_day_count": 65,
+            "complete_raw_first": true,
+            "first_missing_days": [],
+            "legacy_monthly_files": [
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-03.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-04.parquet"
+            ],
+            "legacy_monthly_files_present": 2,
+            "missing_day_count": 0,
+            "required_day_count": 65
+          },
+          "train": {
+            "committed_day_count": 365,
+            "complete_raw_first": true,
+            "first_missing_days": [],
+            "legacy_monthly_files": [
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2025-01.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2025-02.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2025-03.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2025-04.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2025-05.parquet"
+            ],
+            "legacy_monthly_files_present": 12,
+            "missing_day_count": 0,
+            "required_day_count": 365
+          },
+          "val": {
+            "committed_day_count": 59,
+            "complete_raw_first": true,
+            "first_missing_days": [],
+            "legacy_monthly_files": [
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-01.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-02.parquet"
+            ],
+            "legacy_monthly_files_present": 2,
+            "missing_day_count": 0,
+            "required_day_count": 59
+          }
+        }
+      },
+      "source_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_hourly_shock_reversion_eth_12h_funding_guard_mode/live_equivalent_revalidation_latest.json",
+      "splits": {
+        "oos": {
+          "cagr": 1.9413828565628677e-05,
+          "calmar": 0.010918215763708574,
+          "final_equity": 10072.072886264728,
+          "liquidation_count": 0,
+          "max_drawdown": 0.0017781136575592284,
+          "sharpe": 0.11122460571327704,
+          "sortino": 0.13583082076772565,
+          "status": "completed",
+          "total_return": 0.007206268626472667,
+          "trade_count": 34,
+          "volatility": 0.00017468164772302416
+        },
+        "train": {
+          "cagr": 6.654963879748621e-06,
+          "calmar": 0.0003023024614948364,
+          "final_equity": 10139.462393707918,
+          "liquidation_count": 0,
+          "max_drawdown": 0.02201425634062293,
+          "sharpe": 0.024520188999535644,
+          "sortino": 0.02793272159664743,
+          "status": "completed",
+          "total_return": 0.013944685370791632,
+          "trade_count": 254,
+          "volatility": 0.0002729255680919415
+        },
+        "val": {
+          "cagr": 1.4863706618406525e-05,
+          "calmar": 0.005542724328712168,
+          "final_equity": 10050.234728824056,
+          "liquidation_count": 0,
+          "max_drawdown": 0.0026816608109860754,
+          "sharpe": 0.06301931052712983,
+          "sortino": 0.07198879570642576,
+          "status": "completed",
+          "total_return": 0.005023257882405652,
+          "trade_count": 47,
+          "volatility": 0.00023630082955197756
+        }
+      },
+      "status": "live_equivalent_validated"
+    },
     "profit_moonshot_hourly_shock_reversion_eth_12h_mode": {
       "component_summary": [
         {
@@ -444,32 +911,53 @@
           "weight": 1.0
         }
       ],
+      "decision_reason": "Highest current-tail OOS return after full live-equivalent validation; still Sharpe<1, so not deployment-ready under the new Sharpe complaint.",
+      "label": "current OOS-return best / deployment-review only",
       "mode": "profit_moonshot_hourly_shock_reversion_eth_12h_mode",
       "oos_coverage": {
         "ETH/USDT": {
           "oos": {
             "committed_day_count": 65,
             "complete_raw_first": true,
+            "first_missing_days": [],
+            "legacy_monthly_files": [
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-03.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-04.parquet"
+            ],
+            "legacy_monthly_files_present": 2,
             "missing_day_count": 0,
             "required_day_count": 65
           },
           "train": {
             "committed_day_count": 365,
             "complete_raw_first": true,
+            "first_missing_days": [],
+            "legacy_monthly_files": [
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2025-01.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2025-02.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2025-03.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2025-04.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2025-05.parquet"
+            ],
+            "legacy_monthly_files_present": 12,
             "missing_day_count": 0,
             "required_day_count": 365
           },
           "val": {
             "committed_day_count": 59,
             "complete_raw_first": true,
+            "first_missing_days": [],
+            "legacy_monthly_files": [
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-01.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-02.parquet"
+            ],
+            "legacy_monthly_files_present": 2,
             "missing_day_count": 0,
             "required_day_count": 59
           }
         }
       },
-      "oos_scaled_score_report_only": 12.18358261630005,
-      "promotion_role": "current best deployment-review candidate",
-      "selection_score": 13.946967703830367,
+      "source_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_hourly_shock_reversion_eth_12h_mode/live_equivalent_revalidation_latest.json",
       "splits": {
         "oos": {
           "cagr": 2.230644305400986e-05,
@@ -511,36 +999,67 @@
           "volatility": 0.0002640514532260825
         }
       },
-      "status": "live_equivalent_validated",
-      "user_gate_pass": true
+      "status": "live_equivalent_validated"
     },
     "profit_moonshot_hourly_shock_reversion_eth_mode": {
+      "component_summary": [
+        {
+          "component_id": "profit_moonshot_hourly_shock_reversion_eth_4h_48h_stop2",
+          "label": "profit_moonshot_hourly_shock_reversion_eth_4h_48h_stop2",
+          "strategy_class": "HourlyShockReversionStrategy",
+          "symbols": [
+            "ETH/USDT"
+          ],
+          "weight": 1.0
+        }
+      ],
+      "decision_reason": "Positive but OOS return below the prior weak +0.2910% bar.",
+      "label": "rejected 4h shock probe",
       "mode": "profit_moonshot_hourly_shock_reversion_eth_mode",
       "oos_coverage": {
         "ETH/USDT": {
           "oos": {
             "committed_day_count": 65,
             "complete_raw_first": true,
+            "first_missing_days": [],
+            "legacy_monthly_files": [
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-03.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-04.parquet"
+            ],
+            "legacy_monthly_files_present": 2,
             "missing_day_count": 0,
             "required_day_count": 65
           },
           "train": {
             "committed_day_count": 365,
             "complete_raw_first": true,
+            "first_missing_days": [],
+            "legacy_monthly_files": [
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2025-01.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2025-02.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2025-03.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2025-04.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2025-05.parquet"
+            ],
+            "legacy_monthly_files_present": 12,
             "missing_day_count": 0,
             "required_day_count": 365
           },
           "val": {
             "committed_day_count": 59,
             "complete_raw_first": true,
+            "first_missing_days": [],
+            "legacy_monthly_files": [
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-01.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-02.parquet"
+            ],
+            "legacy_monthly_files_present": 2,
             "missing_day_count": 0,
             "required_day_count": 59
           }
         }
       },
-      "oos_scaled_score_report_only": 10.40991059485405,
-      "reject_reason": "Positive but weaker than the existing +0.2910% OOS shadow baseline (+0.2716% OOS).",
-      "selection_score": 13.923290611953725,
+      "source_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_hourly_shock_reversion_eth_mode/live_equivalent_revalidation_latest.json",
       "splits": {
         "oos": {
           "cagr": 7.334341479703355e-06,
@@ -582,28 +1101,62 @@
           "volatility": 0.0004708672998332423
         }
       },
-      "status": "live_equivalent_validated",
-      "user_gate_pass": false
+      "status": "live_equivalent_validated"
     },
     "profit_moonshot_leadlag_slow_diffusion_mode": {
+      "component_summary": [
+        {
+          "component_id": "profit_moonshot_leadlag_btc_eth_2h_8h_slow_diffusion",
+          "label": "profit_moonshot_leadlag_btc_eth_2h_8h_slow_diffusion",
+          "strategy_class": "CrossCryptoSlowDiffusionStrategy",
+          "symbols": [
+            "BTC/USDT",
+            "ETH/USDT"
+          ],
+          "weight": 1.0
+        }
+      ],
+      "decision_reason": "Positive but OOS MDD is too high and Sharpe is near zero; only a weak bar to beat.",
+      "label": "weak positive shadow baseline",
       "mode": "profit_moonshot_leadlag_slow_diffusion_mode",
       "oos_coverage": {
         "BTC/USDT": {
           "oos": {
             "committed_day_count": 65,
             "complete_raw_first": true,
+            "first_missing_days": [],
+            "legacy_monthly_files": [
+              "data/market_parquet/market_ohlcv_1s/binance/BTCUSDT/2026-03.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/BTCUSDT/2026-04.parquet"
+            ],
+            "legacy_monthly_files_present": 2,
             "missing_day_count": 0,
             "required_day_count": 65
           },
           "train": {
             "committed_day_count": 365,
             "complete_raw_first": true,
+            "first_missing_days": [],
+            "legacy_monthly_files": [
+              "data/market_parquet/market_ohlcv_1s/binance/BTCUSDT/2025-01.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/BTCUSDT/2025-02.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/BTCUSDT/2025-03.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/BTCUSDT/2025-04.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/BTCUSDT/2025-05.parquet"
+            ],
+            "legacy_monthly_files_present": 12,
             "missing_day_count": 0,
             "required_day_count": 365
           },
           "val": {
             "committed_day_count": 59,
             "complete_raw_first": true,
+            "first_missing_days": [],
+            "legacy_monthly_files": [
+              "data/market_parquet/market_ohlcv_1s/binance/BTCUSDT/2026-01.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/BTCUSDT/2026-02.parquet"
+            ],
+            "legacy_monthly_files_present": 2,
             "missing_day_count": 0,
             "required_day_count": 59
           }
@@ -612,25 +1165,45 @@
           "oos": {
             "committed_day_count": 65,
             "complete_raw_first": true,
+            "first_missing_days": [],
+            "legacy_monthly_files": [
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-03.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-04.parquet"
+            ],
+            "legacy_monthly_files_present": 2,
             "missing_day_count": 0,
             "required_day_count": 65
           },
           "train": {
             "committed_day_count": 365,
             "complete_raw_first": true,
+            "first_missing_days": [],
+            "legacy_monthly_files": [
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2025-01.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2025-02.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2025-03.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2025-04.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2025-05.parquet"
+            ],
+            "legacy_monthly_files_present": 12,
             "missing_day_count": 0,
             "required_day_count": 365
           },
           "val": {
             "committed_day_count": 59,
             "complete_raw_first": true,
+            "first_missing_days": [],
+            "legacy_monthly_files": [
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-01.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-02.parquet"
+            ],
+            "legacy_monthly_files_present": 2,
             "missing_day_count": 0,
             "required_day_count": 59
           }
         }
       },
-      "oos_scaled_score_report_only": 7.687908337245262,
-      "selection_score": 12.96471842249209,
+      "source_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_leadlag_slow_diffusion_mode/live_equivalent_revalidation_latest.json",
       "splits": {
         "oos": {
           "cagr": 7.823428646913655e-06,
@@ -720,24 +1293,101 @@
       "user_gate_pass": false
     },
     "profit_moonshot_momentum_hybrid_safe_mode": {
+      "component_summary": [
+        {
+          "component_id": "profit_reboot_adaptive_momentum_boost",
+          "label": "profit_reboot_adaptive_momentum_boost",
+          "strategy_class": "AdaptiveRegimeMomentumStrategy",
+          "symbols": [
+            "BTC/USDT",
+            "ETH/USDT",
+            "BNB/USDT",
+            "SOL/USDT",
+            "TRX/USDT"
+          ],
+          "weight": 0.35
+        },
+        {
+          "component_id": "profit_moonshot_adaptive_momentum_vol_target_132",
+          "label": "profit_moonshot_adaptive_momentum_vol_target_132",
+          "strategy_class": "AdaptiveRegimeMomentumStrategy",
+          "symbols": [
+            "BTC/USDT",
+            "ETH/USDT",
+            "BNB/USDT",
+            "SOL/USDT",
+            "TRX/USDT"
+          ],
+          "weight": 0.35
+        },
+        {
+          "component_id": "profit_moonshot_adaptive_momentum_governed",
+          "label": "profit_moonshot_adaptive_momentum_governed",
+          "strategy_class": "AdaptiveRegimeMomentumStrategy",
+          "symbols": [
+            "BTC/USDT",
+            "ETH/USDT",
+            "BNB/USDT",
+            "SOL/USDT",
+            "TRX/USDT"
+          ],
+          "weight": 0.2
+        },
+        {
+          "component_id": "profit_moonshot_adaptive_momentum_asym_dynamic",
+          "label": "profit_moonshot_adaptive_momentum_asym_dynamic",
+          "strategy_class": "AdaptiveRegimeMomentumStrategy",
+          "symbols": [
+            "BTC/USDT",
+            "ETH/USDT",
+            "BNB/USDT",
+            "SOL/USDT",
+            "TRX/USDT"
+          ],
+          "weight": 0.1
+        }
+      ],
+      "decision_reason": "Validation positive but train and OOS are negative; not promotable.",
+      "label": "conservative fallback only / OOS failed",
       "mode": "profit_moonshot_momentum_hybrid_safe_mode",
       "oos_coverage": {
         "BNB/USDT": {
           "oos": {
             "committed_day_count": 65,
             "complete_raw_first": true,
+            "first_missing_days": [],
+            "legacy_monthly_files": [
+              "data/market_parquet/market_ohlcv_1s/binance/BNBUSDT/2026-03.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/BNBUSDT/2026-04.parquet"
+            ],
+            "legacy_monthly_files_present": 2,
             "missing_day_count": 0,
             "required_day_count": 65
           },
           "train": {
             "committed_day_count": 365,
             "complete_raw_first": true,
+            "first_missing_days": [],
+            "legacy_monthly_files": [
+              "data/market_parquet/market_ohlcv_1s/binance/BNBUSDT/2025-01.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/BNBUSDT/2025-02.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/BNBUSDT/2025-03.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/BNBUSDT/2025-04.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/BNBUSDT/2025-05.parquet"
+            ],
+            "legacy_monthly_files_present": 12,
             "missing_day_count": 0,
             "required_day_count": 365
           },
           "val": {
             "committed_day_count": 59,
             "complete_raw_first": true,
+            "first_missing_days": [],
+            "legacy_monthly_files": [
+              "data/market_parquet/market_ohlcv_1s/binance/BNBUSDT/2026-01.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/BNBUSDT/2026-02.parquet"
+            ],
+            "legacy_monthly_files_present": 2,
             "missing_day_count": 0,
             "required_day_count": 59
           }
@@ -746,18 +1396,39 @@
           "oos": {
             "committed_day_count": 65,
             "complete_raw_first": true,
+            "first_missing_days": [],
+            "legacy_monthly_files": [
+              "data/market_parquet/market_ohlcv_1s/binance/BTCUSDT/2026-03.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/BTCUSDT/2026-04.parquet"
+            ],
+            "legacy_monthly_files_present": 2,
             "missing_day_count": 0,
             "required_day_count": 65
           },
           "train": {
             "committed_day_count": 365,
             "complete_raw_first": true,
+            "first_missing_days": [],
+            "legacy_monthly_files": [
+              "data/market_parquet/market_ohlcv_1s/binance/BTCUSDT/2025-01.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/BTCUSDT/2025-02.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/BTCUSDT/2025-03.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/BTCUSDT/2025-04.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/BTCUSDT/2025-05.parquet"
+            ],
+            "legacy_monthly_files_present": 12,
             "missing_day_count": 0,
             "required_day_count": 365
           },
           "val": {
             "committed_day_count": 59,
             "complete_raw_first": true,
+            "first_missing_days": [],
+            "legacy_monthly_files": [
+              "data/market_parquet/market_ohlcv_1s/binance/BTCUSDT/2026-01.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/BTCUSDT/2026-02.parquet"
+            ],
+            "legacy_monthly_files_present": 2,
             "missing_day_count": 0,
             "required_day_count": 59
           }
@@ -766,18 +1437,39 @@
           "oos": {
             "committed_day_count": 65,
             "complete_raw_first": true,
+            "first_missing_days": [],
+            "legacy_monthly_files": [
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-03.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-04.parquet"
+            ],
+            "legacy_monthly_files_present": 2,
             "missing_day_count": 0,
             "required_day_count": 65
           },
           "train": {
             "committed_day_count": 365,
             "complete_raw_first": true,
+            "first_missing_days": [],
+            "legacy_monthly_files": [
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2025-01.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2025-02.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2025-03.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2025-04.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2025-05.parquet"
+            ],
+            "legacy_monthly_files_present": 12,
             "missing_day_count": 0,
             "required_day_count": 365
           },
           "val": {
             "committed_day_count": 59,
             "complete_raw_first": true,
+            "first_missing_days": [],
+            "legacy_monthly_files": [
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-01.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/ETHUSDT/2026-02.parquet"
+            ],
+            "legacy_monthly_files_present": 2,
             "missing_day_count": 0,
             "required_day_count": 59
           }
@@ -786,18 +1478,39 @@
           "oos": {
             "committed_day_count": 65,
             "complete_raw_first": true,
+            "first_missing_days": [],
+            "legacy_monthly_files": [
+              "data/market_parquet/market_ohlcv_1s/binance/SOLUSDT/2026-03.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/SOLUSDT/2026-04.parquet"
+            ],
+            "legacy_monthly_files_present": 2,
             "missing_day_count": 0,
             "required_day_count": 65
           },
           "train": {
             "committed_day_count": 365,
             "complete_raw_first": true,
+            "first_missing_days": [],
+            "legacy_monthly_files": [
+              "data/market_parquet/market_ohlcv_1s/binance/SOLUSDT/2025-01.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/SOLUSDT/2025-02.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/SOLUSDT/2025-03.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/SOLUSDT/2025-04.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/SOLUSDT/2025-05.parquet"
+            ],
+            "legacy_monthly_files_present": 12,
             "missing_day_count": 0,
             "required_day_count": 365
           },
           "val": {
             "committed_day_count": 59,
             "complete_raw_first": true,
+            "first_missing_days": [],
+            "legacy_monthly_files": [
+              "data/market_parquet/market_ohlcv_1s/binance/SOLUSDT/2026-01.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/SOLUSDT/2026-02.parquet"
+            ],
+            "legacy_monthly_files_present": 2,
             "missing_day_count": 0,
             "required_day_count": 59
           }
@@ -806,25 +1519,45 @@
           "oos": {
             "committed_day_count": 65,
             "complete_raw_first": true,
+            "first_missing_days": [],
+            "legacy_monthly_files": [
+              "data/market_parquet/market_ohlcv_1s/binance/TRXUSDT/2026-03.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/TRXUSDT/2026-04.parquet"
+            ],
+            "legacy_monthly_files_present": 2,
             "missing_day_count": 0,
             "required_day_count": 65
           },
           "train": {
             "committed_day_count": 365,
             "complete_raw_first": true,
+            "first_missing_days": [],
+            "legacy_monthly_files": [
+              "data/market_parquet/market_ohlcv_1s/binance/TRXUSDT/2025-01.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/TRXUSDT/2025-02.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/TRXUSDT/2025-03.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/TRXUSDT/2025-04.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/TRXUSDT/2025-05.parquet"
+            ],
+            "legacy_monthly_files_present": 12,
             "missing_day_count": 0,
             "required_day_count": 365
           },
           "val": {
             "committed_day_count": 59,
             "complete_raw_first": true,
+            "first_missing_days": [],
+            "legacy_monthly_files": [
+              "data/market_parquet/market_ohlcv_1s/binance/TRXUSDT/2026-01.parquet",
+              "data/market_parquet/market_ohlcv_1s/binance/TRXUSDT/2026-02.parquet"
+            ],
+            "legacy_monthly_files_present": 2,
             "missing_day_count": 0,
             "required_day_count": 59
           }
         }
       },
-      "oos_scaled_score_report_only": 8.033063592061787,
-      "selection_score": 10.6542297994982,
+      "source_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_momentum_hybrid_safe_mode/live_equivalent_revalidation_latest.json",
       "splits": {
         "oos": {
           "cagr": -9.011633402167263e-06,
@@ -975,8 +1708,78 @@
       "max_rss_mib": 1300.171875,
       "operation": "hourly_shock_reversion_eth_12h_live_equivalent",
       "status": 0
+    },
+    {
+      "elapsed": "0:18.49",
+      "max_rss_kb": 2148200,
+      "max_rss_mib": 2097.8515625,
+      "operation": "stage_filtered_reversion_screen",
+      "status": 0
+    },
+    {
+      "elapsed": "6:50.06",
+      "max_rss_kb": 1320772,
+      "max_rss_mib": 1289.81640625,
+      "operation": "hourly_shock_reversion_eth_12h_funding_guard_live_equivalent",
+      "status": 0
+    },
+    {
+      "elapsed": "13:32.31",
+      "max_rss_kb": 1921976,
+      "max_rss_mib": 1876.9296875,
+      "operation": "filtered_shock_reversion_diversified_live_equivalent",
+      "status": 0
+    },
+    {
+      "elapsed": "6:13.85",
+      "max_rss_kb": 1334416,
+      "max_rss_mib": 1303.140625,
+      "operation": "hourly_shock_reversion_eth_12h_dense_live_equivalent",
+      "status": 0
     }
   ],
+  "sharpe_followup": {
+    "current_oos_return_best": "profit_moonshot_hourly_shock_reversion_eth_12h_mode",
+    "current_oos_return_best_oos": {
+      "cagr": 2.230644305400986e-05,
+      "calmar": 0.007911579902341726,
+      "final_equity": 10082.856846816749,
+      "liquidation_count": 0,
+      "max_drawdown": 0.0028194675816150755,
+      "sharpe": 0.10065076094708575,
+      "sortino": 0.12832138288955808,
+      "status": "completed",
+      "total_return": 0.008284409681674987,
+      "trade_count": 30,
+      "volatility": 0.0002218642578021208
+    },
+    "failed_modes": {
+      "profit_moonshot_filtered_shock_reversion_diversified_mode": "SOL post-funding sleeve did not survive engine realism; partial fills/turnover caused weak OOS Sharpe and higher MDD.",
+      "profit_moonshot_hourly_shock_reversion_eth_12h_dense_mode": "Lower 0.8% trigger matched validation but diluted train/OOS edge; OOS return and Sharpe below incumbent."
+    },
+    "funding_guard_vs_incumbent": {
+      "oos_mdd_reduction_pct": 36.93441736469012,
+      "oos_return_relative_change_pct": -13.014096316206503,
+      "oos_sharpe_relative_improvement_pct": 10.505479210187186,
+      "oos_sortino_relative_improvement_pct": 5.85205498029171
+    },
+    "new_sharpe_focused_shadow": "profit_moonshot_hourly_shock_reversion_eth_12h_funding_guard_mode",
+    "new_sharpe_focused_shadow_oos": {
+      "cagr": 1.9413828565628677e-05,
+      "calmar": 0.010918215763708574,
+      "final_equity": 10072.072886264728,
+      "liquidation_count": 0,
+      "max_drawdown": 0.0017781136575592284,
+      "sharpe": 0.11122460571327704,
+      "sortino": 0.13583082076772565,
+      "status": "completed",
+      "total_return": 0.007206268626472667,
+      "trade_count": 34,
+      "volatility": 0.00017468164772302416
+    },
+    "result": "No honest Sharpe>=1 full-engine candidate found.",
+    "user_complaint": "Sharpe below 1 is not acceptable; find/build stronger filters and use external material."
+  },
   "source_branch": "private-main",
   "support_inventory_notes": {
     "canonical_inventory": true,
@@ -985,6 +1788,7 @@
     "open_interest": "Long-range chunking and empty-window skip are applied; rows reflect what Binance currently returns for each symbol."
   },
   "verification": {
+    "compileall": "passed: uv run python -m compileall -q src tests",
     "continuation_validator": {
       "candidate_mode": "profit_moonshot_hourly_shock_reversion_eth_12h_mode",
       "candidate_oos_return": 0.008284409681674987,
@@ -993,11 +1797,40 @@
       "path": "var/reports/profit_moonshot_20260501/current_tail_20260505/continuation_validation_20260505.json",
       "status": "passed"
     },
+    "continuation_validator_sharpe_followup": {
+      "baseline_mode": "profit_moonshot_adaptive_momentum_mode",
+      "baseline_val_return": 0.0026493262,
+      "blockers": [],
+      "candidate_liquidations": 0,
+      "candidate_mode": "profit_moonshot_hourly_shock_reversion_eth_12h_mode",
+      "candidate_primary_split": "oos",
+      "candidate_sharpe": 0.10065076094708575,
+      "candidate_sortino": 0.12832138288955808,
+      "candidate_trades": 30,
+      "candidate_val_return": 0.008284409681674987,
+      "generated_at": "2026-05-05T11:26:07.138005Z",
+      "improved_candidate_count": 18,
+      "improved_over_baseline": true,
+      "operator_oos_override_active": true,
+      "passed": true,
+      "promoted_by_summary": "profit_moonshot_momentum_hybrid_safe_mode",
+      "status": "passed",
+      "summary": "profit_moonshot_hourly_shock_reversion_eth_12h_mode oos_return=0.008284 vs baseline 0.002649; passed=True",
+      "summary_path": "var/reports/profit_moonshot_20260501/profit_moonshot_summary_latest.json"
+    },
     "corrected_all5_screen": {
       "funding_survivors": 0,
       "leadlag_survivors": 2,
       "peak_rss_mib": 2619.11,
       "status": "passed"
+    },
+    "duplicate_backtest_process_check": "passed before/after runs; no duplicate revalidate/backtest process remained active",
+    "final_ruff_check": "passed full repo: uv run ruff check",
+    "final_targeted_pytest": {
+      "command": "uv run pytest tests/unit/test_hourly_shock_reversion_strategy.py tests/unit/test_artifact_portfolio_mode.py tests/test_live_selection_infer.py tests/unit/test_live_equivalent_revalidation.py tests/unit/test_derivatives_flow_squeeze_strategy.py tests/unit/test_profit_moonshot_research.py tests/test_screen_profit_moonshot_external_alpha.py -q",
+      "output": "43 passed in 0.15s",
+      "status": "passed",
+      "tests": 43
     },
     "hourly_shock_reversion_live_equivalent": {
       "best_mode": "profit_moonshot_hourly_shock_reversion_eth_12h_mode",
@@ -1009,6 +1842,22 @@
     },
     "profit_moonshot_research_summary": "passed max_files=650 generated_at=2026-05-05T10:10:00Z with operator_oos_override_candidate_found",
     "ruff_check": "passed full repo after validator override",
+    "sharpe_followup_live_equivalent": {
+      "best_oos_return": 0.008284409681674987,
+      "best_oos_return_mode": "profit_moonshot_hourly_shock_reversion_eth_12h_mode",
+      "best_oos_return_sharpe": 0.10065076094708575,
+      "best_oos_sharpe": 0.11122460571327704,
+      "best_oos_sharpe_mode": "profit_moonshot_hourly_shock_reversion_eth_12h_funding_guard_mode",
+      "best_oos_sharpe_return": 0.007206268626472667,
+      "max_rss_mib": 2097.8515625,
+      "sequential_backtests": [
+        "profit_moonshot_hourly_shock_reversion_eth_12h_funding_guard_mode",
+        "profit_moonshot_filtered_shock_reversion_diversified_mode",
+        "profit_moonshot_hourly_shock_reversion_eth_12h_dense_mode"
+      ],
+      "status": "completed_but_sharpe_target_not_met",
+      "target_sharpe": 1.0
+    },
     "targeted_pytest": {
       "elapsed": "1.44s",
       "includes": "artifact portfolio mode, hourly shock strategy, research summary/validator, live selection, strategy factory, live-equivalent revalidation, derivatives-flow screen, historic data support, materialization",

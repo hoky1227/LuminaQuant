@@ -127,6 +127,9 @@ _LIVE_PORTFOLIO_MODE_ALIASES = {
     "profit_moonshot_leadlag_slow_diffusion_ensemble_mode",
     "profit_moonshot_hourly_shock_reversion_eth_mode",
     "profit_moonshot_hourly_shock_reversion_eth_12h_mode",
+    "profit_moonshot_hourly_shock_reversion_eth_12h_dense_mode",
+    "profit_moonshot_hourly_shock_reversion_eth_12h_funding_guard_mode",
+    "profit_moonshot_filtered_shock_reversion_diversified_mode",
 }
 _PROFIT_MODE_UNBOUNDED_CHILD_TARGET_ALLOCATION = 0.02
 _PROFIT_MODE_UNBOUNDED_CHILD_MAX_ORDER_VALUE = 250.0
@@ -1149,6 +1152,109 @@ def _alias_rows(token: str) -> list[dict[str, Any]] | None:
                     "allow_short": True,
                 },
                 "weight": 1.0,
+            },
+        ],
+        "profit_moonshot_hourly_shock_reversion_eth_12h_dense_mode": [
+            {
+                "candidate_id": "profit_moonshot_hourly_shock_reversion_eth_12h_72h_stop5_take10_dense08",
+                "name": "profit_moonshot_hourly_shock_reversion_eth_12h_72h_stop5_take10_dense08",
+                "strategy_class": "HourlyShockReversionStrategy",
+                "symbols": ["ETH/USDT"],
+                "params": {
+                    # Raw-first challenger to the 1.0% shock incumbent:
+                    # lower the completed-12h ETH shock threshold to 0.8%
+                    # while keeping the exact same 0.8% / $175 risk caps.
+                    "target_symbol": "ETH/USDT",
+                    "timeframe": "1h",
+                    "lookback_bars": 12,
+                    "return_threshold": 0.008,
+                    "max_hold_bars": 72,
+                    "target_allocation": 0.008,
+                    "max_order_value": 175.0,
+                    "stop_loss_pct": 0.05,
+                    "take_profit_pct": 0.10,
+                    "allow_long": True,
+                    "allow_short": True,
+                },
+                "weight": 1.0,
+            },
+        ],
+        "profit_moonshot_hourly_shock_reversion_eth_12h_funding_guard_mode": [
+            {
+                "candidate_id": "profit_moonshot_hourly_shock_reversion_eth_12h_72h_stop5_take10_no_funding_hours",
+                "name": "profit_moonshot_hourly_shock_reversion_eth_12h_72h_stop5_take10_no_funding_hours",
+                "strategy_class": "HourlyShockReversionStrategy",
+                "symbols": ["ETH/USDT"],
+                "params": {
+                    # Follow-up raw-first survivor after the user rejected
+                    # Sharpe<1: lower the ETH shock threshold to 0.8% but
+                    # block entries during Binance 8h funding settlement
+                    # hours and adjacent windows (00/01, 08/09, 16/17 UTC).
+                    # This is a condition/filter change, not a gross exposure
+                    # increase; risk caps stay at the same 0.8% / $175.
+                    "target_symbol": "ETH/USDT",
+                    "timeframe": "1h",
+                    "lookback_bars": 12,
+                    "return_threshold": 0.008,
+                    "max_hold_bars": 72,
+                    "target_allocation": 0.008,
+                    "max_order_value": 175.0,
+                    "stop_loss_pct": 0.05,
+                    "take_profit_pct": 0.10,
+                    "allow_long": True,
+                    "allow_short": True,
+                    "excluded_entry_hours_utc": "0,1,8,9,16,17",
+                },
+                "weight": 1.0,
+            },
+        ],
+        "profit_moonshot_filtered_shock_reversion_diversified_mode": [
+            {
+                "candidate_id": "profit_moonshot_filtered_eth_12h_funding_guard",
+                "name": "profit_moonshot_filtered_eth_12h_funding_guard",
+                "strategy_class": "HourlyShockReversionStrategy",
+                "symbols": ["ETH/USDT"],
+                "params": {
+                    # Same filtered ETH sleeve as the single-mode guard, but
+                    # scaled to keep total portfolio target allocation at 0.8%.
+                    "target_symbol": "ETH/USDT",
+                    "timeframe": "1h",
+                    "lookback_bars": 12,
+                    "return_threshold": 0.008,
+                    "max_hold_bars": 72,
+                    "target_allocation": 0.008,
+                    "max_order_value": 175.0,
+                    "stop_loss_pct": 0.05,
+                    "take_profit_pct": 0.10,
+                    "allow_long": True,
+                    "allow_short": True,
+                    "excluded_entry_hours_utc": "0,1,8,9,16,17",
+                },
+                "weight": 0.60,
+            },
+            {
+                "candidate_id": "profit_moonshot_filtered_sol_post_funding_reversion",
+                "name": "profit_moonshot_filtered_sol_post_funding_reversion",
+                "strategy_class": "HourlyShockReversionStrategy",
+                "symbols": ["SOL/USDT"],
+                "params": {
+                    # SOL sleeve from the same raw-first screen: only trade
+                    # the post-funding relief hours, so the alpha family is
+                    # explicitly conditional rather than exposure-expanded.
+                    "target_symbol": "SOL/USDT",
+                    "timeframe": "1h",
+                    "lookback_bars": 24,
+                    "return_threshold": 0.010,
+                    "max_hold_bars": 48,
+                    "target_allocation": 0.008,
+                    "max_order_value": 175.0,
+                    "stop_loss_pct": 0.02,
+                    "take_profit_pct": 0.04,
+                    "allow_long": True,
+                    "allow_short": True,
+                    "entry_hours_utc": "2,3,4,10,11,12,18,19,20",
+                },
+                "weight": 0.40,
             },
         ],
         "derivatives_flow_squeeze_mode": [

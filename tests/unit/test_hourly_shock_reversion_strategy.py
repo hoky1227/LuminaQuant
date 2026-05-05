@@ -17,9 +17,13 @@ class _Queue:
 
 
 def _event(when: datetime, close: float) -> MarketEvent:
+    return _event_for_symbol("ETH/USDT", when, close)
+
+
+def _event_for_symbol(symbol: str, when: datetime, close: float) -> MarketEvent:
     return MarketEvent(
         time=when,
-        symbol="ETH/USDT",
+        symbol=symbol,
         open=close,
         high=close,
         low=close,
@@ -32,6 +36,12 @@ def _step(strategy, aggregator, when: datetime, close: float) -> None:
     event = _event(when, close)
     aggregator.update_from_1s_batch("ETH/USDT", [event])
     strategy.calculate_signals_window(event, aggregator)
+
+
+def _step_symbols(strategy, aggregator, when: datetime, closes: dict[str, float]) -> None:
+    events = {symbol: [_event_for_symbol(symbol, when, close)] for symbol, close in closes.items()}
+    aggregator.update_from_1s_batch(events)
+    strategy.calculate_signals_window(events["ETH/USDT"][0], aggregator)
 
 
 def test_hourly_shock_reversion_fades_completed_negative_shock_once() -> None:
@@ -94,3 +104,50 @@ def test_hourly_shock_reversion_shorts_positive_shock_and_consumes_exit_bar() ->
     assert entry.stop_loss == 101.0 * 1.02
     assert entry.metadata["reason"] == "positive_shock_reversion_short"
     assert exit_signal.metadata["reason"] == "max_hold_exit"
+
+
+def test_hourly_shock_reversion_respects_excluded_entry_hours() -> None:
+    queue = _Queue()
+    strategy = HourlyShockReversionStrategy(
+        SimpleNamespace(symbol_list=["ETH/USDT"]),
+        queue,
+        lookback_bars=4,
+        return_threshold=0.006,
+        max_hold_bars=48,
+        excluded_entry_hours_utc="4",
+    )
+    aggregator = TimeframeAggregator(timeframes=["1h"], lookbacks={"1h": 16})
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+
+    for offset, close in enumerate([100.0, 100.0, 100.0, 100.0, 99.0, 99.0]):
+        _step(strategy, aggregator, start + timedelta(hours=offset), close)
+
+    assert queue.items == []
+
+
+def test_hourly_shock_reversion_counterguard_blocks_long_during_btc_downtrend() -> None:
+    queue = _Queue()
+    strategy = HourlyShockReversionStrategy(
+        SimpleNamespace(symbol_list=["BTC/USDT", "ETH/USDT"]),
+        queue,
+        lookback_bars=4,
+        return_threshold=0.006,
+        max_hold_bars=48,
+        regime_symbol="BTC/USDT",
+        regime_lookback_bars=4,
+        counterguard_return_threshold=0.015,
+    )
+    aggregator = TimeframeAggregator(timeframes=["1h"], lookbacks={"1h": 16})
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+
+    for offset, (eth_close, btc_close) in enumerate(
+        zip([100.0, 100.0, 100.0, 100.0, 99.0, 99.0], [100.0, 100.0, 100.0, 100.0, 98.0, 98.0])
+    ):
+        _step_symbols(
+            strategy,
+            aggregator,
+            start + timedelta(hours=offset),
+            {"ETH/USDT": eth_close, "BTC/USDT": btc_close},
+        )
+
+    assert queue.items == []

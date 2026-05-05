@@ -69,6 +69,9 @@ SUPPORTED_LIVE_PORTFOLIO_MODES = frozenset(
         "profit_moonshot_leadlag_slow_diffusion_ensemble_mode",
         "profit_moonshot_hourly_shock_reversion_eth_mode",
         "profit_moonshot_hourly_shock_reversion_eth_12h_mode",
+        "profit_moonshot_hourly_shock_reversion_eth_12h_dense_mode",
+        "profit_moonshot_hourly_shock_reversion_eth_12h_funding_guard_mode",
+        "profit_moonshot_filtered_shock_reversion_diversified_mode",
     }
 )
 
