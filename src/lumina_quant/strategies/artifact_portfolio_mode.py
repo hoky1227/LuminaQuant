@@ -123,6 +123,7 @@ _LIVE_PORTFOLIO_MODE_ALIASES = {
     "profit_moonshot_derivatives_taker_flow_mode",
     "profit_moonshot_derivatives_taker_flow_sparse_mode",
     "profit_moonshot_leadlag_slow_diffusion_mode",
+    "profit_moonshot_leadlag_slow_diffusion_sol_eth_mode",
     "profit_moonshot_leadlag_slow_diffusion_ensemble_mode",
 }
 _PROFIT_MODE_UNBOUNDED_CHILD_TARGET_ALLOCATION = 0.02
@@ -1009,6 +1010,33 @@ def _alias_rows(token: str) -> list[dict[str, Any]] | None:
                     "target_symbol": "ETH/USDT",
                     "timeframe": "1h",
                     "lag_bars": 2,
+                    "leader_abs_ret_min": 0.015,
+                    "target_underreaction_cap": 999.0,
+                    "max_hold_bars": 8,
+                    "target_allocation": 0.008,
+                    "max_order_value": 175.0,
+                    "stop_loss_pct": 0.0,
+                    "take_profit_pct": 0.0,
+                    "allow_short": True,
+                },
+                "weight": 1.0,
+            },
+        ],
+        "profit_moonshot_leadlag_slow_diffusion_sol_eth_mode": [
+            {
+                "candidate_id": "profit_moonshot_leadlag_sol_eth_1h_8h_slow_diffusion",
+                "name": "profit_moonshot_leadlag_sol_eth_1h_8h_slow_diffusion",
+                "strategy_class": "CrossCryptoSlowDiffusionStrategy",
+                "symbols": ["SOL/USDT", "ETH/USDT"],
+                "params": {
+                    # Raw-first screen survivor: SOL/USDT -> ETH/USDT, 1h lag,
+                    # 8h fixed hold.  This is a standalone replacement probe
+                    # at the same 0.8% target allocation as the weak BTC->ETH
+                    # sleeve, not an exposure increase.
+                    "leader_symbol": "SOL/USDT",
+                    "target_symbol": "ETH/USDT",
+                    "timeframe": "1h",
+                    "lag_bars": 1,
                     "leader_abs_ret_min": 0.015,
                     "target_underreaction_cap": 999.0,
                     "max_hold_bars": 8,

@@ -258,6 +258,24 @@ def test_profit_moonshot_leadlag_slow_diffusion_mode_uses_screened_btc_eth_candi
     assert component.params["target_allocation"] == 0.008
 
 
+def test_profit_moonshot_leadlag_slow_diffusion_sol_eth_mode_uses_second_screen_survivor() -> None:
+    definition = MODULE.resolve_portfolio_mode_definition(
+        "profit_moonshot_leadlag_slow_diffusion_sol_eth_mode"
+    )
+
+    assert supports_live_portfolio_mode("profit_moonshot_leadlag_slow_diffusion_sol_eth_mode")
+    assert definition.symbols == ["SOL/USDT", "ETH/USDT"]
+    component = definition.components[0]
+    assert component.strategy_class == "CrossCryptoSlowDiffusionStrategy"
+    assert component.component_id == "profit_moonshot_leadlag_sol_eth_1h_8h_slow_diffusion"
+    assert component.params["leader_symbol"] == "SOL/USDT"
+    assert component.params["target_symbol"] == "ETH/USDT"
+    assert component.params["lag_bars"] == 1
+    assert component.params["leader_abs_ret_min"] == 0.015
+    assert component.params["max_hold_bars"] == 8
+    assert component.params["target_allocation"] == 0.008
+
+
 def test_profit_moonshot_leadlag_slow_diffusion_ensemble_splits_same_target_risk() -> None:
     definition = MODULE.resolve_portfolio_mode_definition(
         "profit_moonshot_leadlag_slow_diffusion_ensemble_mode"
@@ -556,6 +574,7 @@ def test_resolve_portfolio_mode_definition_supports_recursive_allocator_sleeves(
     assert "profit_moonshot_ensemble_mode" in MODULE.supported_portfolio_modes()
     assert "profit_moonshot_derivatives_taker_flow_mode" in MODULE.supported_portfolio_modes()
     assert "profit_moonshot_derivatives_taker_flow_sparse_mode" in MODULE.supported_portfolio_modes()
+    assert "profit_moonshot_leadlag_slow_diffusion_sol_eth_mode" in MODULE.supported_portfolio_modes()
     assert "profit_moonshot_leadlag_slow_diffusion_ensemble_mode" in MODULE.supported_portfolio_modes()
     assert supports_live_portfolio_mode("legacy_no_highvol_hybrid_mode")
     assert supports_live_portfolio_mode("retuned_live_portfolio_hybrid_mode")
@@ -576,6 +595,7 @@ def test_resolve_portfolio_mode_definition_supports_recursive_allocator_sleeves(
     assert supports_live_portfolio_mode("profit_moonshot_ensemble_mode")
     assert supports_live_portfolio_mode("profit_moonshot_derivatives_taker_flow_mode")
     assert supports_live_portfolio_mode("profit_moonshot_derivatives_taker_flow_sparse_mode")
+    assert supports_live_portfolio_mode("profit_moonshot_leadlag_slow_diffusion_sol_eth_mode")
     assert supports_live_portfolio_mode("profit_moonshot_leadlag_slow_diffusion_ensemble_mode")
 
 

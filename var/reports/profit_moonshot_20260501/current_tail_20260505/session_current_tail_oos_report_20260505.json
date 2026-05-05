@@ -34,18 +34,21 @@
   "decision": {
     "conservative_fallback_retained": "profit_moonshot_momentum_hybrid_safe_mode",
     "conservative_fallback_user_oos_gate_pass": false,
-    "deployment_review_candidate": "profit_moonshot_leadlag_slow_diffusion_mode",
-    "deployment_review_candidate_user_gate_pass": true,
+    "deployment_review_candidate": null,
+    "deployment_review_candidate_user_gate_pass": false,
     "do_not_promote": [
       "profit_moonshot_momentum_hybrid_safe_mode",
       "funding_taker_flow_family",
-      "leadlag_same_risk_ensemble"
+      "leadlag_same_risk_ensemble",
+      "profit_moonshot_leadlag_slow_diffusion_sol_eth_mode"
     ],
     "notes": [
       "Framework status is train/val-based; this report applies the user-required OOS gate separately.",
       "No gross exposure increase was used.",
-      "Backtests were executed one portfolio mode at a time."
-    ]
+      "Backtests were executed one portfolio mode at a time.",
+      "User challenge accepted: +0.2910% OOS is too weak for deployment-ready status."
+    ],
+    "weak_positive_shadow_baseline": "profit_moonshot_leadlag_slow_diffusion_mode"
   },
   "external_alpha_screen": {
     "funding_survivors": 0,
@@ -77,6 +80,12 @@
       "memory_rule": "RSS must stay below 8GB",
       "rejected_backtest_policy": "save rejected hypothesis and reason; do not threshold-mine in full backtest"
     }
+  },
+  "external_alpha_screen_all5_corrected": {
+    "funding_survivors": 0,
+    "leadlag_survivors": 2,
+    "note": "Corrected flow denominator guard removes missing-flow/NaN funding survivors for BNB/TRX/TRX-like no-flow rows.",
+    "peak_rss_mib": 2619.10546875
   },
   "generated_at": "2026-05-05T06:30:00Z",
   "live_equivalent": {
@@ -168,6 +177,51 @@
         }
       },
       "status": "live_equivalent_validated"
+    },
+    "profit_moonshot_leadlag_slow_diffusion_sol_eth_mode": {
+      "mode": "profit_moonshot_leadlag_slow_diffusion_sol_eth_mode",
+      "reject_reason": "OOS return/sharpe/sortino negative; train MDD 19.6453% too high.",
+      "selection_score": 12.647992616499021,
+      "splits": {
+        "oos": {
+          "cagr": -9.78774112092573e-06,
+          "calmar": -0.0010199708545749887,
+          "liquidation_count": 0,
+          "max_drawdown": 0.009596098826769105,
+          "sharpe": -0.024121778891976798,
+          "sortino": -0.025617787062131286,
+          "status": "completed",
+          "total_return": -0.0036288254938589004,
+          "trade_count": 34,
+          "volatility": 0.000402409119068304
+        },
+        "train": {
+          "cagr": 4.058067766110618e-05,
+          "calmar": 0.00020656737160926528,
+          "liquidation_count": 0,
+          "max_drawdown": 0.19645250527690789,
+          "sharpe": 0.009018835160124304,
+          "sortino": 0.009648387494059106,
+          "status": "completed",
+          "total_return": 0.08807557222951234,
+          "trade_count": 354,
+          "volatility": 0.00811568299822643
+        },
+        "val": {
+          "cagr": 1.3191250867850002e-05,
+          "calmar": 0.0005215378425535267,
+          "liquidation_count": 0,
+          "max_drawdown": 0.025292988909996785,
+          "sharpe": 0.007668301285830219,
+          "sortino": 0.007818244330184555,
+          "status": "completed",
+          "total_return": 0.004456684827121693,
+          "trade_count": 54,
+          "volatility": 0.00197433211098783
+        }
+      },
+      "status": "live_equivalent_validated",
+      "user_gate_pass": false
     },
     "profit_moonshot_momentum_hybrid_safe_mode": {
       "mode": "profit_moonshot_momentum_hybrid_safe_mode",
@@ -383,6 +437,20 @@
       "max_rss_mib": 2286.33203125,
       "operation": "external_alpha_screen",
       "status": 0
+    },
+    {
+      "elapsed": "16:27.06",
+      "max_rss_kb": 1926860,
+      "max_rss_mib": 1881.69921875,
+      "operation": "sol_eth_standalone_live_equivalent",
+      "status": 0
+    },
+    {
+      "elapsed": "2:07.11",
+      "max_rss_kb": 2681964,
+      "max_rss_mib": 2619.10546875,
+      "operation": "external_alpha_screen_all5_corrected",
+      "status": 0
     }
   ],
   "source_branch": "private-main",
@@ -394,16 +462,22 @@
   },
   "verification": {
     "continuation_validator": {
-      "candidate_mode": "profit_moonshot_leadlag_slow_diffusion_mode",
+      "operator_override": "no deployment-ready candidate",
       "path": "var/reports/profit_moonshot_20260501/current_tail_20260505/continuation_validation_20260505.json",
       "status": "passed"
     },
-    "profit_moonshot_research_summary": "passed",
+    "corrected_all5_screen": {
+      "funding_survivors": 0,
+      "leadlag_survivors": 2,
+      "peak_rss_mib": 2619.11,
+      "status": "passed"
+    },
+    "profit_moonshot_research_summary": "passed max_files=400 generated_at=2026-05-05T09:10:00Z",
     "ruff_check": "passed",
     "targeted_pytest": {
-      "elapsed": "4.07s",
+      "elapsed": "3.16s",
       "status": "passed",
-      "tests": 73
+      "tests": 75
     }
   }
 }

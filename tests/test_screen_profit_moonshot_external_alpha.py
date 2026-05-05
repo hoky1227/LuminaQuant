@@ -4,6 +4,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import polars as pl
+
 MODULE_PATH = (
     Path(__file__).resolve().parents[1]
     / "scripts/research/screen_profit_moonshot_external_alpha.py"
@@ -55,6 +57,14 @@ def test_funding_screen_rejects_train_val_positive_when_oos_loses_after_cost():
     candidate = _candidate(0.0010, 0.0020, -0.0030, train_count=50, val_count=10, oos_count=8)
 
     assert screen._funding_candidate_rejected_reason(candidate) == "oos_post_cost_edge_non_positive"
+
+
+def test_flow_imbalance_is_null_when_no_real_taker_flow():
+    frame = pl.DataFrame({"buy_sum": [0.0, 10.0], "sell_sum": [0.0, 30.0]}).with_columns(
+        screen._flow_imbalance_expr()
+    )
+
+    assert frame["flow"].to_list() == [None, -0.5]
 
 
 def test_leadlag_screen_requires_oos_sample_and_positive_hit_rate():

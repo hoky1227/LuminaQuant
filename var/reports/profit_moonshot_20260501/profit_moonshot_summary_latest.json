@@ -138,16 +138,17 @@
       "count": 4
     }
   ],
-  "candidate_count": 44,
+  "candidate_count": 45,
   "decision": "promoted_candidate_found",
-  "generated_at": "2026-05-05T06:35:00Z",
+  "generated_at": "2026-05-05T09:10:00Z",
   "input_dir": "var/reports/profit_moonshot_20260501",
   "operator_oos_gate_override": {
+    "deployment_ready_candidate": null,
     "evidence_report": "var/reports/profit_moonshot_20260501/current_tail_20260505/session_current_tail_oos_report_20260505.md",
-    "generated_at": "2026-05-05T06:35:00Z",
-    "oos_gate_failed_candidate": "profit_moonshot_momentum_hybrid_safe_mode",
-    "oos_gate_pass_candidate": "profit_moonshot_leadlag_slow_diffusion_mode",
-    "rule": "User task requires complete positive raw-first OOS evidence before success/deployment claims; val-ranked promoted_candidate alone is insufficient."
+    "generated_at": "2026-05-05T09:10:00Z",
+    "rejected_followup": "profit_moonshot_leadlag_slow_diffusion_sol_eth_mode",
+    "rule": "User task requires economically meaningful complete positive raw-first OOS evidence; tiny positive OOS is shadow-only, not deployment-ready.",
+    "weak_positive_shadow_baseline": "profit_moonshot_leadlag_slow_diffusion_mode"
   },
   "output_dir": "var/reports/profit_moonshot_20260501",
   "promoted_candidate": {
@@ -202,7 +203,7 @@
     "total_return": 0.0028371482,
     "trades": 183
   },
-  "promotion_eligible_count": 29,
+  "promotion_eligible_count": 30,
   "ranked_candidates": [
     {
       "artifact_kind": "live_equivalent_revalidation",
@@ -1507,7 +1508,7 @@
   ],
   "scan_limits": {
     "max_bytes": 12000000,
-    "max_files": 300,
+    "max_files": 400,
     "top_n": 25
   },
   "scanned_artifacts": [
@@ -1522,6 +1523,11 @@
       "path": "var/reports/profit_moonshot_20260501/continuation/adaptive_boost_checkpoint.json"
     },
     {
+      "artifact_kind": "continuation_validation_20260505",
+      "candidate_rows": 0,
+      "path": "var/reports/profit_moonshot_20260501/current_tail_20260505/continuation_validation_20260505.json"
+    },
+    {
       "artifact_kind": "continuity_validation_data_refresh",
       "candidate_rows": 0,
       "path": "var/reports/profit_moonshot_20260501/current_tail_20260505/data_refresh_20260505.json"
@@ -1532,6 +1538,11 @@
       "path": "var/reports/profit_moonshot_20260501/current_tail_20260505/external_alpha_screen/external_alpha_screen_20260505.json"
     },
     {
+      "artifact_kind": "profit_moonshot_external_alpha_ex_ante_screen",
+      "candidate_rows": 0,
+      "path": "var/reports/profit_moonshot_20260501/current_tail_20260505/external_alpha_screen_all5/external_alpha_screen_all5_20260505.json"
+    },
+    {
       "artifact_kind": "live_equivalent_revalidation",
       "candidate_rows": 1,
       "path": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_leadlag_slow_diffusion_mode/live_equivalent_revalidation_latest.json"
@@ -1540,6 +1551,16 @@
       "artifact_kind": "live_equivalent_backtest_checkpoint",
       "candidate_rows": 0,
       "path": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_leadlag_slow_diffusion_mode_checkpoint.json"
+    },
+    {
+      "artifact_kind": "live_equivalent_revalidation",
+      "candidate_rows": 1,
+      "path": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_leadlag_slow_diffusion_sol_eth_mode/live_equivalent_revalidation_latest.json"
+    },
+    {
+      "artifact_kind": "live_equivalent_backtest_checkpoint",
+      "candidate_rows": 0,
+      "path": "var/reports/profit_moonshot_20260501/current_tail_20260505/live_equivalent/profit_moonshot_leadlag_slow_diffusion_sol_eth_mode_checkpoint.json"
     },
     {
       "artifact_kind": "live_equivalent_revalidation",
@@ -1859,6 +1880,6 @@
   ],
   "skipped_artifacts": [],
   "source_counts": {
-    "live_equivalent": 44
+    "live_equivalent": 45
   }
 }

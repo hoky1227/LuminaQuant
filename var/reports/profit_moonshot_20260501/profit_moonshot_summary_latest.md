@@ -1,9 +1,9 @@
 # Profit Moonshot Research Summary
 
-Generated: `2026-05-05T06:35:00Z`
+Generated: `2026-05-05T09:10:00Z`
 Decision: `promoted_candidate_found`
-Candidates scanned: `44`
-Promotion-eligible candidates: `29`
+Candidates scanned: `45`
+Promotion-eligible candidates: `30`
 
 ## Promoted Candidate
 
@@ -26,7 +26,7 @@ Promotion-eligible candidates: `29`
 
 ## Current-tail OOS Gate Override
 
-The summary ranking above is the legacy validation-split ranking. For the active 2026-05-05 task, the operator gate is stricter: complete positive raw-first OOS evidence is required before success or deployment claims. Under that gate, `profit_moonshot_leadlag_slow_diffusion_mode` is the current deployment-review candidate, while `profit_moonshot_momentum_hybrid_safe_mode` remains a conservative fallback only because current-tail OOS is negative. See `var/reports/profit_moonshot_20260501/current_tail_20260505/session_current_tail_oos_report_20260505.md`.
+The legacy summary ranking above is validation-split oriented and can mark weak or OOS-negative candidates as promoted. For the active 2026-05-05 operator gate, **there is no deployment-ready profit moonshot candidate**. `profit_moonshot_leadlag_slow_diffusion_mode` is only a weak positive shadow baseline (`OOS +0.2910%`, Sharpe `0.004059`, MDD `7.0817%`). `profit_moonshot_leadlag_slow_diffusion_sol_eth_mode` was tested after the weak-result challenge and rejected (`OOS -0.3629%`, train MDD `19.6453%`). See `var/reports/profit_moonshot_20260501/current_tail_20260505/session_current_tail_oos_report_20260505.md`.
 
 ## Top Ranked Candidates
 

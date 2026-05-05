@@ -169,6 +169,17 @@ def _split(candidate: dict[str, Any], name: str) -> dict[str, Any]:
     return next(item for item in candidate["splits"] if item["split"] == name)
 
 
+def _flow_imbalance_expr() -> pl.Expr:
+    """Return finite taker-flow imbalance only when real flow exists."""
+    denominator = pl.col("buy_sum") + pl.col("sell_sum")
+    return (
+        pl.when(denominator > 0.0)
+        .then((pl.col("buy_sum") - pl.col("sell_sum")) / denominator)
+        .otherwise(None)
+        .alias("flow")
+    )
+
+
 def _all_split_cost_edges(candidate: dict[str, Any]) -> list[float | None]:
     return [_split(candidate, name)["mean_after_cost"] for name in ("train", "val", "oos")]
 
@@ -311,12 +322,7 @@ def _screen_funding_taker(
                     ).alias("momentum"),
                 ]
             )
-            .with_columns(
-                (
-                    (pl.col("buy_sum") - pl.col("sell_sum"))
-                    / (pl.col("buy_sum") + pl.col("sell_sum"))
-                ).alias("flow")
-            )
+            .with_columns(_flow_imbalance_expr())
         )
         for horizon, shift_bars in FUNDING_HORIZONS.items():
             frame = frame.with_columns(
