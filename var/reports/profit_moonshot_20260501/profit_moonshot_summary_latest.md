@@ -90,3 +90,14 @@ Promotion-eligible candidates by generated val-ranker: `35`
 | `profit_moonshot_taker_flow_exhaustion_eth_slow_momentum_mode` | -0.2422% | -0.3210% | -0.0507% | -0.036304 | rejected: cooldown risk control still failed all splits |
 
 Detailed report: `var/reports/profit_moonshot_20260501/current_tail_20260505/taker_flow_exhaustion_new_alpha_report_20260505.md`.
+
+
+## New alpha follow-up — precious-metal pair aggressive mode
+
+- Implemented `TimeframePairZScoreReversionStrategy` and mode `profit_moonshot_precious_metal_pair_aggressive_mode` covering XAU/XAG and XPT/XPD with explicit target-allocation, max-order, stop/take-profit/max-hold, beta/correlation, and current-volume guards.
+- External rationale: CME gold/silver ratio + metals spread products support the relative-value family, but mean-reversion cost literature requires engine/fill-aware validation.
+- Tail refresh attempted for XAU/XAG/XPT/XPD (`2026-03-28` to `2026-05-05`): peak RSS `1537.184 MiB`; XAU raw archive reached `date=2026-05-04`; XAG/XPT/XPD tail refresh did not complete after CloudFront/no-progress stall.
+- Standard raw-first live-equivalent gate: `blocked_missing_raw_first_market_data` for all four metals train/val windows.
+- Legacy-windowed split engine result: train `-0.0570%` Sharpe `-0.024200`; val `+0.1914%` Sharpe `0.037224`; OOS `-0.0478%` Sharpe `-0.164066`; liquidations `0`.
+- Decision: **not promoted**. Keep `profit_moonshot_hourly_shock_reversion_eth_12h_mode` as OOS-return best, `profit_moonshot_hourly_shock_reversion_eth_12h_funding_guard_mode` as Sharpe/MDD shadow, and `profit_moonshot_momentum_hybrid_safe_mode` as conservative legacy candidate.
+- Detailed report: `var/reports/profit_moonshot_20260501/current_tail_20260505/precious_metal_pair_aggressive/precious_metal_pair_aggressive_report_20260505.md`.

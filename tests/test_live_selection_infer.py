@@ -71,6 +71,13 @@ def test_infer_strategy_class_name_hourly_shock_reversion_mode():
     )
 
 
+def test_infer_strategy_class_name_precious_metal_pair_mode():
+    assert (
+        infer_strategy_class_name("profit_moonshot_precious_metal_pair_aggressive_mode")
+        == "TimeframePairZScoreReversionStrategy"
+    )
+
+
 def test_infer_taker_flow_exhaustion_strategy_name() -> None:
     assert (
         infer_strategy_class_name("profit_moonshot_taker_flow_exhaustion_eth_mode")

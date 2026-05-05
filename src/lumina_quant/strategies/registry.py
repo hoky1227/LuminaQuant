@@ -93,6 +93,9 @@ HourlyShockReversionStrategy = _optional_strategy_class(
 TakerFlowExhaustionReversalStrategy = _optional_strategy_class(
     "taker_flow_exhaustion_reversal", "TakerFlowExhaustionReversalStrategy"
 )
+TimeframePairZScoreReversionStrategy = _optional_strategy_class(
+    "timeframe_pair_zscore_reversion", "TimeframePairZScoreReversionStrategy"
+)
 
 StrategyClass = type[Strategy]
 
@@ -138,6 +141,8 @@ if HourlyShockReversionStrategy is not None:
     _RAW_STRATEGY_MAP["HourlyShockReversionStrategy"] = HourlyShockReversionStrategy
 if TakerFlowExhaustionReversalStrategy is not None:
     _RAW_STRATEGY_MAP["TakerFlowExhaustionReversalStrategy"] = TakerFlowExhaustionReversalStrategy
+if TimeframePairZScoreReversionStrategy is not None:
+    _RAW_STRATEGY_MAP["TimeframePairZScoreReversionStrategy"] = TimeframePairZScoreReversionStrategy
 
 _STRATEGY_MAP: dict[str, StrategyClass] = {
     name: cast(StrategyClass, cls) for name, cls in _RAW_STRATEGY_MAP.items() if cls is not None
@@ -174,6 +179,7 @@ _STRATEGY_TIER_HINTS: dict[str, str] = {
     "CrossCryptoSlowDiffusionStrategy": "live_opt_in",
     "HourlyShockReversionStrategy": "live_opt_in",
     "TakerFlowExhaustionReversalStrategy": "live_opt_in",
+    "TimeframePairZScoreReversionStrategy": "live_opt_in",
     "RegimeBreakoutCandidateStrategy": "research_only",
     "VolatilityCompressionReversionStrategy": "research_only",
     "MicroRangeExpansion1sStrategy": "research_only",
@@ -218,6 +224,7 @@ _OPTUNA_TRIAL_OVERRIDES: dict[str, str] = {
     "CrossCryptoSlowDiffusionStrategy": "16",
     "HourlyShockReversionStrategy": "16",
     "TakerFlowExhaustionReversalStrategy": "16",
+    "TimeframePairZScoreReversionStrategy": "16",
     "MicroRangeExpansion1sStrategy": "16",
 }
 

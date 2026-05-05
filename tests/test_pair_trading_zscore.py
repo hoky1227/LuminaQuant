@@ -46,7 +46,7 @@ def _build_pair_prices(length=320):
     return prices
 
 
-def _run_strategy(prices, split=None, param_overrides=None):
+def _run_strategy(prices, split=None, param_overrides=None, raw=False):
     symbol_x = "XAU/USDT"
     symbol_y = "XAG/USDT"
     params = {
@@ -74,6 +74,9 @@ def _run_strategy(prices, split=None, param_overrides=None):
         out = []
         while not events.empty():
             signal = events.get()
+            if raw:
+                out.append(signal)
+                continue
             out.append((int(signal.datetime), str(signal.symbol), str(signal.signal_type)))
         return out
 
@@ -133,6 +136,21 @@ class TestPairTradingZScore(unittest.TestCase):
         self.assertGreater(len(signals), 0)
         signal_types = [signal_type for _, _, signal_type in signals]
         self.assertIn("EXIT", signal_types)
+
+    def test_pair_entries_carry_explicit_risk_caps(self):
+        signals = _run_strategy(
+            _build_pair_prices(),
+            param_overrides={
+                "target_allocation": 0.015,
+                "max_order_value": 180.0,
+            },
+            raw=True,
+        )
+        entries = [signal for signal in signals if str(signal.signal_type) in {"LONG", "SHORT"}]
+        self.assertGreater(len(entries), 0)
+        self.assertEqual(entries[0].metadata["target_allocation"], 0.015)
+        self.assertEqual(entries[0].metadata["max_symbol_exposure_pct"], 0.015)
+        self.assertEqual(entries[0].metadata["max_order_value"], 180.0)
 
     def test_rls_hedge_mode_roundtrip_preserves_signal_sequence(self):
         prices = _build_pair_prices()

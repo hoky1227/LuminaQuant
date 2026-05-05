@@ -65,6 +65,14 @@ DERIVATIVES_FLOW_SQUEEZE_MANIFEST_PATH = (
     / "derivatives_flow_squeeze_20260502"
     / "derivatives_flow_squeeze_candidates.json"
 )
+PRECIOUS_METAL_PAIR_SCREEN_PATH = (
+    Path("var")
+    / "reports"
+    / "profit_moonshot_20260501"
+    / "current_tail_20260505"
+    / "precious_metal_pair_aggressive"
+    / "precious_pair_screen_top.json"
+)
 
 _LIVE_PORTFOLIO_MODE_ALIASES = {
     "aggressive_realized_mode",
@@ -134,6 +142,7 @@ _LIVE_PORTFOLIO_MODE_ALIASES = {
     "profit_moonshot_taker_flow_exhaustion_eth_reactive_mode",
     "profit_moonshot_taker_flow_exhaustion_eth_hold_mode",
     "profit_moonshot_taker_flow_exhaustion_eth_slow_momentum_mode",
+    "profit_moonshot_precious_metal_pair_aggressive_mode",
 }
 _PROFIT_MODE_UNBOUNDED_CHILD_TARGET_ALLOCATION = 0.02
 _PROFIT_MODE_UNBOUNDED_CHILD_MAX_ORDER_VALUE = 250.0
@@ -1212,6 +1221,75 @@ def _alias_rows(token: str) -> list[dict[str, Any]] | None:
                 "weight": 1.0,
             },
         ],
+        "profit_moonshot_precious_metal_pair_aggressive_mode": [
+            {
+                "candidate_id": "profit_moonshot_pm_pair_xau_xag_1h_z12_96h",
+                "name": "profit_moonshot_pm_pair_xau_xag_1h_z12_96h",
+                "strategy_class": "TimeframePairZScoreReversionStrategy",
+                "symbols": ["XAU/USDT", "XAG/USDT"],
+                "params": {
+                    # External thesis: hedge-adjusted precious-metal ratio
+                    # spreads can mean-revert, but the gold/silver relation is
+                    # regime-dependent; use completed 1h bars, rolling hedge
+                    # stats, and explicit pair/leg caps rather than a gross
+                    # exposure bump.  Screen survivor on current metals data:
+                    # train/val/OOS all positive for XAU/XAG.
+                    "symbol_x": "XAU/USDT",
+                    "symbol_y": "XAG/USDT",
+                    "timeframe": "1h",
+                    "lookback_window": 96,
+                    "hedge_window": 192,
+                    "entry_z": 1.2,
+                    "exit_z": 0.2,
+                    "stop_z": 3.2,
+                    "min_correlation": 0.10,
+                    "min_abs_beta": 0.02,
+                    "max_abs_beta": 8.0,
+                    "max_hold_bars": 72,
+                    "stop_loss_pct": 0.020,
+                    "take_profit_pct": 0.040,
+                    "target_allocation": 0.024,
+                    "max_order_value": 350.0,
+                    "min_entry_volume_x": 0.01,
+                    "min_entry_volume_y": 1.0,
+                    "allow_long_spread": True,
+                    "allow_short_spread": True,
+                },
+                "weight": 0.65,
+            },
+            {
+                "candidate_id": "profit_moonshot_pm_pair_xpt_xpd_1h_z18_24h",
+                "name": "profit_moonshot_pm_pair_xpt_xpd_1h_z18_24h",
+                "strategy_class": "TimeframePairZScoreReversionStrategy",
+                "symbols": ["XPT/USDT", "XPD/USDT"],
+                "params": {
+                    # Aggressive secondary PGM sleeve: val/OOS screen-positive
+                    # but train-negative, so keep it below the XAU/XAG sleeve
+                    # and do not promote unless live-equivalent OOS validates.
+                    "symbol_x": "XPT/USDT",
+                    "symbol_y": "XPD/USDT",
+                    "timeframe": "1h",
+                    "lookback_window": 24,
+                    "hedge_window": 72,
+                    "entry_z": 1.8,
+                    "exit_z": 0.2,
+                    "stop_z": 3.6,
+                    "min_correlation": 0.10,
+                    "min_abs_beta": 0.02,
+                    "max_abs_beta": 8.0,
+                    "max_hold_bars": 48,
+                    "stop_loss_pct": 0.025,
+                    "take_profit_pct": 0.045,
+                    "target_allocation": 0.024,
+                    "max_order_value": 350.0,
+                    "min_entry_volume_x": 0.01,
+                    "min_entry_volume_y": 0.01,
+                    "allow_long_spread": True,
+                    "allow_short_spread": True,
+                },
+                "weight": 0.35,
+            },
+        ],
         "profit_moonshot_filtered_shock_reversion_diversified_mode": [
             {
                 "candidate_id": "profit_moonshot_filtered_eth_12h_funding_guard",
@@ -1608,6 +1686,7 @@ def resolve_portfolio_mode_definition(portfolio_mode: str) -> PortfolioModeDefin
         "derivatives_flow_squeeze_manifest_path": str(
             DERIVATIVES_FLOW_SQUEEZE_MANIFEST_PATH.resolve()
         ),
+        "precious_metal_pair_screen_path": str(PRECIOUS_METAL_PAIR_SCREEN_PATH.resolve()),
     }
 
     components: list[PortfolioModeComponent] = []

@@ -76,6 +76,7 @@ SUPPORTED_LIVE_PORTFOLIO_MODES = frozenset(
         "profit_moonshot_taker_flow_exhaustion_eth_reactive_mode",
         "profit_moonshot_taker_flow_exhaustion_eth_hold_mode",
         "profit_moonshot_taker_flow_exhaustion_eth_slow_momentum_mode",
+        "profit_moonshot_precious_metal_pair_aggressive_mode",
     }
 )
 
@@ -227,6 +228,10 @@ def infer_strategy_class_name(candidate_name: str) -> str | None:
         "hourly_shock_reversion"
     ):
         return "HourlyShockReversionStrategy"
+    if token.startswith("profit_moonshot_precious_metal_pair") or token.startswith(
+        "timeframe_pair_zscore_reversion"
+    ):
+        return "TimeframePairZScoreReversionStrategy"
     if token.startswith("profit_moonshot_trend"):
         return "ProfitMoonshotTrendStrategy"
     if token.startswith("profit_moonshot_breakout"):

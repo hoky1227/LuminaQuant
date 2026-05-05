@@ -144,6 +144,20 @@ class PairTradingZScoreStrategy(Strategy):
                 high=0.5,
                 tunable=False,
             ),
+            "target_allocation": HyperParam.floating(
+                "target_allocation",
+                default=0.02,
+                low=0.0,
+                high=1.0,
+                tunable=False,
+            ),
+            "max_order_value": HyperParam.floating(
+                "max_order_value",
+                default=250.0,
+                low=0.0,
+                high=1_000_000.0,
+                tunable=False,
+            ),
             "min_abs_beta": HyperParam.floating(
                 "min_abs_beta",
                 default=0.02,
@@ -259,6 +273,8 @@ class PairTradingZScoreStrategy(Strategy):
         min_z_turn=0.0,
         stop_loss_pct=0.04,
         take_profit_pct=0.0,
+        target_allocation=0.02,
+        max_order_value=250.0,
         min_abs_beta=0.02,
         max_abs_beta=6.0,
         min_volume_window=24,
@@ -303,6 +319,8 @@ class PairTradingZScoreStrategy(Strategy):
                 "min_z_turn": min_z_turn,
                 "stop_loss_pct": stop_loss_pct,
                 "take_profit_pct": take_profit_pct,
+                "target_allocation": target_allocation,
+                "max_order_value": max_order_value,
                 "min_abs_beta": min_abs_beta,
                 "max_abs_beta": max_abs_beta,
                 "min_volume_window": min_volume_window,
@@ -349,6 +367,8 @@ class PairTradingZScoreStrategy(Strategy):
         self.min_z_turn = float(resolved["min_z_turn"])
         self.stop_loss_pct = float(resolved["stop_loss_pct"])
         self.take_profit_pct = float(resolved["take_profit_pct"])
+        self.target_allocation = max(0.0, float(resolved["target_allocation"]))
+        self.max_order_value = max(0.0, float(resolved["max_order_value"]))
         self.min_abs_beta = float(resolved["min_abs_beta"])
         self.max_abs_beta = max(self.min_abs_beta + 1e-9, float(resolved["max_abs_beta"]))
         self.min_volume_window = int(resolved["min_volume_window"])
@@ -770,6 +790,9 @@ class PairTradingZScoreStrategy(Strategy):
             "symbol_y": self.symbol_y,
             "stop_loss_pct": float(self.stop_loss_pct),
             "take_profit_pct": float(self.take_profit_pct),
+            "target_allocation": float(self.target_allocation),
+            "max_symbol_exposure_pct": float(self.target_allocation),
+            "max_order_value": float(self.max_order_value),
             "vol_zscore": self._last_vol_zscore,
             "vol_lag_bars": int(self.vol_lag_bars),
             "vwap_window": int(self.vwap_window),

@@ -378,6 +378,31 @@ def test_profit_moonshot_hourly_shock_reversion_funding_guard_mode_filters_hours
     assert component.weight == 1.0
 
 
+def test_profit_moonshot_precious_metal_pair_mode_includes_four_metals_with_caps() -> None:
+    definition = MODULE.resolve_portfolio_mode_definition(
+        "profit_moonshot_precious_metal_pair_aggressive_mode"
+    )
+
+    assert supports_live_portfolio_mode("profit_moonshot_precious_metal_pair_aggressive_mode")
+    assert definition.symbols == ["XAU/USDT", "XAG/USDT", "XPT/USDT", "XPD/USDT"]
+    assert [component.strategy_class for component in definition.components] == [
+        "TimeframePairZScoreReversionStrategy",
+        "TimeframePairZScoreReversionStrategy",
+    ]
+    assert [component.symbols for component in definition.components] == [
+        ("XAU/USDT", "XAG/USDT"),
+        ("XPT/USDT", "XPD/USDT"),
+    ]
+    assert [component.weight for component in definition.components] == [0.65, 0.35]
+    assert all(component.params["timeframe"] == "1h" for component in definition.components)
+    assert all(component.params["target_allocation"] == 0.024 for component in definition.components)
+    assert all(component.params["max_order_value"] == 350.0 for component in definition.components)
+    assert (
+        sum(component.weight * component.params["target_allocation"] for component in definition.components)
+        == 0.024
+    )
+
+
 def test_profit_moonshot_filtered_shock_reversion_diversified_mode_keeps_gross_cap() -> None:
     definition = MODULE.resolve_portfolio_mode_definition(
         "profit_moonshot_filtered_shock_reversion_diversified_mode"
@@ -709,6 +734,7 @@ def test_resolve_portfolio_mode_definition_supports_recursive_allocator_sleeves(
         "profit_moonshot_taker_flow_exhaustion_eth_slow_momentum_mode"
         in MODULE.supported_portfolio_modes()
     )
+    assert "profit_moonshot_precious_metal_pair_aggressive_mode" in MODULE.supported_portfolio_modes()
     assert supports_live_portfolio_mode("legacy_no_highvol_hybrid_mode")
     assert supports_live_portfolio_mode("retuned_live_portfolio_hybrid_mode")
     assert supports_live_portfolio_mode("profit_reboot_panic_rebound_mode")
@@ -737,6 +763,7 @@ def test_resolve_portfolio_mode_definition_supports_recursive_allocator_sleeves(
         "profit_moonshot_hourly_shock_reversion_eth_12h_funding_guard_mode"
     )
     assert supports_live_portfolio_mode("profit_moonshot_filtered_shock_reversion_diversified_mode")
+    assert supports_live_portfolio_mode("profit_moonshot_precious_metal_pair_aggressive_mode")
 
 
 def test_profit_reboot_synthetic_modes_resolve_new_strategy_families() -> None:
