@@ -35,7 +35,9 @@ Hard requirements:
 ### Repo anchors
 
 - Existing exchange factory supports `binance_futures`/`binance_native`, `mt5`, and `polymarket`; there is no Hyperliquid driver yet (`src/lumina_quant/exchanges/__init__.py:6-25`).
+- For read-only multiasset onboarding, the existing portable seam is the `external` data route: external path resolution/loaders (`src/lumina_quant/market_data.py:293-355`), live source routing to `ExternalWindowDataHandler` (`src/lumina_quant/live/_source_routing.py:6-28`; `src/lumina_quant/live/data_external.py:19-49`), and backtest `--data-source external` / `--external-data-root` (`src/lumina_quant/cli/backtest.py:954-977`). Prefer this before adding live execution drivers.
 - MT5 already has a bridge-capable exchange class and WSL/Linux bridge path (`src/lumina_quant/exchanges/mt5_exchange.py:37-64`) plus `fetch_ohlcv` and order surfaces (`src/lumina_quant/exchanges/mt5_exchange.py:219-352`). Use it for Tickmill read-only first; do not enable direct orders in the first phase.
+- Config validation currently allows live market data sources `committed`, `binance_futures`, `external`, and `polymarket_live`, and exchange drivers `binance_futures`, `binance_native`, `mt5`, and `polymarket` (`src/lumina_quant/configuration/validate.py:103-128`). A new Hyperliquid driver requires schema/validation work; an external read-only feed does not.
 - The MT5 worker returns OHLCV from `copy_rates_from_pos` with timestamp/open/high/low/close/tick-volume rows (`scripts/mt5_bridge_worker.py:88-119`). Tickmill spread/swap/session modeling still needs explicit capture; OHLCV alone is insufficient.
 - Feature columns already include funding, mark/index price, OI, taker buy/sell volume, and liquidation fields (`src/lumina_quant/market_data.py:38-54`; `src/lumina_quant/data/feature_points.py:15-31`). Hyperliquid should map into this schema where semantics match, with exchange-specific provenance.
 - `FeaturePointLookup` is timestamp-safe and uses latest/sum-before-or-at semantics, which is suitable for completed-feature confirmation filters (`src/lumina_quant/data/feature_points.py:41-184`).
@@ -100,7 +102,7 @@ Acceptance for Phase A:
 
 ### Phase B — Hyperliquid read-only collector and normalizer
 
-Implement read-only Hyperliquid support before any trading surface:
+Implement read-only Hyperliquid support before any trading surface. Default to a user-managed external-feed contract first; add a full exchange driver only if execution/live-source integration is later justified:
 
 1. Add a small client/collector for public endpoints only:
    - `metaAndAssetCtxs` for mark/current funding/OI context.
@@ -127,7 +129,7 @@ Acceptance for Phase B:
 
 ### Phase C — Tickmill/MT5 read-only macro filter lane
 
-Use the existing MT5 bridge path first; Tickmill is a broker/provider configuration over MT5, not a new direct-execution alpha in phase C.
+Use the existing MT5 bridge path and/or external-feed root first; Tickmill is a broker/provider configuration over MT5, not a new direct-execution alpha in phase C. Treat MT5 bridge output as raw input to the same external/canonical OHLCV path until spread/swap/session capture is tested.
 
 1. Extend the MT5 bridge/read-only tooling to capture or snapshot:
    - OHLCV/tick-volume for FX majors, USD index proxy if available, XAUUSD/XAGUSD, major indices, oil/natural gas where available.
