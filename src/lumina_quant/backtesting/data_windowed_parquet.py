@@ -75,6 +75,11 @@ class HistoricParquetWindowedDataHandler(HistoricCSVDataHandler):
             timestamps = self.symbol_timestamps_ms.get(symbol)
             if not rows or not timestamps or len(rows) != len(timestamps):
                 continue
+            if symbol in getattr(self, "_epoch_ms_prefrozen_symbols", set()):
+                idx = int(self.symbol_index.get(symbol, 0))
+                if 0 <= idx < len(rows):
+                    self.next_bar[symbol] = rows[idx]
+                continue
             frozen = tuple(
                 (
                     int(ts_ms),

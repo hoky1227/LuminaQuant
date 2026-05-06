@@ -1723,6 +1723,67 @@ def _merge_components(components: list[PortfolioModeComponent]) -> list[Portfoli
     return sorted(merged.values(), key=lambda item: item.weight, reverse=True)
 
 
+def _component_param_override(
+    *,
+    component: PortfolioModeComponent,
+    component_index: int,
+    overrides: dict[str, Any],
+) -> dict[str, Any]:
+    merged: dict[str, Any] = {}
+    for key in (
+        "__all__",
+        "*",
+        component.strategy_class,
+        component.component_id,
+        str(component_index),
+    ):
+        raw = overrides.get(key)
+        if isinstance(raw, dict):
+            merged.update(dict(raw))
+    return merged
+
+
+def _apply_component_param_overrides(
+    definition: PortfolioModeDefinition,
+    overrides: dict[str, Any] | None,
+) -> PortfolioModeDefinition:
+    """Return a definition copy with research-only component param overrides."""
+    if not isinstance(overrides, dict) or not overrides:
+        return definition
+
+    components: list[PortfolioModeComponent] = []
+    for idx, component in enumerate(definition.components):
+        param_override = _component_param_override(
+            component=component,
+            component_index=idx,
+            overrides=overrides,
+        )
+        if not param_override:
+            components.append(component)
+            continue
+        params = dict(component.params or {})
+        params.update(param_override)
+        components.append(
+            PortfolioModeComponent(
+                component_id=component.component_id,
+                label=component.label,
+                strategy_class=component.strategy_class,
+                symbols=tuple(component.symbols),
+                params=params,
+                weight=float(component.weight),
+                source=component.source,
+            )
+        )
+
+    return PortfolioModeDefinition(
+        portfolio_mode=definition.portfolio_mode,
+        components=tuple(components),
+        cash_weight=float(definition.cash_weight),
+        source_artifacts=dict(definition.source_artifacts),
+        watch_symbols=tuple(definition.watch_symbols),
+    )
+
+
 def resolve_portfolio_mode_definition(portfolio_mode: str) -> PortfolioModeDefinition:
     token = str(portfolio_mode or "").strip()
     if not token:
@@ -1856,11 +1917,21 @@ def _child_uses_timeframe_aggregator(child: Any) -> bool:
 class ArtifactPortfolioModeStrategy(Strategy):
     preferred_contract = "context"
 
-    def __init__(self, bars, events, *, portfolio_mode: str):
+    def __init__(
+        self,
+        bars,
+        events,
+        *,
+        portfolio_mode: str,
+        component_param_overrides: dict[str, Any] | None = None,
+    ):
         self.bars = bars
         self.events = events
         self.portfolio_mode = str(portfolio_mode or "").strip()
-        self.definition = resolve_portfolio_mode_definition(self.portfolio_mode)
+        self.definition = _apply_component_param_overrides(
+            resolve_portfolio_mode_definition(self.portfolio_mode),
+            component_param_overrides,
+        )
         self.symbol_list = list(self.definition.symbols)
         self.decision_cadence_seconds = 60
         self._children: list[tuple[PortfolioModeComponent, Any, _SignalCaptureQueue]] = []

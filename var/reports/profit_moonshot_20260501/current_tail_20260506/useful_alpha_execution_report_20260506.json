@@ -1,4 +1,153 @@
 {
+  "cadence_sweep": {
+    "decision": "no_new_successful_alpha_promoted",
+    "full_gate_pass": false,
+    "full_gate_reasons": "train_total_return_not_positive;oos_return_not_above_0.8284pct_incumbent;oos_mdd_not_below_funding_guard_shadow;oos_sharpe_not_above_1.0_success_target;train_liquidation_observed",
+    "full_survivors_tested": 1,
+    "oos_liquidation_count": 0,
+    "oos_max_drawdown": 0.33002268419821307,
+    "oos_sharpe": 0.0120102809288089,
+    "oos_total_return": -0.009618904120529237,
+    "oos_trade_count": 374,
+    "optimization": {
+      "cached_render_data_cache": {
+        "entries": 0,
+        "freeze_seconds": 0.0,
+        "hits": 0,
+        "load_seconds": 0.0,
+        "loads": 0,
+        "max_entries": 5,
+        "misses": 0
+      },
+      "checkpoint_slowest_runs": [
+        {
+          "candidate_id": "profit_moonshot_adaptive_momentum_boost_mode__cadence_1b",
+          "engine_seconds": 473.0317018189962,
+          "load_seconds": 879.2898622159992,
+          "split": "train",
+          "wall_seconds": 1352.3215640349954
+        },
+        {
+          "candidate_id": "profit_moonshot_adaptive_momentum_boost_mode__cadence_1b",
+          "engine_seconds": 76.01354709499901,
+          "load_seconds": 145.12601053800063,
+          "split": "oos",
+          "wall_seconds": 221.13955763299964
+        },
+        {
+          "candidate_id": "profit_moonshot_adaptive_momentum_boost_mode__cadence_1b",
+          "engine_seconds": 68.03937755200059,
+          "load_seconds": 130.88347068800067,
+          "split": "val",
+          "wall_seconds": 198.92284824000126
+        },
+        {
+          "candidate_id": "derivatives_flow_squeeze_mode__cadence_1b",
+          "engine_seconds": 6.815367601999242,
+          "load_seconds": 2.6726000214694068e-05,
+          "split": "val_screen",
+          "wall_seconds": 6.815394327999456
+        },
+        {
+          "candidate_id": "profit_moonshot_balanced_mode__cadence_1b",
+          "engine_seconds": 6.548399837000034,
+          "load_seconds": 2.335699991817819e-05,
+          "split": "val_screen",
+          "wall_seconds": 6.548423193999952
+        },
+        {
+          "candidate_id": "profit_moonshot_ensemble_mode__cadence_1b",
+          "engine_seconds": 6.387115158999222,
+          "load_seconds": 2.389900055277394e-05,
+          "split": "val_screen",
+          "wall_seconds": 6.387139057999775
+        },
+        {
+          "candidate_id": "derivatives_flow_squeeze_mode__native",
+          "engine_seconds": 2.189639649000128,
+          "load_seconds": 3.0358832239999174,
+          "split": "val_screen",
+          "wall_seconds": 5.225522873000045
+        },
+        {
+          "candidate_id": "profit_moonshot_reversion_mode__cadence_1b",
+          "engine_seconds": 4.8869985289993565,
+          "load_seconds": 2.5058000574063044e-05,
+          "split": "val_screen",
+          "wall_seconds": 4.887023586999931
+        }
+      ],
+      "exactness_note": "cadence-only overrides; no gross/target/max-order increase; same ArtifactPortfolioModeStrategy/SimulatedExecutionHandler/Portfolio path with fees, spread, slippage, partial fills, cooldown/max-hold state.",
+      "native_backends": {
+        "raw_first": {
+          "auto_fallback_warning_count": 0,
+          "auto_fallback_warning_reasons": [],
+          "description": "rust:/home/hoky/Quants-agent/LuminaQuant/native/rust_rawfirst/target/release/liblumina_rawfirst.so",
+          "native_library_path": "/home/hoky/Quants-agent/LuminaQuant/native/rust_rawfirst/target/release/liblumina_rawfirst.so",
+          "native_load_error": null,
+          "requested_backend": "auto",
+          "resolved_backend": "rust"
+        }
+      },
+      "note": "latest report was re-rendered from checkpoint; split-level wall/load/engine seconds are in checkpoint_slowest_runs."
+    },
+    "report": "var/reports/profit_moonshot_20260501/current_tail_20260506/cadence_sweep/profit_moonshot_cadence_sweep_latest.json",
+    "resource_usage": {
+      "checkpointed_run_wall_seconds": 1943.7024499259905,
+      "max_rss_mib": 4693.50390625,
+      "total_wall_seconds_for_cached_render": 2.0596963160005544
+    },
+    "screened_candidates": 174,
+    "top_full_candidate": "profit_moonshot_adaptive_momentum_boost_mode__cadence_1b",
+    "top_validation_screen": [
+      {
+        "candidate_id": "profit_moonshot_adaptive_momentum_boost_mode__cadence_1b",
+        "val_max_drawdown": 0.0028247621455307365,
+        "val_sharpe": 0.1074917672804689,
+        "val_total_return": 0.0009126067958815653,
+        "val_trade_count": 16
+      },
+      {
+        "candidate_id": "profit_moonshot_adaptive_momentum_140_mode__cadence_1b",
+        "val_max_drawdown": 0.002644561931461705,
+        "val_sharpe": 0.10759057375589998,
+        "val_total_return": 0.0008553687976637914,
+        "val_trade_count": 16
+      },
+      {
+        "candidate_id": "profit_moonshot_adaptive_momentum_governed_mode__cadence_1b",
+        "val_max_drawdown": 0.002644561931461705,
+        "val_sharpe": 0.10759057375589998,
+        "val_total_return": 0.0008553687976637914,
+        "val_trade_count": 16
+      },
+      {
+        "candidate_id": "profit_moonshot_adaptive_momentum_130_mode__cadence_1b",
+        "val_max_drawdown": 0.0024640565767850846,
+        "val_sharpe": 0.1077249941578604,
+        "val_total_return": 0.000798131129059243,
+        "val_trade_count": 16
+      },
+      {
+        "candidate_id": "profit_moonshot_momentum_hybrid_return_mode__cadence_1b",
+        "val_max_drawdown": 0.0024527538218372057,
+        "val_sharpe": 0.10611890676659722,
+        "val_total_return": 0.000783395849206947,
+        "val_trade_count": 46
+      }
+    ],
+    "train_liquidation_count": 5,
+    "train_max_drawdown": 1.757880422159876,
+    "train_sharpe": 0.03554001582890543,
+    "train_total_return": -1.1158936570801055,
+    "train_trade_count": 2606,
+    "updated_at_utc": "2026-05-06T12:55:59.857827Z",
+    "val_liquidation_count": 0,
+    "val_max_drawdown": 0.258855029484078,
+    "val_sharpe": 0.031136228116046705,
+    "val_total_return": 0.12574345689749178,
+    "val_trade_count": 661
+  },
   "decision": "no_new_successful_alpha",
   "incumbent_oos_return_best": {
     "mode": "profit_moonshot_hourly_shock_reversion_eth_12h_mode",
@@ -101,6 +250,7 @@
   "replay_evaluated": 130,
   "replay_survivors": 8,
   "reports": {
+    "cadence_sweep": "var/reports/profit_moonshot_20260501/current_tail_20260506/cadence_sweep/profit_moonshot_cadence_sweep_latest.json",
     "raw_first_coverage": "var/reports/profit_moonshot_20260501/current_tail_20260506/raw_first_preflight_eth_btc_sol_metals/raw_first_symbol_coverage_latest.json",
     "replay": "var/reports/profit_moonshot_20260501/current_tail_20260506/eth_shock_filter_replay/eth_shock_filter_replay_latest.json",
     "sol_regime_guard": "var/reports/profit_moonshot_20260501/current_tail_20260506/live_equivalent/profit_moonshot_hourly_shock_reversion_eth_12h_sol_regime_guard_mode/live_equivalent_revalidation_latest.json",

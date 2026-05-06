@@ -77,6 +77,7 @@ class HistoricCSVDataHandler(DataHandler):
         self.symbol_index: dict[str, int] = {}
         self.next_bar: dict[str, tuple[Any, ...]] = {}
         self.finished_symbols = set()
+        self._epoch_ms_prefrozen_symbols: set[str] = set()
         self._bar_heap: list[tuple[Any, int, str]] = []
         self._heap_seq = 0
         self.last_emitted_timestamp_ms: int | None = None
@@ -155,6 +156,8 @@ class HistoricCSVDataHandler(DataHandler):
                     preloaded = combined_data[s]
                     if self._is_prefrozen_rows(preloaded):
                         rows = tuple(preloaded)
+                        if self._is_epoch_ms_ohlcv_rows(rows):
+                            self._epoch_ms_prefrozen_symbols.add(s)
                     else:
                         df = self._frame_loader.normalize(preloaded)
                         if df is None:
@@ -194,7 +197,10 @@ class HistoricCSVDataHandler(DataHandler):
                 self.symbol_index[s] = 0
                 self.next_bar[s] = rows[0]
 
-                timestamps_ms = [self._bar_time_ms(row[0]) or 0 for row in rows]
+                if s in self._epoch_ms_prefrozen_symbols:
+                    timestamps_ms = [int(row[0]) for row in rows]
+                else:
+                    timestamps_ms = [self._bar_time_ms(row[0]) or 0 for row in rows]
                 self.symbol_timestamps_ms[s] = timestamps_ms
                 self._push_heap(s, rows[0])
             except Exception as e:
@@ -215,6 +221,21 @@ class HistoricCSVDataHandler(DataHandler):
             return True
         first = value[0]
         return isinstance(first, tuple) and len(first) >= 6
+
+    @staticmethod
+    def _is_epoch_ms_ohlcv_rows(rows) -> bool:
+        if not isinstance(rows, (list, tuple)) or len(rows) == 0:
+            return False
+        first = rows[0]
+        if not isinstance(first, tuple) or len(first) < 6:
+            return False
+        if isinstance(first[0], datetime):
+            return False
+        try:
+            value = int(first[0])
+        except Exception:
+            return False
+        return abs(value) >= 100_000_000_000
 
     def _push_heap(self, symbol, bar):
         heapq.heappush(self._bar_heap, (bar[0], self._heap_seq, symbol))

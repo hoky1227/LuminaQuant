@@ -119,6 +119,7 @@ class Portfolio:
             "total_funding_paid": self.total_funding_paid,
             "last_funding_ts": self._last_funding_ts,
             "pending_liquidation": list(self._pending_liquidation),
+            "liquidation_events": list(self.liquidation_events),
             "trade_count": self.trade_count,
             "trading_frozen": bool(self.trading_frozen),
             "equity_points": list(self._equity_points),
@@ -145,6 +146,8 @@ class Portfolio:
             self._last_funding_ts = state["last_funding_ts"]
         if "pending_liquidation" in state:
             self._pending_liquidation = set(state["pending_liquidation"])
+        if "liquidation_events" in state and isinstance(state["liquidation_events"], list):
+            self.liquidation_events = list(state["liquidation_events"])
         if "trade_count" in state:
             self.trade_count = int(state["trade_count"])
         if "trading_frozen" in state:
@@ -422,9 +425,15 @@ class Portfolio:
 
         if loss_pct >= self.max_daily_loss_pct:
             self.circuit_breaker_tripped = True
-            print(
-                f"[CIRCUIT BREAKER] Daily loss {loss_pct:.2%} >= {self.max_daily_loss_pct:.2%}. HALTING TRADING."
-            )
+            if os.getenv("LQ_BACKTEST_SUPPRESS_CIRCUIT_BREAKER_LOGS", "").strip().lower() not in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }:
+                print(
+                    f"[CIRCUIT BREAKER] Daily loss {loss_pct:.2%} >= {self.max_daily_loss_pct:.2%}. HALTING TRADING."
+                )
 
     def _update_day_boundary(self, latest_datetime):
         cur_day = self._normalize_to_date(latest_datetime)

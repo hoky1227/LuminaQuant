@@ -112,3 +112,10 @@ Detailed report: `var/reports/profit_moonshot_20260501/current_tail_20260505/tak
   - `profit_moonshot_hourly_shock_reversion_eth_12h_taker_flow_guard_mode`: OOS `+0.5871%`, MDD `0.3203%`, Sharpe `0.070688`; rejected.
   - `profit_moonshot_hourly_shock_reversion_eth_12h_sol_regime_guard_mode`: OOS `+0.3221%`, MDD `0.9275%`, Sharpe `0.014160`; rejected.
 - Decision: **no new successful alpha promoted**. Keep ETH 12h shock reversion as OOS-return best and funding guard as Sharpe/MDD shadow; new modes remain shadow/audit artifacts only, not live-selection-supported modes.
+
+## Leverage/rebalancing cadence follow-up — 2026-05-06
+
+- Cadence sweep report: `var/reports/profit_moonshot_20260501/current_tail_20260506/cadence_sweep/profit_moonshot_cadence_sweep_latest.md`.
+- Exact screen: `174` cadence variants; no exposure/gross/max-order increase.
+- Best screen survivor `profit_moonshot_adaptive_momentum_boost_mode__cadence_1b` failed full replay: train `-111.5894%` with `5` liquidations; OOS `-0.9619%` / Sharpe `0.012010` / MDD `33.0023%`.
+- Decision: **no cadence/rebalance alpha promoted**; incumbent ETH 12h shock and funding-guard shadow remain unchanged.

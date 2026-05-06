@@ -92,6 +92,37 @@ def test_portfolio_mode_propagates_child_timeframes_for_explicit_aggregator_use(
     assert strategy.required_timeframes == ("1m", "20s")
 
 
+def test_portfolio_mode_applies_research_only_component_param_overrides(monkeypatch) -> None:
+    observed_params = {}
+
+    class _ParamChild:
+        def __init__(self, bars, events, **params):
+            _ = bars, events
+            observed_params.update(params)
+
+        def calculate_signals(self, event):
+            _ = event
+
+    _patch_single_component(monkeypatch, _ParamChild)
+
+    strategy = MODULE.ArtifactPortfolioModeStrategy(
+        bars=SimpleNamespace(symbol_list=["BNB/USDT"], get_latest_bar_value=lambda *args, **kwargs: 100.0),
+        events=SimpleNamespace(put=lambda item: None),
+        portfolio_mode="hybrid_guarded_mode",
+        component_param_overrides={
+            "comp-a": {
+                "rebalance_bars": 60,
+                "gross_exposure": 0.01,
+            }
+        },
+    )
+
+    assert strategy.definition.components[0].params["rebalance_bars"] == 60
+    assert strategy.definition.components[0].params["gross_exposure"] == 0.01
+    assert observed_params["rebalance_bars"] == 60
+    assert observed_params["gross_exposure"] == 0.01
+
+
 def test_portfolio_mode_propagates_child_features_and_context(monkeypatch) -> None:
     class _ContextChild:
         required_features = ("taker_buy_quote_volume",)

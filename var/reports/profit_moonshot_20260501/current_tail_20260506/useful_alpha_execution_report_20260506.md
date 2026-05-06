@@ -89,3 +89,18 @@ Only replay survivors were promoted to full engine tests, one mode at a time. Bo
 ## Final decision
 
 No new profit-moonshot alpha qualifies for success. Keep `profit_moonshot_hourly_shock_reversion_eth_12h_mode` as OOS-return best and `profit_moonshot_hourly_shock_reversion_eth_12h_funding_guard_mode` as Sharpe/MDD shadow. Do not promote metals, taker-flow guard, or SOL regime guard.
+
+## Leverage / rebalancing cadence sweep addendum — 2026-05-06
+
+User-requested leveraged-strategy cadence tuning was run across current profit-moonshot / reboot portfolio modes without increasing gross exposure, target allocation, or max-order caps.
+
+- Cadence artifact: `var/reports/profit_moonshot_20260501/current_tail_20260506/cadence_sweep/profit_moonshot_cadence_sweep_latest.json`.
+- Exact validation screen: `174` cadence variants across `28` eligible modes; grid included frequent `1` bar through low-frequency `1440` bars plus native cadences.
+- Top one-day validation screen was dominated by aggressive `1b` adaptive-momentum variants, but the best screen survivor failed full train/val/OOS replay.
+- Full live-equivalent raw-first replay: `profit_moonshot_adaptive_momentum_boost_mode__cadence_1b`.
+  - train: `-111.5894%` return / Sharpe `0.035540` / MDD `175.7880%` / trades `2606` / liquidations `5`.
+  - val: `+12.5743%` return / Sharpe `0.031136` / MDD `25.8855%` / trades `661` / liquidations `0`.
+  - OOS: `-0.9619%` return / Sharpe `0.012010` / MDD `33.0023%` / trades `374` / liquidations `0`.
+- Gate decision: **reject / no promotion** — `train_total_return_not_positive;oos_return_not_above_0.8284pct_incumbent;oos_mdd_not_below_funding_guard_shadow;oos_sharpe_not_above_1.0_success_target;train_liquidation_observed`.
+- Resource/optimization evidence: max RSS `4693.50 MiB`; checkpointed replay wall `1943.70s`; Rust raw-first backend resolved to `rust:/home/hoky/Quants-agent/LuminaQuant/native/rust_rawfirst/target/release/liblumina_rawfirst.so`; exact row cache and epoch-ms prefrozen rows preserve the same event-driven fill/fee/partial-fill path.
+- Bottleneck conclusion: structural exactness cost remains in Python strategy/portfolio/event state, especially when leveraged positions stay open and liquidation/funding/active-order checks prevent safe skip-ahead. The safe hot-loop work completed here removes redundant raw-first load/freeze/refreeze work and keeps RSS under 8GB; it does **not** mark the failed cadence candidate as useful alpha.
