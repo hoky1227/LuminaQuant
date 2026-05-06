@@ -20,12 +20,14 @@ class _PositionState:
     entry_price: float | None = None
     bars_held: int = 0
     last_completed_bar_key: str = ""
+    cooldown_remaining: int = 0
 
 
 class HourlyShockReversionStrategy(Strategy):
     """Fade a large completed hourly move in one liquid crypto symbol."""
 
     uses_timeframe_aggregator = True
+    preferred_contract = "context"
     required_timeframes = ("1h",)
     required_lookbacks = {"1h": 128}
 
@@ -39,6 +41,9 @@ class HourlyShockReversionStrategy(Strategy):
                 "return_threshold", default=0.006, low=0.0, high=1.0
             ),
             "max_hold_bars": HyperParam.integer("max_hold_bars", default=48, low=1, high=240),
+            "cooldown_bars": HyperParam.integer(
+                "cooldown_bars", default=0, low=0, high=240, tunable=False
+            ),
             "target_allocation": HyperParam.floating(
                 "target_allocation", default=0.008, low=0.0, high=1.0, tunable=False
             ),
@@ -70,6 +75,12 @@ class HourlyShockReversionStrategy(Strategy):
             "max_realized_volatility": HyperParam.floating(
                 "max_realized_volatility", default=0.0, low=0.0, high=1.0, tunable=False
             ),
+            "flow_confirmation_lookback_bars": HyperParam.integer(
+                "flow_confirmation_lookback_bars", default=0, low=0, high=24, tunable=False
+            ),
+            "flow_imbalance_min": HyperParam.floating(
+                "flow_imbalance_min", default=0.0, low=0.0, high=1.0, tunable=False
+            ),
         }
 
     def __init__(
@@ -81,6 +92,7 @@ class HourlyShockReversionStrategy(Strategy):
         lookback_bars: int = 4,
         return_threshold: float = 0.006,
         max_hold_bars: int = 48,
+        cooldown_bars: int = 0,
         target_allocation: float = 0.008,
         max_order_value: float = 175.0,
         stop_loss_pct: float = 0.02,
@@ -94,6 +106,8 @@ class HourlyShockReversionStrategy(Strategy):
         counterguard_return_threshold: float = 0.0,
         volatility_lookback_bars: int = 0,
         max_realized_volatility: float = 0.0,
+        flow_confirmation_lookback_bars: int = 0,
+        flow_imbalance_min: float = 0.0,
     ) -> None:
         self.bars = bars
         self.events = events
@@ -105,6 +119,7 @@ class HourlyShockReversionStrategy(Strategy):
                 "lookback_bars": lookback_bars,
                 "return_threshold": return_threshold,
                 "max_hold_bars": max_hold_bars,
+                "cooldown_bars": cooldown_bars,
                 "target_allocation": target_allocation,
                 "max_order_value": max_order_value,
                 "stop_loss_pct": stop_loss_pct,
@@ -118,6 +133,8 @@ class HourlyShockReversionStrategy(Strategy):
                 "counterguard_return_threshold": counterguard_return_threshold,
                 "volatility_lookback_bars": volatility_lookback_bars,
                 "max_realized_volatility": max_realized_volatility,
+                "flow_confirmation_lookback_bars": flow_confirmation_lookback_bars,
+                "flow_imbalance_min": flow_imbalance_min,
             },
             keep_unknown=False,
         )
@@ -126,6 +143,7 @@ class HourlyShockReversionStrategy(Strategy):
         self.lookback_bars = max(1, int(resolved["lookback_bars"]))
         self.return_threshold = max(0.0, float(resolved["return_threshold"]))
         self.max_hold_bars = max(1, int(resolved["max_hold_bars"]))
+        self.cooldown_bars = max(0, int(resolved["cooldown_bars"]))
         self.target_allocation = max(0.0, float(resolved["target_allocation"]))
         self.max_order_value = max(0.0, float(resolved["max_order_value"]))
         self.stop_loss_pct = max(0.0, float(resolved["stop_loss_pct"]))
@@ -142,7 +160,22 @@ class HourlyShockReversionStrategy(Strategy):
         )
         self.volatility_lookback_bars = max(0, int(resolved["volatility_lookback_bars"]))
         self.max_realized_volatility = max(0.0, float(resolved["max_realized_volatility"]))
+        self.flow_confirmation_lookback_bars = max(
+            0, int(resolved["flow_confirmation_lookback_bars"])
+        )
+        self.flow_imbalance_min = max(0.0, float(resolved["flow_imbalance_min"]))
         self._state = _PositionState()
+
+    @property
+    def required_features(self) -> tuple[str, ...]:
+        if self.flow_confirmation_lookback_bars > 0 and self.flow_imbalance_min > 0.0:
+            return (
+                "taker_buy_quote_volume",
+                "taker_sell_quote_volume",
+                "taker_buy_base_volume",
+                "taker_sell_base_volume",
+            )
+        return ()
 
     def get_state(self) -> dict[str, Any]:
         return {
@@ -150,6 +183,7 @@ class HourlyShockReversionStrategy(Strategy):
             "entry_price": self._state.entry_price,
             "bars_held": int(self._state.bars_held),
             "last_completed_bar_key": self._state.last_completed_bar_key,
+            "cooldown_remaining": int(self._state.cooldown_remaining),
         }
 
     def set_state(self, state: dict) -> None:
@@ -163,6 +197,10 @@ class HourlyShockReversionStrategy(Strategy):
         except Exception:
             self._state.bars_held = 0
         self._state.last_completed_bar_key = str(state.get("last_completed_bar_key", ""))
+        try:
+            self._state.cooldown_remaining = max(0, int(state.get("cooldown_remaining", 0)))
+        except Exception:
+            self._state.cooldown_remaining = 0
 
     @staticmethod
     def _completed_bars(aggregator: Any, symbol: str, timeframe: str, lookback: int) -> list[Any]:
@@ -244,6 +282,31 @@ class HourlyShockReversionStrategy(Strategy):
         return int(value.hour)
 
     @staticmethod
+    def _bar_start_ms(bar: Any) -> int | None:
+        raw = None
+        if isinstance(bar, (tuple, list)) and bar:
+            raw = bar[0]
+        elif isinstance(bar, dict):
+            raw = bar.get("time") or bar.get("datetime")
+        if raw is None:
+            return None
+        if isinstance(raw, datetime):
+            value = raw.astimezone(UTC) if raw.tzinfo is not None else raw.replace(tzinfo=UTC)
+            return int(value.timestamp() * 1000)
+        if isinstance(raw, (int, float)):
+            ts = float(raw)
+            return int(ts if abs(ts) > 100_000_000_000 else ts * 1000)
+        text = str(raw).strip()
+        if not text:
+            return None
+        try:
+            value = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except Exception:
+            return None
+        value = value.astimezone(UTC) if value.tzinfo is not None else value.replace(tzinfo=UTC)
+        return int(value.timestamp() * 1000)
+
+    @staticmethod
     def _realized_volatility(bars: list[Any], lookback: int) -> float:
         if lookback <= 1 or len(bars) < 3:
             return 0.0
@@ -259,6 +322,87 @@ class HourlyShockReversionStrategy(Strategy):
             return 0.0
         return math.sqrt(sum(value * value for value in returns) / len(returns))
 
+    def _flow_confirmation_pass(
+        self,
+        *,
+        feature_lookup: Any,
+        latest_bar: Any,
+        signal_type: str,
+        latest_close: float,
+    ) -> tuple[bool, dict[str, Any]]:
+        if self.flow_confirmation_lookback_bars <= 0 or self.flow_imbalance_min <= 0.0:
+            return True, {}
+        metadata: dict[str, Any] = {
+            "flow_confirmation_lookback_bars": int(self.flow_confirmation_lookback_bars),
+            "flow_imbalance_min": float(self.flow_imbalance_min),
+        }
+        bar_start_ms = self._bar_start_ms(latest_bar)
+        if bar_start_ms is None:
+            metadata["filter_reject"] = "flow_bar_time_missing"
+            return False, metadata
+        window_start = int(bar_start_ms) - (self.flow_confirmation_lookback_bars - 1) * 3_600_000
+        window_stop = int(bar_start_ms) + 3_600_000 - 1
+        sum_between = getattr(feature_lookup, "sum_between", None)
+        if not callable(sum_between):
+            metadata["filter_reject"] = "flow_feature_lookup_missing"
+            return False, metadata
+
+        buy_quote = safe_float(
+            sum_between(
+                self.target_symbol,
+                "taker_buy_quote_volume",
+                start_timestamp_ms=window_start,
+                end_timestamp_ms=window_stop,
+            )
+        )
+        sell_quote = safe_float(
+            sum_between(
+                self.target_symbol,
+                "taker_sell_quote_volume",
+                start_timestamp_ms=window_start,
+                end_timestamp_ms=window_stop,
+            )
+        )
+        if buy_quote is None or sell_quote is None or buy_quote + sell_quote <= 0.0:
+            buy_base = safe_float(
+                sum_between(
+                    self.target_symbol,
+                    "taker_buy_base_volume",
+                    start_timestamp_ms=window_start,
+                    end_timestamp_ms=window_stop,
+                )
+            )
+            sell_base = safe_float(
+                sum_between(
+                    self.target_symbol,
+                    "taker_sell_base_volume",
+                    start_timestamp_ms=window_start,
+                    end_timestamp_ms=window_stop,
+                )
+            )
+            if buy_base is not None and sell_base is not None and buy_base + sell_base > 0.0:
+                buy_quote = buy_base * float(latest_close)
+                sell_quote = sell_base * float(latest_close)
+                metadata["flow_source"] = "base_volume"
+        else:
+            metadata["flow_source"] = "quote_volume"
+
+        if buy_quote is None or sell_quote is None or buy_quote + sell_quote <= 0.0:
+            metadata["filter_reject"] = "flow_feature_missing"
+            return False, metadata
+
+        imbalance = float((buy_quote - sell_quote) / (buy_quote + sell_quote))
+        metadata["flow_imbalance"] = imbalance
+        metadata["flow_window_start_ms"] = int(window_start)
+        metadata["flow_window_end_ms"] = int(window_stop)
+        if signal_type == "LONG" and imbalance > -self.flow_imbalance_min:
+            metadata["filter_reject"] = "taker_sell_exhaustion_missing"
+            return False, metadata
+        if signal_type == "SHORT" and imbalance < self.flow_imbalance_min:
+            metadata["filter_reject"] = "taker_buy_exhaustion_missing"
+            return False, metadata
+        return True, metadata
+
     def _entry_filters_pass(
         self,
         *,
@@ -266,6 +410,8 @@ class HourlyShockReversionStrategy(Strategy):
         latest_bar: Any,
         signal_type: str,
         target_bars: list[Any],
+        latest_close: float,
+        feature_lookup: Any = None,
     ) -> tuple[bool, dict[str, Any]]:
         metadata: dict[str, Any] = {}
         hour = self._bar_hour_utc(latest_bar)
@@ -317,6 +463,17 @@ class HourlyShockReversionStrategy(Strategy):
                 return False, metadata
             if signal_type == "SHORT" and regime_return >= self.counterguard_return_threshold:
                 metadata["filter_reject"] = "counterguard_uptrend"
+                return False, metadata
+
+        if self.flow_confirmation_lookback_bars > 0 and self.flow_imbalance_min > 0.0:
+            passed, flow_metadata = self._flow_confirmation_pass(
+                feature_lookup=feature_lookup,
+                latest_bar=latest_bar,
+                signal_type=signal_type,
+                latest_close=float(latest_close),
+            )
+            metadata.update(flow_metadata)
+            if not passed:
                 return False, metadata
 
         return True, metadata
@@ -417,13 +574,21 @@ class HourlyShockReversionStrategy(Strategy):
         self._state.mode = "OUT"
         self._state.entry_price = None
         self._state.bars_held = 0
+        self._state.cooldown_remaining = int(self.cooldown_bars)
         return True
 
     def calculate_signals(self, event: Any) -> None:
         _ = event
         return
 
-    def calculate_signals_window(self, event: Any, aggregator: Any) -> None:
+    def calculate_signals_context(self, context: Any) -> None:
+        self.calculate_signals_window(
+            getattr(context, "event", None),
+            getattr(context, "aggregator", None),
+            feature_lookup=getattr(context, "feature_lookup", None),
+        )
+
+    def calculate_signals_window(self, event: Any, aggregator: Any, feature_lookup: Any = None) -> None:
         if aggregator is None:
             return
         bars = self._completed_bars(
@@ -452,6 +617,9 @@ class HourlyShockReversionStrategy(Strategy):
             return
         if self._state.mode != "OUT":
             return
+        if self._state.cooldown_remaining > 0:
+            self._state.cooldown_remaining -= 1
+            return
 
         if shock_return >= self.return_threshold:
             if not self.allow_short:
@@ -471,6 +639,8 @@ class HourlyShockReversionStrategy(Strategy):
             latest_bar=latest_bar,
             signal_type=signal_type,
             target_bars=bars,
+            latest_close=float(latest_close),
+            feature_lookup=feature_lookup,
         )
         if not filters_pass:
             return

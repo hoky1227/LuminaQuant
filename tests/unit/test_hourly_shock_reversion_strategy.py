@@ -16,6 +16,15 @@ class _Queue:
         self.items.append(item)
 
 
+class _FeatureLookup:
+    def __init__(self, values: dict[str, float | None]) -> None:
+        self.values = dict(values)
+
+    def sum_between(self, _symbol, field, *, start_timestamp_ms, end_timestamp_ms):
+        assert start_timestamp_ms <= end_timestamp_ms
+        return self.values.get(field)
+
+
 def _event(when: datetime, close: float) -> MarketEvent:
     return _event_for_symbol("ETH/USDT", when, close)
 
@@ -36,6 +45,18 @@ def _step(strategy, aggregator, when: datetime, close: float) -> None:
     event = _event(when, close)
     aggregator.update_from_1s_batch("ETH/USDT", [event])
     strategy.calculate_signals_window(event, aggregator)
+
+
+def _step_with_features(
+    strategy,
+    aggregator,
+    when: datetime,
+    close: float,
+    feature_lookup,
+) -> None:
+    event = _event(when, close)
+    aggregator.update_from_1s_batch("ETH/USDT", [event])
+    strategy.calculate_signals_window(event, aggregator, feature_lookup=feature_lookup)
 
 
 def _step_symbols(strategy, aggregator, when: datetime, closes: dict[str, float]) -> None:
@@ -123,6 +144,54 @@ def test_hourly_shock_reversion_respects_excluded_entry_hours() -> None:
         _step(strategy, aggregator, start + timedelta(hours=offset), close)
 
     assert queue.items == []
+
+
+def test_hourly_shock_reversion_requires_taker_flow_confirmation() -> None:
+    queue = _Queue()
+    strategy = HourlyShockReversionStrategy(
+        SimpleNamespace(symbol_list=["ETH/USDT"]),
+        queue,
+        lookback_bars=4,
+        return_threshold=0.006,
+        flow_confirmation_lookback_bars=1,
+        flow_imbalance_min=0.10,
+    )
+    aggregator = TimeframeAggregator(timeframes=["1h"], lookbacks={"1h": 16})
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    buy_dominant = _FeatureLookup(
+        {"taker_buy_quote_volume": 70.0, "taker_sell_quote_volume": 30.0}
+    )
+
+    for offset, close in enumerate([100.0, 100.0, 100.0, 100.0, 99.0, 99.0]):
+        _step_with_features(strategy, aggregator, start + timedelta(hours=offset), close, buy_dominant)
+
+    assert queue.items == []
+
+
+def test_hourly_shock_reversion_accepts_confirming_taker_flow() -> None:
+    queue = _Queue()
+    strategy = HourlyShockReversionStrategy(
+        SimpleNamespace(symbol_list=["ETH/USDT"]),
+        queue,
+        lookback_bars=4,
+        return_threshold=0.006,
+        flow_confirmation_lookback_bars=1,
+        flow_imbalance_min=0.10,
+    )
+    aggregator = TimeframeAggregator(timeframes=["1h"], lookbacks={"1h": 16})
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    sell_dominant = _FeatureLookup(
+        {"taker_buy_quote_volume": 30.0, "taker_sell_quote_volume": 70.0}
+    )
+
+    for offset, close in enumerate([100.0, 100.0, 100.0, 100.0, 99.0, 99.0]):
+        _step_with_features(strategy, aggregator, start + timedelta(hours=offset), close, sell_dominant)
+
+    assert len(queue.items) == 1
+    signal = queue.items[0]
+    assert signal.signal_type == "LONG"
+    assert signal.metadata["flow_imbalance"] == -0.4
+    assert signal.metadata["flow_source"] == "quote_volume"
 
 
 def test_hourly_shock_reversion_counterguard_blocks_long_during_btc_downtrend() -> None:

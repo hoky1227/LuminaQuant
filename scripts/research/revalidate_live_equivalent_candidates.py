@@ -55,6 +55,9 @@ MIN_ALPHA_TRAIN_TOTAL_RETURN = -0.03
 MIN_ALPHA_VAL_TOTAL_RETURN = 0.0
 MIN_ALPHA_VAL_SHARPE = 0.0
 MIN_ALPHA_VAL_SORTINO = 0.0
+MIN_USEFUL_ALPHA_OOS_TOTAL_RETURN = 0.008284
+MAX_USEFUL_ALPHA_OOS_MDD = 0.001778
+MIN_USEFUL_ALPHA_OOS_SHARPE = 1.0
 METRIC_KEYS = (
     "total_return",
     "cagr",
@@ -437,13 +440,17 @@ def _profit_alpha_gate(
     scores = dict(result.get("scores") or {})
     train = dict(metrics.get("train") or {})
     val = dict(metrics.get("val") or {})
+    oos = dict(metrics.get("oos") or {})
     train_run = _split_run_by_name(result, "train")
     val_run = _split_run_by_name(result, "val")
+    oos_run = _split_run_by_name(result, "oos")
 
     train_trade_count = int(_safe_float(train_run.get("trade_count"), 0.0))
     val_trade_count = int(_safe_float(val_run.get("trade_count"), 0.0))
+    oos_trade_count = int(_safe_float(oos_run.get("trade_count"), 0.0))
     train_liquidation_count = int(_safe_float(train_run.get("liquidation_count"), 0.0))
     val_liquidation_count = int(_safe_float(val_run.get("liquidation_count"), 0.0))
+    oos_liquidation_count = int(_safe_float(oos_run.get("liquidation_count"), 0.0))
 
     reasons: list[str] = []
     if status != "live_equivalent_validated":
@@ -466,7 +473,15 @@ def _profit_alpha_gate(
         reasons.append("val_sharpe_not_positive")
     if _safe_float(val.get("sortino"), 0.0) <= MIN_ALPHA_VAL_SORTINO:
         reasons.append("val_sortino_not_positive")
-    if train_liquidation_count > 0 or val_liquidation_count > 0:
+    if _safe_float(oos.get("total_return"), 0.0) <= MIN_USEFUL_ALPHA_OOS_TOTAL_RETURN:
+        reasons.append("oos_return_not_above_0.8284pct_incumbent")
+    if _safe_float(oos.get("max_drawdown"), 0.0) >= MAX_USEFUL_ALPHA_OOS_MDD:
+        reasons.append("oos_mdd_not_below_funding_guard_shadow")
+    if _safe_float(oos.get("sharpe"), 0.0) <= MIN_USEFUL_ALPHA_OOS_SHARPE:
+        reasons.append("oos_sharpe_not_above_1.0_success_target")
+    if oos_trade_count <= 0:
+        reasons.append("oos_trade_count_zero")
+    if train_liquidation_count > 0 or val_liquidation_count > 0 or oos_liquidation_count > 0:
         reasons.append("liquidation_observed")
 
     return {
@@ -478,8 +493,11 @@ def _profit_alpha_gate(
         "val_trade_count": val_trade_count,
         "train_liquidation_count": train_liquidation_count,
         "val_liquidation_count": val_liquidation_count,
+        "oos_trade_count": oos_trade_count,
+        "oos_liquidation_count": oos_liquidation_count,
         "train_final_equity": _safe_float(train_run.get("final_equity"), 0.0),
         "val_final_equity": _safe_float(val_run.get("final_equity"), 0.0),
+        "oos_final_equity": _safe_float(oos_run.get("final_equity"), 0.0),
     }
 
 
@@ -868,10 +886,13 @@ def _mode_candidate_rows(mode_results: list[dict[str, Any]], preflights: dict[st
             "oos_scaled_score_report_only": scores.get("oos_scaled_score_report_only"),
             "train_trade_count": int(_safe_float(gate.get("train_trade_count"), 0.0)),
             "val_trade_count": int(_safe_float(gate.get("val_trade_count"), 0.0)),
+            "oos_trade_count": int(_safe_float(gate.get("oos_trade_count"), 0.0)),
             "train_liquidation_count": int(_safe_float(gate.get("train_liquidation_count"), 0.0)),
             "val_liquidation_count": int(_safe_float(gate.get("val_liquidation_count"), 0.0)),
+            "oos_liquidation_count": int(_safe_float(gate.get("oos_liquidation_count"), 0.0)),
             "train_final_equity": _safe_float(gate.get("train_final_equity"), 0.0),
             "val_final_equity": _safe_float(gate.get("val_final_equity"), 0.0),
+            "oos_final_equity": _safe_float(gate.get("oos_final_equity"), 0.0),
             "cash_weight": float(preflight.cash_weight),
             "symbols": ",".join(preflight.symbols),
             "blocking_reasons": ";".join(preflight.blocking_reasons[:12]),
@@ -1194,12 +1215,13 @@ def build_live_equivalent_revalidation(
     backtest_checkpoint_path: Path | None = None,
     portfolio_modes: list[str] | None = None,
     fail_fast_alpha_gate: bool = False,
+    oos_end: date | None = None,
 ) -> dict[str, Any]:
     market_root = Path(market_root or str(BaseConfig.MARKET_DATA_PARQUET_PATH))
     exchange = str(exchange or BaseConfig.MARKET_DATA_EXCHANGE).lower()
     checkpoint_path = Path(backtest_checkpoint_path or DEFAULT_BACKTEST_CHECKPOINT_PATH)
     checkpoint = _load_backtest_checkpoint(checkpoint_path) if execute_backtests else None
-    splits = _split_windows()
+    splits = _split_windows(oos_end=oos_end)
     full_universe = _load_full_universe(full_universe_path)
     artifact_rows = _artifact_candidate_reset_rows(full_universe)
 
@@ -1209,8 +1231,8 @@ def build_live_equivalent_revalidation(
             mode = str(raw_mode or "").strip()
             if not mode:
                 continue
-            if not supports_live_portfolio_mode(mode):
-                raise ValueError(f"unsupported live portfolio mode filter: {mode}")
+            if not supports_live_portfolio_mode(mode) and mode not in supported_portfolio_modes():
+                raise ValueError(f"unsupported live-equivalent portfolio mode filter: {mode}")
             modes.append(mode)
         modes = sorted(dict.fromkeys(modes))
     else:
@@ -1369,6 +1391,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--backtest-window-seconds", type=int, default=20)
     parser.add_argument("--backtest-checkpoint-path", default=str(DEFAULT_BACKTEST_CHECKPOINT_PATH))
     parser.add_argument(
+        "--oos-end-date",
+        default="",
+        help="Inclusive OOS end date override; useful when the latest UTC day is not raw-first complete.",
+    )
+    parser.add_argument(
         "--portfolio-modes",
         default="",
         help="Comma-separated live portfolio modes to revalidate; defaults to all supported modes.",
@@ -1415,6 +1442,9 @@ def main(argv: list[str] | None = None) -> int:
         ]
         or None,
         fail_fast_alpha_gate=bool(args.fail_fast_alpha_gate),
+        oos_end=datetime.fromisoformat(str(args.oos_end_date)).date()
+        if str(args.oos_end_date or "").strip()
+        else None,
     )
     print(json.dumps(result["paths"], ensure_ascii=False, indent=2, sort_keys=True))
     return 0

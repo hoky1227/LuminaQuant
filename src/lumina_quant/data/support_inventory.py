@@ -85,6 +85,27 @@ def _liquidation_present_expr() -> pl.Expr:
     return expr
 
 
+def _select_feature_columns(frame: pl.DataFrame) -> pl.DataFrame:
+    """Return inventory columns, tolerating older sparse feature partitions."""
+    columns = [
+        "timestamp_ms",
+        "funding_rate",
+        "funding_fee_rate",
+        "funding_fee_quote_per_unit",
+        "mark_price",
+        "index_price",
+        "open_interest",
+        *_TAKER_FLOW_COLUMNS,
+        *_LIQUIDATION_COLUMNS,
+    ]
+    aligned = frame
+    for column in columns:
+        if column not in aligned.columns:
+            dtype = pl.Int64 if column == "timestamp_ms" else pl.Float64
+            aligned = aligned.with_columns(pl.lit(None, dtype=dtype).alias(column))
+    return aligned.select(columns).sort("timestamp_ms")
+
+
 def build_strategy_support_inventory(
     *,
     db_path: str,
@@ -135,19 +156,7 @@ def build_strategy_support_inventory(
             )
             continue
 
-        cleaned = frame.select(
-            [
-                "timestamp_ms",
-                "funding_rate",
-                "funding_fee_rate",
-                "funding_fee_quote_per_unit",
-                "mark_price",
-                "index_price",
-                "open_interest",
-                *_TAKER_FLOW_COLUMNS,
-                *_LIQUIDATION_COLUMNS,
-            ]
-        ).sort("timestamp_ms")
+        cleaned = _select_feature_columns(frame)
 
         first_timestamp_ms = cleaned.select(pl.min("timestamp_ms").alias("min_ts")).item()
         last_timestamp_ms = cleaned.select(pl.max("timestamp_ms").alias("max_ts")).item()

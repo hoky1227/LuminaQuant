@@ -92,6 +92,56 @@ def test_portfolio_mode_propagates_child_timeframes_for_explicit_aggregator_use(
     assert strategy.required_timeframes == ("1m", "20s")
 
 
+def test_portfolio_mode_propagates_child_features_and_context(monkeypatch) -> None:
+    class _ContextChild:
+        required_features = ("taker_buy_quote_volume",)
+
+        def __init__(self, bars, events, **params):
+            _ = bars, params
+            self.events = events
+
+        def calculate_signals_context(self, context):
+            assert context.feature_lookup == "feature-lookup"
+            self.events.put(
+                SignalEvent(
+                    strategy_id="context-child",
+                    symbol="BNB/USDT",
+                    datetime=context.event.time,
+                    signal_type="LONG",
+                    strength=1.0,
+                    metadata={"target_allocation": 0.1},
+                )
+            )
+
+    _patch_single_component(monkeypatch, _ContextChild)
+
+    events = []
+    strategy = MODULE.ArtifactPortfolioModeStrategy(
+        bars=SimpleNamespace(symbol_list=["BNB/USDT"], get_latest_bar_value=lambda *args, **kwargs: 100.0),
+        events=SimpleNamespace(put=lambda item: events.append(item)),
+        portfolio_mode="hybrid_guarded_mode",
+    )
+    strategy.calculate_signals_context(
+        SimpleNamespace(
+            event=MarketEvent(
+                time="2026-04-17T00:00:00Z",
+                symbol="BNB/USDT",
+                open=100.0,
+                high=101.0,
+                low=99.0,
+                close=100.0,
+                volume=1.0,
+            ),
+            aggregator=None,
+            feature_lookup="feature-lookup",
+        )
+    )
+
+    assert strategy.preferred_contract == "context"
+    assert strategy.required_features == ("taker_buy_quote_volume",)
+    assert len(events) == 1
+
+
 def test_portfolio_mode_strategy_forwards_component_weighted_signals(monkeypatch) -> None:
     class _ChildStrategy:
         required_timeframes = ("1h",)
@@ -375,6 +425,55 @@ def test_profit_moonshot_hourly_shock_reversion_funding_guard_mode_filters_hours
     assert component.params["return_threshold"] == 0.008
     assert component.params["excluded_entry_hours_utc"] == "0,1,8,9,16,17"
     assert component.params["target_allocation"] == 0.008
+    assert component.weight == 1.0
+
+
+def test_profit_moonshot_hourly_shock_reversion_taker_flow_guard_mode_requires_features() -> None:
+    definition = MODULE.resolve_portfolio_mode_definition(
+        "profit_moonshot_hourly_shock_reversion_eth_12h_taker_flow_guard_mode"
+    )
+
+    assert not supports_live_portfolio_mode(
+        "profit_moonshot_hourly_shock_reversion_eth_12h_taker_flow_guard_mode"
+    )
+    assert definition.symbols == ["ETH/USDT"]
+    component = definition.components[0]
+    assert component.strategy_class == "HourlyShockReversionStrategy"
+    assert component.params["return_threshold"] == 0.01
+    assert component.params["flow_confirmation_lookback_bars"] == 1
+    assert component.params["flow_imbalance_min"] == 0.10
+    assert component.params["target_allocation"] == 0.008
+    assert component.weight == 1.0
+    strategy = MODULE.ArtifactPortfolioModeStrategy(
+        bars=SimpleNamespace(symbol_list=["ETH/USDT"], get_latest_bar_value=lambda *args, **kwargs: 100.0),
+        events=SimpleNamespace(put=lambda item: None),
+        portfolio_mode="profit_moonshot_hourly_shock_reversion_eth_12h_taker_flow_guard_mode",
+    )
+    assert set(strategy.required_features) == {
+        "taker_buy_base_volume",
+        "taker_sell_base_volume",
+        "taker_buy_quote_volume",
+        "taker_sell_quote_volume",
+    }
+
+
+def test_profit_moonshot_hourly_shock_reversion_sol_regime_guard_mode_uses_replay_survivor() -> None:
+    definition = MODULE.resolve_portfolio_mode_definition(
+        "profit_moonshot_hourly_shock_reversion_eth_12h_sol_regime_guard_mode"
+    )
+
+    assert not supports_live_portfolio_mode(
+        "profit_moonshot_hourly_shock_reversion_eth_12h_sol_regime_guard_mode"
+    )
+    assert definition.symbols == ["ETH/USDT", "SOL/USDT"]
+    component = definition.components[0]
+    assert component.strategy_class == "HourlyShockReversionStrategy"
+    assert component.params["return_threshold"] == 0.01
+    assert component.params["regime_symbol"] == "SOL/USDT"
+    assert component.params["regime_lookback_bars"] == 24
+    assert component.params["counterguard_return_threshold"] == 0.035
+    assert component.params["target_allocation"] == 0.008
+    assert component.params["max_order_value"] == 175.0
     assert component.weight == 1.0
 
 
@@ -724,6 +823,10 @@ def test_resolve_portfolio_mode_definition_supports_recursive_allocator_sleeves(
     assert "profit_moonshot_hourly_shock_reversion_eth_12h_dense_mode" in MODULE.supported_portfolio_modes()
     assert (
         "profit_moonshot_hourly_shock_reversion_eth_12h_funding_guard_mode"
+        in MODULE.supported_portfolio_modes()
+    )
+    assert (
+        "profit_moonshot_hourly_shock_reversion_eth_12h_taker_flow_guard_mode"
         in MODULE.supported_portfolio_modes()
     )
     assert "profit_moonshot_filtered_shock_reversion_diversified_mode" in MODULE.supported_portfolio_modes()

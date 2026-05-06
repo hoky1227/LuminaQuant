@@ -101,3 +101,14 @@ Detailed report: `var/reports/profit_moonshot_20260501/current_tail_20260505/tak
 - Legacy-windowed split engine result: train `-0.0570%` Sharpe `-0.024200`; val `+0.1914%` Sharpe `0.037224`; OOS `-0.0478%` Sharpe `-0.164066`; liquidations `0`.
 - Decision: **not promoted**. Keep `profit_moonshot_hourly_shock_reversion_eth_12h_mode` as OOS-return best, `profit_moonshot_hourly_shock_reversion_eth_12h_funding_guard_mode` as Sharpe/MDD shadow, and `profit_moonshot_momentum_hybrid_safe_mode` as conservative legacy candidate.
 - Detailed report: `var/reports/profit_moonshot_20260501/current_tail_20260505/precious_metal_pair_aggressive/precious_metal_pair_aggressive_report_20260505.md`.
+
+## Useful-alpha execution follow-up — 2026-05-06
+
+- Report: `var/reports/profit_moonshot_20260501/current_tail_20260506/useful_alpha_execution_report_20260506.md`.
+- Raw-first coverage check: ETH/BTC/SOL train and val complete; OOS through `2026-05-05` missing `2026-05-05`, so full tests used complete OOS end `2026-05-04`; metals remain raw-first blocked.
+- Feature inventory: BTC/ETH/SOL funding, OI, and taker-flow are available; liquidation rows are `0`, so liquidation confirmation is not usable yet.
+- Stateful ETH 12h shock replay: `130` filter specs, `8` replay-relative survivors, `0` absolute final-gate survivors.
+- Full live-equivalent survivors tested one at a time:
+  - `profit_moonshot_hourly_shock_reversion_eth_12h_taker_flow_guard_mode`: OOS `+0.5871%`, MDD `0.3203%`, Sharpe `0.070688`; rejected.
+  - `profit_moonshot_hourly_shock_reversion_eth_12h_sol_regime_guard_mode`: OOS `+0.3221%`, MDD `0.9275%`, Sharpe `0.014160`; rejected.
+- Decision: **no new successful alpha promoted**. Keep ETH 12h shock reversion as OOS-return best and funding guard as Sharpe/MDD shadow; new modes remain shadow/audit artifacts only, not live-selection-supported modes.
