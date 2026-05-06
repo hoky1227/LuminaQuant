@@ -67,6 +67,14 @@ METRIC_KEYS = (
     "max_drawdown",
     "volatility",
 )
+METRIC_DIAGNOSTIC_KEYS = (
+    "raw_total_return",
+    "raw_max_drawdown",
+    "min_equity",
+    "raw_final_equity",
+    "equity_breach_count",
+    "equity_breach_observed",
+)
 
 LIVE_MODE_RESEARCH_ALIASES = {
     "legacy_metric_no_highvol_baseline_raw_score": "legacy_no_highvol_hybrid_mode",
@@ -347,11 +355,43 @@ def _metrics_from_equity_totals(values: list[float], *, periods: int) -> dict[st
     equity = equity[np.isfinite(equity)]
     if equity.size < 2 or equity[0] <= 0.0:
         return _empty_metrics()
+
+    raw_total_return = float(equity[-1] / equity[0] - 1.0)
+    running_max = np.maximum.accumulate(equity)
+    drawdowns = np.where(running_max > 0.0, (running_max - equity) / running_max, 0.0)
+    raw_max_drawdown = float(np.max(drawdowns)) if drawdowns.size else 0.0
+    min_equity = float(np.min(equity)) if equity.size else 0.0
+    final_equity = float(equity[-1]) if equity.size else 0.0
+    breach_count = int(np.count_nonzero(equity <= 0.0))
+    equity_breach_observed = bool(
+        breach_count > 0
+        or final_equity <= 0.0
+        or raw_total_return <= -1.0
+        or raw_max_drawdown > 1.0
+    )
+    diagnostics = {
+        "raw_total_return": raw_total_return,
+        "raw_max_drawdown": raw_max_drawdown,
+        "min_equity": min_equity,
+        "raw_final_equity": final_equity,
+        "equity_breach_count": float(breach_count),
+        "equity_breach_observed": bool(equity_breach_observed),
+    }
+    if equity_breach_observed:
+        return {
+            **_empty_metrics(),
+            "total_return": -1.0,
+            "cagr": -1.0,
+            "calmar": -1.0,
+            "max_drawdown": 1.0,
+            **diagnostics,
+        }
+
     returns = np.diff(equity) / equity[:-1]
     returns = returns[np.isfinite(returns)]
-    total_return = float(equity[-1] / equity[0] - 1.0)
+    total_return = raw_total_return
     if returns.size <= 0:
-        return {**_empty_metrics(), "total_return": total_return}
+        return {**_empty_metrics(), "total_return": total_return, **diagnostics}
     periods_per_year = max(1, int(periods))
     mean = float(np.mean(returns))
     std = float(np.std(returns, ddof=1)) if returns.size > 1 else 0.0
@@ -360,9 +400,7 @@ def _metrics_from_equity_totals(values: list[float], *, periods: int) -> dict[st
     downside = returns[returns < 0.0]
     downside_std = float(np.std(downside, ddof=1)) if downside.size > 1 else 0.0
     sortino = float((mean / downside_std) * math.sqrt(periods_per_year)) if downside_std > 0.0 else 0.0
-    running_max = np.maximum.accumulate(equity)
-    drawdowns = np.where(running_max > 0.0, (running_max - equity) / running_max, 0.0)
-    max_drawdown = float(np.max(drawdowns)) if drawdowns.size else 0.0
+    max_drawdown = min(raw_max_drawdown, 1.0)
     cagr = float((1.0 + total_return) ** (periods_per_year / returns.size) - 1.0) if total_return > -1.0 else -1.0
     calmar = float(cagr / max_drawdown) if max_drawdown > 1e-12 else 0.0
     return {
@@ -373,6 +411,7 @@ def _metrics_from_equity_totals(values: list[float], *, periods: int) -> dict[st
         "calmar": calmar,
         "max_drawdown": max_drawdown,
         "volatility": volatility,
+        **diagnostics,
     }
 
 
@@ -461,6 +500,13 @@ def _profit_alpha_gate(
         reasons.append("train_mdd_above_active_cap")
     if _safe_float(val.get("max_drawdown"), 0.0) > ACTIVE_VAL_MDD_CAP:
         reasons.append("val_mdd_above_active_cap")
+    for split_name, split_metrics in (
+        ("train", train),
+        ("val", val),
+        ("oos", oos),
+    ):
+        if bool(split_metrics.get("equity_breach_observed")):
+            reasons.append(f"{split_name}_equity_breach_observed")
     if train_trade_count < MIN_ALPHA_TRAIN_TRADES:
         reasons.append("train_trade_count_below_min")
     if val_trade_count < MIN_ALPHA_VAL_TRADES:
@@ -522,6 +568,8 @@ def _train_fail_fast_reasons(split_run: dict[str, Any]) -> list[str]:
         reasons.append("train_total_return_below_floor")
     if _safe_float(metrics.get("max_drawdown"), 0.0) > ACTIVE_TRAIN_MDD_CAP:
         reasons.append("train_mdd_above_active_cap")
+    if bool(metrics.get("equity_breach_observed")):
+        reasons.append("train_equity_breach_observed")
     return reasons
 
 
@@ -553,6 +601,30 @@ def _mode_equivalence_key(mode: str) -> str:
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
+def _resolve_revalidation_runtime_config(mode: str) -> dict[str, Any]:
+    """Resolve runtime config for live or research-only portfolio modes.
+
+    Some profit-moonshot shadow modes are intentionally not live-selectable yet,
+    but are still defined as ArtifactPortfolioModeStrategy modes for raw-first
+    engine validation.  Revalidation must be able to audit those modes without
+    silently adding them to the live selector allowlist.
+    """
+    try:
+        return dict(resolve_portfolio_mode_runtime_config(mode))
+    except ValueError:
+        if mode not in supported_portfolio_modes():
+            raise
+    definition = resolve_portfolio_mode_definition(mode)
+    return {
+        "portfolio_mode": mode,
+        "strategy_name": f"ArtifactPortfolioModeStrategy[{mode}]",
+        "strategy_params": {"portfolio_mode": mode},
+        "symbols": list(definition.symbols),
+        "cash_weight": float(definition.cash_weight),
+        "research_only_live_equivalent": True,
+    }
+
+
 def _run_live_equivalent_split(
     *,
     mode: str,
@@ -565,7 +637,7 @@ def _run_live_equivalent_split(
     backtest_window_seconds: int,
     equivalence_key: str,
 ) -> dict[str, Any]:
-    runtime_config = resolve_portfolio_mode_runtime_config(mode)
+    runtime_config = _resolve_revalidation_runtime_config(mode)
     symbols = list(runtime_config["symbols"])
     start_dt, end_dt = _split_to_datetimes(split)
 
@@ -901,6 +973,11 @@ def _mode_candidate_rows(mode_results: list[dict[str, Any]], preflights: dict[st
             split_metrics = dict(metrics.get(split_name) or {})
             for key in METRIC_KEYS:
                 row[f"{split_name}_{key}"] = _safe_float(split_metrics.get(key), 0.0)
+            for key in METRIC_DIAGNOSTIC_KEYS:
+                if key == "equity_breach_observed":
+                    row[f"{split_name}_{key}"] = bool(split_metrics.get(key))
+                else:
+                    row[f"{split_name}_{key}"] = _safe_float(split_metrics.get(key), 0.0)
         rows.append(row)
 
     def _status_priority(row: dict[str, Any]) -> int:

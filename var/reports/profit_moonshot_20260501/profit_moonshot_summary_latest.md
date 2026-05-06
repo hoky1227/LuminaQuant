@@ -1,6 +1,6 @@
 # Profit Moonshot Research Summary
 
-Generated: `2026-05-05T11:25:00Z`; operator override patched: `2026-05-05T11:25:43Z`
+Generated: `2026-05-05T11:25:00Z`; operator override patched: `2026-05-05T11:25:43Z`; latest follow-up patched: `2026-05-06T13:26:37Z`
 Decision: `operator_oos_override_candidate_found`
 Candidates scanned by generated ranker: `1050`
 Promotion-eligible candidates by generated val-ranker: `35`
@@ -111,11 +111,12 @@ Detailed report: `var/reports/profit_moonshot_20260501/current_tail_20260505/tak
 - Full live-equivalent survivors tested one at a time:
   - `profit_moonshot_hourly_shock_reversion_eth_12h_taker_flow_guard_mode`: OOS `+0.5871%`, MDD `0.3203%`, Sharpe `0.070688`; rejected.
   - `profit_moonshot_hourly_shock_reversion_eth_12h_sol_regime_guard_mode`: OOS `+0.3221%`, MDD `0.9275%`, Sharpe `0.014160`; rejected.
+  - `profit_moonshot_hourly_shock_reversion_eth_12h_funding_taker_flow_guard_mode`: OOS `+0.1759%`, MDD `0.2204%`, Sharpe `0.043476`; train `-0.2259%` with `1` liquidation; rejected.
 - Decision: **no new successful alpha promoted**. Keep ETH 12h shock reversion as OOS-return best and funding guard as Sharpe/MDD shadow; new modes remain shadow/audit artifacts only, not live-selection-supported modes.
 
 ## Leverage/rebalancing cadence follow-up — 2026-05-06
 
 - Cadence sweep report: `var/reports/profit_moonshot_20260501/current_tail_20260506/cadence_sweep/profit_moonshot_cadence_sweep_latest.md`.
 - Exact screen: `174` cadence variants; no exposure/gross/max-order increase.
-- Best screen survivor `profit_moonshot_adaptive_momentum_boost_mode__cadence_1b` failed full replay: train `-111.5894%` with `5` liquidations; OOS `-0.9619%` / Sharpe `0.012010` / MDD `33.0023%`.
-- Decision: **no cadence/rebalance alpha promoted**; incumbent ETH 12h shock and funding-guard shadow remain unchanged.
+- Best screen survivor `profit_moonshot_adaptive_momentum_boost_mode__cadence_1b` is discarded: report-capped train `-100.0000%` / MDD `100.0000%` after equity breach, raw arithmetic `-111.5894%` / `175.7880%`, `5` train liquidations; OOS `-0.9619%` / Sharpe `0.012010` / MDD `33.0023%`.
+- Decision: **no cadence/rebalance alpha promoted**; the equity-breach candidate is a failure artifact, not useful alpha. Incumbent ETH 12h shock and funding-guard shadow remain unchanged.

@@ -1,19 +1,20 @@
 # Profit moonshot leverage/cadence sweep
 
-- generated_at: `2026-05-06T12:55:07.986239Z`
-- mode_count: `44`
+- generated_at: `2026-05-06T13:17:10.755652Z`
+- mode_count: `45`
 - candidate_count: `174`
 - validation_screened: `174`
 - full_survivors_tested: `1`
 - max_rss_mib: `4693.50`
 - cost model: event-driven `SimulatedExecutionHandler` with taker_fee=`0.0004`, slippage=`0.0005`, spread=`0.0002`.
 - exposure policy: cadence-only overrides; gross/target allocation and max order caps are not increased.
+- bankruptcy/account-breach policy: report-facing return/MDD are capped at `-100%`/`100%` when equity reaches non-positive territory; raw arithmetic is preserved in JSON/CSV diagnostic fields. `*` marks such capped rows.
 
 ## Full survivor results
 
-| candidate | gate | train ret | val ret | OOS ret | OOS Sharpe | OOS MDD | reasons |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| `profit_moonshot_adaptive_momentum_boost_mode__cadence_1b` | `False` | -111.5894% | +12.5743% | -0.9619% | 0.012010 | 33.0023% | `train_total_return_not_positive;oos_return_not_above_0.8284pct_incumbent;oos_mdd_not_below_funding_guard_shadow;oos_sharpe_not_above_1.0_success_target;train_liquidation_observed` |
+| candidate | gate | train ret | train MDD | val ret | OOS ret | OOS Sharpe | OOS MDD | breach | reasons |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |
+| `profit_moonshot_adaptive_momentum_boost_mode__cadence_1b` | `False` | -100.0000%* | +100.0000%* | +12.5743% | -0.9619% | 0.012010 | +33.0023% | `train` | `train_total_return_not_positive;oos_return_not_above_0.8284pct_incumbent;oos_mdd_not_below_funding_guard_shadow;oos_sharpe_not_above_1.0_success_target;train_equity_breach_observed;train_liquidation_observed` |
 
 ## Top validation cadence screen
 
@@ -42,7 +43,7 @@
 
 ## Bottleneck notes
 
-- total_wall_seconds: `2.06`
+- total_wall_seconds: `3.01`
 - checkpointed_run_wall_seconds: `1943.70`
 - data_cache: `{'entries': 0, 'hits': 0, 'misses': 0, 'loads': 0, 'load_seconds': 0.0, 'freeze_seconds': 0.0, 'max_entries': 5}`
 - native_backends: `{'raw_first': {'requested_backend': 'auto', 'resolved_backend': 'rust', 'description': 'rust:/home/hoky/Quants-agent/LuminaQuant/native/rust_rawfirst/target/release/liblumina_rawfirst.so', 'native_library_path': '/home/hoky/Quants-agent/LuminaQuant/native/rust_rawfirst/target/release/liblumina_rawfirst.so', 'native_load_error': None, 'auto_fallback_warning_count': 0, 'auto_fallback_warning_reasons': []}}`

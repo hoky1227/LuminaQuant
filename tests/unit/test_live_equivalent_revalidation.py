@@ -127,6 +127,29 @@ def test_split_windows_default_uses_latest_complete_utc_day(monkeypatch) -> None
     assert splits[-1].end == date(2026, 5, 2)
 
 
+def test_metrics_cap_negative_equity_as_breach_not_investment_drawdown() -> None:
+    metrics = reval._metrics_from_equity_totals([10_000.0, 12_000.0, -1_000.0], periods=252)
+
+    assert metrics["equity_breach_observed"] is True
+    assert metrics["total_return"] == -1.0
+    assert metrics["max_drawdown"] == 1.0
+    assert metrics["raw_total_return"] < -1.0
+    assert metrics["raw_max_drawdown"] > 1.0
+    assert metrics["min_equity"] < 0.0
+
+
+def test_revalidation_runtime_config_allows_research_only_defined_modes(monkeypatch) -> None:
+    monkeypatch.setattr(reval, "supported_portfolio_modes", lambda: {"shadow_mode"})
+    monkeypatch.setattr(reval, "resolve_portfolio_mode_definition", _fake_pair_definition)
+    monkeypatch.setattr(reval, "resolve_portfolio_mode_runtime_config", lambda _mode: (_ for _ in ()).throw(ValueError("unsupported")))
+
+    config = reval._resolve_revalidation_runtime_config("shadow_mode")
+
+    assert config["research_only_live_equivalent"] is True
+    assert config["symbols"] == ["BNB/USDT", "TRX/USDT"]
+    assert config["strategy_params"] == {"portfolio_mode": "shadow_mode"}
+
+
 def test_fail_fast_alpha_gate_skips_val_after_train_floor_failure(monkeypatch, tmp_path: Path) -> None:
     calls: list[str] = []
     splits = [

@@ -488,6 +488,26 @@ def test_profit_moonshot_hourly_shock_reversion_taker_flow_guard_mode_requires_f
     }
 
 
+def test_profit_moonshot_hourly_shock_reversion_funding_taker_flow_guard_mode_combines_filters() -> None:
+    definition = MODULE.resolve_portfolio_mode_definition(
+        "profit_moonshot_hourly_shock_reversion_eth_12h_funding_taker_flow_guard_mode"
+    )
+
+    assert not supports_live_portfolio_mode(
+        "profit_moonshot_hourly_shock_reversion_eth_12h_funding_taker_flow_guard_mode"
+    )
+    assert definition.symbols == ["ETH/USDT"]
+    component = definition.components[0]
+    assert component.strategy_class == "HourlyShockReversionStrategy"
+    assert component.params["return_threshold"] == 0.008
+    assert component.params["excluded_entry_hours_utc"] == "0,1,8,9,16,17"
+    assert component.params["flow_confirmation_lookback_bars"] == 1
+    assert component.params["flow_imbalance_min"] == 0.10
+    assert component.params["target_allocation"] == 0.008
+    assert component.params["max_order_value"] == 175.0
+    assert component.weight == 1.0
+
+
 def test_profit_moonshot_hourly_shock_reversion_sol_regime_guard_mode_uses_replay_survivor() -> None:
     definition = MODULE.resolve_portfolio_mode_definition(
         "profit_moonshot_hourly_shock_reversion_eth_12h_sol_regime_guard_mode"

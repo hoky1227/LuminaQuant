@@ -15,6 +15,7 @@ import gc
 import hashlib
 import importlib.util
 import json
+import math
 import os
 import resource
 import sys
@@ -63,6 +64,14 @@ DEFAULT_CADENCE_GRID = (1, 5, 15, 30, 60, 120, 240, 360, 720, 1440)
 MIN_USEFUL_ALPHA_OOS_TOTAL_RETURN = 0.008284
 MAX_USEFUL_ALPHA_OOS_MDD = 0.001778
 MIN_USEFUL_ALPHA_OOS_SHARPE = 1.0
+METRIC_DIAGNOSTIC_KEYS = (
+    "raw_total_return",
+    "raw_max_drawdown",
+    "min_equity",
+    "raw_final_equity",
+    "equity_breach_count",
+    "equity_breach_observed",
+)
 FrozenRows = tuple[tuple[int, float, float, float, float, float], ...]
 
 _REVALIDATE_SPEC = importlib.util.spec_from_file_location(
@@ -525,7 +534,63 @@ def _metrics_from_equity_totals(values: list[float]) -> dict[str, float]:
         values,
         periods=int(getattr(BacktestConfig, "ANNUAL_PERIODS", 252)),
     )
-    return {key: _safe_float(metrics.get(key), 0.0) for key in _empty_metrics()}
+    return _normalize_metrics_payload(metrics)
+
+
+def _normalize_metrics_payload(
+    metrics: dict[str, Any],
+    *,
+    final_equity: Any | None = None,
+) -> dict[str, Any]:
+    """Cap report-facing metrics after an account/equity breach.
+
+    Older checkpoints may contain raw negative-equity arithmetic (for example
+    total return below -100% and drawdown above 100%).  Preserve those raw values
+    in diagnostic fields but never let them appear as ordinary performance.
+    """
+    source = dict(metrics or {})
+    out: dict[str, Any] = {key: _safe_float(source.get(key), 0.0) for key in _empty_metrics()}
+    raw_total_return = _safe_float(source.get("raw_total_return", out["total_return"]), out["total_return"])
+    raw_max_drawdown = _safe_float(source.get("raw_max_drawdown", out["max_drawdown"]), out["max_drawdown"])
+    min_equity = _safe_float(source.get("min_equity"), 0.0)
+    raw_final_equity = _safe_float(source.get("raw_final_equity", final_equity or 0.0), 0.0)
+    breach_count = _safe_float(source.get("equity_breach_count"), 0.0)
+    final_value = _safe_float(final_equity, float("nan")) if final_equity is not None else float("nan")
+    final_breach = bool(
+        math.isfinite(final_value)
+        and final_value <= 0.0
+        and (abs(raw_total_return) > 1e-12 or abs(raw_max_drawdown) > 1e-12)
+    )
+    breach = bool(
+        source.get("equity_breach_observed")
+        or raw_total_return <= -1.0
+        or raw_max_drawdown > 1.0
+        or breach_count > 0.0
+        or final_breach
+    )
+    if breach:
+        out.update(
+            {
+                "total_return": -1.0,
+                "cagr": -1.0,
+                "sharpe": 0.0,
+                "sortino": 0.0,
+                "calmar": -1.0,
+                "max_drawdown": 1.0,
+                "volatility": 0.0,
+            }
+        )
+    out.update(
+        {
+            "raw_total_return": raw_total_return,
+            "raw_max_drawdown": raw_max_drawdown,
+            "min_equity": min_equity,
+            "raw_final_equity": raw_final_equity,
+            "equity_breach_count": float(breach_count),
+            "equity_breach_observed": bool(breach),
+        }
+    )
+    return out
 
 
 def _run_split(
@@ -742,11 +807,15 @@ def _run_split_batch(
 
 
 def _screen_pass(result: dict[str, Any]) -> bool:
-    metrics = dict(result.get("metrics") or {})
+    metrics = _normalize_metrics_payload(
+        dict(result.get("metrics") or {}),
+        final_equity=result.get("final_equity") if str(result.get("status") or "") == "completed" else None,
+    )
     return bool(
         str(result.get("status") or "") == "completed"
         and int(result.get("trade_count") or 0) >= 3
         and int(result.get("liquidation_count") or 0) == 0
+        and not bool(metrics.get("equity_breach_observed"))
         and _safe_float(metrics.get("total_return")) > 0.0
         and _safe_float(metrics.get("sharpe")) > 0.0
         and _safe_float(metrics.get("max_drawdown")) <= 0.05
@@ -755,9 +824,18 @@ def _screen_pass(result: dict[str, Any]) -> bool:
 
 def _full_gate(full_runs: dict[str, dict[str, Any]]) -> tuple[bool, list[str]]:
     reasons: list[str] = []
-    train = dict(dict(full_runs.get("train") or {}).get("metrics") or {})
-    val = dict(dict(full_runs.get("val") or {}).get("metrics") or {})
-    oos = dict(dict(full_runs.get("oos") or {}).get("metrics") or {})
+    split_metrics = {
+        split_name: _normalize_metrics_payload(
+            dict(dict(full_runs.get(split_name) or {}).get("metrics") or {}),
+            final_equity=dict(full_runs.get(split_name) or {}).get("final_equity")
+            if str(dict(full_runs.get(split_name) or {}).get("status") or "") == "completed"
+            else None,
+        )
+        for split_name in ("train", "val", "oos")
+    }
+    train = split_metrics["train"]
+    val = split_metrics["val"]
+    oos = split_metrics["oos"]
     if _safe_float(train.get("total_return")) <= 0.0:
         reasons.append("train_total_return_not_positive")
     if _safe_float(val.get("total_return")) <= 0.0:
@@ -769,6 +847,14 @@ def _full_gate(full_runs: dict[str, dict[str, Any]]) -> tuple[bool, list[str]]:
     if _safe_float(oos.get("sharpe")) <= MIN_USEFUL_ALPHA_OOS_SHARPE:
         reasons.append("oos_sharpe_not_above_1.0_success_target")
     for split_name, split_result in full_runs.items():
+        metrics = split_metrics.get(split_name) or _normalize_metrics_payload(
+            dict(split_result.get("metrics") or {}),
+            final_equity=split_result.get("final_equity")
+            if str(split_result.get("status") or "") == "completed"
+            else None,
+        )
+        if bool(metrics.get("equity_breach_observed")):
+            reasons.append(f"{split_name}_equity_breach_observed")
         if int(split_result.get("trade_count") or 0) <= 0:
             reasons.append(f"{split_name}_trade_count_zero")
         if int(split_result.get("liquidation_count") or 0) > 0:
@@ -792,13 +878,22 @@ def _candidate_row(
     )
     for split_name in ("train", "val", "oos"):
         result = dict(split_results.get(split_name) or {})
-        metrics = dict(result.get("metrics") or {})
+        metrics = _normalize_metrics_payload(
+            dict(result.get("metrics") or {}),
+            final_equity=result.get("final_equity") if str(result.get("status") or "") == "completed" else None,
+        )
         row[f"{split_name}_status"] = str(result.get("status") or "")
         row[f"{split_name}_trade_count"] = int(result.get("trade_count") or 0)
         row[f"{split_name}_liquidation_count"] = int(result.get("liquidation_count") or 0)
         row[f"{split_name}_wall_seconds"] = _safe_float(result.get("wall_seconds"))
+        row[f"{split_name}_final_equity"] = _safe_float(result.get("final_equity"))
         for key in _empty_metrics():
             row[f"{split_name}_{key}"] = _safe_float(metrics.get(key))
+        for key in METRIC_DIAGNOSTIC_KEYS:
+            if key == "equity_breach_observed":
+                row[f"{split_name}_{key}"] = bool(metrics.get(key))
+            else:
+                row[f"{split_name}_{key}"] = _safe_float(metrics.get(key))
     return row
 
 
@@ -815,6 +910,12 @@ def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         writer = csv.DictWriter(fp, fieldnames=fieldnames, lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
+
+
+def _fmt_pct_with_breach(row: dict[str, Any], split_name: str, metric_name: str) -> str:
+    value = _safe_float(row.get(f"{split_name}_{metric_name}"))
+    marker = "*" if bool(row.get(f"{split_name}_equity_breach_observed")) else ""
+    return f"{value:+.4%}{marker}"
 
 
 def _build_markdown(payload: dict[str, Any]) -> str:
@@ -837,25 +938,37 @@ def _build_markdown(payload: dict[str, Any]) -> str:
             f"spread=`{payload['cost_model']['spread_rate']}`."
         ),
         "- exposure policy: cadence-only overrides; gross/target allocation and max order caps are not increased.",
+        (
+            "- bankruptcy/account-breach policy: report-facing return/MDD are capped at "
+            "`-100%`/`100%` when equity reaches non-positive territory; raw arithmetic is "
+            "preserved in JSON/CSV diagnostic fields. `*` marks such capped rows."
+        ),
         "",
         "## Full survivor results",
         "",
-        "| candidate | gate | train ret | val ret | OOS ret | OOS Sharpe | OOS MDD | reasons |",
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+        "| candidate | gate | train ret | train MDD | val ret | OOS ret | OOS Sharpe | OOS MDD | breach | reasons |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |",
     ]
     if not best_full:
-        lines.append("| - | - | - | - | - | - | - | no validation survivor full-tested |")
+        lines.append("| - | - | - | - | - | - | - | - | - | no validation survivor full-tested |")
     for row in best_full:
         lines.append(
-            "| `{candidate_id}` | `{gate}` | {train:+.4%} | {val:+.4%} | {oos:+.4%} | "
-            "{sharpe:.6f} | {mdd:.4%} | `{reasons}` |".format(
+            "| `{candidate_id}` | `{gate}` | {train} | {train_mdd} | {val} | {oos} | "
+            "{sharpe:.6f} | {mdd} | `{breach}` | `{reasons}` |".format(
                 candidate_id=row.get("candidate_id"),
                 gate=bool(row.get("full_gate_pass")),
-                train=_safe_float(row.get("train_total_return")),
-                val=_safe_float(row.get("val_total_return")),
-                oos=_safe_float(row.get("oos_total_return")),
+                train=_fmt_pct_with_breach(row, "train", "total_return"),
+                train_mdd=_fmt_pct_with_breach(row, "train", "max_drawdown"),
+                val=_fmt_pct_with_breach(row, "val", "total_return"),
+                oos=_fmt_pct_with_breach(row, "oos", "total_return"),
                 sharpe=_safe_float(row.get("oos_sharpe")),
-                mdd=_safe_float(row.get("oos_max_drawdown")),
+                mdd=_fmt_pct_with_breach(row, "oos", "max_drawdown"),
+                breach=",".join(
+                    split
+                    for split in ("train", "val", "oos")
+                    if bool(row.get(f"{split}_equity_breach_observed"))
+                )
+                or "-",
                 reasons=row.get("full_gate_reasons") or "",
             )
         )

@@ -139,6 +139,7 @@ _LIVE_PORTFOLIO_MODE_ALIASES = {
     "profit_moonshot_hourly_shock_reversion_eth_12h_funding_guard_mode",
     "profit_moonshot_hourly_shock_reversion_eth_12h_sol_regime_guard_mode",
     "profit_moonshot_hourly_shock_reversion_eth_12h_taker_flow_guard_mode",
+    "profit_moonshot_hourly_shock_reversion_eth_12h_funding_taker_flow_guard_mode",
     "profit_moonshot_filtered_shock_reversion_diversified_mode",
     "profit_moonshot_taker_flow_exhaustion_eth_mode",
     "profit_moonshot_taker_flow_exhaustion_eth_reactive_mode",
@@ -1245,6 +1246,36 @@ def _alias_rows(token: str) -> list[dict[str, Any]] | None:
                     "take_profit_pct": 0.10,
                     "allow_long": True,
                     "allow_short": True,
+                    "flow_confirmation_lookback_bars": 1,
+                    "flow_imbalance_min": 0.10,
+                },
+                "weight": 1.0,
+            },
+        ],
+        "profit_moonshot_hourly_shock_reversion_eth_12h_funding_taker_flow_guard_mode": [
+            {
+                "candidate_id": "profit_moonshot_hourly_shock_reversion_eth_12h_72h_stop5_take10_funding_taker_flow_1h10",
+                "name": "profit_moonshot_hourly_shock_reversion_eth_12h_72h_stop5_take10_funding_taker_flow_1h10",
+                "strategy_class": "HourlyShockReversionStrategy",
+                "symbols": ["ETH/USDT"],
+                "params": {
+                    # Replay survivor 2026-05-06 after discarding the cadence
+                    # bankruptcy artifact: use the funding-guard 0.8% shock
+                    # threshold, but require completed raw taker-flow exhaustion
+                    # over the entry hour.  This changes filters only; the same
+                    # 0.8% / $175 risk caps remain unchanged.
+                    "target_symbol": "ETH/USDT",
+                    "timeframe": "1h",
+                    "lookback_bars": 12,
+                    "return_threshold": 0.008,
+                    "max_hold_bars": 72,
+                    "target_allocation": 0.008,
+                    "max_order_value": 175.0,
+                    "stop_loss_pct": 0.05,
+                    "take_profit_pct": 0.10,
+                    "allow_long": True,
+                    "allow_short": True,
+                    "excluded_entry_hours_utc": "0,1,8,9,16,17",
                     "flow_confirmation_lookback_bars": 1,
                     "flow_imbalance_min": 0.10,
                 },
