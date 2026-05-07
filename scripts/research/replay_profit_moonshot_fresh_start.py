@@ -92,6 +92,12 @@ class FreshSpec:
     compression_quantile: float = 0.0
     flow_lookback_bars: int = 0
     flow_threshold: float = 0.0
+    flow_persistence_bars: int = 0
+    flow_persistence_threshold: float = 0.0
+    adaptive_lookback_bars: int = 12
+    sharpe_lookback_bars: int = 0
+    sharpe_rank_min: float = 0.0
+    oi_rank_min: float = 0.0
 
     def payload(self) -> dict[str, Any]:
         return {
@@ -113,12 +119,18 @@ class FreshSpec:
             "funding_abs_cap": self.funding_abs_cap,
             "funding_rank_min": self.funding_rank_min,
             "compression_lookback_bars": self.compression_lookback_bars,
-            "compression_quantile": self.compression_quantile,
-            "flow_lookback_bars": self.flow_lookback_bars,
-            "flow_threshold": self.flow_threshold,
-            "target_allocation": TARGET_ALLOCATION,
-            "max_order_value": MAX_ORDER_VALUE,
-        }
+        "compression_quantile": self.compression_quantile,
+        "flow_lookback_bars": self.flow_lookback_bars,
+        "flow_threshold": self.flow_threshold,
+        "flow_persistence_bars": self.flow_persistence_bars,
+        "flow_persistence_threshold": self.flow_persistence_threshold,
+        "adaptive_lookback_bars": self.adaptive_lookback_bars,
+        "sharpe_lookback_bars": self.sharpe_lookback_bars,
+        "sharpe_rank_min": self.sharpe_rank_min,
+        "oi_rank_min": self.oi_rank_min,
+        "target_allocation": TARGET_ALLOCATION,
+        "max_order_value": MAX_ORDER_VALUE,
+    }
 
 
 def _compact(symbol: str) -> str:
@@ -480,12 +492,13 @@ def _build_arrays(panel: pl.DataFrame, symbols: list[str]) -> dict[str, Any]:
         for lookback in (24, 48, 72):
             arrays[f"{prefix}_rv_{lookback}h"] = _rolling_rms_log_return(close, lookback)
         arrays[f"{prefix}_rv_24h_mean_72h"] = _rolling_mean(arrays[f"{prefix}_rv_24h"], 72)
-        arrays[f"{prefix}_funding_ffill"] = _ffill(arrays[f"{prefix}_funding_rate"])
-        buy_quote = arrays[f"{prefix}_taker_buy_quote_volume"]
-        sell_quote = arrays[f"{prefix}_taker_sell_quote_volume"]
-        flow_den = buy_quote + sell_quote
-        arrays[f"{prefix}_flow_imbalance_1h"] = np.divide(
-            buy_quote - sell_quote,
+    arrays[f"{prefix}_funding_ffill"] = _ffill(arrays[f"{prefix}_funding_rate"])
+    arrays[f"{prefix}_open_interest_ffill"] = _ffill(arrays[f"{prefix}_open_interest"])
+    buy_quote = arrays[f"{prefix}_taker_buy_quote_volume"]
+    sell_quote = arrays[f"{prefix}_taker_sell_quote_volume"]
+    flow_den = buy_quote + sell_quote
+    arrays[f"{prefix}_flow_imbalance_1h"] = np.divide(
+        buy_quote - sell_quote,
             flow_den,
             out=np.full_like(flow_den, np.nan, dtype=float),
             where=np.isfinite(flow_den) & (flow_den > 0.0),
@@ -500,8 +513,19 @@ def _build_arrays(panel: pl.DataFrame, symbols: list[str]) -> dict[str, Any]:
                 out=np.full_like(den, np.nan, dtype=float),
                 where=np.isfinite(den) & (den > 0.0),
             )
-            arrays[f"{prefix}_flow_imbalance_{lookback}h"] = flow
-            arrays[f"{prefix}_flow_z_{lookback}h"] = _rolling_zscore(flow, max(24, lookback * 6))
+        arrays[f"{prefix}_flow_imbalance_{lookback}h"] = flow
+        arrays[f"{prefix}_flow_z_{lookback}h"] = _rolling_zscore(flow, max(24, lookback * 6))
+    for lookback in (3, 6, 12, 24):
+        oi = arrays[f"{prefix}_open_interest_ffill"]
+        oi_delta = np.full_like(oi, np.nan, dtype=float)
+        if oi.size > lookback:
+            oi_delta[lookback:] = np.divide(
+                oi[lookback:] - oi[:-lookback],
+                lookback,
+                out=np.full_like(oi[lookback:], np.nan, dtype=float),
+                where=np.isfinite(oi[:-lookback]) & np.isfinite(oi[lookback:]),
+            )
+        arrays[f"{prefix}_oi_delta_{lookback}h"] = oi_delta
     stacked = np.vstack(close_stack)
     market_close = np.nanmean(stacked, axis=0)
     arrays["market_close"] = market_close
@@ -622,6 +646,20 @@ def _candidate_signal(spec: FreshSpec, arrays: dict[str, Any], idx: int) -> tupl
                 candidates.append((abs(ret), symbol, "SHORT"))
     if not candidates:
         return "", "", "signal_missing"
+    if spec.family == "adaptive_trend":
+        if spec.sharpe_lookback_bars <= 0:
+            spec_sharpe_lb = spec.lookback_bars
+        else:
+            spec_sharpe_lb = spec.sharpe_lookback_bars
+        trend = arrays.get(f"market_ret_{spec.adaptive_lookback_bars}h", np.array([], dtype=float))
+        if trend.size == 0 or not math.isfinite(float(trend[idx])):
+            return "", "", "adaptive_signal_missing"
+        if spec.allow_long and float(trend[idx]) >= spec.threshold and ret >= spec.min_abs_return:
+            candidates.append((abs(float(trend[idx])), symbol, "LONG"))
+        if spec.allow_short and float(trend[idx]) <= -spec.threshold and ret <= -spec.min_abs_return:
+            candidates.append((abs(float(trend[idx])), symbol, "SHORT"))
+        if not candidates:
+            return "", "", "adaptive_signal_missing"
     candidates.sort(reverse=True, key=lambda item: item[0])
     _, symbol, side = candidates[0]
     return symbol, side, ""
