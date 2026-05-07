@@ -1,0 +1,8 @@
+{
+  "artifact_kind": "profit_moonshot_external_overhaul_verifier",
+  "generated_at": "2026-05-07T12:52:59.933878Z",
+  "passed": false,
+  "replay_path": "var/reports/profit_moonshot_20260501/current_tail_20260507/fresh_overhaul/fresh_start_overhaul_replay_latest.json",
+  "summary_pass_gate": true,
+  "tuning_path": "var/reports/profit_moonshot_20260501/current_tail_20260507/fresh_overhaul/fresh_portfolio_tuning_latest.json"
+}

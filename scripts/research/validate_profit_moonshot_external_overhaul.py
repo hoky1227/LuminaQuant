@@ -8,14 +8,18 @@ artifacts, RSS limit, test evidence, and CI evidence are all present and passing
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from . import validate_profit_moonshot_continuation as continuation_validator
 
-
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+CONTINUATION_VALIDATOR_PATH = Path(__file__).with_name("validate_profit_moonshot_continuation.py")
 DEFAULT_SUMMARY_PATH = Path("var/reports/profit_moonshot_20260501/profit_moonshot_summary_latest.json")
 DEFAULT_EXTERNAL_OVERHAUL_DIR = Path(
     "var/reports/profit_moonshot_20260501/current_tail_20260507/external_overhaul"
@@ -33,6 +37,23 @@ DEFAULT_TEST_EVIDENCE_PATH = DEFAULT_RESULT_DIR / "tests_evidence.json"
 DEFAULT_CI_EVIDENCE_PATH = DEFAULT_RESULT_DIR / "ci_evidence.json"
 RSS_LIMIT_MIB = 8192.0
 PASS_GATE_NAME = "profit_moonshot_pass_under_8gb_overhaul"
+
+
+def _load_continuation_validator() -> Any:
+    """Load the sibling continuation validator for direct script execution and tests."""
+    spec = importlib.util.spec_from_file_location(
+        "validate_profit_moonshot_continuation_for_external_overhaul",
+        CONTINUATION_VALIDATOR_PATH,
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"failed to load continuation validator: {CONTINUATION_VALIDATOR_PATH}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+continuation_validator = _load_continuation_validator()
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -106,28 +127,29 @@ def _coerce_artifact_path(path: Path, fallback_dir: Path, legacy_path: Path) -> 
     return legacy_path if legacy_path.exists() else fallback_dir / path.name
 
 
-def _evidence_pass(payload: Any) -> tuple[bool, list[str]]:
+def _evidence_pass(payload: Any, *, label: str) -> tuple[bool, list[str]]:
     if not payload:
-        return False, ["missing_evidence"]
+        return False, [f"missing_{label}_evidence"]
     if isinstance(payload, dict):
         checks = payload.get("checks")
         if isinstance(checks, dict) and checks:
             failed = [
                 key for key, check in checks.items() if not _status_ok((check or {}).get("status") if isinstance(check, dict) else check)
             ]
-            return len(failed) == 0, [f"ci_check_failed:{item}" for item in failed]
+            return len(failed) == 0, [f"{label}_check_failed:{item}" for item in failed]
         if str(payload.get("status") or "").strip() == "":
-            return False, ["evidence_status_missing"]
-        return _status_ok(str(payload.get("status") or "")), ["evidence_status_not_pass"]
+            return False, [f"{label}_evidence_status_missing"]
+        status_passed = _status_ok(str(payload.get("status") or ""))
+        return status_passed, [] if status_passed else [f"{label}_evidence_status_not_pass"]
     if isinstance(payload, list):
         failed = []
         for idx, row in enumerate(payload):
             if not isinstance(row, dict):
                 continue
             if not _status_ok(str(row.get("status") or row.get("result") or "")):
-                failed.append(f"evidence_{idx}")
+                failed.append(f"{label}_evidence_{idx}")
         return len(failed) == 0, [f"{item}:failed" for item in failed]
-    return False, ["unsupported_evidence_payload"]
+    return False, [f"unsupported_{label}_evidence_payload"]
 
 
 def validate(
@@ -171,10 +193,12 @@ def validate(
     rss_ok = peak_rss_mib == peak_rss_mib and peak_rss_mib <= rss_limit_mib
     rss_issues = [] if rss_ok else [f"peak_rss_exceeds_limit:{peak_rss_mib}"]
 
-    test_payload = _load_json(_resolve_evidence_path(str(tests_evidence_path), tests_evidence_path))
-    tests_ok, test_issues = _evidence_pass(test_payload)
-    ci_payload = _load_json(_resolve_evidence_path(str(ci_evidence_path), ci_evidence_path))
-    ci_ok, ci_issues = _evidence_pass(ci_payload)
+    tests_evidence_path = _resolve_evidence_path(str(tests_evidence_path), tests_evidence_path)
+    test_payload = _load_json(tests_evidence_path)
+    tests_ok, test_issues = _evidence_pass(test_payload, label="tests")
+    ci_evidence_path = _resolve_evidence_path(str(ci_evidence_path), ci_evidence_path)
+    ci_payload = _load_json(ci_evidence_path)
+    ci_ok, ci_issues = _evidence_pass(ci_payload, label="ci")
 
     # Lockbox label should always come from the tuning artifact policy.
     lockbox_label = ""
@@ -222,7 +246,7 @@ def validate(
                     "candidate_mode": continuation.get("candidate_mode") or summary.get("promoted_candidate")
                     or summary.get("best_return_candidate")
                     or {},
-                    "candidate_primay_split": continuation.get("candidate_primary_split"),
+                    "candidate_primary_split": continuation.get("candidate_primary_split"),
                     "promoted_by_summary": continuation.get("promoted_by_summary"),
                 },
             },
