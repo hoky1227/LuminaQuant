@@ -122,6 +122,8 @@ def test_external_overhaul_validator_passes_with_gate_rss_tests_ci_and_lockbox(
     progress = json.loads((external_dir / "validator_progress_latest.json").read_text(encoding="utf-8"))
     assert progress["passed"] is True
     assert progress["summary_pass_gate"] is True
+    assert progress["next_required_evidence"] == []
+    assert progress["checks"]["ci"]["passed"] is True
 
 
 def test_external_overhaul_validator_fails_until_ci_evidence_passes(
@@ -158,7 +160,9 @@ def test_external_overhaul_validator_fails_until_ci_evidence_passes(
     assert result["checks"]["ci"]["passed"] is False
     assert result["checks"]["ci"]["issues"] == ["ci_evidence_status_not_pass"]
     assert json.loads(result_path.read_text(encoding="utf-8"))["passed"] is False
-    assert (external_dir / "validator_progress_latest.json").exists()
+    progress = json.loads((external_dir / "validator_progress_latest.json").read_text(encoding="utf-8"))
+    assert progress["next_required_evidence"] == ["ci"]
+    assert progress["checks"]["ci"]["issues"] == ["ci_evidence_status_not_pass"]
 
 
 def test_external_overhaul_validator_cli_runs_as_direct_script(tmp_path: Path) -> None:
