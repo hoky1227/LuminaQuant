@@ -23,6 +23,15 @@ from typing import Any
 import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from lumina_quant.portfolio_split_contract import (  # noqa: E402
+    PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES,
+    acquire_portfolio_memory_guard,
+    memory_policy_payload,
+)
+
 FRESH_PATH = REPO_ROOT / "scripts/research/replay_profit_moonshot_fresh_start.py"
 DEFAULT_OUTPUT_DIR = (
     REPO_ROOT / "var/reports/profit_moonshot_20260501/current_tail_20260507/fresh_overhaul"
@@ -31,6 +40,13 @@ DEFAULT_CANDIDATE_CSV = DEFAULT_OUTPUT_DIR / "fresh_start_overhaul_replay_candid
 BASELINE_OOS_RETURN = 0.008284
 SHADOW_OOS_MDD = 0.001778
 SUCCESS_SHARPE = 1.0
+RUN_NAME = "profit_moonshot_fresh_portfolio_tuning"
+LOCKBOX_POLICY = {
+    "selection_label": "train_val_validation_only",
+    "locked_oos_label": "locked_oos_report_only",
+    "diagnostic_best_oos_label": "diagnostic_locked_oos_not_selection_authority",
+    "oos_is_report_only": True,
+}
 
 
 def _load_fresh_module() -> Any:
@@ -199,6 +215,9 @@ def _fmt_float(value: Any) -> str:
 def _markdown(payload: dict[str, Any], rows: list[dict[str, Any]]) -> str:
     selected = payload.get("selected_by_validation") or {}
     best_oos = payload.get("diagnostic_best_oos") or {}
+    memory_policy = payload.get("memory_policy") or {}
+    memory_summary = payload.get("memory_summary") or {}
+    lockbox_policy = payload.get("lockbox_policy") or LOCKBOX_POLICY
     lines = [
         "# Profit moonshot fresh portfolio tuning",
         "",
@@ -209,6 +228,14 @@ def _markdown(payload: dict[str, Any], rows: list[dict[str, Any]]) -> str:
         "- Sleeve universe is restricted to train-positive and validation-positive fresh-start candidates.",
         "- Portfolio selection is validation-primary; OOS is report-only.",
         "- `diagnostic_best_oos` is not a deployable selection if it differs from validation selection.",
+        f"- Selection label: `{lockbox_policy.get('selection_label')}`.",
+        f"- Locked-OOS label: `{lockbox_policy.get('locked_oos_label')}`.",
+        "",
+        "## Runtime guard",
+        "",
+        f"- Heavy-run lock: `{memory_policy.get('heavy_lock_path')}`",
+        f"- Explicit memory budget: `{memory_policy.get('explicit_budget_bytes')}` bytes",
+        f"- RSS summary: `{memory_summary.get('summary_path') or memory_summary.get('rss_log_path')}`",
         "",
         "## Summary",
         "",
@@ -228,7 +255,7 @@ def _markdown(payload: dict[str, Any], rows: list[dict[str, Any]]) -> str:
                 f"- sleeves: `{', '.join(selected.get('sleeves') or [])}`",
                 f"- train: `{_fmt_pct(split.get('train', {}).get('metrics', {}).get('total_return'))}`",
                 f"- val: `{_fmt_pct(split.get('val', {}).get('metrics', {}).get('total_return'))}`",
-                f"- OOS: `{_fmt_pct(split.get('oos', {}).get('metrics', {}).get('total_return'))}`, Sharpe `{_fmt_float(split.get('oos', {}).get('metrics', {}).get('sharpe'))}`, MDD `{_fmt_pct(split.get('oos', {}).get('metrics', {}).get('max_drawdown'))}`",
+                f"- locked OOS: `{_fmt_pct(split.get('oos', {}).get('metrics', {}).get('total_return'))}`, Sharpe `{_fmt_float(split.get('oos', {}).get('metrics', {}).get('sharpe'))}`, MDD `{_fmt_pct(split.get('oos', {}).get('metrics', {}).get('max_drawdown'))}`",
                 f"- success: `{selected.get('success_candidate')}` / failed gates: `{','.join(k for k, ok in (selected.get('gates') or {}).items() if not ok)}`",
                 "",
             ]
@@ -242,7 +269,7 @@ def _markdown(payload: dict[str, Any], rows: list[dict[str, Any]]) -> str:
                 f"- `{best_oos.get('name')}`",
                 f"- train: `{_fmt_pct(split.get('train', {}).get('metrics', {}).get('total_return'))}`",
                 f"- val: `{_fmt_pct(split.get('val', {}).get('metrics', {}).get('total_return'))}`",
-                f"- OOS: `{_fmt_pct(split.get('oos', {}).get('metrics', {}).get('total_return'))}`, Sharpe `{_fmt_float(split.get('oos', {}).get('metrics', {}).get('sharpe'))}`, MDD `{_fmt_pct(split.get('oos', {}).get('metrics', {}).get('max_drawdown'))}`",
+                f"- locked OOS: `{_fmt_pct(split.get('oos', {}).get('metrics', {}).get('total_return'))}`, Sharpe `{_fmt_float(split.get('oos', {}).get('metrics', {}).get('sharpe'))}`, MDD `{_fmt_pct(split.get('oos', {}).get('metrics', {}).get('max_drawdown'))}`",
                 "",
             ]
         )
@@ -250,7 +277,7 @@ def _markdown(payload: dict[str, Any], rows: list[dict[str, Any]]) -> str:
         [
             "## Top rows",
             "",
-            "| rank | name | success | train | val | OOS | OOS MDD | OOS Sharpe | failed gates |",
+            "| rank | name | success | train | val | locked OOS | locked OOS MDD | locked OOS Sharpe | failed gates |",
             "|---:|---|---:|---:|---:|---:|---:|---:|---|",
         ]
     )
@@ -337,6 +364,8 @@ def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[dict[s
         "diagnostic_best_oos": diagnostic_best_oos,
         "data_metadata": data_metadata,
         "peak_rss_mib": _rss_mib(),
+        "lockbox_policy": dict(LOCKBOX_POLICY),
+        "memory_policy": memory_policy_payload(budget_bytes=PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES),
     }
     return payload, csv_rows
 
@@ -356,15 +385,77 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    payload, rows = build_payload(args)
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     json_path = output_dir / "fresh_portfolio_tuning_latest.json"
     csv_path = output_dir / "fresh_portfolio_tuning_candidates.csv"
     md_path = output_dir / "fresh_portfolio_tuning_latest.md"
-    json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    _write_csv(csv_path, rows)
-    md_path.write_text(_markdown(payload, rows) + "\n", encoding="utf-8")
+    memory_guard = acquire_portfolio_memory_guard(
+        run_name=RUN_NAME,
+        output_dir=output_dir,
+        input_path=args.candidate_csv,
+        metadata={
+            "script": Path(__file__).name,
+            "top_n": int(args.top_n),
+            "max_sleeves": int(args.max_sleeves),
+            "locked_oos_label": LOCKBOX_POLICY["locked_oos_label"],
+            "selection_label": LOCKBOX_POLICY["selection_label"],
+        },
+        budget_bytes=PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES,
+    )
+    finalized = False
+    try:
+        memory_guard.checkpoint(
+            "start",
+            {
+                "candidate_csv": str(args.candidate_csv),
+                "top_n": int(args.top_n),
+                "max_sleeves": int(args.max_sleeves),
+            },
+        )
+        payload, rows = build_payload(args)
+        payload["lockbox_policy"] = dict(LOCKBOX_POLICY)
+        payload["memory_policy"] = memory_policy_payload(
+            budget_bytes=PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES
+        )
+        payload["rss_log_path"] = str(memory_guard.rss_log_path)
+        payload["memory_summary_path"] = str(memory_guard.summary_path)
+        _write_csv(csv_path, rows)
+        memory_guard.checkpoint(
+            "artifacts_prepared",
+            {
+                "portfolio_spec_count": int(payload["portfolio_spec_count"]),
+                "success_candidate_count": int(payload["success_candidate_count"]),
+            },
+        )
+        memory_summary = memory_guard.finalize(
+            status="completed",
+            context={
+                "json_path": str(json_path),
+                "markdown_path": str(md_path),
+                "csv_path": str(csv_path),
+                "portfolio_spec_count": int(payload["portfolio_spec_count"]),
+                "success_candidate_count": int(payload["success_candidate_count"]),
+            },
+        )
+        finalized = True
+        memory_summary["summary_path"] = str(memory_guard.summary_path)
+        payload["memory_summary"] = memory_summary
+        payload["peak_rss_mib"] = max(
+            _safe_float(payload.get("peak_rss_mib")),
+            _safe_float(memory_summary.get("peak_rss_bytes")) / (1024.0 * 1024.0),
+        )
+        json_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        md_path.write_text(_markdown(payload, rows) + "\n", encoding="utf-8")
+    except Exception as exc:
+        if not finalized:
+            memory_guard.finalize(status="failed", error=str(exc), context={"script": Path(__file__).name})
+        raise
+    finally:
+        memory_guard.release()
     print(
         json.dumps(
             {
