@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import csv
 import gc
+import hashlib
 import json
 import math
 import resource
@@ -25,8 +26,13 @@ from typing import Any
 import numpy as np
 import polars as pl
 
-from lumina_quant.config import BacktestConfig, BaseConfig
+from lumina_quant.config import BaseConfig
 from lumina_quant.market_data import load_futures_feature_points_from_db
+from lumina_quant.portfolio_split_contract import (
+    PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES,
+    acquire_portfolio_memory_guard,
+    memory_policy_payload,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
@@ -57,6 +63,10 @@ SHADOW_OOS_MDD = 0.001778
 SUCCESS_SHARPE = 1.0
 TARGET_ALLOCATION = 0.008
 MAX_ORDER_VALUE = 175.0
+HOURLY_PERIODS_PER_YEAR = 365 * 24
+RUN_NAME = "profit_moonshot_fresh_start_replay"
+CACHE_SCHEMA_VERSION = 2
+DEFAULT_PANEL_CACHE_DIR = REPO_ROOT / "var/cache/profit_moonshot_fresh_start"
 FEATURE_VALUE_COLUMNS = (
     "funding_rate",
     "open_interest",
@@ -103,6 +113,10 @@ class FreshSpec:
     trailing_stop_rv_multiple: float = 0.0
     trailing_stop_floor_pct: float = 0.0
     trailing_stop_cap_pct: float = 0.0
+    calendar_long_months: tuple[int, ...] = ()
+    calendar_short_months: tuple[int, ...] = ()
+    calendar_long_symbol: str = ""
+    calendar_short_symbol: str = ""
 
     def payload(self) -> dict[str, Any]:
         return {
@@ -138,6 +152,10 @@ class FreshSpec:
             "trailing_stop_rv_multiple": self.trailing_stop_rv_multiple,
             "trailing_stop_floor_pct": self.trailing_stop_floor_pct,
             "trailing_stop_cap_pct": self.trailing_stop_cap_pct,
+            "calendar_long_months": list(self.calendar_long_months),
+            "calendar_short_months": list(self.calendar_short_months),
+            "calendar_long_symbol": self.calendar_long_symbol,
+            "calendar_short_symbol": self.calendar_short_symbol,
             "target_allocation": TARGET_ALLOCATION,
             "max_order_value": MAX_ORDER_VALUE,
         }
@@ -402,9 +420,162 @@ def _load_feature_hourly(
     return hourly, metadata
 
 
+def _date_iter(start: date, end: date) -> list[date]:
+    if end < start:
+        return []
+    return [start + timedelta(days=offset) for offset in range((end - start).days + 1)]
+
+
+def _materialized_source_paths(
+    *, market_root: Path, exchange: str, symbol: str, start: date, end: date
+) -> list[Path]:
+    compact = _compact(symbol)
+    paths: list[Path] = []
+    for day in _date_iter(start, end):
+        day_root = (
+            market_root
+            / "market_data_materialized"
+            / str(exchange).lower()
+            / compact
+            / "timeframe=1s"
+            / f"date={day.isoformat()}"
+        )
+        manifest_path = day_root / "manifest.json"
+        if not manifest_path.exists():
+            continue
+        paths.append(manifest_path)
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        for item in list(manifest.get("data_files") or []):
+            path = day_root / str(item)
+            if path.exists():
+                paths.append(path)
+    return paths
+
+
+def _feature_source_paths(
+    *, market_root: Path, exchange: str, symbol: str, start: date, end: date
+) -> list[Path]:
+    root = (
+        market_root
+        / "feature_points"
+        / f"exchange={str(exchange).lower()}"
+        / f"symbol={_compact(symbol)}"
+    )
+    paths: list[Path] = []
+    for day in _date_iter(start, end):
+        day_root = root / f"date={day.isoformat()}"
+        if day_root.exists():
+            paths.extend(sorted(day_root.glob("*.parquet")))
+    return paths
+
+
+def _joined_panel_cache_path(
+    *,
+    cache_dir: Path,
+    market_root: Path,
+    exchange: str,
+    symbols: list[str],
+    start: date,
+    end: date,
+) -> tuple[Path, dict[str, Any]]:
+    source_paths: list[Path] = []
+    for symbol in symbols:
+        for month_start in _month_iter(start, end):
+            monthly_path = _raw_month_path(
+                market_root=market_root,
+                exchange=exchange,
+                symbol=symbol,
+                month_start=month_start,
+            )
+            if monthly_path.exists():
+                source_paths.append(monthly_path)
+        source_paths.extend(
+            _materialized_source_paths(
+                market_root=market_root,
+                exchange=exchange,
+                symbol=symbol,
+                start=start,
+                end=end,
+            )
+        )
+        source_paths.extend(
+            _feature_source_paths(
+                market_root=market_root,
+                exchange=exchange,
+                symbol=symbol,
+                start=start,
+                end=end,
+            )
+        )
+    digest = hashlib.sha256()
+    params = {
+        "schema": CACHE_SCHEMA_VERSION,
+        "market_root": str(market_root.resolve()),
+        "exchange": str(exchange).lower(),
+        "symbols": list(symbols),
+        "start": start.isoformat(),
+        "end": end.isoformat(),
+    }
+    digest.update(json.dumps(params, sort_keys=True).encode("utf-8"))
+    total_bytes = 0
+    latest_mtime_ns = 0
+    for path in sorted({item.resolve() for item in source_paths}):
+        try:
+            stat = path.stat()
+        except FileNotFoundError:
+            continue
+        rel = str(path)
+        digest.update(rel.encode("utf-8"))
+        digest.update(str(int(stat.st_size)).encode("ascii"))
+        digest.update(str(int(stat.st_mtime_ns)).encode("ascii"))
+        total_bytes += int(stat.st_size)
+        latest_mtime_ns = max(latest_mtime_ns, int(stat.st_mtime_ns))
+    source_metadata = {
+        **params,
+        "source_count": len({str(item.resolve()) for item in source_paths if item.exists()}),
+        "source_total_bytes": total_bytes,
+        "source_latest_mtime_ns": latest_mtime_ns,
+        "cache_key": digest.hexdigest(),
+    }
+    return cache_dir / f"joined_panel_{digest.hexdigest()[:24]}.parquet", source_metadata
+
+
 def _joined_panel(
-    *, market_root: Path, exchange: str, symbols: list[str], start: date, end: date
+    *,
+    market_root: Path,
+    exchange: str,
+    symbols: list[str],
+    start: date,
+    end: date,
+    cache_dir: Path | None = DEFAULT_PANEL_CACHE_DIR,
+    refresh_cache: bool = False,
 ) -> tuple[pl.DataFrame, dict[str, Any]]:
+    cache_path: Path | None = None
+    cache_metadata: dict[str, Any] = {}
+    if cache_dir is not None:
+        cache_path, cache_metadata = _joined_panel_cache_path(
+            cache_dir=Path(cache_dir),
+            market_root=market_root,
+            exchange=exchange,
+            symbols=symbols,
+            start=start,
+            end=end,
+        )
+        metadata_path = cache_path.with_suffix(".json")
+        if not refresh_cache and cache_path.exists() and metadata_path.exists():
+            panel = pl.read_parquet(cache_path).sort("datetime")
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            data_metadata = dict(metadata.get("data_metadata") or {})
+            data_metadata["panel_cache"] = {
+                **cache_metadata,
+                "cache_hit": True,
+                "path": str(cache_path),
+            }
+            return panel, data_metadata
+
     panels = [_load_symbol_hourly(market_root=market_root, exchange=exchange, symbol=s, start=start, end=end) for s in symbols]
     panel = panels[0]
     for frame in panels[1:]:
@@ -421,7 +592,58 @@ def _joined_panel(
             column = f"{prefix}_{suffix}"
             if column not in panel.columns:
                 panel = panel.with_columns(pl.lit(None, dtype=pl.Float64).alias(column))
-    return panel.sort("datetime"), {"feature_points": feature_meta, "rows": int(panel.height)}
+    panel = panel.sort("datetime")
+    data_metadata = {"feature_points": feature_meta, "rows": int(panel.height)}
+    if cache_path is not None:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = cache_path.with_suffix(".tmp.parquet")
+        panel.write_parquet(tmp_path)
+        tmp_path.replace(cache_path)
+        metadata_path = cache_path.with_suffix(".json")
+        metadata_path.write_text(
+            json.dumps(
+                {
+                    "data_metadata": data_metadata,
+                    "panel_cache": {
+                        **cache_metadata,
+                        "cache_hit": False,
+                        "path": str(cache_path),
+                    },
+                },
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        data_metadata["panel_cache"] = {
+            **cache_metadata,
+            "cache_hit": False,
+            "path": str(cache_path),
+        }
+    return panel, data_metadata
+
+
+def _array_for(arrays: dict[str, Any], key: str) -> np.ndarray | None:
+    raw = arrays.get(key)
+    if raw is None:
+        return None
+    return np.asarray(raw, dtype=float)
+
+
+def _array_value(arrays: dict[str, Any], key: str, idx: int) -> float:
+    raw = arrays.get(key)
+    if raw is None:
+        return np.nan
+    return float(raw[idx])
+
+
+def _calendar_target_match(symbol: str, target: str) -> bool:
+    if not target:
+        return True
+    return _compact(symbol) == _compact(target)
+
 
 
 def _to_float_array(panel: pl.DataFrame, column: str) -> np.ndarray:
@@ -488,6 +710,7 @@ def _build_arrays(panel: pl.DataFrame, symbols: list[str]) -> dict[str, Any]:
         "datetime": datetimes,
         "timestamp": np.asarray([int(dt.replace(tzinfo=UTC).timestamp()) for dt in datetimes], dtype=np.int64),
         "symbols": tuple(symbols),
+        "symbol_prefixes": tuple(_symbol_prefix(symbol) for symbol in symbols),
     }
     close_stack: list[np.ndarray] = []
     for symbol in symbols:
@@ -497,7 +720,7 @@ def _build_arrays(panel: pl.DataFrame, symbols: list[str]) -> dict[str, Any]:
             arrays[key] = _to_float_array(panel, key)
         close = arrays[f"{prefix}_close"]
         close_stack.append(close)
-        for lookback in (3, 6, 12, 24, 48, 72, 168):
+        for lookback in (3, 6, 12, 24, 48, 72, 168, 336):
             arrays[f"{prefix}_ret_{lookback}h"] = _pct_change(close, lookback)
         for lookback in (24, 48, 72):
             arrays[f"{prefix}_rv_{lookback}h"] = _rolling_rms_log_return(close, lookback)
@@ -541,7 +764,7 @@ def _build_arrays(panel: pl.DataFrame, symbols: list[str]) -> dict[str, Any]:
     stacked = np.vstack(close_stack)
     market_close = np.nanmean(stacked, axis=0)
     arrays["market_close"] = market_close
-    for lookback in (3, 6, 12, 24, 48, 72, 168):
+    for lookback in (3, 6, 12, 24, 48, 72, 168, 336):
         market_ret = _pct_change(market_close, lookback)
         arrays[f"market_ret_{lookback}h"] = market_ret
         for symbol in symbols:
@@ -582,35 +805,54 @@ def _entry_stop_pct(spec: FreshSpec, arrays: dict[str, Any], prefix: str, idx: i
 
 
 def _candidate_signal(spec: FreshSpec, arrays: dict[str, Any], idx: int) -> tuple[str, str, str]:
-    if spec.entry_hours and _hour_utc(arrays["datetime"][idx]) not in set(spec.entry_hours):
+    if spec.entry_hours and _hour_utc(arrays["datetime"][idx]) not in spec.entry_hours:
         return "", "", "entry_hour_block"
-    symbols = list(arrays["symbols"])
+    symbols = tuple(arrays["symbols"])
+    prefixes = tuple(arrays.get("symbol_prefixes") or tuple(_symbol_prefix(symbol) for symbol in symbols))
     lookback = int(spec.lookback_bars)
-    market_ret = float(arrays[f"market_ret_{lookback}h"][idx]) if f"market_ret_{lookback}h" in arrays else np.nan
-    if spec.broad_min_abs > 0.0 and (not math.isfinite(market_ret) or abs(market_ret) < spec.broad_min_abs):
+    market_ret = _array_value(arrays, f"market_ret_{lookback}h", idx)
+    if spec.family != "calendar_rotation" and spec.broad_min_abs > 0.0 and (
+        not math.isfinite(market_ret) or abs(market_ret) < spec.broad_min_abs
+    ):
         return "", "", "broad_move_missing"
+    signal_month = int(arrays["datetime"][idx].replace(tzinfo=UTC).month)
 
     candidates: list[tuple[float, str, str]] = []
-    for symbol in symbols:
-        prefix = _symbol_prefix(symbol)
+    for symbol, prefix in zip(symbols, prefixes, strict=True):
         close = float(arrays[f"{prefix}_close"][idx])
         if not math.isfinite(close) or close <= 0.0:
             continue
         rv_key = f"{prefix}_rv_{spec.rv_lookback_bars}h"
         if spec.max_rv > 0.0:
-            rv = float(arrays.get(rv_key, np.full_like(arrays[f"{prefix}_close"], np.nan))[idx])
+            rv = _array_value(arrays, rv_key, idx)
             if not math.isfinite(rv) or rv > spec.max_rv:
                 continue
-        ret = float(arrays[f"{prefix}_ret_{lookback}h"][idx])
-        resid_z = float(arrays[f"{prefix}_resid_z_{lookback}h"][idx])
-        funding = float(arrays[f"{prefix}_funding_ffill"][idx])
-        flow = np.nan
-        if spec.flow_lookback_bars > 0:
-            flow_key = f"{prefix}_flow_imbalance_{spec.flow_lookback_bars}h"
-            flow = float(arrays.get(flow_key, np.full_like(arrays[f"{prefix}_close"], np.nan))[idx])
+        ret = _array_value(arrays, f"{prefix}_ret_{lookback}h", idx)
+
+        if spec.family == "calendar_rotation":
+            if signal_month in spec.calendar_long_months:
+                if (
+                    spec.allow_long
+                    and _calendar_target_match(symbol, spec.calendar_long_symbol)
+                    and math.isfinite(ret)
+                    and ret >= spec.min_abs_return
+                ):
+                    candidates.append((ret, symbol, "LONG"))
+            elif (
+                signal_month in spec.calendar_short_months
+                and spec.allow_short
+                and _calendar_target_match(symbol, spec.calendar_short_symbol)
+                and math.isfinite(ret)
+                and ret <= -spec.threshold
+            ):
+                candidates.append((abs(ret), symbol, "SHORT"))
+            continue
+
+        funding = _array_value(arrays, f"{prefix}_funding_ffill", idx)
         if spec.funding_abs_cap > 0.0 and (not math.isfinite(funding) or abs(funding) > spec.funding_abs_cap):
             continue
         if spec.family == "residual_reversion":
+            resid_z = _array_value(arrays, f"{prefix}_resid_z_{lookback}h", idx)
             if spec.allow_long and math.isfinite(resid_z) and resid_z <= -spec.threshold and ret <= -spec.min_abs_return:
                 candidates.append((abs(resid_z), symbol, "LONG"))
             if spec.allow_short and math.isfinite(resid_z) and resid_z >= spec.threshold and ret >= spec.min_abs_return:
@@ -618,6 +860,7 @@ def _candidate_signal(spec: FreshSpec, arrays: dict[str, Any], idx: int) -> tupl
         elif spec.family == "cross_momentum":
             if not math.isfinite(ret) or abs(ret) < spec.min_abs_return:
                 continue
+            resid_z = _array_value(arrays, f"{prefix}_resid_z_{lookback}h", idx)
             if spec.allow_long and market_ret > spec.broad_min_abs and resid_z >= spec.threshold:
                 candidates.append((resid_z, symbol, "LONG"))
             if spec.allow_short and market_ret < -spec.broad_min_abs and resid_z <= -spec.threshold:
@@ -633,15 +876,17 @@ def _candidate_signal(spec: FreshSpec, arrays: dict[str, Any], idx: int) -> tupl
                 key = f"{candidate_prefix}_ret_{sharpe_lb}h"
                 if key not in arrays:
                     continue
-                hist = arrays[key][window_start : idx + 1]
+                hist = np.asarray(arrays[key][window_start : idx + 1], dtype=float)
                 finite = np.isfinite(hist)
-                if finite.sum() < 2:
+                if finite.sum() == 0:
                     continue
                 vals = hist[finite]
                 vol = float(np.std(vals))
+                mean_ret = float(np.mean(vals))
                 if not math.isfinite(vol) or vol <= 0.0:
-                    continue
-                sharpe_scores.append((candidate_symbol, float(np.mean(vals) / vol)))
+                    sharpe_scores.append((candidate_symbol, mean_ret))
+                else:
+                    sharpe_scores.append((candidate_symbol, mean_ret / vol))
             if len(sharpe_scores) < 2:
                 continue
             sharpe_scores.sort(key=lambda item: item[1], reverse=True)
@@ -656,12 +901,13 @@ def _candidate_signal(spec: FreshSpec, arrays: dict[str, Any], idx: int) -> tupl
         elif spec.family == "funding_carry_fade":
             if not math.isfinite(funding):
                 continue
+            resid_z = _array_value(arrays, f"{prefix}_resid_z_{lookback}h", idx)
             if spec.allow_short and funding >= spec.funding_rank_min and resid_z >= spec.threshold and ret >= spec.min_abs_return:
                 candidates.append((abs(funding) + abs(resid_z) / 100.0, symbol, "SHORT"))
             if spec.allow_long and funding <= -spec.funding_rank_min and resid_z <= -spec.threshold and ret <= -spec.min_abs_return:
                 candidates.append((abs(funding) + abs(resid_z) / 100.0, symbol, "LONG"))
         elif spec.family == "funding_oi_carry_fade":
-            oi = float(arrays.get(f"{prefix}_oi_delta_{max(int(spec.sharpe_lookback_bars),1)}h", np.full_like(arrays[f"{prefix}_close"], np.nan))[idx])
+            oi = _array_value(arrays, f"{prefix}_oi_delta_{max(int(spec.sharpe_lookback_bars),1)}h", idx)
             if not math.isfinite(funding) or not math.isfinite(oi):
                 continue
             if spec.allow_short and funding >= spec.funding_rank_min and oi >= spec.oi_rank_min and ret >= spec.min_abs_return:
@@ -669,6 +915,7 @@ def _candidate_signal(spec: FreshSpec, arrays: dict[str, Any], idx: int) -> tupl
             if spec.allow_long and funding <= -spec.funding_rank_min and oi <= -spec.oi_rank_min and ret <= -spec.min_abs_return:
                 candidates.append((abs(funding) + abs(oi), symbol, "LONG"))
         elif spec.family == "flow_momentum":
+            flow = _array_value(arrays, f"{prefix}_flow_imbalance_{spec.flow_lookback_bars}h", idx)
             if not math.isfinite(ret) or not math.isfinite(flow) or abs(ret) < spec.min_abs_return:
                 continue
             if spec.allow_long and ret > 0.0 and flow >= spec.flow_threshold:
@@ -676,6 +923,7 @@ def _candidate_signal(spec: FreshSpec, arrays: dict[str, Any], idx: int) -> tupl
             if spec.allow_short and ret < 0.0 and flow <= -spec.flow_threshold:
                 candidates.append((abs(flow) + abs(ret), symbol, "SHORT"))
         elif spec.family == "flow_exhaustion_fade":
+            flow = _array_value(arrays, f"{prefix}_flow_imbalance_{spec.flow_lookback_bars}h", idx)
             if not math.isfinite(ret) or not math.isfinite(flow) or abs(ret) < spec.min_abs_return:
                 continue
             if spec.allow_short and ret > 0.0 and flow >= spec.flow_threshold:
@@ -683,12 +931,16 @@ def _candidate_signal(spec: FreshSpec, arrays: dict[str, Any], idx: int) -> tupl
             if spec.allow_long and ret < 0.0 and flow <= -spec.flow_threshold:
                 candidates.append((abs(flow) + abs(ret), symbol, "LONG"))
         elif spec.family == "flow_imbalance_persistence":
+            flow = _array_value(arrays, f"{prefix}_flow_imbalance_{spec.flow_lookback_bars}h", idx)
             if not math.isfinite(flow) or not math.isfinite(ret) or abs(ret) < spec.min_abs_return:
                 continue
             persist = max(2, int(spec.flow_persistence_bars))
             flow_key = f"{prefix}_flow_imbalance_{spec.flow_lookback_bars}h"
-            flow_hist = arrays.get(flow_key)
-            if flow_hist is None or flow_hist.size < idx + 1:
+            raw_flow_hist = arrays.get(flow_key)
+            if raw_flow_hist is None:
+                continue
+            flow_hist = np.asarray(raw_flow_hist, dtype=float)
+            if flow_hist.size < idx + 1:
                 continue
             history = flow_hist[max(0, idx + 1 - persist) : idx + 1]
             if history.size < persist:
@@ -698,6 +950,7 @@ def _candidate_signal(spec: FreshSpec, arrays: dict[str, Any], idx: int) -> tupl
             elif spec.allow_short and np.all(history <= -spec.flow_persistence_threshold):
                 candidates.append((abs(flow) + abs(ret), symbol, "SHORT"))
         elif spec.family == "flow_imbalance_exhaustion":
+            flow = _array_value(arrays, f"{prefix}_flow_imbalance_{spec.flow_lookback_bars}h", idx)
             if not math.isfinite(flow) or not math.isfinite(ret) or abs(ret) < spec.min_abs_return:
                 continue
             if spec.allow_long and flow <= -spec.flow_persistence_threshold and ret <= -spec.min_abs_return:
@@ -705,6 +958,8 @@ def _candidate_signal(spec: FreshSpec, arrays: dict[str, Any], idx: int) -> tupl
             if spec.allow_short and flow >= spec.flow_persistence_threshold and ret >= spec.min_abs_return:
                 candidates.append((abs(flow) + abs(ret), symbol, "SHORT"))
         elif spec.family == "residual_reversion_flow_confirmed":
+            resid_z = _array_value(arrays, f"{prefix}_resid_z_{lookback}h", idx)
+            flow = _array_value(arrays, f"{prefix}_flow_imbalance_{spec.flow_lookback_bars}h", idx)
             if not math.isfinite(resid_z) or not math.isfinite(flow):
                 continue
             if (
@@ -725,7 +980,7 @@ def _candidate_signal(spec: FreshSpec, arrays: dict[str, Any], idx: int) -> tupl
             trend_key = f"market_ret_{spec.adaptive_lookback_bars}h"
             if trend_key not in arrays:
                 continue
-            trend = float(arrays[trend_key][idx])
+            trend = _array_value(arrays, trend_key, idx)
             if not math.isfinite(trend) or abs(trend) < spec.threshold:
                 continue
             if spec.allow_long and trend > 0.0 and ret >= spec.min_abs_return:
@@ -734,9 +989,9 @@ def _candidate_signal(spec: FreshSpec, arrays: dict[str, Any], idx: int) -> tupl
                 candidates.append((abs(trend) + abs(ret), symbol, "SHORT"))
         elif spec.family == "compression_breakout":
             comp_key = f"{prefix}_rv_{spec.rv_lookback_bars}h"
-            rv = float(arrays[comp_key][idx]) if comp_key in arrays else np.nan
+            rv = _array_value(arrays, comp_key, idx)
             rv_mean_key = f"{prefix}_rv_24h_mean_72h"
-            rv_mean = float(arrays[rv_mean_key][idx]) if rv_mean_key in arrays else np.nan
+            rv_mean = _array_value(arrays, rv_mean_key, idx)
             if not math.isfinite(rv) or not math.isfinite(rv_mean) or rv_mean <= 0.0:
                 continue
             if rv / rv_mean > spec.compression_quantile:
@@ -767,6 +1022,9 @@ def _run_split(
     position_side = "OUT"
     position_symbol = ""
     entry_price = 0.0
+    position_stop_loss_pct = 0.0
+    position_take_profit_pct = 0.0
+    best_price = 0.0
     bars_held = 0
     cooldown = 0
     equity_history: list[float] = []
@@ -802,8 +1060,16 @@ def _run_split(
             exit_reason = ""
             exit_price = close
             if position_side == "LONG":
-                stop = entry_price * (1.0 - spec.stop_loss_pct) if spec.stop_loss_pct > 0.0 else -math.inf
-                take = entry_price * (1.0 + spec.take_profit_pct) if spec.take_profit_pct > 0.0 else math.inf
+                best_price = max(best_price, high if math.isfinite(high) else close)
+                stop_pct = position_stop_loss_pct
+                base_stop = entry_price * (1.0 - stop_pct) if stop_pct > 0.0 else -math.inf
+                trail_stop = best_price * (1.0 - stop_pct) if stop_pct > 0.0 else -math.inf
+                stop = max(base_stop, trail_stop)
+                take = (
+                    entry_price * (1.0 + position_take_profit_pct)
+                    if position_take_profit_pct > 0.0
+                    else math.inf
+                )
                 if low <= stop:
                     exit_reason = "stop"
                     exit_price = min(open_, stop) if open_ < stop else stop
@@ -816,8 +1082,16 @@ def _run_split(
                     fill, fee_rate = _fill_price(exit_price, "SELL", high_low_vol=high_low_vol)
                     cash += qty * fill - qty * fill * fee_rate
             elif position_side == "SHORT":
-                stop = entry_price * (1.0 + spec.stop_loss_pct) if spec.stop_loss_pct > 0.0 else math.inf
-                take = entry_price * (1.0 - spec.take_profit_pct) if spec.take_profit_pct > 0.0 else -math.inf
+                best_price = min(best_price, low if math.isfinite(low) else close)
+                stop_pct = position_stop_loss_pct
+                base_stop = entry_price * (1.0 + stop_pct) if stop_pct > 0.0 else math.inf
+                trail_stop = best_price * (1.0 + stop_pct) if stop_pct > 0.0 else math.inf
+                stop = min(base_stop, trail_stop)
+                take = (
+                    entry_price * (1.0 - position_take_profit_pct)
+                    if position_take_profit_pct > 0.0
+                    else -math.inf
+                )
                 if high >= stop:
                     exit_reason = "stop"
                     exit_price = max(open_, stop) if open_ > stop else stop
@@ -834,6 +1108,9 @@ def _run_split(
                 position_symbol = ""
                 qty = 0.0
                 entry_price = 0.0
+                position_stop_loss_pct = 0.0
+                position_take_profit_pct = 0.0
+                best_price = 0.0
                 bars_held = 0
                 cooldown = max(0, int(spec.cooldown_bars))
                 round_trips += 1
@@ -855,7 +1132,11 @@ def _run_split(
                     open_ = float(arrays[f"{prefix}_open"][idx])
                     volume = max(0.0, float(arrays[f"{prefix}_volume"][idx]))
                     high_low_vol = max(0.0, (high - low) / open_) if open_ > 0.0 else 0.0
-                    notional = min(TARGET_ALLOCATION * mark_equity_at(int(idx)), MAX_ORDER_VALUE)
+                    allocation_scale = _side_allocation_scale(spec, side)
+                    notional = min(
+                        TARGET_ALLOCATION * allocation_scale * mark_equity_at(int(idx)),
+                        MAX_ORDER_VALUE * allocation_scale,
+                    )
                     raw_qty = math.floor((notional / close) / 0.001) * 0.001
                     max_fill_qty = volume * 0.10
                     order_qty = min(raw_qty, max_fill_qty)
@@ -868,6 +1149,9 @@ def _run_split(
                         position_symbol = symbol
                         position_side = "LONG"
                         entry_price = fill
+                        position_stop_loss_pct = _entry_stop_pct(spec, arrays, prefix, int(idx))
+                        position_take_profit_pct = float(spec.take_profit_pct)
+                        best_price = fill
                         bars_held = 0
                         fills += 1
                     else:
@@ -877,6 +1161,9 @@ def _run_split(
                         position_symbol = symbol
                         position_side = "SHORT"
                         entry_price = fill
+                        position_stop_loss_pct = _entry_stop_pct(spec, arrays, prefix, int(idx))
+                        position_take_profit_pct = float(spec.take_profit_pct)
+                        best_price = fill
                         bars_held = 0
                         fills += 1
         equity_history.append(mark_equity_at(int(idx)))
@@ -895,7 +1182,7 @@ def _run_split(
         round_trips += 1
         fills += 1
 
-    metrics = _metrics_from_equity_totals(equity_history, periods=int(getattr(BacktestConfig, "ANNUAL_PERIODS", 252)))
+    metrics = _metrics_from_equity_totals(equity_history, periods=HOURLY_PERIODS_PER_YEAR)
     payload = {
         "metrics": metrics,
         "round_trips": int(round_trips),
@@ -1125,6 +1412,9 @@ def _candidate_specs(arrays: dict[str, Any], symbols: list[str]) -> list[FreshSp
                 take_profit_pct=0.028,
                 min_abs_return=0.0015 if lookback <= 12 else 0.0025,
                 allow_short=True,
+                trailing_stop_rv_multiple=1.6,
+                trailing_stop_floor_pct=0.006,
+                trailing_stop_cap_pct=0.018,
             )
     for lookback in (12, 24, 48):
         for rank_min in (0.05, 0.08, 0.12):
@@ -1142,7 +1432,80 @@ def _candidate_specs(arrays: dict[str, Any], symbols: list[str]) -> list[FreshSp
                 take_profit_pct=0.030,
                 min_abs_return=0.0025 if lookback <= 24 else 0.0035,
                 allow_short=True,
+                long_allocation_scale=1.15,
+                short_allocation_scale=0.70,
             )
+    calendar_pairs = (
+        ("", ""),
+        ("TRXUSDT", ""),
+        ("BTCUSDT", ""),
+        ("ETHUSDT", ""),
+        ("TRXUSDT", "ETHUSDT"),
+        ("", "ETHUSDT"),
+    )
+    for long_symbol, short_symbol in calendar_pairs:
+        long_label = long_symbol.lower() or "strongest"
+        short_label = short_symbol.lower() or "weakest"
+        for lookback in (72, 168, 336):
+            for threshold in (0.002, 0.005, 0.010, 0.020):
+                for hold in (48, 120, 168, 336):
+                    for scale in (1.0, 2.0, 4.0, 6.0, 8.0):
+                        for stop in (0.0, 0.006):
+                            name = (
+                                f"fresh_calendar_rot_l{long_label}_s{short_label}_lb{lookback}_"
+                                f"thr{int(threshold*10000)}_h{hold}_sc{str(scale).replace('.', '')}_"
+                                f"st{int(stop*10000)}"
+                            )
+                            specs[name] = FreshSpec(
+                                name=name,
+                                family="calendar_rotation",
+                                lookback_bars=lookback,
+                                threshold=threshold,
+                                hold_bars=hold,
+                                cooldown_bars=max(0, hold // 4),
+                                stop_loss_pct=stop,
+                                take_profit_pct=0.0,
+                                min_abs_return=threshold,
+                                allow_long=True,
+                                allow_short=True,
+                                long_allocation_scale=scale,
+                                short_allocation_scale=scale,
+                                calendar_long_months=(3, 4, 5),
+                                calendar_short_months=(1, 2),
+                                calendar_long_symbol=long_symbol,
+                                calendar_short_symbol=short_symbol,
+                            )
+    for short_symbol in ("", "ETHUSDT"):
+        short_label = short_symbol.lower() or "weakest"
+        for threshold in (0.012, 0.015):
+            for hold in (120, 144):
+                for long_scale in (5.3, 5.4, 5.6, 5.8, 6.0, 6.2):
+                    for short_scale in (8.0, 10.0, 12.0):
+                        for take in (0.018, 0.045):
+                            name = (
+                                f"fresh_calendar_trx_takeprofit_s{short_label}_thr{int(threshold*10000)}_"
+                                f"h{hold}_ls{int(long_scale*100)}_ss{int(short_scale*10)}_"
+                                f"tp{int(take*10000)}"
+                            )
+                            specs[name] = FreshSpec(
+                                name=name,
+                                family="calendar_rotation",
+                                lookback_bars=168,
+                                threshold=threshold,
+                                hold_bars=hold,
+                                cooldown_bars=max(0, hold // 4),
+                                stop_loss_pct=0.0,
+                                take_profit_pct=take,
+                                min_abs_return=threshold,
+                                allow_long=True,
+                                allow_short=True,
+                                long_allocation_scale=long_scale,
+                                short_allocation_scale=short_scale,
+                                calendar_long_months=(3, 4, 5),
+                                calendar_short_months=(1, 2),
+                                calendar_long_symbol="TRXUSDT",
+                                calendar_short_symbol=short_symbol,
+                            )
     for lookback in (6, 12, 24):
         for threshold in (0.006, 0.010, 0.014):
             for comp in (0.55, 0.70, 0.85):
@@ -1274,7 +1637,7 @@ def _markdown(payload: dict[str, Any], rows: list[dict[str, Any]]) -> str:
         "",
         "- 기존 ETH shock-reversion incumbent/leadlag/context-wrapper를 쓰지 않고 raw-first data에서 새로 출발했다.",
         "- 신규 후보군: cross-sectional residual reversal, cross-sectional momentum, adaptive trend, cross-sectional Sharpe/rank selector, "
-        "funding-carry fade, funding+OI carry fade, taker-flow persistence/exhaustion, compression breakout.",
+        "funding-carry fade, funding+OI carry fade, taker-flow persistence/exhaustion, calendar rotation, compression breakout.",
         "- Replay는 one-position, fee/slippage, 10% bar-volume fill cap, cooldown, stop/take/max-hold, 0.8% target allocation, $175 max order를 강제한다.",
         "",
         "## Gate policy",
@@ -1328,7 +1691,16 @@ def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[dict[s
     start = min(split.start for split in splits)
     end = max(split.end for split in splits)
     symbols = [item.strip() for item in str(args.symbols).split(",") if item.strip()]
-    panel, data_metadata = _joined_panel(market_root=Path(args.market_root), exchange=str(args.exchange), symbols=symbols, start=start, end=end)
+    cache_dir = None if not str(args.panel_cache_dir or "").strip() else Path(args.panel_cache_dir)
+    panel, data_metadata = _joined_panel(
+        market_root=Path(args.market_root),
+        exchange=str(args.exchange),
+        symbols=symbols,
+        start=start,
+        end=end,
+        cache_dir=cache_dir,
+        refresh_cache=bool(args.refresh_panel_cache),
+    )
     arrays = _build_arrays(panel, symbols)
     specs = _candidate_specs(arrays, symbols)
     rows, results = _evaluate_specs(specs=specs, arrays=arrays, splits=splits)
@@ -1347,6 +1719,7 @@ def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[dict[s
             "success_oos_sharpe": SUCCESS_SHARPE,
             "target_allocation": TARGET_ALLOCATION,
             "max_order_value": MAX_ORDER_VALUE,
+            "metric_periods_per_year": HOURLY_PERIODS_PER_YEAR,
             "liquidations_required": 0,
         },
         "spec_count": len(specs),
@@ -1365,20 +1738,84 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--symbols", default=",".join(DEFAULT_SYMBOLS))
     parser.add_argument("--oos-end-date", default="2026-05-06")
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
+    parser.add_argument("--panel-cache-dir", default=str(DEFAULT_PANEL_CACHE_DIR))
+    parser.add_argument("--refresh-panel-cache", action="store_true")
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    payload, rows = build_payload(args)
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     json_path = output_dir / "fresh_start_overhaul_replay_latest.json"
     md_path = output_dir / "fresh_start_overhaul_replay_latest.md"
     csv_path = output_dir / "fresh_start_overhaul_replay_candidates.csv"
-    json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    _write_csv(csv_path, rows)
-    md_path.write_text(_markdown(payload, rows) + "\n", encoding="utf-8")
+    memory_guard = acquire_portfolio_memory_guard(
+        run_name=RUN_NAME,
+        output_dir=output_dir,
+        input_path=args.market_root,
+        metadata={
+            "script": Path(__file__).name,
+            "exchange": str(args.exchange),
+            "symbols": str(args.symbols),
+            "oos_end_date": str(args.oos_end_date),
+        },
+        budget_bytes=PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES,
+    )
+    finalized = False
+    try:
+        memory_guard.checkpoint(
+            "start",
+            {
+                "market_root": str(args.market_root),
+                "exchange": str(args.exchange),
+                "symbols": str(args.symbols),
+                "oos_end_date": str(args.oos_end_date),
+            },
+        )
+        payload, rows = build_payload(args)
+        payload["memory_policy"] = memory_policy_payload(
+            budget_bytes=PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES
+        )
+        payload["rss_log_path"] = str(memory_guard.rss_log_path)
+        payload["memory_summary_path"] = str(memory_guard.summary_path)
+        _write_csv(csv_path, rows)
+        memory_guard.checkpoint(
+            "artifacts_prepared",
+            {
+                "spec_count": int(payload["spec_count"]),
+                "replay_survivor_count": int(payload["replay_survivor_count"]),
+                "success_candidate_count": int(payload["success_candidate_count"]),
+            },
+        )
+        memory_summary = memory_guard.finalize(
+            status="completed",
+            context={
+                "json_path": str(json_path),
+                "markdown_path": str(md_path),
+                "csv_path": str(csv_path),
+                "spec_count": int(payload["spec_count"]),
+                "success_candidate_count": int(payload["success_candidate_count"]),
+            },
+        )
+        finalized = True
+        memory_summary["summary_path"] = str(memory_guard.summary_path)
+        payload["memory_summary"] = memory_summary
+        payload["peak_rss_mib"] = max(
+            _safe_float(payload.get("peak_rss_mib")),
+            _safe_float(memory_summary.get("peak_rss_bytes")) / (1024.0 * 1024.0),
+        )
+        json_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        md_path.write_text(_markdown(payload, rows) + "\n", encoding="utf-8")
+    except Exception as exc:
+        if not finalized:
+            memory_guard.finalize(status="failed", error=str(exc), context={"script": Path(__file__).name})
+        raise
+    finally:
+        memory_guard.release()
     print(
         json.dumps(
             {

@@ -290,3 +290,4 @@ var/scripts/*
 src/lumina_quant/data/__pycache__/
 src/lumina_quant/data/**/*.pyc
 var/reports/memory/
+var/cache/

@@ -102,7 +102,13 @@ def _rss_mib() -> float:
     return peak / 1024.0
 
 
-def _combine_equity(curves: list[list[float]], *, mode: str) -> list[float]:
+def _combine_equity(
+    curves: list[list[float]],
+    *,
+    mode: str,
+    weights: list[float] | None = None,
+    leverage: float = 1.0,
+) -> list[float]:
     if not curves:
         return []
     min_len = min(len(curve) for curve in curves)
@@ -113,13 +119,73 @@ def _combine_equity(curves: list[list[float]], *, mode: str) -> list[float]:
         arr = np.asarray(curve[:min_len], dtype=float)
         returns.append(arr / 10_000.0 - 1.0)
     stacked = np.vstack(returns)
-    if mode == "additive_sleeves":
-        combined = stacked.sum(axis=0)
-    elif mode == "equal_weight":
-        combined = stacked.mean(axis=0)
+    if weights is None:
+        if mode == "additive_sleeves":
+            weight_arr = np.ones(stacked.shape[0], dtype=float)
+        elif mode == "equal_weight":
+            weight_arr = np.full(stacked.shape[0], 1.0 / float(stacked.shape[0]), dtype=float)
+        else:
+            raise ValueError(f"weights required for combine mode: {mode}")
     else:
-        raise ValueError(f"unknown combine mode: {mode}")
+        weight_arr = np.asarray(weights, dtype=float)
+    combined = float(leverage) * np.dot(weight_arr, stacked)
     return [float(10_000.0 * (1.0 + item)) for item in combined]
+
+
+def _normalize_weights(raw_weights: list[float]) -> list[float]:
+    clean = [max(0.0, _safe_float(item)) for item in raw_weights]
+    total = sum(clean)
+    if total <= 0.0:
+        return [1.0 / float(len(clean)) for _ in clean] if clean else []
+    return [float(item / total) for item in clean]
+
+
+def _validation_return_risk_weights(
+    *,
+    combo_names: tuple[str, ...],
+    split_payloads: dict[str, dict[str, dict[str, Any]]],
+) -> list[float]:
+    raw: list[float] = []
+    for name in combo_names:
+        train_metrics = split_payloads[name]["train"].get("metrics") or {}
+        val_metrics = split_payloads[name]["val"].get("metrics") or {}
+        train_ret = max(0.0, _safe_float(train_metrics.get("total_return")))
+        val_ret = max(0.0, _safe_float(val_metrics.get("total_return")))
+        val_sharpe = max(0.0, _safe_float(val_metrics.get("sharpe")))
+        val_mdd = max(1e-6, _safe_float(val_metrics.get("max_drawdown"), 1.0))
+        raw.append((val_ret * 4.0 + train_ret + val_sharpe * 0.01) / val_mdd)
+    return _normalize_weights(raw)
+
+
+def _mode_weights_and_leverage(
+    *,
+    fresh: Any,
+    combo_names: tuple[str, ...],
+    split_curves: dict[str, dict[str, list[float]]],
+    split_payloads: dict[str, dict[str, dict[str, Any]]],
+    mode: str,
+) -> tuple[list[float] | None, float]:
+    if mode in {"additive_sleeves", "equal_weight"}:
+        return None, 1.0
+    weights = _validation_return_risk_weights(combo_names=combo_names, split_payloads=split_payloads)
+    if mode == "validation_return_risk_weight":
+        return weights, 1.0
+    if mode == "validation_drawdown_budget":
+        validation_equity = _combine_equity(
+            [split_curves[name]["val"] for name in combo_names],
+            mode=mode,
+            weights=weights,
+            leverage=1.0,
+        )
+        validation_metrics = fresh._metrics_from_equity_totals(
+            validation_equity,
+            periods=int(getattr(fresh, "HOURLY_PERIODS_PER_YEAR", 365 * 24)),
+        )
+        val_mdd = _safe_float(validation_metrics.get("max_drawdown"), 1.0)
+        target_val_mdd = SHADOW_OOS_MDD * 0.75
+        leverage = 1.0 if val_mdd <= 0.0 else target_val_mdd / val_mdd
+        return weights, max(0.20, min(6.0, float(leverage)))
+    raise ValueError(f"unknown combine mode: {mode}")
 
 
 def _combo_metrics(
@@ -137,12 +203,21 @@ def _combo_metrics(
         "sleeve_count": len(combo_names),
         "splits": {},
     }
+    weights, leverage = _mode_weights_and_leverage(
+        fresh=fresh,
+        combo_names=combo_names,
+        split_curves=split_curves,
+        split_payloads=split_payloads,
+        mode=mode,
+    )
+    out["weights"] = [float(item) for item in weights] if weights is not None else []
+    out["leverage"] = float(leverage)
     for split_name in ("train", "val", "oos"):
         curves = [split_curves[name][split_name] for name in combo_names]
-        equity = _combine_equity(curves, mode=mode)
+        equity = _combine_equity(curves, mode=mode, weights=weights, leverage=leverage)
         metrics = fresh._metrics_from_equity_totals(
             equity,
-            periods=int(getattr(fresh.BacktestConfig, "ANNUAL_PERIODS", 252)),
+            periods=int(getattr(fresh, "HOURLY_PERIODS_PER_YEAR", 365 * 24)),
         )
         round_trips = sum(int(split_payloads[name][split_name].get("round_trips") or 0) for name in combo_names)
         fills = sum(int(split_payloads[name][split_name].get("fills") or 0) for name in combo_names)
@@ -181,6 +256,8 @@ def _flatten_row(item: dict[str, Any]) -> dict[str, Any]:
         "mode": item["mode"],
         "sleeve_count": item["sleeve_count"],
         "sleeves": ",".join(item["sleeves"]),
+        "weights": ",".join(f"{float(weight):.6f}" for weight in item.get("weights") or []),
+        "leverage": _safe_float(item.get("leverage"), 1.0),
         "validation_score": item["validation_score"],
         "success_candidate": item["success_candidate"],
         "failed_gates": ",".join(key for key, ok in item["gates"].items() if not ok),
@@ -199,7 +276,11 @@ def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         path.write_text("", encoding="utf-8")
         return
     with path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=sorted({key for row in rows for key in row}))
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=sorted({key for row in rows for key in row}),
+            lineterminator="\n",
+        )
         writer.writeheader()
         writer.writerows(rows)
 
@@ -218,6 +299,7 @@ def _markdown(payload: dict[str, Any], rows: list[dict[str, Any]]) -> str:
     memory_policy = payload.get("memory_policy") or {}
     memory_summary = payload.get("memory_summary") or {}
     lockbox_policy = payload.get("lockbox_policy") or LOCKBOX_POLICY
+    combo_limit = payload.get("combo_limit_policy") or {}
     lines = [
         "# Profit moonshot fresh portfolio tuning",
         "",
@@ -241,6 +323,7 @@ def _markdown(payload: dict[str, Any], rows: list[dict[str, Any]]) -> str:
         "",
         f"- Candidate sleeves considered: `{payload['candidate_sleeve_count']}`",
         f"- Portfolio specs evaluated: `{payload['portfolio_spec_count']}`",
+        f"- Combo cap per size: `{combo_limit.get('max_combos_per_size', 'n/a')}`; skipped by size: `{combo_limit.get('limit_hits_by_size', {})}`",
         f"- Success candidates: `{payload['success_candidate_count']}`",
         f"- Peak RSS: `{payload['peak_rss_mib']:.3f} MiB`",
         "",
@@ -277,13 +360,13 @@ def _markdown(payload: dict[str, Any], rows: list[dict[str, Any]]) -> str:
         [
             "## Top rows",
             "",
-            "| rank | name | success | train | val | locked OOS | locked OOS MDD | locked OOS Sharpe | failed gates |",
-            "|---:|---|---:|---:|---:|---:|---:|---:|---|",
+            "| rank | name | mode | leverage | success | train | val | locked OOS | locked OOS MDD | locked OOS Sharpe | failed gates |",
+            "|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---|",
         ]
     )
     for idx, row in enumerate(rows[:15], start=1):
         lines.append(
-            f"| {idx} | `{row['name']}` | {row['success_candidate']} | "
+            f"| {idx} | `{row['name']}` | `{row['mode']}` | {_fmt_float(row.get('leverage'))} | {row['success_candidate']} | "
             f"{_fmt_pct(row['train_total_return'])} | {_fmt_pct(row['val_total_return'])} | "
             f"{_fmt_pct(row['oos_total_return'])} | {_fmt_pct(row['oos_max_drawdown'])} | "
             f"{_fmt_float(row['oos_sharpe'])} | `{row['failed_gates']}` |"
@@ -324,9 +407,19 @@ def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[dict[s
     portfolio_items: list[dict[str, Any]] = []
     names = [row["name"] for row in pool]
     max_k = max(2, min(int(args.max_sleeves), len(names))) if names else 0
+    max_combos_per_size = max(1, int(args.max_combos_per_size))
+    combo_limit_hits: dict[str, int] = {}
     for size in range(2, max_k + 1):
-        for combo in itertools.combinations(names, size):
-            for mode in ("equal_weight", "additive_sleeves"):
+        total_for_size = math.comb(len(names), size)
+        if total_for_size > max_combos_per_size:
+            combo_limit_hits[str(size)] = int(total_for_size - max_combos_per_size)
+        for combo in itertools.islice(itertools.combinations(names, size), max_combos_per_size):
+            for mode in (
+                "equal_weight",
+                "additive_sleeves",
+                "validation_return_risk_weight",
+                "validation_drawdown_budget",
+            ):
                 portfolio_items.append(
                     _combo_metrics(
                         fresh=fresh,
@@ -359,6 +452,11 @@ def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[dict[s
         "candidate_csv": str(args.candidate_csv),
         "candidate_sleeve_count": len(pool),
         "portfolio_spec_count": len(portfolio_items),
+        "combo_limit_policy": {
+            "max_combos_per_size": max_combos_per_size,
+            "limit_hits_by_size": combo_limit_hits,
+            "pool_order": "validation_score_descending",
+        },
         "success_candidate_count": sum(1 for item in portfolio_items if bool(item["success_candidate"])),
         "selected_by_validation": selected_by_validation,
         "diagnostic_best_oos": diagnostic_best_oos,
@@ -380,6 +478,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
     parser.add_argument("--top-n", type=int, default=18)
     parser.add_argument("--max-sleeves", type=int, default=5)
+    parser.add_argument("--max-combos-per-size", type=int, default=12_000)
     return parser.parse_args(argv)
 
 
