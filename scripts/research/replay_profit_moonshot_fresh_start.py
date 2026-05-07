@@ -98,6 +98,11 @@ class FreshSpec:
     sharpe_lookback_bars: int = 0
     sharpe_rank_min: float = 0.0
     oi_rank_min: float = 0.0
+    long_allocation_scale: float = 1.0
+    short_allocation_scale: float = 1.0
+    trailing_stop_rv_multiple: float = 0.0
+    trailing_stop_floor_pct: float = 0.0
+    trailing_stop_cap_pct: float = 0.0
 
     def payload(self) -> dict[str, Any]:
         return {
@@ -119,18 +124,23 @@ class FreshSpec:
             "funding_abs_cap": self.funding_abs_cap,
             "funding_rank_min": self.funding_rank_min,
             "compression_lookback_bars": self.compression_lookback_bars,
-        "compression_quantile": self.compression_quantile,
-        "flow_lookback_bars": self.flow_lookback_bars,
-        "flow_threshold": self.flow_threshold,
-        "flow_persistence_bars": self.flow_persistence_bars,
-        "flow_persistence_threshold": self.flow_persistence_threshold,
-        "adaptive_lookback_bars": self.adaptive_lookback_bars,
-        "sharpe_lookback_bars": self.sharpe_lookback_bars,
-        "sharpe_rank_min": self.sharpe_rank_min,
-        "oi_rank_min": self.oi_rank_min,
-        "target_allocation": TARGET_ALLOCATION,
-        "max_order_value": MAX_ORDER_VALUE,
-    }
+            "compression_quantile": self.compression_quantile,
+            "flow_lookback_bars": self.flow_lookback_bars,
+            "flow_threshold": self.flow_threshold,
+            "flow_persistence_bars": self.flow_persistence_bars,
+            "flow_persistence_threshold": self.flow_persistence_threshold,
+            "adaptive_lookback_bars": self.adaptive_lookback_bars,
+            "sharpe_lookback_bars": self.sharpe_lookback_bars,
+            "sharpe_rank_min": self.sharpe_rank_min,
+            "oi_rank_min": self.oi_rank_min,
+            "long_allocation_scale": self.long_allocation_scale,
+            "short_allocation_scale": self.short_allocation_scale,
+            "trailing_stop_rv_multiple": self.trailing_stop_rv_multiple,
+            "trailing_stop_floor_pct": self.trailing_stop_floor_pct,
+            "trailing_stop_cap_pct": self.trailing_stop_cap_pct,
+            "target_allocation": TARGET_ALLOCATION,
+            "max_order_value": MAX_ORDER_VALUE,
+        }
 
 
 def _compact(symbol: str) -> str:
@@ -492,13 +502,13 @@ def _build_arrays(panel: pl.DataFrame, symbols: list[str]) -> dict[str, Any]:
         for lookback in (24, 48, 72):
             arrays[f"{prefix}_rv_{lookback}h"] = _rolling_rms_log_return(close, lookback)
         arrays[f"{prefix}_rv_24h_mean_72h"] = _rolling_mean(arrays[f"{prefix}_rv_24h"], 72)
-    arrays[f"{prefix}_funding_ffill"] = _ffill(arrays[f"{prefix}_funding_rate"])
-    arrays[f"{prefix}_open_interest_ffill"] = _ffill(arrays[f"{prefix}_open_interest"])
-    buy_quote = arrays[f"{prefix}_taker_buy_quote_volume"]
-    sell_quote = arrays[f"{prefix}_taker_sell_quote_volume"]
-    flow_den = buy_quote + sell_quote
-    arrays[f"{prefix}_flow_imbalance_1h"] = np.divide(
-        buy_quote - sell_quote,
+        arrays[f"{prefix}_funding_ffill"] = _ffill(arrays[f"{prefix}_funding_rate"])
+        arrays[f"{prefix}_open_interest_ffill"] = _ffill(arrays[f"{prefix}_open_interest"])
+        buy_quote = arrays[f"{prefix}_taker_buy_quote_volume"]
+        sell_quote = arrays[f"{prefix}_taker_sell_quote_volume"]
+        flow_den = buy_quote + sell_quote
+        arrays[f"{prefix}_flow_imbalance_1h"] = np.divide(
+            buy_quote - sell_quote,
             flow_den,
             out=np.full_like(flow_den, np.nan, dtype=float),
             where=np.isfinite(flow_den) & (flow_den > 0.0),
@@ -513,32 +523,32 @@ def _build_arrays(panel: pl.DataFrame, symbols: list[str]) -> dict[str, Any]:
                 out=np.full_like(den, np.nan, dtype=float),
                 where=np.isfinite(den) & (den > 0.0),
             )
-        arrays[f"{prefix}_flow_imbalance_{lookback}h"] = flow
-        arrays[f"{prefix}_flow_z_{lookback}h"] = _rolling_zscore(flow, max(24, lookback * 6))
-    for lookback in (3, 6, 12, 24):
-        oi = arrays[f"{prefix}_open_interest_ffill"]
-        oi_delta = np.full_like(oi, np.nan, dtype=float)
-        if oi.size > lookback:
-            oi_delta[lookback:] = np.divide(
-                oi[lookback:] - oi[:-lookback],
-                lookback,
-                out=np.full_like(oi[lookback:], np.nan, dtype=float),
-                where=np.isfinite(oi[:-lookback]) & np.isfinite(oi[lookback:]),
-            )
-        arrays[f"{prefix}_oi_delta_{lookback}h"] = oi_delta
+            arrays[f"{prefix}_flow_imbalance_{lookback}h"] = flow
+            arrays[f"{prefix}_flow_z_{lookback}h"] = _rolling_zscore(flow, max(24, lookback * 6))
+        for lookback in (3, 6, 12, 24):
+            oi = arrays[f"{prefix}_open_interest_ffill"]
+            oi_delta = np.full_like(oi, np.nan, dtype=float)
+            if oi.size > lookback:
+                oi_delta[lookback:] = np.divide(
+                    oi[lookback:] - oi[:-lookback],
+                    lookback,
+                    out=np.full_like(oi[lookback:], np.nan, dtype=float),
+                    where=np.isfinite(oi[:-lookback]) & np.isfinite(oi[lookback:]),
+                )
+            arrays[f"{prefix}_oi_delta_{lookback}h"] = oi_delta
+    if not close_stack:
+        return arrays
     stacked = np.vstack(close_stack)
     market_close = np.nanmean(stacked, axis=0)
     arrays["market_close"] = market_close
     for lookback in (3, 6, 12, 24, 48, 72, 168):
         market_ret = _pct_change(market_close, lookback)
         arrays[f"market_ret_{lookback}h"] = market_ret
-        residuals: list[np.ndarray] = []
         for symbol in symbols:
             prefix = _compact(symbol).lower()
             residual = arrays[f"{prefix}_ret_{lookback}h"] - market_ret
             arrays[f"{prefix}_resid_{lookback}h"] = residual
             arrays[f"{prefix}_resid_z_{lookback}h"] = _rolling_zscore(residual, max(24, lookback * 4))
-            residuals.append(residual)
     return arrays
 
 
@@ -548,6 +558,27 @@ def _hour_utc(dt: datetime) -> int:
 
 def _symbol_prefix(symbol: str) -> str:
     return _compact(symbol).lower()
+
+
+def _side_allocation_scale(spec: FreshSpec, side: str) -> float:
+    if side == "SHORT":
+        return max(0.0, float(spec.short_allocation_scale))
+    return max(0.0, float(spec.long_allocation_scale))
+
+
+def _entry_stop_pct(spec: FreshSpec, arrays: dict[str, Any], prefix: str, idx: int) -> float:
+    if spec.trailing_stop_rv_multiple <= 0.0:
+        return float(spec.stop_loss_pct)
+    rv_key = f"{prefix}_rv_{spec.rv_lookback_bars}h"
+    rv = float(arrays.get(rv_key, np.full_like(arrays[f"{prefix}_close"], np.nan))[idx])
+    if not math.isfinite(rv) or rv <= 0.0:
+        return float(spec.stop_loss_pct)
+    stop_pct = rv * float(spec.trailing_stop_rv_multiple)
+    if spec.trailing_stop_floor_pct > 0.0:
+        stop_pct = max(stop_pct, float(spec.trailing_stop_floor_pct))
+    if spec.trailing_stop_cap_pct > 0.0:
+        stop_pct = min(stop_pct, float(spec.trailing_stop_cap_pct))
+    return max(0.0, float(stop_pct))
 
 
 def _candidate_signal(spec: FreshSpec, arrays: dict[str, Any], idx: int) -> tuple[str, str, str]:
@@ -591,15 +622,52 @@ def _candidate_signal(spec: FreshSpec, arrays: dict[str, Any], idx: int) -> tupl
                 candidates.append((resid_z, symbol, "LONG"))
             if spec.allow_short and market_ret < -spec.broad_min_abs and resid_z <= -spec.threshold:
                 candidates.append((abs(resid_z), symbol, "SHORT"))
+        elif spec.family == "cross_sectional_sharpe_rank":
+            if not math.isfinite(ret):
+                continue
+            sharpe_lb = max(2, int(spec.sharpe_lookback_bars or spec.lookback_bars))
+            window_start = max(0, idx + 1 - sharpe_lb)
+            sharpe_scores: list[tuple[str, float]] = []
+            for candidate_symbol in symbols:
+                candidate_prefix = _symbol_prefix(candidate_symbol)
+                key = f"{candidate_prefix}_ret_{sharpe_lb}h"
+                if key not in arrays:
+                    continue
+                hist = arrays[key][window_start : idx + 1]
+                finite = np.isfinite(hist)
+                if finite.sum() < 2:
+                    continue
+                vals = hist[finite]
+                vol = float(np.std(vals))
+                if not math.isfinite(vol) or vol <= 0.0:
+                    continue
+                sharpe_scores.append((candidate_symbol, float(np.mean(vals) / vol)))
+            if len(sharpe_scores) < 2:
+                continue
+            sharpe_scores.sort(key=lambda item: item[1], reverse=True)
+            top = sharpe_scores[0]
+            bottom = sharpe_scores[-1]
+            if abs(ret) < spec.min_abs_return or top[1] < spec.sharpe_rank_min:
+                continue
+            if spec.allow_long and symbol == top[0]:
+                candidates.append((top[1] + abs(ret), symbol, "LONG"))
+            if spec.allow_short and symbol == bottom[0]:
+                candidates.append((abs(bottom[1]) + abs(ret), symbol, "SHORT"))
         elif spec.family == "funding_carry_fade":
             if not math.isfinite(funding):
                 continue
-            # Fade crowded positive carry only after price has already outrun the basket;
-            # long negative carry only after underperformance.  No direct funding capture.
             if spec.allow_short and funding >= spec.funding_rank_min and resid_z >= spec.threshold and ret >= spec.min_abs_return:
                 candidates.append((abs(funding) + abs(resid_z) / 100.0, symbol, "SHORT"))
             if spec.allow_long and funding <= -spec.funding_rank_min and resid_z <= -spec.threshold and ret <= -spec.min_abs_return:
                 candidates.append((abs(funding) + abs(resid_z) / 100.0, symbol, "LONG"))
+        elif spec.family == "funding_oi_carry_fade":
+            oi = float(arrays.get(f"{prefix}_oi_delta_{max(int(spec.sharpe_lookback_bars),1)}h", np.full_like(arrays[f"{prefix}_close"], np.nan))[idx])
+            if not math.isfinite(funding) or not math.isfinite(oi):
+                continue
+            if spec.allow_short and funding >= spec.funding_rank_min and oi >= spec.oi_rank_min and ret >= spec.min_abs_return:
+                candidates.append((abs(funding) + abs(oi), symbol, "SHORT"))
+            if spec.allow_long and funding <= -spec.funding_rank_min and oi <= -spec.oi_rank_min and ret <= -spec.min_abs_return:
+                candidates.append((abs(funding) + abs(oi), symbol, "LONG"))
         elif spec.family == "flow_momentum":
             if not math.isfinite(ret) or not math.isfinite(flow) or abs(ret) < spec.min_abs_return:
                 continue
@@ -614,6 +682,28 @@ def _candidate_signal(spec: FreshSpec, arrays: dict[str, Any], idx: int) -> tupl
                 candidates.append((abs(flow) + abs(ret), symbol, "SHORT"))
             if spec.allow_long and ret < 0.0 and flow <= -spec.flow_threshold:
                 candidates.append((abs(flow) + abs(ret), symbol, "LONG"))
+        elif spec.family == "flow_imbalance_persistence":
+            if not math.isfinite(flow) or not math.isfinite(ret) or abs(ret) < spec.min_abs_return:
+                continue
+            persist = max(2, int(spec.flow_persistence_bars))
+            flow_key = f"{prefix}_flow_imbalance_{spec.flow_lookback_bars}h"
+            flow_hist = arrays.get(flow_key)
+            if flow_hist is None or flow_hist.size < idx + 1:
+                continue
+            history = flow_hist[max(0, idx + 1 - persist) : idx + 1]
+            if history.size < persist:
+                continue
+            if spec.allow_long and np.all(history >= spec.flow_persistence_threshold):
+                candidates.append((abs(flow) + abs(ret), symbol, "LONG"))
+            elif spec.allow_short and np.all(history <= -spec.flow_persistence_threshold):
+                candidates.append((abs(flow) + abs(ret), symbol, "SHORT"))
+        elif spec.family == "flow_imbalance_exhaustion":
+            if not math.isfinite(flow) or not math.isfinite(ret) or abs(ret) < spec.min_abs_return:
+                continue
+            if spec.allow_long and flow <= -spec.flow_persistence_threshold and ret <= -spec.min_abs_return:
+                candidates.append((abs(flow) + abs(ret), symbol, "LONG"))
+            if spec.allow_short and flow >= spec.flow_persistence_threshold and ret >= spec.min_abs_return:
+                candidates.append((abs(flow) + abs(ret), symbol, "SHORT"))
         elif spec.family == "residual_reversion_flow_confirmed":
             if not math.isfinite(resid_z) or not math.isfinite(flow):
                 continue
@@ -631,6 +721,17 @@ def _candidate_signal(spec: FreshSpec, arrays: dict[str, Any], idx: int) -> tupl
                 and flow <= -spec.flow_threshold
             ):
                 candidates.append((abs(resid_z) + abs(flow), symbol, "SHORT"))
+        elif spec.family == "adaptive_trend":
+            trend_key = f"market_ret_{spec.adaptive_lookback_bars}h"
+            if trend_key not in arrays:
+                continue
+            trend = float(arrays[trend_key][idx])
+            if not math.isfinite(trend) or abs(trend) < spec.threshold:
+                continue
+            if spec.allow_long and trend > 0.0 and ret >= spec.min_abs_return:
+                candidates.append((abs(trend) + abs(ret), symbol, "LONG"))
+            if spec.allow_short and trend < 0.0 and ret <= -spec.min_abs_return:
+                candidates.append((abs(trend) + abs(ret), symbol, "SHORT"))
         elif spec.family == "compression_breakout":
             comp_key = f"{prefix}_rv_{spec.rv_lookback_bars}h"
             rv = float(arrays[comp_key][idx]) if comp_key in arrays else np.nan
@@ -646,20 +747,6 @@ def _candidate_signal(spec: FreshSpec, arrays: dict[str, Any], idx: int) -> tupl
                 candidates.append((abs(ret), symbol, "SHORT"))
     if not candidates:
         return "", "", "signal_missing"
-    if spec.family == "adaptive_trend":
-        if spec.sharpe_lookback_bars <= 0:
-            spec_sharpe_lb = spec.lookback_bars
-        else:
-            spec_sharpe_lb = spec.sharpe_lookback_bars
-        trend = arrays.get(f"market_ret_{spec.adaptive_lookback_bars}h", np.array([], dtype=float))
-        if trend.size == 0 or not math.isfinite(float(trend[idx])):
-            return "", "", "adaptive_signal_missing"
-        if spec.allow_long and float(trend[idx]) >= spec.threshold and ret >= spec.min_abs_return:
-            candidates.append((abs(float(trend[idx])), symbol, "LONG"))
-        if spec.allow_short and float(trend[idx]) <= -spec.threshold and ret <= -spec.min_abs_return:
-            candidates.append((abs(float(trend[idx])), symbol, "SHORT"))
-        if not candidates:
-            return "", "", "adaptive_signal_missing"
     candidates.sort(reverse=True, key=lambda item: item[0])
     _, symbol, side = candidates[0]
     return symbol, side, ""
@@ -908,6 +995,25 @@ def _candidate_specs(arrays: dict[str, Any], symbols: list[str]) -> list[FreshSp
                     min_abs_return=0.003,
                     entry_hours=(1, 2, 9, 10, 17, 18),
                 )
+    for lookback in (6, 12, 24, 48):
+        for threshold in (1.25, 1.5, 1.75):
+            for funding_min in (0.00005, 0.00010):
+                name = f"fresh_funding_oi_fade_lb{lookback}_z{str(threshold).replace('.', '')}_f{int(funding_min*1e6)}_oi{int((funding_min*10)*100)}"
+                specs[name] = FreshSpec(
+                    name=name,
+                    family="funding_oi_carry_fade",
+                    lookback_bars=lookback,
+                    threshold=threshold,
+                    hold_bars=24,
+                    cooldown_bars=12,
+                    stop_loss_pct=0.016,
+                    take_profit_pct=0.032,
+                    funding_rank_min=funding_min,
+                    oi_rank_min=funding_min * 10.0,
+                    sharpe_lookback_bars=12,
+                    min_abs_return=0.003 if lookback >= 24 else 0.002,
+                    allow_short=True,
+                )
     for flow_lookback in (3, 6, 12, 24):
         for price_lookback in (3, 6, 12, 24):
             for flow_threshold in (0.03, 0.06, 0.10, 0.15):
@@ -946,6 +1052,43 @@ def _candidate_specs(arrays: dict[str, Any], symbols: list[str]) -> list[FreshSp
                         flow_lookback_bars=flow_lookback,
                         flow_threshold=flow_threshold,
                     )
+                    name = (
+                        f"fresh_flow_imb_persist_fl{flow_lookback}_px{price_lookback}_"
+                        f"imb{int(flow_threshold * 100)}_h{hold}"
+                    )
+                    specs[name] = FreshSpec(
+                        name=name,
+                        family="flow_imbalance_persistence",
+                        lookback_bars=price_lookback,
+                        threshold=0.0,
+                        hold_bars=hold,
+                        cooldown_bars=max(1, hold // 2),
+                        stop_loss_pct=0.013,
+                        take_profit_pct=0.029,
+                        min_abs_return=0.0015 if price_lookback <= 6 else 0.003,
+                        flow_lookback_bars=flow_lookback,
+                        flow_threshold=flow_threshold,
+                        flow_persistence_bars=4,
+                        flow_persistence_threshold=flow_threshold,
+                    )
+                    name = (
+                        f"fresh_flow_imb_exhaust_fl{flow_lookback}_px{price_lookback}_"
+                        f"imb{int(flow_threshold * 100)}_h{hold}"
+                    )
+                    specs[name] = FreshSpec(
+                        name=name,
+                        family="flow_imbalance_exhaustion",
+                        lookback_bars=price_lookback,
+                        threshold=0.0,
+                        hold_bars=hold,
+                        cooldown_bars=max(1, hold // 2),
+                        stop_loss_pct=0.014,
+                        take_profit_pct=0.028,
+                        min_abs_return=0.0015 if price_lookback <= 6 else 0.003,
+                        flow_lookback_bars=flow_lookback,
+                        flow_threshold=flow_threshold,
+                        flow_persistence_threshold=flow_threshold,
+                    )
     for flow_lookback in (3, 6, 12):
         for price_lookback in (6, 12, 24, 48):
             for threshold in (1.25, 1.5, 1.75):
@@ -967,6 +1110,39 @@ def _candidate_specs(arrays: dict[str, Any], symbols: list[str]) -> list[FreshSp
                         flow_lookback_bars=flow_lookback,
                         flow_threshold=flow_threshold,
                     )
+    for lookback in (12, 24, 48):
+        for threshold in (0.0010, 0.0015, 0.0020):
+            name = f"fresh_adaptive_trend_lb{lookback}_thr{int(threshold*10000)}"
+            specs[name] = FreshSpec(
+                name=name,
+                family="adaptive_trend",
+                lookback_bars=lookback,
+                adaptive_lookback_bars=max(12, lookback),
+                threshold=threshold,
+                hold_bars=12,
+                cooldown_bars=6,
+                stop_loss_pct=0.014,
+                take_profit_pct=0.028,
+                min_abs_return=0.0015 if lookback <= 12 else 0.0025,
+                allow_short=True,
+            )
+    for lookback in (12, 24, 48):
+        for rank_min in (0.05, 0.08, 0.12):
+            name = f"fresh_cross_sharpe_rank_lb{lookback}_r{int(rank_min*100)}"
+            specs[name] = FreshSpec(
+                name=name,
+                family="cross_sectional_sharpe_rank",
+                lookback_bars=lookback,
+                sharpe_lookback_bars=24,
+                sharpe_rank_min=rank_min,
+                threshold=0.0,
+                hold_bars=24,
+                cooldown_bars=8,
+                stop_loss_pct=0.013,
+                take_profit_pct=0.030,
+                min_abs_return=0.0025 if lookback <= 24 else 0.0035,
+                allow_short=True,
+            )
     for lookback in (6, 12, 24):
         for threshold in (0.006, 0.010, 0.014):
             for comp in (0.55, 0.70, 0.85):
@@ -1097,7 +1273,8 @@ def _markdown(payload: dict[str, Any], rows: list[dict[str, Any]]) -> str:
         "## Intent",
         "",
         "- 기존 ETH shock-reversion incumbent/leadlag/context-wrapper를 쓰지 않고 raw-first data에서 새로 출발했다.",
-        "- 신규 후보군: cross-sectional residual reversal, cross-sectional momentum, funding-carry fade, taker-flow momentum/exhaustion, compression breakout.",
+        "- 신규 후보군: cross-sectional residual reversal, cross-sectional momentum, adaptive trend, cross-sectional Sharpe/rank selector, "
+        "funding-carry fade, funding+OI carry fade, taker-flow persistence/exhaustion, compression breakout.",
         "- Replay는 one-position, fee/slippage, 10% bar-volume fill cap, cooldown, stop/take/max-hold, 0.8% target allocation, $175 max order를 강제한다.",
         "",
         "## Gate policy",
