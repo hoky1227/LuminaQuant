@@ -120,3 +120,10 @@ Detailed report: `var/reports/profit_moonshot_20260501/current_tail_20260505/tak
 - Exact screen: `174` cadence variants; no exposure/gross/max-order increase.
 - Best screen survivor `profit_moonshot_adaptive_momentum_boost_mode__cadence_1b` is discarded: report-capped train `-100.0000%` / MDD `100.0000%` after equity breach, raw arithmetic `-111.5894%` / `175.7880%`, `5` train liquidations; OOS `-0.9619%` / Sharpe `0.012010` / MDD `33.0023%`.
 - Decision: **no cadence/rebalance alpha promoted**; the equity-breach candidate is a failure artifact, not useful alpha. Incumbent ETH 12h shock and funding-guard shadow remain unchanged.
+## Multiasset exchange expansion follow-up — 2026-05-07
+
+- Report: `var/reports/profit_moonshot_20260501/current_tail_20260506/multiasset_exchange_expansion/multiasset_exchange_alpha_execution_report_20260506.md`.
+- Hyperliquid read-only public `/info` collection upserted `35211` feature rows; funding history covered train/val/OOS, but OI/mark were current snapshot/context only.
+- Tickmill/MT5 read-only collection was blocked because `LQ_MT5_BRIDGE_PYTHON / LQ__LIVE__MT5_BRIDGE_PYTHON is not configured.`.
+- Stateful replay evaluated `38` Hyperliquid/Tickmill confirmation/regime filters; replay survivors `0`, success candidates `0`, max RSS `6710.816 MiB`.
+- No live-equivalent full backtest was run because there was no replay survivor. Incumbent and Sharpe/MDD shadow remain unchanged.

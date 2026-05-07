@@ -119,6 +119,45 @@ def _action_fetch_ohlcv(payload: dict[str, Any]) -> list[list[float]]:
     return out
 
 
+def _namedtuple_to_dict(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {}
+    asdict = getattr(value, "_asdict", None)
+    if callable(asdict):
+        try:
+            return dict(asdict())
+        except Exception:
+            pass
+    out: dict[str, Any] = {}
+    for name in dir(value):
+        if name.startswith("_"):
+            continue
+        try:
+            item = getattr(value, name)
+        except Exception:
+            continue
+        if callable(item):
+            continue
+        if isinstance(item, (str, int, float, bool)) or item is None:
+            out[str(name)] = item
+    return out
+
+
+def _action_fetch_symbol_info(payload: dict[str, Any]) -> dict[str, Any]:
+    symbol = str(payload.get("symbol") or "")
+    if not symbol:
+        return {}
+    info = mt5.symbol_info(symbol)
+    if info is None:
+        return {}
+    tick = mt5.symbol_info_tick(symbol)
+    result = _namedtuple_to_dict(info)
+    tick_payload = _namedtuple_to_dict(tick)
+    if tick_payload:
+        result["tick"] = tick_payload
+    return result
+
+
 def _action_execute_order(payload: dict[str, Any]) -> dict[str, Any]:
     symbol = str(payload.get("symbol") or "")
     order_type = str(payload.get("type") or "market").strip().lower()
@@ -265,6 +304,7 @@ ACTIONS: dict[str, Any] = {
     "get_balance": _action_get_balance,
     "get_all_positions": _action_get_all_positions,
     "fetch_ohlcv": _action_fetch_ohlcv,
+    "fetch_symbol_info": _action_fetch_symbol_info,
     "execute_order": _action_execute_order,
     "fetch_order": _action_fetch_order,
     "fetch_open_orders": _action_fetch_open_orders,

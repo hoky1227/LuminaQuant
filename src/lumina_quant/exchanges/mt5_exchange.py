@@ -269,6 +269,28 @@ class MT5Exchange(ExchangeInterface):
             )
         return data
 
+    def fetch_symbol_info(self, symbol: str) -> dict[str, Any]:
+        """Return read-only MT5 symbol properties and latest tick fields."""
+        if not self.connected:
+            return {}
+        if self._bridge_mode():
+            try:
+                result = self._bridge_call("fetch_symbol_info", {"symbol": str(symbol)})
+            except Exception:
+                return {}
+            return result if isinstance(result, dict) else {}
+
+        info = mt5.symbol_info(str(symbol))
+        if info is None:
+            return {}
+        asdict = getattr(info, "_asdict", None)
+        payload = dict(asdict()) if callable(asdict) else {}
+        tick = mt5.symbol_info_tick(str(symbol))
+        tick_asdict = getattr(tick, "_asdict", None)
+        if callable(tick_asdict):
+            payload["tick"] = dict(tick_asdict())
+        return payload
+
     def execute_order(
         self,
         symbol: str,
