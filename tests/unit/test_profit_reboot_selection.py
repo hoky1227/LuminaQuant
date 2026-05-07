@@ -33,12 +33,16 @@ def _result(
     *,
     train_return: float,
     val_return: float,
+    oos_return: float = 0.009,
     train_mdd: float = 0.05,
     val_mdd: float = 0.02,
+    oos_mdd: float = 0.001,
     train_trades: int = 40,
     val_trades: int = 6,
+    oos_trades: int = 6,
     val_sharpe: float = 1.2,
     val_sortino: float = 2.0,
+    oos_sharpe: float = 1.2,
     status: str = "live_equivalent_validated",
 ):
     metrics = {
@@ -60,7 +64,15 @@ def _result(
             "volatility": 0.1,
             "cagr": val_return,
         },
-        "oos": reval._empty_metrics(),
+        "oos": {
+            "total_return": oos_return,
+            "sharpe": oos_sharpe,
+            "sortino": 2.0,
+            "calmar": 1.0,
+            "max_drawdown": oos_mdd,
+            "volatility": 0.1,
+            "cagr": oos_return,
+        },
     }
     return {
         "mode": mode,
@@ -82,6 +94,13 @@ def _result(
                 "final_equity": 100000.0 * (1.0 + val_return),
                 "liquidation_count": 0,
             },
+            {
+                "split": "oos",
+                "status": "completed",
+                "trade_count": oos_trades,
+                "final_equity": 100000.0 * (1.0 + oos_return),
+                "liquidation_count": 0,
+            },
         ],
     }
 
@@ -96,8 +115,10 @@ def test_no_trade_flat_result_is_not_alpha_selection_eligible() -> None:
                 val_return=0.0,
                 train_trades=0,
                 val_trades=0,
+                oos_trades=0,
                 val_sharpe=0.0,
                 val_sortino=0.0,
+                oos_sharpe=0.0,
             )
         ],
         preflights,

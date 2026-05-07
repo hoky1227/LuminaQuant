@@ -83,6 +83,9 @@ include = ["lumina_quant*"]
 target-version = "py311"
 line-length = 100
 src = ["src", "apps", "scripts", "tests"]
+extend-exclude = [
+    "var",
+]
 
 [tool.ruff.lint]
 select = [
