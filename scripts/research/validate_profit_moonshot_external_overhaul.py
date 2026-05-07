@@ -289,10 +289,28 @@ def validate(
     progress_payload = {
         "artifact_kind": "profit_moonshot_external_overhaul_verifier",
         "generated_at": payload["generated_at"],
+        "status": payload["status"],
         "passed": payload["passed"],
+        "result_path": str(result_path),
         "summary_pass_gate": bool(pass_gate_ok),
         "replay_path": str(replay_path),
         "tuning_path": str(tuning_path),
+        "tests_evidence_path": str(tests_evidence_path),
+        "ci_evidence_path": str(ci_evidence_path),
+        "artifact_rss_mib": payload["artifact_rss_mib"],
+        "checks": {
+            key: {
+                "passed": bool(check.get("passed")),
+                "issues": list(check.get("issues") or []),
+            }
+            for key, check in dict(payload.get("checks") or {}).items()
+            if isinstance(check, dict)
+        },
+        "next_required_evidence": [
+            key
+            for key, check in dict(payload.get("checks") or {}).items()
+            if isinstance(check, dict) and not bool(check.get("passed"))
+        ],
     }
     result_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     (external_overhaul_dir / "validator_progress_latest.json").write_text(
