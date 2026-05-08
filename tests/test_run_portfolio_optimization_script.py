@@ -285,7 +285,7 @@ def test_run_portfolio_optimization_enforces_strategy_cap_when_feasible(tmp_path
     assert all(float(row.get("weight_share", 0.0)) <= max_strategy + 1e-6 for row in weights)
 
 
-def test_run_portfolio_optimization_fails_explicitly_when_asset_caps_are_infeasible(tmp_path: Path):
+def test_run_portfolio_optimization_reserves_cash_when_asset_caps_bind(tmp_path: Path):
     root = Path(__file__).resolve().parents[1]
 
     candidates = [
@@ -358,6 +358,8 @@ def test_run_portfolio_optimization_fails_explicitly_when_asset_caps_are_infeasi
     assert payload["status"] == "completed"
     constraints = dict(payload.get("constraints") or {})
     assert float(constraints.get("max_asset", 0.0)) == 0.2
+    assert float(constraints.get("active_weight", 0.0)) <= 0.200001
+    assert float(constraints.get("cash_reserve_weight", 0.0)) >= 0.79
     assert float(payload.get("cash_weight", 0.0)) >= 0.79
     assert float(payload.get("gross_exposure", 0.0)) <= 0.200001
 

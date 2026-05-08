@@ -1,6 +1,6 @@
 import os
 from collections import deque
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 
 import polars as pl
 from lumina_quant.core.events import FillEvent, OrderEvent
@@ -665,7 +665,7 @@ class Portfolio:
             if ts > 10_000_000_000:
                 ts = ts / 1000.0
             try:
-                return datetime.utcfromtimestamp(ts).date()
+                return datetime.fromtimestamp(ts, UTC).date()
             except Exception:
                 return None
         try:

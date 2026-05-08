@@ -10,10 +10,14 @@ import pytest
 from lumina_quant.portfolio.optimizer_core import (
     LOCKED_OOS_OBJECTIVE_POLICY,
     StreamCache,
+    apply_caps,
+    asset_exposure,
     build_portfolio_returns,
     build_portfolio_stream,
     canonical_split,
+    metals_exposure,
     objective_policy_payload,
+    project_simplex_with_upper_bounds,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -81,6 +85,62 @@ def test_objective_policy_payload_labels_locked_oos_contract() -> None:
     assert payload["objective_policy"] == LOCKED_OOS_OBJECTIVE_POLICY
     assert payload["oos_is_objective_input"] is False
     assert payload["locked_oos_label"] == "locked_oos_report_only"
+
+
+def test_apply_caps_enforces_strategy_asset_and_metals_exposure() -> None:
+    records = {
+        "trend_btc": {"candidate_id": "trend_btc", "family": "trend", "symbols": ["BTC/USDT"]},
+        "trend_eth": {"candidate_id": "trend_eth", "family": "trend", "symbols": ["ETH/USDT"]},
+        "metal_mix": {"candidate_id": "metal_mix", "family": "macro", "symbols": ["XAU/USDT", "BTC/USDT"]},
+    }
+    weights, caps = apply_caps(
+        {"trend_btc": 0.80, "trend_eth": 0.10, "metal_mix": 0.10},
+        records=records,
+        max_strategy=0.50,
+        max_family=0.60,
+        max_asset=0.55,
+        max_metals=0.10,
+    )
+
+    assert caps["max_strategy"] == pytest.approx(0.50)
+    assert all(weight <= 0.500001 for weight in weights.values())
+    assert weights["trend_btc"] + weights["trend_eth"] <= 0.600001
+    assert asset_exposure(weights, records, "BTC/USDT") <= 0.550001
+    assert metals_exposure(weights, records) <= 0.100001
+
+
+def test_apply_caps_reserves_cash_when_asset_cap_limits_all_candidates() -> None:
+    records = {
+        f"btc_{idx}": {"candidate_id": f"btc_{idx}", "family": f"family_{idx}", "symbols": ["BTC/USDT"]}
+        for idx in range(3)
+    }
+
+    weights, caps = apply_caps(
+        dict.fromkeys(records, 1.0),
+        records=records,
+        max_strategy=0.50,
+        max_family=1.0,
+        max_asset=0.20,
+        max_metals=1.0,
+    )
+
+    assert caps["max_asset"] == pytest.approx(0.20)
+    assert caps["active_weight"] == pytest.approx(0.20)
+    assert caps["cash_reserve_weight"] == pytest.approx(0.80)
+    assert sum(weights.values()) == pytest.approx(0.20)
+    assert asset_exposure(weights, records, "BTC/USDT") <= 0.200001
+
+
+def test_project_simplex_with_upper_bounds_preserves_capacity_and_preferences() -> None:
+    weights = project_simplex_with_upper_bounds(
+        {"a": 10.0, "b": 1.0, "c": 1.0},
+        upper={"a": 0.50, "b": 0.40, "c": 0.40},
+        target_sum=1.0,
+    )
+
+    assert sum(weights.values()) == pytest.approx(1.0)
+    assert weights["a"] == pytest.approx(0.50)
+    assert weights["b"] == pytest.approx(weights["c"])
 
 
 def test_hybrid_optuna_locked_profile_ignores_oos_metrics() -> None:

@@ -71,3 +71,23 @@ The generic optimizer CLI remains backward compatible: arguments, report filenam
 - Corrective action: moved hybrid-specific profiles/scoring to `src/lumina_quant/portfolio/hybrid_objective.py`.
 - Re-check status: CLEAR; no architectural blockers.
 - Post-split verification: targeted 17-test subset passed in 3.02s; ruff, py_compile, `git diff --check` passed; full pytest `1188 passed, 1262 warnings in 369.57s`.
+
+## Follow-up modularity / warning closure — 2026-05-08T10:37Z
+
+User follow-up requested risk closure, exactness, AGENTS tree confirmation, modular/capsulated code boundaries, warning cleanup, and ai-slop-cleaner-style cleanup confirmation.
+
+- `AGENTS.md` marker-bounded tree/ownership map remains present between `<!-- LQ:TREE:START -->` and `<!-- LQ:TREE:END -->`.
+- Portfolio cap/allocation helpers were extracted from `scripts/run_portfolio_optimization.py` into `src/lumina_quant/portfolio/optimizer_core.py` so the CLI remains a thin wrapper and the shared optimizer core owns reusable allocation math.
+- Effective cap metadata now exposes `target_active_weight`, actual `active_weight`, and `cash_reserve_weight` to make cash-reserve outcomes explicit when asset/metal caps bind.
+- Stale test wording was corrected from infeasible failure to cash-reserve behavior, matching the locked CLI contract.
+- Observed full-suite warning source was fixed at source: `datetime.utcfromtimestamp(...)` replaced by timezone-aware `datetime.fromtimestamp(..., UTC)` in `src/lumina_quant/backtesting/portfolio_backtest.py`.
+- Follow-up evidence: core+script warning-as-error tests `13 passed`; chunk/window warning-as-error suite plus ruff `22 passed`.
+- Final full-suite/local gate and post-push CI evidence will be appended after completion.
+
+### Follow-up final local evidence
+
+- Warning-as-error portfolio/moonshot/validator/chunk/window subset: `29 passed in 3.51s`.
+- Focused ruff: passed.
+- `py_compile` on touched scripts/core modules: passed.
+- `git diff --check`: passed.
+- Full local suite after warning-source fix: `1191 passed in 259.55s (0:04:19)` with no pytest warning summary.

@@ -41,3 +41,33 @@
 
 - Architect re-check after splitting `hybrid_objective.py`: `CLEAR`; no architectural blockers.
 - Post-split full local suite: `uv run --extra dev pytest -q` → `1188 passed, 1262 warnings in 369.57s`.
+
+## Follow-up risk/warning closure in progress — 2026-05-08T10:37Z
+
+Trigger: user asked to resolve remaining risk accurately, confirm AGENTS tree insertion, ensure modular/capsulated shared code, fix warnings, and confirm ai-slop-cleaner-style cleanup.
+
+Current follow-up changes:
+- Confirmed `AGENTS.md` has the bounded repo tree/ownership map between `<!-- LQ:TREE:START -->` and `<!-- LQ:TREE:END -->`.
+- Extracted cap/allocation helpers from `scripts/run_portfolio_optimization.py` into `src/lumina_quant/portfolio/optimizer_core.py`.
+- Added shared-core tests for strategy/asset/metals cap enforcement, cash-reserve behavior, and bounded simplex projection.
+- Made effective cap metadata explicit with actual `active_weight` and `cash_reserve_weight`.
+- Fixed the observed pytest deprecation source in `portfolio_backtest.py` by using timezone-aware `datetime.fromtimestamp(..., UTC)`.
+- Corrected stale test naming around binding asset caps: behavior is cash reserve, not explicit failure.
+
+Evidence so far:
+- Core+script warning-as-error tests: `13 passed in 1.81s`.
+- Core/script/chunk/window warning-as-error tests plus focused ruff: `22 passed in 3.66s`; ruff passed.
+
+If rebooted before completion:
+1. Run full local gates: targeted portfolio/moonshot/validator subset, full `pytest -q`, focused `ruff`, `py_compile`, and `git diff --check`.
+2. Commit with Lore protocol, push `HEAD:main` to remote `private`.
+3. Verify GitHub Actions `ci` and `private-ci` are green for the new SHA.
+
+## Follow-up final local evidence — 2026-05-08T10:45Z
+
+- Warning-as-error portfolio/moonshot/validator/chunk/window subset: `29 passed in 3.51s`.
+- Focused ruff: passed.
+- `py_compile` on touched scripts/core modules: passed.
+- `git diff --check`: passed.
+- Full local suite after warning-source fix: `1191 passed in 259.55s (0:04:19)` with no pytest warning summary.
+- Pending only: Lore commit, push to `private/main`, and GitHub Actions `ci` / `private-ci` green verification for the follow-up SHA.
