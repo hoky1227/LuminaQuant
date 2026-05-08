@@ -857,6 +857,12 @@ def _candidate_signal(spec: FreshSpec, arrays: dict[str, Any], idx: int) -> tupl
                 candidates.append((abs(resid_z), symbol, "LONG"))
             if spec.allow_short and math.isfinite(resid_z) and resid_z >= spec.threshold and ret >= spec.min_abs_return:
                 candidates.append((abs(resid_z), symbol, "SHORT"))
+        elif spec.family == "residual_momentum":
+            resid_z = _array_value(arrays, f"{prefix}_resid_z_{lookback}h", idx)
+            if spec.allow_long and math.isfinite(resid_z) and resid_z >= spec.threshold and ret >= spec.min_abs_return:
+                candidates.append((abs(resid_z) + abs(ret), symbol, "LONG"))
+            if spec.allow_short and math.isfinite(resid_z) and resid_z <= -spec.threshold and ret <= -spec.min_abs_return:
+                candidates.append((abs(resid_z) + abs(ret), symbol, "SHORT"))
         elif spec.family == "cross_momentum":
             if not math.isfinite(ret) or abs(ret) < spec.min_abs_return:
                 continue
@@ -865,7 +871,7 @@ def _candidate_signal(spec: FreshSpec, arrays: dict[str, Any], idx: int) -> tupl
                 candidates.append((resid_z, symbol, "LONG"))
             if spec.allow_short and market_ret < -spec.broad_min_abs and resid_z <= -spec.threshold:
                 candidates.append((abs(resid_z), symbol, "SHORT"))
-        elif spec.family == "cross_sectional_sharpe_rank":
+        elif spec.family in {"cross_sectional_sharpe_rank", "cross_sectional_sharpe_reversal"}:
             if not math.isfinite(ret):
                 continue
             sharpe_lb = max(2, int(spec.sharpe_lookback_bars or spec.lookback_bars))
@@ -892,12 +898,19 @@ def _candidate_signal(spec: FreshSpec, arrays: dict[str, Any], idx: int) -> tupl
             sharpe_scores.sort(key=lambda item: item[1], reverse=True)
             top = sharpe_scores[0]
             bottom = sharpe_scores[-1]
-            if abs(ret) < spec.min_abs_return or top[1] < spec.sharpe_rank_min:
+            rank_spread = float(top[1] - bottom[1])
+            if abs(ret) < spec.min_abs_return or rank_spread < spec.sharpe_rank_min:
                 continue
-            if spec.allow_long and symbol == top[0]:
-                candidates.append((top[1] + abs(ret), symbol, "LONG"))
-            if spec.allow_short and symbol == bottom[0]:
-                candidates.append((abs(bottom[1]) + abs(ret), symbol, "SHORT"))
+            if spec.family == "cross_sectional_sharpe_reversal":
+                if spec.allow_short and symbol == top[0]:
+                    candidates.append((rank_spread + abs(ret), symbol, "SHORT"))
+                if spec.allow_long and symbol == bottom[0]:
+                    candidates.append((rank_spread + abs(ret), symbol, "LONG"))
+            else:
+                if spec.allow_long and symbol == top[0]:
+                    candidates.append((top[1] + abs(ret), symbol, "LONG"))
+                if spec.allow_short and symbol == bottom[0]:
+                    candidates.append((abs(bottom[1]) + abs(ret), symbol, "SHORT"))
         elif spec.family == "funding_carry_fade":
             if not math.isfinite(funding):
                 continue
@@ -906,6 +919,14 @@ def _candidate_signal(spec: FreshSpec, arrays: dict[str, Any], idx: int) -> tupl
                 candidates.append((abs(funding) + abs(resid_z) / 100.0, symbol, "SHORT"))
             if spec.allow_long and funding <= -spec.funding_rank_min and resid_z <= -spec.threshold and ret <= -spec.min_abs_return:
                 candidates.append((abs(funding) + abs(resid_z) / 100.0, symbol, "LONG"))
+        elif spec.family == "funding_carry_momentum":
+            if not math.isfinite(funding):
+                continue
+            resid_z = _array_value(arrays, f"{prefix}_resid_z_{lookback}h", idx)
+            if spec.allow_long and funding >= spec.funding_rank_min and resid_z >= spec.threshold and ret >= spec.min_abs_return:
+                candidates.append((abs(funding) + abs(resid_z) / 100.0 + abs(ret), symbol, "LONG"))
+            if spec.allow_short and funding <= -spec.funding_rank_min and resid_z <= -spec.threshold and ret <= -spec.min_abs_return:
+                candidates.append((abs(funding) + abs(resid_z) / 100.0 + abs(ret), symbol, "SHORT"))
         elif spec.family == "funding_oi_carry_fade":
             oi = _array_value(arrays, f"{prefix}_oi_delta_{max(int(spec.sharpe_lookback_bars),1)}h", idx)
             if not math.isfinite(funding) or not math.isfinite(oi):
@@ -987,6 +1008,17 @@ def _candidate_signal(spec: FreshSpec, arrays: dict[str, Any], idx: int) -> tupl
                 candidates.append((abs(trend) + abs(ret), symbol, "LONG"))
             if spec.allow_short and trend < 0.0 and ret <= -spec.min_abs_return:
                 candidates.append((abs(trend) + abs(ret), symbol, "SHORT"))
+        elif spec.family == "adaptive_trend_fade":
+            trend_key = f"market_ret_{spec.adaptive_lookback_bars}h"
+            if trend_key not in arrays:
+                continue
+            trend = _array_value(arrays, trend_key, idx)
+            if not math.isfinite(trend) or abs(trend) < spec.threshold:
+                continue
+            if spec.allow_short and trend > 0.0 and ret >= spec.min_abs_return:
+                candidates.append((abs(trend) + abs(ret), symbol, "SHORT"))
+            if spec.allow_long and trend < 0.0 and ret <= -spec.min_abs_return:
+                candidates.append((abs(trend) + abs(ret), symbol, "LONG"))
         elif spec.family == "compression_breakout":
             comp_key = f"{prefix}_rv_{spec.rv_lookback_bars}h"
             rv = _array_value(arrays, comp_key, idx)
@@ -1000,6 +1032,19 @@ def _candidate_signal(spec: FreshSpec, arrays: dict[str, Any], idx: int) -> tupl
                 candidates.append((abs(ret), symbol, "LONG"))
             if spec.allow_short and ret <= -spec.threshold:
                 candidates.append((abs(ret), symbol, "SHORT"))
+        elif spec.family == "compression_breakout_fade":
+            comp_key = f"{prefix}_rv_{spec.rv_lookback_bars}h"
+            rv = _array_value(arrays, comp_key, idx)
+            rv_mean_key = f"{prefix}_rv_24h_mean_72h"
+            rv_mean = _array_value(arrays, rv_mean_key, idx)
+            if not math.isfinite(rv) or not math.isfinite(rv_mean) or rv_mean <= 0.0:
+                continue
+            if rv / rv_mean > spec.compression_quantile:
+                continue
+            if spec.allow_short and ret >= spec.threshold:
+                candidates.append((abs(ret), symbol, "SHORT"))
+            if spec.allow_long and ret <= -spec.threshold:
+                candidates.append((abs(ret), symbol, "LONG"))
     if not candidates:
         return "", "", "signal_missing"
     candidates.sort(reverse=True, key=lambda item: item[0])
@@ -1266,6 +1311,31 @@ def _candidate_specs(arrays: dict[str, Any], symbols: list[str]) -> list[FreshSp
                     min_abs_return=0.003,
                 )
     for lookback in (12, 24, 48, 72):
+        for threshold in (1.0, 1.25, 1.5, 1.75):
+            for hold in (12, 24, 48, 96):
+                for scale in (0.5, 1.0, 2.0, 4.0):
+                    name = (
+                        f"fresh_resid_mom_lb{lookback}_z{str(threshold).replace('.', '')}_"
+                        f"h{hold}_sc{str(scale).replace('.', '')}"
+                    )
+                    specs[name] = FreshSpec(
+                        name=name,
+                        family="residual_momentum",
+                        lookback_bars=lookback,
+                        threshold=threshold,
+                        hold_bars=hold,
+                        cooldown_bars=max(1, hold // 3),
+                        stop_loss_pct=0.012,
+                        take_profit_pct=0.040,
+                        min_abs_return=0.0025 if lookback <= 24 else 0.004,
+                        allow_short=True,
+                        long_allocation_scale=scale,
+                        short_allocation_scale=scale,
+                        trailing_stop_rv_multiple=1.4,
+                        trailing_stop_floor_pct=0.006,
+                        trailing_stop_cap_pct=0.016,
+                    )
+    for lookback in (12, 24, 48, 72):
         for threshold in (1.0, 1.25, 1.5):
             for funding_min in (0.00005, 0.00010, 0.00015):
                 name = f"fresh_funding_fade_lb{lookback}_z{str(threshold).replace('.', '')}_f{int(funding_min*1e6)}ppm"
@@ -1281,6 +1351,27 @@ def _candidate_specs(arrays: dict[str, Any], symbols: list[str]) -> list[FreshSp
                     funding_rank_min=funding_min,
                     min_abs_return=0.003,
                     entry_hours=(1, 2, 9, 10, 17, 18),
+                )
+                name = (
+                    f"fresh_funding_mom_lb{lookback}_z{str(threshold).replace('.', '')}_"
+                    f"f{int(funding_min*1e6)}ppm"
+                )
+                specs[name] = FreshSpec(
+                    name=name,
+                    family="funding_carry_momentum",
+                    lookback_bars=lookback,
+                    threshold=threshold,
+                    hold_bars=24,
+                    cooldown_bars=12,
+                    stop_loss_pct=0.014,
+                    take_profit_pct=0.040,
+                    funding_rank_min=funding_min,
+                    min_abs_return=0.003,
+                    entry_hours=(1, 2, 9, 10, 17, 18),
+                    allow_short=True,
+                    trailing_stop_rv_multiple=1.3,
+                    trailing_stop_floor_pct=0.006,
+                    trailing_stop_cap_pct=0.016,
                 )
     for lookback in (6, 12, 24, 48):
         for threshold in (1.25, 1.5, 1.75):
@@ -1416,6 +1507,32 @@ def _candidate_specs(arrays: dict[str, Any], symbols: list[str]) -> list[FreshSp
                 trailing_stop_floor_pct=0.006,
                 trailing_stop_cap_pct=0.018,
             )
+    for lookback in (6, 12, 24, 48):
+        for threshold in (0.0010, 0.0015, 0.0020, 0.0030):
+            for hold in (6, 12, 24, 48):
+                for scale in (0.5, 1.0, 2.0):
+                    name = (
+                        f"fresh_adaptive_trend_fade_lb{lookback}_thr{int(threshold*10000)}_"
+                        f"h{hold}_sc{str(scale).replace('.', '')}"
+                    )
+                    specs[name] = FreshSpec(
+                        name=name,
+                        family="adaptive_trend_fade",
+                        lookback_bars=lookback,
+                        adaptive_lookback_bars=max(6, lookback),
+                        threshold=threshold,
+                        hold_bars=hold,
+                        cooldown_bars=max(1, hold // 3),
+                        stop_loss_pct=0.010,
+                        take_profit_pct=0.035,
+                        min_abs_return=0.0015 if lookback <= 12 else 0.0025,
+                        allow_short=True,
+                        long_allocation_scale=scale,
+                        short_allocation_scale=scale,
+                        trailing_stop_rv_multiple=1.2,
+                        trailing_stop_floor_pct=0.005,
+                        trailing_stop_cap_pct=0.014,
+                    )
     for lookback in (12, 24, 48):
         for rank_min in (0.05, 0.08, 0.12):
             name = f"fresh_cross_sharpe_rank_lb{lookback}_r{int(rank_min*100)}"
@@ -1435,6 +1552,29 @@ def _candidate_specs(arrays: dict[str, Any], symbols: list[str]) -> list[FreshSp
                 long_allocation_scale=1.15,
                 short_allocation_scale=0.70,
             )
+    for lookback in (12, 24, 48, 72):
+        for rank_min in (0.03, 0.05, 0.08, 0.12):
+            for hold in (12, 24, 48):
+                name = f"fresh_cross_sharpe_reversal_lb{lookback}_r{int(rank_min*100)}_h{hold}"
+                specs[name] = FreshSpec(
+                    name=name,
+                    family="cross_sectional_sharpe_reversal",
+                    lookback_bars=lookback,
+                    sharpe_lookback_bars=max(12, lookback),
+                    sharpe_rank_min=rank_min,
+                    threshold=0.0,
+                    hold_bars=hold,
+                    cooldown_bars=max(1, hold // 3),
+                    stop_loss_pct=0.010,
+                    take_profit_pct=0.035,
+                    min_abs_return=0.0020 if lookback <= 24 else 0.0030,
+                    allow_short=True,
+                    long_allocation_scale=0.85,
+                    short_allocation_scale=0.85,
+                    trailing_stop_rv_multiple=1.2,
+                    trailing_stop_floor_pct=0.005,
+                    trailing_stop_cap_pct=0.014,
+                )
     calendar_pairs = (
         ("", ""),
         ("TRXUSDT", ""),
@@ -1477,11 +1617,11 @@ def _candidate_specs(arrays: dict[str, Any], symbols: list[str]) -> list[FreshSp
                             )
     for short_symbol in ("", "ETHUSDT"):
         short_label = short_symbol.lower() or "weakest"
-        for threshold in (0.012, 0.015):
-            for hold in (120, 144):
-                for long_scale in (5.3, 5.4, 5.6, 5.8, 6.0, 6.2):
+        for threshold in (0.012, 0.015, 0.018):
+            for hold in (120, 144, 168):
+                for long_scale in (5.3, 5.4, 5.6, 5.8, 5.9, 6.0, 6.2):
                     for short_scale in (8.0, 10.0, 12.0):
-                        for take in (0.018, 0.045):
+                        for take in (0.018, 0.024, 0.045, 0.060):
                             name = (
                                 f"fresh_calendar_trx_takeprofit_s{short_label}_thr{int(threshold*10000)}_"
                                 f"h{hold}_ls{int(long_scale*100)}_ss{int(short_scale*10)}_"
@@ -1524,6 +1664,31 @@ def _candidate_specs(arrays: dict[str, Any], symbols: list[str]) -> list[FreshSp
                     compression_quantile=comp,
                     allow_short=True,
                 )
+    for lookback in (6, 12, 24):
+        for threshold in (0.006, 0.010, 0.014, 0.020):
+            for comp in (0.55, 0.70, 0.85):
+                for hold in (12, 24, 48):
+                    name = (
+                        f"fresh_compression_fade_lb{lookback}_thr{int(threshold*10000)}_"
+                        f"c{int(comp*100)}_h{hold}"
+                    )
+                    specs[name] = FreshSpec(
+                        name=name,
+                        family="compression_breakout_fade",
+                        lookback_bars=lookback,
+                        threshold=threshold,
+                        hold_bars=hold,
+                        cooldown_bars=max(1, hold // 3),
+                        stop_loss_pct=0.010,
+                        take_profit_pct=0.035,
+                        rv_lookback_bars=24,
+                        compression_lookback_bars=72,
+                        compression_quantile=comp,
+                        allow_short=True,
+                        trailing_stop_rv_multiple=1.2,
+                        trailing_stop_floor_pct=0.005,
+                        trailing_stop_cap_pct=0.014,
+                    )
     return list(specs.values())
 
 

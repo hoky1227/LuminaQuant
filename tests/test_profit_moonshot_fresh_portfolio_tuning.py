@@ -18,6 +18,44 @@ sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 
 
+def test_candidate_pool_can_reserve_family_balanced_slots() -> None:
+    rows = [
+        {
+            "name": "calendar_a",
+            "family": "calendar_rotation",
+            "train_total_return": "0.02",
+            "val_total_return": "0.05",
+            "val_sharpe": "2.0",
+            "val_max_drawdown": "0.001",
+            "val_round_trips": "5",
+        },
+        {
+            "name": "calendar_b",
+            "family": "calendar_rotation",
+            "train_total_return": "0.02",
+            "val_total_return": "0.04",
+            "val_sharpe": "2.0",
+            "val_max_drawdown": "0.001",
+            "val_round_trips": "5",
+        },
+        {
+            "name": "new_family_a",
+            "family": "adaptive_trend_fade",
+            "train_total_return": "0.01",
+            "val_total_return": "0.005",
+            "val_sharpe": "1.0",
+            "val_max_drawdown": "0.001",
+            "val_round_trips": "5",
+        },
+    ]
+
+    unbalanced = MODULE._candidate_pool(rows, top_n=2)
+    balanced = MODULE._candidate_pool(rows, top_n=3, family_quota=1)
+
+    assert [row["name"] for row in unbalanced] == ["calendar_a", "calendar_b"]
+    assert {row["family"] for row in balanced[:2]} == {"calendar_rotation", "adaptive_trend_fade"}
+
+
 class _FakeMemoryGuard:
     def __init__(self, output_dir: Path) -> None:
         memory_dir = output_dir / "_memory_guard"

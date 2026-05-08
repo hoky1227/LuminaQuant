@@ -207,6 +207,103 @@ def test_candidate_signal_cross_sharpe_rank_and_funding_oi() -> None:
     assert reason == ""
 
 
+def test_candidate_signal_new_inverse_families() -> None:
+    dt = [datetime(2026, 5, 1, h, tzinfo=UTC) for h in range(8)]
+    arrays = {
+        "datetime": dt,
+        "symbols": ("BTC/USDT", "ETH/USDT"),
+        "symbol_prefixes": ("btcusdt", "ethusdt"),
+        "btcusdt_close": np.array([100.0] * 8),
+        "ethusdt_close": np.array([50.0] * 8),
+        "btcusdt_ret_6h": np.array([np.nan] * 7 + [0.03]),
+        "ethusdt_ret_6h": np.array([np.nan] * 7 + [-0.03]),
+        "btcusdt_ret_12h": np.array([np.nan] * 7 + [0.04]),
+        "ethusdt_ret_12h": np.array([np.nan] * 7 + [-0.04]),
+        "btcusdt_resid_z_6h": np.array([np.nan] * 7 + [2.0]),
+        "ethusdt_resid_z_6h": np.array([np.nan] * 7 + [-2.0]),
+        "btcusdt_funding_ffill": np.array([0.0002] * 8),
+        "ethusdt_funding_ffill": np.array([-0.0002] * 8),
+        "btcusdt_flow_imbalance_3h": np.zeros(8),
+        "ethusdt_flow_imbalance_3h": np.zeros(8),
+        "btcusdt_rv_24h": np.array([0.005] * 8),
+        "ethusdt_rv_24h": np.array([0.005] * 8),
+        "btcusdt_rv_24h_mean_72h": np.array([0.010] * 8),
+        "ethusdt_rv_24h_mean_72h": np.array([0.010] * 8),
+        "market_ret_6h": np.array([np.nan] * 7 + [0.02]),
+        "market_ret_12h": np.array([np.nan] * 7 + [0.03]),
+    }
+
+    residual = FreshSpec(
+        name="residual_momentum",
+        family="residual_momentum",
+        lookback_bars=6,
+        threshold=1.5,
+        hold_bars=4,
+        cooldown_bars=0,
+        stop_loss_pct=0.01,
+        take_profit_pct=0.02,
+        min_abs_return=0.01,
+    )
+    assert MODULE._candidate_signal(residual, arrays, 7) == ("BTC/USDT", "LONG", "")
+
+    trend_fade = FreshSpec(
+        name="adaptive_trend_fade",
+        family="adaptive_trend_fade",
+        lookback_bars=12,
+        adaptive_lookback_bars=12,
+        threshold=0.01,
+        hold_bars=4,
+        cooldown_bars=0,
+        stop_loss_pct=0.01,
+        take_profit_pct=0.02,
+        min_abs_return=0.01,
+    )
+    assert MODULE._candidate_signal(trend_fade, arrays, 7) == ("BTC/USDT", "SHORT", "")
+
+    compression_fade = FreshSpec(
+        name="compression_fade",
+        family="compression_breakout_fade",
+        lookback_bars=6,
+        threshold=0.01,
+        hold_bars=4,
+        cooldown_bars=0,
+        stop_loss_pct=0.01,
+        take_profit_pct=0.02,
+        rv_lookback_bars=24,
+        compression_quantile=0.70,
+    )
+    assert MODULE._candidate_signal(compression_fade, arrays, 7) == ("BTC/USDT", "SHORT", "")
+
+    funding_momentum = FreshSpec(
+        name="funding_momentum",
+        family="funding_carry_momentum",
+        lookback_bars=6,
+        threshold=1.5,
+        hold_bars=4,
+        cooldown_bars=0,
+        stop_loss_pct=0.01,
+        take_profit_pct=0.02,
+        funding_rank_min=0.0001,
+        min_abs_return=0.01,
+    )
+    assert MODULE._candidate_signal(funding_momentum, arrays, 7) == ("BTC/USDT", "LONG", "")
+
+    sharpe_reversal = FreshSpec(
+        name="sharpe_reversal",
+        family="cross_sectional_sharpe_reversal",
+        lookback_bars=6,
+        sharpe_lookback_bars=6,
+        sharpe_rank_min=0.01,
+        threshold=0.0,
+        hold_bars=4,
+        cooldown_bars=0,
+        stop_loss_pct=0.01,
+        take_profit_pct=0.02,
+        min_abs_return=0.01,
+    )
+    assert MODULE._candidate_signal(sharpe_reversal, arrays, 7) == ("BTC/USDT", "SHORT", "")
+
+
 def test_candidate_signal_flow_imbalance_persistence_and_exhaustion() -> None:
     dt = [datetime(2026, 5, 1, h, tzinfo=UTC) for h in range(6)]
     arrays = {
@@ -337,6 +434,11 @@ def test_candidate_specs_include_external_inspired_families() -> None:
     assert "flow_imbalance_exhaustion" in families
     assert "funding_oi_carry_fade" in families
     assert "calendar_rotation" in families
+    assert "residual_momentum" in families
+    assert "adaptive_trend_fade" in families
+    assert "cross_sectional_sharpe_reversal" in families
+    assert "compression_breakout_fade" in families
+    assert "funding_carry_momentum" in families
 
 
 def test_joined_panel_reuses_cache_without_reloading_sources(

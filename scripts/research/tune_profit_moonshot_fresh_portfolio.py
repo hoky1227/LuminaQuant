@@ -76,7 +76,7 @@ def _validation_score(row: dict[str, str]) -> float:
     return val_ret * 100.0 + train_ret * 25.0 + val_sharpe * 0.15 - val_mdd * 50.0 + math.log1p(trips) * 0.01
 
 
-def _candidate_pool(rows: list[dict[str, str]], *, top_n: int) -> list[dict[str, str]]:
+def _candidate_pool(rows: list[dict[str, str]], *, top_n: int, family_quota: int = 0) -> list[dict[str, str]]:
     eligible = [
         row
         for row in rows
@@ -85,7 +85,37 @@ def _candidate_pool(rows: list[dict[str, str]], *, top_n: int) -> list[dict[str,
         and _safe_float(row.get("val_round_trips")) >= 1.0
     ]
     eligible.sort(key=_validation_score, reverse=True)
-    return eligible[:top_n]
+    limit = max(0, int(top_n))
+    if limit == 0 or family_quota <= 0:
+        return eligible[:limit]
+
+    selected: list[dict[str, str]] = []
+    selected_names: set[str] = set()
+    families = sorted(
+        {row.get("family") or "unknown" for row in eligible},
+        key=lambda family: max(
+            (_validation_score(row) for row in eligible if (row.get("family") or "unknown") == family),
+            default=float("-inf"),
+        ),
+        reverse=True,
+    )
+    for family in families:
+        family_rows = [row for row in eligible if (row.get("family") or "unknown") == family]
+        for row in family_rows[: max(0, int(family_quota))]:
+            name = str(row.get("name") or "")
+            if name and name not in selected_names:
+                selected.append(row)
+                selected_names.add(name)
+            if len(selected) >= limit:
+                return selected
+    for row in eligible:
+        name = str(row.get("name") or "")
+        if name and name not in selected_names:
+            selected.append(row)
+            selected_names.add(name)
+        if len(selected) >= limit:
+            break
+    return selected
 
 
 def _rss_mib() -> float:
@@ -371,7 +401,7 @@ def _markdown(payload: dict[str, Any], rows: list[dict[str, Any]]) -> str:
 def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     fresh = _load_fresh_module()
     rows = _read_rows(Path(args.candidate_csv))
-    pool = _candidate_pool(rows, top_n=int(args.top_n))
+    pool = _candidate_pool(rows, top_n=int(args.top_n), family_quota=int(args.family_quota))
     oos_end = datetime.fromisoformat(str(args.oos_end_date)).date()
     splits = fresh._split_windows(oos_end=oos_end)
     start = min(split.start for split in splits)
@@ -449,6 +479,7 @@ def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[dict[s
             "max_combos_per_size": max_combos_per_size,
             "limit_hits_by_size": combo_limit_hits,
             "pool_order": "validation_score_descending",
+            "family_quota": int(args.family_quota),
         },
         "success_candidate_count": sum(1 for item in portfolio_items if bool(item["success_candidate"])),
         "selected_by_validation": selected_by_validation,
@@ -470,6 +501,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--candidate-csv", default=str(DEFAULT_CANDIDATE_CSV))
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
     parser.add_argument("--top-n", type=int, default=18)
+    parser.add_argument("--family-quota", type=int, default=0)
     parser.add_argument("--max-sleeves", type=int, default=5)
     parser.add_argument("--max-combos-per-size", type=int, default=12_000)
     return parser.parse_args(argv)
@@ -489,6 +521,7 @@ def main(argv: list[str] | None = None) -> int:
         metadata={
             "script": Path(__file__).name,
             "top_n": int(args.top_n),
+            "family_quota": int(args.family_quota),
             "max_sleeves": int(args.max_sleeves),
             "locked_oos_label": LOCKBOX_POLICY["locked_oos_label"],
             "selection_label": LOCKBOX_POLICY["selection_label"],
@@ -502,6 +535,7 @@ def main(argv: list[str] | None = None) -> int:
             {
                 "candidate_csv": str(args.candidate_csv),
                 "top_n": int(args.top_n),
+                "family_quota": int(args.family_quota),
                 "max_sleeves": int(args.max_sleeves),
             },
         )
