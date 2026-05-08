@@ -453,6 +453,9 @@ def test_run_portfolio_optimization_fits_on_validation_and_reports_oos(tmp_path:
     selection = dict(payload.get("selection") or {})
     assert selection.get("fit_split") == "val"
     assert selection.get("report_split") == "oos"
+    objective_policy = dict(payload.get("objective_policy") or {})
+    assert objective_policy.get("objective_policy") == "train_val_only_locked_oos_report"
+    assert objective_policy.get("oos_is_objective_input") is False
 
     weights = list(payload.get("weights") or [])
     assert [row.get("candidate_id") for row in weights] == ["fit_winner"]

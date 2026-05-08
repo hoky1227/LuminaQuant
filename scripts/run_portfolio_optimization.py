@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 from collections import defaultdict
 from copy import deepcopy
 from datetime import UTC, datetime
@@ -12,6 +11,20 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+
+from lumina_quant.portfolio.optimizer_core import (
+    StreamCache,
+    build_portfolio_returns as _build_portfolio_returns,
+    build_portfolio_stream as _build_portfolio_stream,
+    canonical_split as _canonical_split,
+    cluster_by_correlation as _cluster_by_correlation,
+    metrics as _metrics,
+    objective_policy_payload as _objective_policy_payload,
+    safe_float as _safe_float,
+    split_metrics as _split_metrics,
+    split_stream as _split_stream,
+    stream_to_array as _stream_to_array,
+)
 
 from lumina_quant.portfolio_split_contract import (
     acquire_portfolio_memory_guard,
@@ -60,180 +73,6 @@ class PortfolioConstraintInfeasibleError(RuntimeError):
         self.details = dict(details)
 
 
-def _safe_float(value: Any, default: float = 0.0) -> float:
-    try:
-        out = float(value)
-    except Exception:
-        return float(default)
-    if not math.isfinite(out):
-        return float(default)
-    return out
-
-
-def _stream_to_array(stream: list[dict[str, Any]]) -> np.ndarray:
-    return np.asarray([_safe_float(item.get("v"), 0.0) for item in stream], dtype=float)
-
-
-def _canonical_split(value: Any, *, default: str) -> str:
-    token = str(value or "").strip().lower()
-    if not token:
-        return default
-    alias_map = {
-        "train": "train",
-        "validation": "val",
-        "val": "val",
-        "oos": "oos",
-        "test": "oos",
-        "test_oos": "oos",
-    }
-    return alias_map.get(token, default)
-
-
-def _coerce_stream_datetime(value: Any) -> datetime | None:
-    if isinstance(value, datetime):
-        if value.tzinfo is None:
-            return value.replace(tzinfo=UTC)
-        return value.astimezone(UTC)
-
-    numeric_value: float | None = None
-    if isinstance(value, (int, float)):
-        numeric_value = float(value)
-    elif isinstance(value, str) and value.strip():
-        token = value.strip()
-        try:
-            numeric_value = float(token)
-        except Exception:
-            normalized = token.replace("Z", "+00:00") if token.endswith("Z") else token
-            try:
-                parsed = datetime.fromisoformat(normalized)
-            except ValueError:
-                return None
-            if parsed.tzinfo is None:
-                return parsed.replace(tzinfo=UTC)
-            return parsed.astimezone(UTC)
-
-    if numeric_value is None or not math.isfinite(numeric_value):
-        return None
-
-    magnitude = abs(numeric_value)
-    if magnitude >= 1e15:
-        return datetime.fromtimestamp(numeric_value / 1_000_000.0, tz=UTC)
-    if magnitude >= 1e12:
-        return datetime.fromtimestamp(numeric_value / 1_000.0, tz=UTC)
-    if magnitude >= 1e9:
-        return datetime.fromtimestamp(numeric_value, tz=UTC)
-    return None
-
-
-def _isoformat_utc(value: datetime) -> str:
-    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
-
-
-def _stream_point_timestamp(raw_point: dict[str, Any]) -> Any:
-    return raw_point.get("t", raw_point.get("timestamp", raw_point.get("datetime")))
-
-
-def _normalize_stream(stream: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    normalized: list[dict[str, Any]] = []
-    for idx, raw_point in enumerate(stream):
-        value = _safe_float(raw_point.get("v"), 0.0)
-        raw_timestamp = _stream_point_timestamp(raw_point)
-        dt = _coerce_stream_datetime(raw_timestamp)
-        if dt is not None:
-            timestamp = _isoformat_utc(dt)
-            normalized.append(
-                {
-                    "token": f"dt:{timestamp}",
-                    "sort_key": (0, float(dt.timestamp()), float(idx)),
-                    "t": timestamp,
-                    "datetime": timestamp,
-                    "v": float(value),
-                }
-            )
-            continue
-
-        numeric_timestamp = None
-        if isinstance(raw_timestamp, (int, float)):
-            numeric_timestamp = float(raw_timestamp)
-        elif isinstance(raw_timestamp, str) and raw_timestamp.strip():
-            try:
-                numeric_timestamp = float(raw_timestamp.strip())
-            except Exception:
-                numeric_timestamp = None
-
-        if numeric_timestamp is not None and math.isfinite(numeric_timestamp):
-            normalized.append(
-                {
-                    "token": f"num:{numeric_timestamp:.12g}",
-                    "sort_key": (1, float(numeric_timestamp), float(idx)),
-                    "t": float(numeric_timestamp),
-                    "datetime": None,
-                    "v": float(value),
-                }
-            )
-            continue
-
-        seq = float(idx)
-        normalized.append(
-            {
-                "token": f"seq:{seq:.12g}",
-                "sort_key": (2, float(seq), float(idx)),
-                "t": float(seq),
-                "datetime": None,
-                "v": float(value),
-            }
-        )
-    normalized.sort(key=lambda item: item["sort_key"])
-    return normalized
-
-
-def _aggregate_stream(stream: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    aggregated: dict[str, dict[str, Any]] = {}
-    for point in _normalize_stream(stream):
-        token = str(point["token"])
-        if token not in aggregated:
-            aggregated[token] = {
-                "token": token,
-                "sort_key": point["sort_key"],
-                "t": point["t"],
-                "datetime": point.get("datetime"),
-                "v": 0.0,
-            }
-        aggregated[token]["v"] += float(point["v"])
-    return aggregated
-
-
-def _aligned_stream_arrays(lhs_stream: list[dict[str, Any]], rhs_stream: list[dict[str, Any]]) -> tuple[np.ndarray, np.ndarray]:
-    lhs = _aggregate_stream(lhs_stream)
-    rhs = _aggregate_stream(rhs_stream)
-    if not lhs and not rhs:
-        return np.asarray([], dtype=float), np.asarray([], dtype=float)
-
-    merged = dict(lhs)
-    for token, point in rhs.items():
-        if token not in merged:
-            merged[token] = point
-
-    ordered_tokens = [token for token, _ in sorted(merged.items(), key=lambda item: item[1]["sort_key"])]
-    lhs_values = np.asarray([_safe_float((lhs.get(token) or {}).get("v"), 0.0) for token in ordered_tokens], dtype=float)
-    rhs_values = np.asarray([_safe_float((rhs.get(token) or {}).get("v"), 0.0) for token in ordered_tokens], dtype=float)
-    return lhs_values, rhs_values
-
-
-def _split_metrics(row: dict[str, Any], split: str) -> dict[str, Any]:
-    token = _canonical_split(split, default="oos")
-    if token == "val":
-        return dict(row.get("val") or {})
-    if token == "train":
-        return dict(row.get("train") or {})
-    return dict(row.get("oos") or {})
-
-
-def _split_stream(row: dict[str, Any], split: str) -> list[dict[str, Any]]:
-    token = _canonical_split(split, default="oos")
-    return list(((row.get("return_streams") or {}).get(token)) or [])
-
-
 def _load_score_config(path: Path) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -268,90 +107,6 @@ def _resolved_cli_or_config_float(cli_value: float | None, config_value: Any, *,
         return max(0.0, _safe_float(cli_value, default))
     return max(0.0, _safe_float(config_value, default))
 
-
-def _corr(x: np.ndarray, y: np.ndarray) -> float:
-    n = min(x.size, y.size)
-    if n < 8:
-        return 0.0
-    xa = x[-n:]
-    ya = y[-n:]
-    sx = float(np.std(xa, ddof=1))
-    sy = float(np.std(ya, ddof=1))
-    if sx <= 1e-12 or sy <= 1e-12:
-        return 0.0
-    value = float(np.corrcoef(xa, ya)[0, 1])
-    if not math.isfinite(value):
-        return 0.0
-    return value
-
-
-def _corr_streams(lhs_stream: list[dict[str, Any]], rhs_stream: list[dict[str, Any]]) -> float:
-    lhs, rhs = _aligned_stream_arrays(lhs_stream, rhs_stream)
-    return _corr(lhs, rhs)
-
-
-def _max_drawdown(returns: np.ndarray) -> float:
-    if returns.size == 0:
-        return 0.0
-    equity = np.cumprod(1.0 + returns)
-    peaks = np.maximum.accumulate(equity)
-    dd = 1.0 - np.divide(equity, np.maximum(peaks, 1e-12))
-    return float(np.max(dd)) if dd.size else 0.0
-
-
-def _metrics(returns: np.ndarray, periods_per_year: int = 365) -> dict[str, float]:
-    if returns.size == 0:
-        return {
-            "total_return": 0.0,
-            "cagr": 0.0,
-            "sharpe": 0.0,
-            "sortino": 0.0,
-            "calmar": 0.0,
-            "max_drawdown": 0.0,
-            "volatility": 0.0,
-        }
-
-    total_return = float(np.prod(1.0 + returns) - 1.0)
-    years = max(1.0 / periods_per_year, returns.size / periods_per_year)
-    cagr = float(math.exp(math.log1p(max(-0.999999, total_return)) / years) - 1.0)
-    mu = float(np.mean(returns))
-    sigma = float(np.std(returns, ddof=1)) if returns.size > 1 else 0.0
-    sharpe = 0.0 if sigma <= 1e-12 else (mu / sigma) * math.sqrt(periods_per_year)
-
-    downside = returns[returns < 0.0]
-    dsigma = float(np.std(downside, ddof=1)) if downside.size > 1 else 0.0
-    sortino = 0.0 if dsigma <= 1e-12 else (mu / dsigma) * math.sqrt(periods_per_year)
-
-    mdd = _max_drawdown(returns)
-    calmar = 0.0 if mdd <= 1e-12 else cagr / mdd
-
-    return {
-        "total_return": total_return,
-        "cagr": cagr,
-        "sharpe": sharpe,
-        "sortino": sortino,
-        "calmar": calmar,
-        "max_drawdown": mdd,
-        "volatility": float(sigma * math.sqrt(periods_per_year)),
-    }
-
-
-def _cluster_by_correlation(
-    ids: list[str],
-    stream_map: dict[str, list[dict[str, Any]]],
-    threshold: float = 0.60,
-) -> list[list[str]]:
-    clusters: list[list[str]] = []
-    for cid in ids:
-        added = False
-        for cluster in clusters:
-            if any(abs(_corr_streams(stream_map[cid], stream_map[member])) >= threshold for member in cluster):
-                cluster.append(cid)
-                added = True
-                break
-        if not added:
-            clusters.append([cid])
-    return clusters
 
 
 def _inverse_vol_weight(returns: np.ndarray) -> float:
@@ -708,46 +463,6 @@ def _apply_caps(
     }
 
 
-def _build_portfolio_stream(
-    weights: dict[str, float],
-    rows: dict[str, dict[str, Any]],
-    *,
-    split: str,
-) -> list[dict[str, Any]]:
-    aggregated: dict[str, dict[str, Any]] = {}
-    for cid, weight in weights.items():
-        stream = _split_stream(rows.get(cid) or {}, split)
-        if not stream or weight <= 0.0:
-            continue
-        for token, point in _aggregate_stream(stream).items():
-            if token not in aggregated:
-                aggregated[token] = {
-                    "token": token,
-                    "sort_key": point["sort_key"],
-                    "t": point["t"],
-                    "datetime": point.get("datetime"),
-                    "v": 0.0,
-                }
-            aggregated[token]["v"] += float(weight) * _safe_float(point.get("v"), 0.0)
-
-    out: list[dict[str, Any]] = []
-    for point in sorted(aggregated.values(), key=lambda item: item["sort_key"]):
-        row = {"t": point["t"], "v": float(point["v"])}
-        if point.get("datetime"):
-            row["datetime"] = point["datetime"]
-        out.append(row)
-    return out
-
-
-def _build_portfolio_returns(
-    weights: dict[str, float],
-    rows: dict[str, dict[str, Any]],
-    *,
-    split: str,
-) -> np.ndarray:
-    return _stream_to_array(_build_portfolio_stream(weights, rows, split=split))
-
-
 def _load_rows(args) -> tuple[list[dict[str, Any]], str]:
     research_path = Path(args.research_report)
     if research_path.exists():
@@ -883,8 +598,9 @@ def main() -> int:
 
         rows = {str(row.get("candidate_id") or row.get("name")): row for row in selected}
         ids = list(rows.keys())
-        fit_streams = {cid: _split_stream(rows[cid], fit_split) for cid in ids}
-        fit_map = {cid: _stream_to_array(fit_streams[cid]) for cid in ids}
+        stream_cache = StreamCache()
+        fit_streams = {cid: stream_cache.aggregate_for_row(rows[cid], fit_split) for cid in ids}
+        fit_map = {cid: stream_cache.array_for_row(rows[cid], fit_split) for cid in ids}
         clusters = _cluster_by_correlation(ids, fit_streams, threshold=float(args.correlation_threshold))
 
         cluster_weight_raw: dict[int, float] = {}
@@ -996,7 +712,12 @@ def main() -> int:
         target_vol_floor = max(0.0, _safe_float(vol_targeting_params.get("target_vol_floor"), 0.01))
         vol_scale_cap = max(0.0, _safe_float(vol_targeting_params.get("vol_scale_cap"), 2.0))
         vol_scale_epsilon = max(0.0, _safe_float(vol_targeting_params.get("vol_scale_epsilon"), 1e-12))
-        portfolio_fit = _build_portfolio_returns(pre_vol_weights, rows, split=fit_split)
+        portfolio_fit = _build_portfolio_returns(
+            pre_vol_weights,
+            rows,
+            split=fit_split,
+            cache=stream_cache,
+        )
         fit_vol = _safe_float(np.std(portfolio_fit, ddof=1), 0.0)
         target_vol = max(target_vol_floor, float(args.target_vol))
         vol_scale = 1.0 if fit_vol <= vol_scale_epsilon else min(
@@ -1007,11 +728,21 @@ def main() -> int:
         gross_exposure = float(sum(weights.values()))
         cash_weight = max(0.0, 1.0 - gross_exposure)
 
-        portfolio_train_stream = _build_portfolio_stream(weights, rows, split="train")
-        portfolio_val_stream = _build_portfolio_stream(weights, rows, split="val")
-        portfolio_oos_stream = _build_portfolio_stream(weights, rows, split="oos")
-        portfolio_fit_stream = _build_portfolio_stream(weights, rows, split=fit_split)
-        portfolio_report_stream = _build_portfolio_stream(weights, rows, split=report_split)
+        portfolio_train_stream = _build_portfolio_stream(weights, rows, split="train", cache=stream_cache)
+        portfolio_val_stream = _build_portfolio_stream(weights, rows, split="val", cache=stream_cache)
+        portfolio_oos_stream = _build_portfolio_stream(weights, rows, split="oos", cache=stream_cache)
+        portfolio_fit_stream = _build_portfolio_stream(
+            weights,
+            rows,
+            split=fit_split,
+            cache=stream_cache,
+        )
+        portfolio_report_stream = _build_portfolio_stream(
+            weights,
+            rows,
+            split=report_split,
+            cache=stream_cache,
+        )
 
         portfolio_train = _stream_to_array(portfolio_train_stream)
         portfolio_val = _stream_to_array(portfolio_val_stream)
@@ -1100,6 +831,10 @@ def main() -> int:
                 "report_split": report_split,
                 "selection_basis": "validation_only" if fit_split == "val" and report_split == "oos" else f"{fit_split}_fit",
             },
+            "objective_policy": _objective_policy_payload(
+                f"{fit_split}_fit",
+                oos_is_objective_input=fit_split == "oos",
+            ),
             "cluster_count": len(clusters),
             "clusters": clusters,
             "gross_exposure": gross_exposure,

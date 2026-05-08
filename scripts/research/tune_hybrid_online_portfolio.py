@@ -11,6 +11,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from lumina_quant.portfolio.hybrid_objective import (
+    HYBRID_LOCKED_OBJECTIVE_PROFILE,
+    HYBRID_OBJECTIVE_PROFILES,
+    hybrid_online_objective_from_payload,
+    hybrid_online_objective_policy,
+)
+from lumina_quant.portfolio.optimizer_core import safe_float as _safe_float
+
 ROOT = Path(__file__).resolve().parent
 _SPEC = importlib.util.spec_from_file_location(
     "run_hybrid_online_portfolio",
@@ -23,10 +31,12 @@ sys.modules[_SPEC.name] = _MOD
 _SPEC.loader.exec_module(_MOD)
 
 OUTPUT_DIR = _MOD.GROUP_ROOT / "portfolio_hybrid_online_tuning_current"
+LOCKED_OBJECTIVE_PROFILE = HYBRID_LOCKED_OBJECTIVE_PROFILE
+OBJECTIVE_PROFILES = HYBRID_OBJECTIVE_PROFILES
 
 
-def _safe_float(value: Any, default: float = 0.0) -> float:
-    return float(_MOD._safe_float(value, default))
+def _objective_policy_for_profile(profile: str) -> dict:
+    return hybrid_online_objective_policy(profile)
 
 
 def _candidate_configs(*, base: _MOD.HybridOnlineConfig | None = None) -> list[tuple[str, _MOD.HybridOnlineConfig]]:
@@ -171,29 +181,8 @@ def _candidate_configs(*, base: _MOD.HybridOnlineConfig | None = None) -> list[t
     return variants
 
 
-def _objective(payload: dict[str, Any]) -> float:
-    refreshed = dict(payload["scenarios"]["refreshed_latest_tail"]["split_metrics"])
-    historical = dict(payload["scenarios"]["historical_saved_baseline"]["split_metrics"])
-    readiness = dict(payload.get("readiness") or {})
-    ref_train = dict(refreshed.get("train") or {})
-    ref_val = dict(refreshed.get("val") or {})
-    ref_oos = dict(refreshed.get("oos") or {})
-    hist_oos = dict(historical.get("oos") or {})
-    score = 0.0
-    score += 240.0 * _safe_float(ref_oos.get("total_return", ref_oos.get("return")), 0.0)
-    score += 10.0 * _safe_float(ref_oos.get("sharpe"), 0.0)
-    score -= 120.0 * _safe_float(ref_oos.get("max_drawdown", ref_oos.get("mdd")), 0.0)
-    score += 60.0 * _safe_float(ref_val.get("total_return", ref_val.get("return")), 0.0)
-    score += 8.0 * _safe_float(ref_val.get("sharpe"), 0.0)
-    score += 20.0 * _safe_float(ref_train.get("total_return", ref_train.get("return")), 0.0)
-    score += 3.0 * _safe_float(ref_train.get("sharpe"), 0.0)
-    score += 20.0 * _safe_float(hist_oos.get("total_return", hist_oos.get("return")), 0.0)
-    score += 2.0 * _safe_float(hist_oos.get("sharpe"), 0.0)
-    if not readiness.get("beats_cash_refreshed"):
-        score -= 1000.0
-    if not readiness.get("pair_cap_respected"):
-        score -= 500.0
-    return float(score)
+def _objective(payload: dict[str, Any], *, profile: str = LOCKED_OBJECTIVE_PROFILE) -> float:
+    return hybrid_online_objective_from_payload(payload, profile=profile)
 
 
 def main() -> None:
@@ -202,6 +191,7 @@ def main() -> None:
     parser.add_argument("--warmup-ratio", type=float, default=_MOD.HybridOnlineConfig().warmup_ratio)
     parser.add_argument("--warmup-days", type=int, default=None)
     parser.add_argument("--output-dir", type=Path, default=OUTPUT_DIR)
+    parser.add_argument("--objective-profile", choices=OBJECTIVE_PROFILES, default=LOCKED_OBJECTIVE_PROFILE)
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir).resolve()
@@ -260,7 +250,9 @@ def main() -> None:
                 "pair_cap_respected": bool(max(pair_alloc_weights or [0.0]) <= config.pair_weight_cap + 1e-9),
             },
         }
-        payload["objective"] = _objective(payload)
+        payload["objective_profile"] = args.objective_profile
+        payload["objective_policy"] = _objective_policy_for_profile(args.objective_profile)
+        payload["objective"] = _objective(payload, profile=args.objective_profile)
         leaderboard.append(payload)
 
     leaderboard.sort(key=lambda row: float(row["objective"]), reverse=True)
@@ -273,6 +265,8 @@ def main() -> None:
     payload = {
         "artifact_kind": "hybrid_online_portfolio_tuning",
         "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        "objective_profile": args.objective_profile,
+        "objective_policy": _objective_policy_for_profile(args.objective_profile),
         "split_windows": split_config.as_payload(),
         "warmup_ratio": float(base_config.warmup_ratio),
         "fixed_warmup_days": (
@@ -292,6 +286,9 @@ def main() -> None:
         "",
         f"- generated_at: `{payload['generated_at']}`",
         f"- evaluated_configs: `{len(leaderboard)}`",
+        f"- objective_profile: `{args.objective_profile}`",
+        f"- objective_policy: `{payload['objective_policy']['objective_policy']}`",
+        f"- locked_oos_label: `{payload['objective_policy']['locked_oos_label']}`",
         "",
         "## Best config",
         "",

@@ -13,7 +13,6 @@ import argparse
 import csv
 import importlib.util
 import json
-import math
 import resource
 import sys
 from datetime import UTC, datetime
@@ -23,6 +22,8 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
+
+from lumina_quant.portfolio.optimizer_core import safe_float as _safe_float  # noqa: E402
 
 FRESH_PATH = REPO_ROOT / "scripts/research/replay_profit_moonshot_fresh_start.py"
 DEFAULT_OUTPUT_DIR = (
@@ -40,15 +41,6 @@ def _load_fresh_module() -> Any:
     spec.loader.exec_module(module)
     return module
 
-
-def _safe_float(value: Any, default: float = 0.0) -> float:
-    try:
-        out = float(value)
-    except Exception:
-        return default
-    if not math.isfinite(out):
-        return default
-    return out
 
 
 def _rss_mib() -> float:

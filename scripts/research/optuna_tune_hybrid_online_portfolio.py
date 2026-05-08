@@ -2,15 +2,26 @@
 
 from __future__ import annotations
 
+import argparse
 import importlib.util
 import json
 import sys
-import argparse
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 
-import optuna
+from lumina_quant.portfolio.hybrid_objective import (
+    HYBRID_LOCKED_OBJECTIVE_PROFILE,
+    HYBRID_OBJECTIVE_PROFILES,
+    hybrid_online_objective_from_payload,
+    hybrid_online_objective_policy,
+)
+from lumina_quant.portfolio.optimizer_core import safe_float as _safe_float
+
+try:
+    import optuna
+except ModuleNotFoundError:
+    optuna = None
 
 ROOT = Path(__file__).resolve().parent
 _SPEC = importlib.util.spec_from_file_location(
@@ -24,50 +35,22 @@ sys.modules[_SPEC.name] = _MOD
 _SPEC.loader.exec_module(_MOD)
 
 OUTPUT_DIR = _MOD.GROUP_ROOT / "portfolio_hybrid_online_optuna_current"
+LOCKED_OBJECTIVE_PROFILE = HYBRID_LOCKED_OBJECTIVE_PROFILE
+OBJECTIVE_PROFILES = HYBRID_OBJECTIVE_PROFILES
 
 
-def _safe_float(value, default=0.0) -> float:
-    return float(_MOD._safe_float(value, default))
+def _require_optuna():
+    if optuna is None:
+        raise RuntimeError("Optuna is required; run with `uv run --extra optimize ...`")
+    return optuna
+
+
+def _objective_policy_for_profile(profile: str) -> dict:
+    return hybrid_online_objective_policy(profile)
 
 
 def _objective_from_payload(payload: dict, *, profile: str) -> float:
-    refreshed = dict(payload["scenarios"]["refreshed_latest_tail"]["split_metrics"])
-    historical = dict(payload["scenarios"]["historical_saved_baseline"]["split_metrics"])
-    readiness = dict(payload.get("readiness") or {})
-    ref_train = dict(refreshed.get("train") or {})
-    ref_val = dict(refreshed.get("val") or {})
-    ref_oos = dict(refreshed.get("oos") or {})
-    hist_oos = dict(historical.get("oos") or {})
-    score = 0.0
-    if profile == "train_aware_guarded":
-        score += 180.0 * _safe_float(ref_oos.get("total_return", ref_oos.get("return")), 0.0)
-        score += 8.0 * _safe_float(ref_oos.get("sharpe"), 0.0)
-        score -= 100.0 * _safe_float(ref_oos.get("max_drawdown", ref_oos.get("mdd")), 0.0)
-        score += 100.0 * _safe_float(ref_val.get("total_return", ref_val.get("return")), 0.0)
-        score += 10.0 * _safe_float(ref_val.get("sharpe"), 0.0)
-        score += 120.0 * _safe_float(ref_train.get("total_return", ref_train.get("return")), 0.0)
-        score += 10.0 * _safe_float(ref_train.get("sharpe"), 0.0)
-        score += 15.0 * _safe_float(hist_oos.get("total_return", hist_oos.get("return")), 0.0)
-        score += 2.0 * _safe_float(hist_oos.get("sharpe"), 0.0)
-        if _safe_float(ref_train.get("total_return", ref_train.get("return")), 0.0) < 0.0:
-            score -= 50.0
-        if _safe_float(ref_val.get("total_return", ref_val.get("return")), 0.0) < 0.0:
-            score -= 40.0
-    else:
-        score += 240.0 * _safe_float(ref_oos.get("total_return", ref_oos.get("return")), 0.0)
-        score += 10.0 * _safe_float(ref_oos.get("sharpe"), 0.0)
-        score -= 120.0 * _safe_float(ref_oos.get("max_drawdown", ref_oos.get("mdd")), 0.0)
-        score += 60.0 * _safe_float(ref_val.get("total_return", ref_val.get("return")), 0.0)
-        score += 8.0 * _safe_float(ref_val.get("sharpe"), 0.0)
-        score += 20.0 * _safe_float(ref_train.get("total_return", ref_train.get("return")), 0.0)
-        score += 3.0 * _safe_float(ref_train.get("sharpe"), 0.0)
-        score += 20.0 * _safe_float(hist_oos.get("total_return", hist_oos.get("return")), 0.0)
-        score += 2.0 * _safe_float(hist_oos.get("sharpe"), 0.0)
-    if not readiness.get("beats_cash_refreshed"):
-        score -= 1000.0
-    if not readiness.get("pair_cap_respected"):
-        score -= 500.0
-    return float(score)
+    return hybrid_online_objective_from_payload(payload, profile=profile)
 
 
 def _evaluate_config(
@@ -138,6 +121,7 @@ def _build_config(
 
 
 def main() -> None:
+    optuna_mod = _require_optuna()
     parser = argparse.ArgumentParser(description=__doc__)
     _MOD.add_split_config_arguments(parser)
     parser.add_argument("--warmup-ratio", type=float, default=_MOD.HybridOnlineConfig().warmup_ratio)
@@ -145,8 +129,8 @@ def main() -> None:
     parser.add_argument("--output-dir", type=Path, default=OUTPUT_DIR)
     parser.add_argument(
         "--objective-profile",
-        choices=("live_guarded", "train_aware_guarded"),
-        default="live_guarded",
+        choices=OBJECTIVE_PROFILES,
+        default=LOCKED_OBJECTIVE_PROFILE,
     )
     parser.add_argument("--n-trials", type=int, default=24)
     args = parser.parse_args()
@@ -165,6 +149,7 @@ def main() -> None:
         )
         payload = _evaluate_config(config, split_config=split_config)
         payload["objective_profile"] = args.objective_profile
+        payload["objective_policy"] = _objective_policy_for_profile(args.objective_profile)
         trial_score = float(_objective_from_payload(payload, profile=args.objective_profile))
         payload["objective"] = trial_score
         trial.set_user_attr("payload", payload)
@@ -172,8 +157,8 @@ def main() -> None:
             best_payload = payload
         return trial_score
 
-    sampler = optuna.samplers.TPESampler(seed=42)
-    study = optuna.create_study(direction="maximize", sampler=sampler)
+    sampler = optuna_mod.samplers.TPESampler(seed=42)
+    study = optuna_mod.create_study(direction="maximize", sampler=sampler)
     study.optimize(objective, n_trials=max(1, int(args.n_trials)), show_progress_bar=False)
 
     trials = []
@@ -196,6 +181,7 @@ def main() -> None:
         "artifact_kind": "hybrid_online_portfolio_optuna",
         "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "objective_profile": args.objective_profile,
+        "objective_policy": _objective_policy_for_profile(args.objective_profile),
         "split_windows": split_config.as_payload(),
         "warmup_ratio": float(args.warmup_ratio),
         "fixed_warmup_days": None if args.warmup_days is None else int(args.warmup_days),
@@ -211,6 +197,8 @@ def main() -> None:
         f"- generated_at: `{payload['generated_at']}`",
         f"- trials: `{len(trials)}`",
         f"- objective_profile: `{args.objective_profile}`",
+        f"- objective_policy: `{payload['objective_policy']['objective_policy']}`",
+        f"- locked_oos_label: `{payload['objective_policy']['locked_oos_label']}`",
         "",
         "## Best trial",
         "",
