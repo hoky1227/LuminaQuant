@@ -17,6 +17,17 @@
 ## Working diagnosis
 The next edge probably is **not** another standalone all-hours non-calendar alpha. The data says calendar/TRX sleeves have the durable train/validation sign, while residual/flow/funding/trend standalone families are negative or too low-amplitude. Therefore the next hypotheses should use new features as risk controls, gates, or calendar-conditioned modifiers instead of independent sleeves.
 
+## Execution status — 2026-05-09
+- H6/H1/H2 were processed first in commit `333f8c7931e75ea3b828f7f7edc714ab66857c10`; CI was green and no improved candidate was promoted.
+- H3/H4/H5 were then processed as `h3_h4_h5_calendar_conditioned`:
+  - H3 added calendar-conditioned residual/funding/market/flow veto variants.
+  - H4 added day-of-month + entry-hour calendar sub-window variants.
+  - H5 added an explicit TRX/ETH calendar spread state machine.
+- Bounded replay evaluated `80` H3/H4/H5 specs: `0` replay survivors, `0` success candidates, peak RSS `250.707 MiB`.
+- Portfolio follow-up evaluated `18` train/validation-positive sleeves and `20,145` portfolio specs: `0` improved candidates, peak RSS `389.789 MiB`.
+- High locked-OOS return diagnostics remain quarantined as `diagnostic_not_promoted`; best diagnostic OOS was `3.7780%` with MDD `0.5981%`, failing MDD / return-risk gates.
+- Conclusion: all listed hypotheses H1-H6 have now been tried under the locked-OOS/report-only and `<8 GiB` constraints; current champion is preserved.
+
 ## Ranked hypotheses
 
 ### H1 — Drawdown-capped calendar sleeve allocator

@@ -417,6 +417,176 @@ def test_candidate_signal_calendar_rotation_selects_month_side() -> None:
     assert MODULE._candidate_signal(fixed_long, arrays, 1) == ("BTC/USDT", "LONG", "")
 
 
+def test_calendar_veto_and_day_window_do_not_promote_blocked_entries() -> None:
+    arrays = {
+        "datetime": [
+            datetime(2026, 3, 15, 2, tzinfo=UTC),
+            datetime(2026, 3, 16, 2, tzinfo=UTC),
+        ],
+        "symbols": ("BTC/USDT", "TRX/USDT"),
+        "symbol_prefixes": ("btcusdt", "trxusdt"),
+        "btcusdt_close": np.array([100.0, 100.0]),
+        "trxusdt_close": np.array([20.0, 20.0]),
+        "btcusdt_ret_168h": np.array([0.03, 0.03]),
+        "trxusdt_ret_168h": np.array([0.04, 0.04]),
+        "market_ret_168h": np.array([0.02, 0.02]),
+        "market_ret_24h": np.array([0.01, 0.01]),
+        "btcusdt_resid_z_168h": np.array([-2.0, -2.0]),
+        "trxusdt_resid_z_168h": np.array([0.0, 0.0]),
+        "btcusdt_funding_ffill": np.array([0.0, 0.0]),
+        "trxusdt_funding_ffill": np.array([0.0, 0.0]),
+        "btcusdt_flow_imbalance_6h": np.array([0.0, 0.0]),
+        "trxusdt_flow_imbalance_6h": np.array([0.0, 0.0]),
+    }
+    fixed_veto = FreshSpec(
+        name="calendar_veto_fixed",
+        family="calendar_rotation",
+        lookback_bars=168,
+        threshold=0.018,
+        hold_bars=120,
+        cooldown_bars=0,
+        stop_loss_pct=0.0,
+        take_profit_pct=0.060,
+        min_abs_return=0.018,
+        calendar_long_months=(3,),
+        calendar_short_months=(1,),
+        calendar_long_symbol="BTCUSDT",
+        calendar_veto_resid_z=1.0,
+    )
+    assert MODULE._candidate_signal(fixed_veto, arrays, 0) == ("", "", "calendar_residual_veto")
+
+    dynamic_veto = FreshSpec(
+        name="calendar_veto_dynamic",
+        family="calendar_rotation",
+        lookback_bars=168,
+        threshold=0.018,
+        hold_bars=120,
+        cooldown_bars=0,
+        stop_loss_pct=0.0,
+        take_profit_pct=0.060,
+        min_abs_return=0.018,
+        calendar_long_months=(3,),
+        calendar_short_months=(1,),
+        calendar_veto_resid_z=1.0,
+    )
+    assert MODULE._candidate_signal(dynamic_veto, arrays, 0) == ("TRX/USDT", "LONG", "")
+
+    day_window = FreshSpec(
+        name="calendar_day_window",
+        family="calendar_rotation",
+        lookback_bars=168,
+        threshold=0.018,
+        hold_bars=120,
+        cooldown_bars=0,
+        stop_loss_pct=0.0,
+        take_profit_pct=0.060,
+        min_abs_return=0.018,
+        entry_days_of_month=(16,),
+        entry_hours=(2,),
+        calendar_long_months=(3,),
+        calendar_short_months=(1,),
+        calendar_long_symbol="TRXUSDT",
+    )
+    assert MODULE._candidate_signal(day_window, arrays, 0) == ("", "", "entry_day_block")
+    assert MODULE._candidate_signal(day_window, arrays, 1) == ("TRX/USDT", "LONG", "")
+
+
+def test_calendar_spread_split_runs_two_legs_and_reports_equity() -> None:
+    datetimes = [datetime(2026, 3, 1, hour, tzinfo=UTC) for hour in range(12)]
+    timestamps = np.array([int(item.timestamp()) for item in datetimes])
+    trx_close = np.linspace(100.0, 110.0, len(datetimes))
+    eth_close = np.linspace(100.0, 94.0, len(datetimes))
+    arrays = {
+        "datetime": datetimes,
+        "timestamp": timestamps,
+        "symbols": ("TRX/USDT", "ETH/USDT"),
+        "symbol_prefixes": ("trxusdt", "ethusdt"),
+        "trxusdt_open": trx_close,
+        "trxusdt_high": trx_close * 1.001,
+        "trxusdt_low": trx_close * 0.999,
+        "trxusdt_close": trx_close,
+        "trxusdt_volume": np.full(len(datetimes), 1_000.0),
+        "ethusdt_open": eth_close,
+        "ethusdt_high": eth_close * 1.001,
+        "ethusdt_low": eth_close * 0.999,
+        "ethusdt_close": eth_close,
+        "ethusdt_volume": np.full(len(datetimes), 1_000.0),
+        "trxusdt_ret_168h": np.full(len(datetimes), 0.03),
+        "ethusdt_ret_168h": np.full(len(datetimes), -0.01),
+    }
+    spec = FreshSpec(
+        name="calendar_spread_smoke",
+        family="calendar_spread",
+        lookback_bars=168,
+        threshold=0.0,
+        hold_bars=4,
+        cooldown_bars=0,
+        stop_loss_pct=0.01,
+        take_profit_pct=0.001,
+        min_abs_return=0.0,
+        calendar_long_months=(3,),
+        calendar_short_months=(1,),
+        calendar_long_symbol="TRXUSDT",
+        calendar_short_symbol="ETHUSDT",
+        long_allocation_scale=2.0,
+        short_allocation_scale=2.0,
+        spread_hedge_ratio=1.0,
+    )
+    result = MODULE._run_split(
+        spec=spec,
+        arrays=arrays,
+        split=MODULE.SplitWindow(name="train", start=date(2026, 3, 1), end=date(2026, 3, 1), role="train"),
+        include_equity=True,
+    )
+
+    assert result["round_trips"] >= 1
+    assert result["fills"] >= 4
+    assert len(result["equity_history"]) == len(datetimes)
+    assert result["metrics"]["total_return"] > 0.0
+
+
+def test_spec_filters_are_train_validation_universe_controls() -> None:
+    args = MODULE.parse_args(
+        [
+            "--spec-family",
+            "calendar_spread",
+            "--spec-name-contains",
+            "spread",
+            "--max-specs",
+            "1",
+        ]
+    )
+    specs = [
+        FreshSpec(
+            name="fresh_calendar_trx_daywin_mid",
+            family="calendar_rotation",
+            lookback_bars=168,
+            threshold=0.018,
+            hold_bars=120,
+            cooldown_bars=0,
+            stop_loss_pct=0.0,
+            take_profit_pct=0.060,
+        ),
+        FreshSpec(
+            name="fresh_calendar_spread_trx_eth",
+            family="calendar_spread",
+            lookback_bars=168,
+            threshold=0.018,
+            hold_bars=120,
+            cooldown_bars=0,
+            stop_loss_pct=0.006,
+            take_profit_pct=0.024,
+        ),
+    ]
+
+    filtered, metadata = MODULE._filter_specs(specs, args)
+
+    assert [spec.name for spec in filtered] == ["fresh_calendar_spread_trx_eth"]
+    assert metadata["unfiltered_spec_count"] == 2
+    assert metadata["filtered_spec_count"] == 1
+    assert metadata["spec_family"] == ["calendar_spread"]
+
+
 def test_candidate_specs_include_external_inspired_families() -> None:
     arrays = {
         "btcusdt_rv_24h": np.linspace(0.002, 0.003, 6),
@@ -439,6 +609,10 @@ def test_candidate_specs_include_external_inspired_families() -> None:
     assert "cross_sectional_sharpe_reversal" in families
     assert "compression_breakout_fade" in families
     assert "funding_carry_momentum" in families
+    assert "calendar_spread" in families
+    names = {spec.name for spec in specs}
+    assert any(name.startswith("fresh_calendar_trx_veto_") for name in names)
+    assert any(name.startswith("fresh_calendar_trx_daywin_") for name in names)
 
 
 def test_joined_panel_reuses_cache_without_reloading_sources(

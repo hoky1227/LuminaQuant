@@ -58,7 +58,8 @@ DEFAULT_OUTPUT_DIR = (
     / "var/reports/profit_moonshot_20260501/current_tail_20260507/fresh_overhaul"
 )
 DEFAULT_SYMBOLS = ("BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "TRX/USDT")
-BASELINE_OOS_RETURN = 0.008284
+CURRENT_CHAMPION_OOS_RETURN = 0.012181
+BASELINE_OOS_RETURN = CURRENT_CHAMPION_OOS_RETURN
 SHADOW_OOS_MDD = 0.001778
 SUCCESS_SHARPE = 1.0
 TARGET_ALLOCATION = 0.008
@@ -117,6 +118,12 @@ class FreshSpec:
     calendar_short_months: tuple[int, ...] = ()
     calendar_long_symbol: str = ""
     calendar_short_symbol: str = ""
+    entry_days_of_month: tuple[int, ...] = ()
+    calendar_veto_resid_z: float = 0.0
+    calendar_veto_funding_abs: float = 0.0
+    calendar_veto_market_ret_abs: float = 0.0
+    calendar_veto_flow_abs: float = 0.0
+    spread_hedge_ratio: float = 1.0
 
     def payload(self) -> dict[str, Any]:
         return {
@@ -156,6 +163,12 @@ class FreshSpec:
             "calendar_short_months": list(self.calendar_short_months),
             "calendar_long_symbol": self.calendar_long_symbol,
             "calendar_short_symbol": self.calendar_short_symbol,
+            "entry_days_of_month": list(self.entry_days_of_month),
+            "calendar_veto_resid_z": self.calendar_veto_resid_z,
+            "calendar_veto_funding_abs": self.calendar_veto_funding_abs,
+            "calendar_veto_market_ret_abs": self.calendar_veto_market_ret_abs,
+            "calendar_veto_flow_abs": self.calendar_veto_flow_abs,
+            "spread_hedge_ratio": self.spread_hedge_ratio,
             "target_allocation": TARGET_ALLOCATION,
             "max_order_value": MAX_ORDER_VALUE,
         }
@@ -645,6 +658,16 @@ def _calendar_target_match(symbol: str, target: str) -> bool:
     return _compact(symbol) == _compact(target)
 
 
+def _resolve_calendar_symbol(symbols: tuple[str, ...], target: str) -> str:
+    if not target:
+        return ""
+    target_compact = _compact(target)
+    for symbol in symbols:
+        if _compact(symbol) == target_compact:
+            return symbol
+    return ""
+
+
 
 def _to_float_array(panel: pl.DataFrame, column: str) -> np.ndarray:
     if column not in panel.columns:
@@ -779,6 +802,10 @@ def _hour_utc(dt: datetime) -> int:
     return int(dt.replace(tzinfo=UTC).hour)
 
 
+def _day_of_month_utc(dt: datetime) -> int:
+    return int(dt.replace(tzinfo=UTC).day)
+
+
 def _symbol_prefix(symbol: str) -> str:
     return _compact(symbol).lower()
 
@@ -804,9 +831,59 @@ def _entry_stop_pct(spec: FreshSpec, arrays: dict[str, Any], prefix: str, idx: i
     return max(0.0, float(stop_pct))
 
 
+def _entry_window_block_reason(spec: FreshSpec, arrays: dict[str, Any], idx: int) -> str:
+    dt = arrays["datetime"][idx]
+    if spec.entry_hours and _hour_utc(dt) not in spec.entry_hours:
+        return "entry_hour_block"
+    if spec.entry_days_of_month and _day_of_month_utc(dt) not in spec.entry_days_of_month:
+        return "entry_day_block"
+    return ""
+
+
+def _calendar_veto_reason(
+    spec: FreshSpec,
+    arrays: dict[str, Any],
+    *,
+    symbol: str,
+    side: str,
+    prefix: str,
+    idx: int,
+) -> str:
+    if spec.calendar_veto_resid_z > 0.0:
+        resid_z = _array_value(arrays, f"{prefix}_resid_z_{spec.lookback_bars}h", idx)
+        limit = float(spec.calendar_veto_resid_z)
+        if side == "LONG" and math.isfinite(resid_z) and resid_z <= -limit:
+            return "calendar_residual_veto"
+        if side == "SHORT" and math.isfinite(resid_z) and resid_z >= limit:
+            return "calendar_residual_veto"
+    if spec.calendar_veto_funding_abs > 0.0:
+        funding = _array_value(arrays, f"{prefix}_funding_ffill", idx)
+        limit = float(spec.calendar_veto_funding_abs)
+        if side == "LONG" and math.isfinite(funding) and funding <= -limit:
+            return "calendar_funding_conflict_veto"
+        if side == "SHORT" and math.isfinite(funding) and funding >= limit:
+            return "calendar_funding_conflict_veto"
+    if spec.calendar_veto_market_ret_abs > 0.0:
+        market_lookback = max(1, int(spec.adaptive_lookback_bars or spec.lookback_bars))
+        market_ret = _array_value(arrays, f"market_ret_{market_lookback}h", idx)
+        if math.isfinite(market_ret) and abs(market_ret) >= float(spec.calendar_veto_market_ret_abs):
+            return "calendar_market_extreme_veto"
+    if spec.calendar_veto_flow_abs > 0.0:
+        flow_lookback = max(1, int(spec.flow_lookback_bars or 6))
+        flow = _array_value(arrays, f"{prefix}_flow_imbalance_{flow_lookback}h", idx)
+        limit = float(spec.calendar_veto_flow_abs)
+        if side == "LONG" and math.isfinite(flow) and flow <= -limit:
+            return "calendar_flow_exhaustion_veto"
+        if side == "SHORT" and math.isfinite(flow) and flow >= limit:
+            return "calendar_flow_exhaustion_veto"
+    _ = symbol
+    return ""
+
+
 def _candidate_signal(spec: FreshSpec, arrays: dict[str, Any], idx: int) -> tuple[str, str, str]:
-    if spec.entry_hours and _hour_utc(arrays["datetime"][idx]) not in spec.entry_hours:
-        return "", "", "entry_hour_block"
+    blocked = _entry_window_block_reason(spec, arrays, idx)
+    if blocked:
+        return "", "", blocked
     symbols = tuple(arrays["symbols"])
     prefixes = tuple(arrays.get("symbol_prefixes") or tuple(_symbol_prefix(symbol) for symbol in symbols))
     lookback = int(spec.lookback_bars)
@@ -818,6 +895,7 @@ def _candidate_signal(spec: FreshSpec, arrays: dict[str, Any], idx: int) -> tupl
     signal_month = int(arrays["datetime"][idx].replace(tzinfo=UTC).month)
 
     candidates: list[tuple[float, str, str]] = []
+    veto_reason = ""
     for symbol, prefix in zip(symbols, prefixes, strict=True):
         close = float(arrays[f"{prefix}_close"][idx])
         if not math.isfinite(close) or close <= 0.0:
@@ -837,7 +915,13 @@ def _candidate_signal(spec: FreshSpec, arrays: dict[str, Any], idx: int) -> tupl
                     and math.isfinite(ret)
                     and ret >= spec.min_abs_return
                 ):
-                    candidates.append((ret, symbol, "LONG"))
+                    reason = _calendar_veto_reason(
+                        spec, arrays, symbol=symbol, side="LONG", prefix=prefix, idx=idx
+                    )
+                    if reason:
+                        veto_reason = veto_reason or reason
+                    else:
+                        candidates.append((ret, symbol, "LONG"))
             elif (
                 signal_month in spec.calendar_short_months
                 and spec.allow_short
@@ -845,7 +929,13 @@ def _candidate_signal(spec: FreshSpec, arrays: dict[str, Any], idx: int) -> tupl
                 and math.isfinite(ret)
                 and ret <= -spec.threshold
             ):
-                candidates.append((abs(ret), symbol, "SHORT"))
+                reason = _calendar_veto_reason(
+                    spec, arrays, symbol=symbol, side="SHORT", prefix=prefix, idx=idx
+                )
+                if reason:
+                    veto_reason = veto_reason or reason
+                else:
+                    candidates.append((abs(ret), symbol, "SHORT"))
             continue
 
         funding = _array_value(arrays, f"{prefix}_funding_ffill", idx)
@@ -1046,15 +1136,248 @@ def _candidate_signal(spec: FreshSpec, arrays: dict[str, Any], idx: int) -> tupl
             if spec.allow_long and ret <= -spec.threshold:
                 candidates.append((abs(ret), symbol, "LONG"))
     if not candidates:
-        return "", "", "signal_missing"
+        return "", "", veto_reason or "signal_missing"
     candidates.sort(reverse=True, key=lambda item: item[0])
     _, symbol, side = candidates[0]
     return symbol, side, ""
 
 
+def _calendar_spread_signal(
+    spec: FreshSpec, arrays: dict[str, Any], idx: int
+) -> tuple[str, str, str, str]:
+    blocked = _entry_window_block_reason(spec, arrays, idx)
+    if blocked:
+        return "", "", "", blocked
+    symbols = tuple(arrays["symbols"])
+    long_symbol = _resolve_calendar_symbol(symbols, spec.calendar_long_symbol)
+    short_symbol = _resolve_calendar_symbol(symbols, spec.calendar_short_symbol)
+    if not long_symbol or not short_symbol or long_symbol == short_symbol:
+        return "", "", "", "calendar_spread_symbol_missing"
+
+    signal_month = int(arrays["datetime"][idx].replace(tzinfo=UTC).month)
+    long_prefix = _symbol_prefix(long_symbol)
+    short_prefix = _symbol_prefix(short_symbol)
+    long_close = _array_value(arrays, f"{long_prefix}_close", idx)
+    short_close = _array_value(arrays, f"{short_prefix}_close", idx)
+    if (
+        not math.isfinite(long_close)
+        or long_close <= 0.0
+        or not math.isfinite(short_close)
+        or short_close <= 0.0
+    ):
+        return "", "", "", "calendar_spread_price_missing"
+
+    lookback = int(spec.lookback_bars)
+    long_ret = _array_value(arrays, f"{long_prefix}_ret_{lookback}h", idx)
+    short_ret = _array_value(arrays, f"{short_prefix}_ret_{lookback}h", idx)
+    if not math.isfinite(long_ret) or not math.isfinite(short_ret):
+        return "", "", "", "signal_missing"
+    hedge = max(0.0, float(spec.spread_hedge_ratio))
+    spread_ret = long_ret - hedge * short_ret
+    threshold = max(0.0, float(spec.threshold))
+    min_abs_return = max(threshold, float(spec.min_abs_return))
+
+    if (
+        signal_month in spec.calendar_long_months
+        and spec.allow_long
+        and spread_ret >= threshold
+        and (long_ret >= min_abs_return or short_ret <= -min_abs_return)
+    ):
+        return long_symbol, short_symbol, "LONG_SPREAD", ""
+    if (
+        signal_month in spec.calendar_short_months
+        and spec.allow_short
+        and spread_ret <= -threshold
+        and (long_ret <= -min_abs_return or short_ret >= min_abs_return)
+    ):
+        return long_symbol, short_symbol, "SHORT_SPREAD", ""
+    return "", "", "", "signal_missing"
+
+
+def _run_calendar_spread_split(
+    *, spec: FreshSpec, arrays: dict[str, Any], split: SplitWindow, include_equity: bool = False
+) -> dict[str, Any]:
+    timestamps = arrays["timestamp"]
+    start_ts = int(datetime.combine(split.start, datetime.min.time(), tzinfo=UTC).timestamp())
+    end_ts = int(datetime.combine(split.end + timedelta(days=1), datetime.min.time(), tzinfo=UTC).timestamp()) - 1
+    indices = np.flatnonzero((timestamps >= start_ts) & (timestamps <= end_ts))
+    if indices.size == 0:
+        return {"metrics": {}, "round_trips": 0, "fills": 0, "reject_counts": {"split_empty": 1}, "liquidations": 0}
+
+    cash = 10_000.0
+    legs: list[dict[str, Any]] = []
+    gross_entry_notional = 0.0
+    entry_equity = 10_000.0
+    bars_held = 0
+    cooldown = 0
+    equity_history: list[float] = []
+    fills = 0
+    round_trips = 0
+    reject_counts: dict[str, int] = {}
+
+    def record_reject(reason: str) -> None:
+        reject_counts[reason] = int(reject_counts.get(reason, 0)) + 1
+
+    def mark_equity_at(idx: int) -> float:
+        equity = cash
+        for leg in legs:
+            prefix = str(leg["prefix"])
+            close = _array_value(arrays, f"{prefix}_close", idx)
+            if not math.isfinite(close) or close <= 0.0:
+                close = float(leg["entry_price"])
+            equity += float(leg["signed_qty"]) * close
+        return equity
+
+    def close_legs(idx: int) -> None:
+        nonlocal bars_held, cash, fills, gross_entry_notional, entry_equity, legs, round_trips
+        for leg in legs:
+            prefix = str(leg["prefix"])
+            close = _array_value(arrays, f"{prefix}_close", idx)
+            if not math.isfinite(close) or close <= 0.0:
+                close = float(leg["entry_price"])
+            high = _array_value(arrays, f"{prefix}_high", idx)
+            low = _array_value(arrays, f"{prefix}_low", idx)
+            open_ = _array_value(arrays, f"{prefix}_open", idx)
+            high_low_vol = (
+                max(0.0, (high - low) / open_)
+                if math.isfinite(high) and math.isfinite(low) and open_ > 0.0
+                else 0.0
+            )
+            qty_abs = abs(float(leg["signed_qty"]))
+            if float(leg["signed_qty"]) > 0.0:
+                fill, fee_rate = _fill_price(close, "SELL", high_low_vol=high_low_vol)
+                cash += qty_abs * fill - qty_abs * fill * fee_rate
+            else:
+                fill, fee_rate = _fill_price(close, "BUY", high_low_vol=high_low_vol)
+                cash -= qty_abs * fill + qty_abs * fill * fee_rate
+        fills += len(legs)
+        round_trips += 1
+        legs = []
+        bars_held = 0
+        gross_entry_notional = 0.0
+        entry_equity = cash
+
+    def plan_order(symbol: str, action: str, scale: float, idx: int) -> dict[str, Any] | None:
+        prefix = _symbol_prefix(symbol)
+        close = _array_value(arrays, f"{prefix}_close", idx)
+        if not math.isfinite(close) or close <= 0.0 or scale <= 0.0:
+            return None
+        high = _array_value(arrays, f"{prefix}_high", idx)
+        low = _array_value(arrays, f"{prefix}_low", idx)
+        open_ = _array_value(arrays, f"{prefix}_open", idx)
+        volume = max(0.0, _array_value(arrays, f"{prefix}_volume", idx))
+        high_low_vol = (
+            max(0.0, (high - low) / open_)
+            if math.isfinite(high) and math.isfinite(low) and open_ > 0.0
+            else 0.0
+        )
+        equity = mark_equity_at(idx)
+        notional = min(TARGET_ALLOCATION * scale * equity, MAX_ORDER_VALUE * scale)
+        raw_qty = math.floor((notional / close) / 0.001) * 0.001
+        order_qty = min(raw_qty, volume * 0.10)
+        if order_qty * close < 5.0 or order_qty <= 0.0:
+            return None
+        fill, fee_rate = _fill_price(close, action, high_low_vol=high_low_vol)
+        return {
+            "symbol": symbol,
+            "prefix": prefix,
+            "action": action,
+            "qty": float(order_qty),
+            "fill": float(fill),
+            "fee_rate": float(fee_rate),
+            "signed_qty": float(order_qty if action == "BUY" else -order_qty),
+        }
+
+    for idx_raw in indices:
+        idx = int(idx_raw)
+        if legs:
+            bars_held += 1
+            spread_return = (mark_equity_at(idx) - entry_equity) / max(1e-9, gross_entry_notional)
+            exit_reason = ""
+            if spec.stop_loss_pct > 0.0 and spread_return <= -float(spec.stop_loss_pct):
+                exit_reason = "stop"
+            elif spec.take_profit_pct > 0.0 and spread_return >= float(spec.take_profit_pct):
+                exit_reason = "take_profit"
+            elif bars_held >= int(spec.hold_bars):
+                exit_reason = "max_hold"
+            if exit_reason:
+                close_legs(idx)
+                cooldown = max(0, int(spec.cooldown_bars))
+
+        if not legs:
+            if cooldown > 0:
+                cooldown -= 1
+                record_reject("cooldown")
+            else:
+                long_symbol, short_symbol, direction, reason = _calendar_spread_signal(spec, arrays, idx)
+                if not long_symbol or not short_symbol or not direction:
+                    record_reject(reason or "signal_missing")
+                else:
+                    hedge = max(0.0, float(spec.spread_hedge_ratio))
+                    if direction == "LONG_SPREAD":
+                        leg_plans = (
+                            (long_symbol, "BUY", max(0.0, float(spec.long_allocation_scale))),
+                            (short_symbol, "SELL", max(0.0, float(spec.short_allocation_scale)) * hedge),
+                        )
+                    else:
+                        leg_plans = (
+                            (long_symbol, "SELL", max(0.0, float(spec.long_allocation_scale))),
+                            (short_symbol, "BUY", max(0.0, float(spec.short_allocation_scale)) * hedge),
+                        )
+                    orders = [
+                        order
+                        for symbol, action, scale in leg_plans
+                        if (order := plan_order(symbol, action, scale, idx)) is not None
+                    ]
+                    if len(orders) != 2:
+                        record_reject("fill_or_min_notional")
+                    else:
+                        gross_entry_notional = sum(abs(float(order["qty"]) * float(order["fill"])) for order in orders)
+                        for order in orders:
+                            qty = float(order["qty"])
+                            fill = float(order["fill"])
+                            fee_rate = float(order["fee_rate"])
+                            if order["action"] == "BUY":
+                                cash -= qty * fill + qty * fill * fee_rate
+                            else:
+                                cash += qty * fill - qty * fill * fee_rate
+                            legs.append(
+                                {
+                                    "symbol": order["symbol"],
+                                    "prefix": order["prefix"],
+                                    "signed_qty": order["signed_qty"],
+                                    "entry_price": fill,
+                                }
+                            )
+                        fills += len(orders)
+                        bars_held = 0
+                        entry_equity = mark_equity_at(idx)
+
+        equity_history.append(mark_equity_at(idx))
+
+    if legs and indices.size:
+        close_legs(int(indices[-1]))
+        equity_history[-1] = cash
+
+    metrics = _metrics_from_equity_totals(equity_history, periods=HOURLY_PERIODS_PER_YEAR)
+    payload = {
+        "metrics": metrics,
+        "round_trips": int(round_trips),
+        "fills": int(fills),
+        "final_equity": float(equity_history[-1]) if equity_history else 10_000.0,
+        "reject_counts": dict(sorted(reject_counts.items(), key=lambda item: (-item[1], item[0]))[:8]),
+        "liquidations": 0,
+    }
+    if include_equity:
+        payload["equity_history"] = [float(item) for item in equity_history]
+    return payload
+
+
 def _run_split(
     *, spec: FreshSpec, arrays: dict[str, Any], split: SplitWindow, include_equity: bool = False
 ) -> dict[str, Any]:
+    if spec.family == "calendar_spread":
+        return _run_calendar_spread_split(spec=spec, arrays=arrays, split=split, include_equity=include_equity)
     timestamps = arrays["timestamp"]
     start_ts = int(datetime.combine(split.start, datetime.min.time(), tzinfo=UTC).timestamp())
     end_ts = int(datetime.combine(split.end + timedelta(days=1), datetime.min.time(), tzinfo=UTC).timestamp()) - 1
@@ -1646,6 +1969,109 @@ def _candidate_specs(arrays: dict[str, Any], symbols: list[str]) -> list[FreshSp
                                 calendar_long_symbol="TRXUSDT",
                                 calendar_short_symbol=short_symbol,
                             )
+    veto_sets = (
+        ("rz10", {"calendar_veto_resid_z": 1.0}),
+        ("rz15", {"calendar_veto_resid_z": 1.5}),
+        ("fund100", {"calendar_veto_funding_abs": 0.00010}),
+        ("flow6", {"calendar_veto_flow_abs": 0.06, "flow_lookback_bars": 6}),
+        ("mkt24", {"calendar_veto_market_ret_abs": 0.04, "adaptive_lookback_bars": 24}),
+    )
+    for short_symbol in ("", "ETHUSDT"):
+        short_label = short_symbol.lower() or "weakest"
+        for threshold in (0.015, 0.018):
+            for hold in (120, 168):
+                for veto_label, veto_kwargs in veto_sets:
+                    name = (
+                        f"fresh_calendar_trx_veto_{veto_label}_s{short_label}_"
+                        f"thr{int(threshold*10000)}_h{hold}"
+                    )
+                    specs[name] = FreshSpec(
+                        name=name,
+                        family="calendar_rotation",
+                        lookback_bars=168,
+                        threshold=threshold,
+                        hold_bars=hold,
+                        cooldown_bars=max(0, hold // 4),
+                        stop_loss_pct=0.0,
+                        take_profit_pct=0.060,
+                        min_abs_return=threshold,
+                        allow_long=True,
+                        allow_short=True,
+                        long_allocation_scale=6.0,
+                        short_allocation_scale=12.0,
+                        calendar_long_months=(3, 4, 5),
+                        calendar_short_months=(1, 2),
+                        calendar_long_symbol="TRXUSDT",
+                        calendar_short_symbol=short_symbol,
+                        **veto_kwargs,
+                    )
+    day_windows = {
+        "early": tuple(range(1, 11)),
+        "mid": tuple(range(11, 21)),
+        "late": tuple(range(21, 32)),
+    }
+    day_window_sessions = {
+        "postfund": (2, 3, 10, 11, 18, 19),
+        "asiaus": (0, 1, 2, 13, 14, 15, 16, 20, 21),
+    }
+    for short_symbol in ("", "ETHUSDT"):
+        short_label = short_symbol.lower() or "weakest"
+        for day_label, days in day_windows.items():
+            for session_label, hours in day_window_sessions.items():
+                for hold in (120, 168):
+                    name = (
+                        f"fresh_calendar_trx_daywin_{day_label}_{session_label}_"
+                        f"s{short_label}_thr180_h{hold}"
+                    )
+                    specs[name] = FreshSpec(
+                        name=name,
+                        family="calendar_rotation",
+                        lookback_bars=168,
+                        threshold=0.018,
+                        hold_bars=hold,
+                        cooldown_bars=max(0, hold // 4),
+                        stop_loss_pct=0.0,
+                        take_profit_pct=0.060,
+                        min_abs_return=0.018,
+                        allow_long=True,
+                        allow_short=True,
+                        long_allocation_scale=6.0,
+                        short_allocation_scale=12.0,
+                        entry_hours=hours,
+                        entry_days_of_month=days,
+                        calendar_long_months=(3, 4, 5),
+                        calendar_short_months=(1, 2),
+                        calendar_long_symbol="TRXUSDT",
+                        calendar_short_symbol=short_symbol,
+                    )
+    for threshold in (0.012, 0.018):
+        for hold in (120, 168):
+            for hedge in (0.5, 1.0):
+                for take in (0.024, 0.060):
+                    name = (
+                        f"fresh_calendar_spread_trx_eth_hr{int(hedge*100)}_"
+                        f"thr{int(threshold*10000)}_h{hold}_tp{int(take*10000)}"
+                    )
+                    specs[name] = FreshSpec(
+                        name=name,
+                        family="calendar_spread",
+                        lookback_bars=168,
+                        threshold=threshold,
+                        hold_bars=hold,
+                        cooldown_bars=max(0, hold // 4),
+                        stop_loss_pct=0.006,
+                        take_profit_pct=take,
+                        min_abs_return=threshold,
+                        allow_long=True,
+                        allow_short=True,
+                        long_allocation_scale=3.0,
+                        short_allocation_scale=3.0,
+                        calendar_long_months=(3, 4, 5),
+                        calendar_short_months=(1, 2),
+                        calendar_long_symbol="TRXUSDT",
+                        calendar_short_symbol="ETHUSDT",
+                        spread_hedge_ratio=hedge,
+                    )
     for lookback in (6, 12, 24):
         for threshold in (0.006, 0.010, 0.014):
             for comp in (0.55, 0.70, 0.85):
@@ -1802,7 +2228,8 @@ def _markdown(payload: dict[str, Any], rows: list[dict[str, Any]]) -> str:
         "",
         "- 기존 ETH shock-reversion incumbent/leadlag/context-wrapper를 쓰지 않고 raw-first data에서 새로 출발했다.",
         "- 신규 후보군: cross-sectional residual reversal, cross-sectional momentum, adaptive trend, cross-sectional Sharpe/rank selector, "
-        "funding-carry fade, funding+OI carry fade, taker-flow persistence/exhaustion, calendar rotation, compression breakout.",
+        "funding-carry fade, funding+OI carry fade, taker-flow persistence/exhaustion, calendar rotation, "
+        "calendar-conditioned veto/day-window sleeves, TRX/ETH calendar spread, compression breakout.",
         "- Replay는 one-position, fee/slippage, 10% bar-volume fill cap, cooldown, stop/take/max-hold, 0.8% target allocation, $175 max order를 강제한다.",
         "",
         "## Gate policy",
@@ -1850,6 +2277,35 @@ def _markdown(payload: dict[str, Any], rows: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _split_arg_tokens(raw: Any) -> tuple[str, ...]:
+    return tuple(
+        token.strip()
+        for token in str(raw or "").replace(";", ",").split(",")
+        if token.strip()
+    )
+
+
+def _filter_specs(specs: list[FreshSpec], args: argparse.Namespace) -> tuple[list[FreshSpec], dict[str, Any]]:
+    families = set(_split_arg_tokens(getattr(args, "spec_family", "")))
+    name_tokens = _split_arg_tokens(getattr(args, "spec_name_contains", ""))
+    max_specs = max(0, int(getattr(args, "max_specs", 0) or 0))
+    filtered = [
+        spec
+        for spec in specs
+        if (not families or spec.family in families)
+        and (not name_tokens or any(token in spec.name for token in name_tokens))
+    ]
+    if max_specs > 0:
+        filtered = filtered[:max_specs]
+    return filtered, {
+        "spec_family": sorted(families),
+        "spec_name_contains": list(name_tokens),
+        "max_specs": max_specs,
+        "unfiltered_spec_count": len(specs),
+        "filtered_spec_count": len(filtered),
+    }
+
+
 def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     oos_end = datetime.fromisoformat(str(args.oos_end_date)).date() if str(args.oos_end_date or "").strip() else date(2026, 5, 6)
     splits = _split_windows(oos_end=oos_end)
@@ -1867,7 +2323,8 @@ def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[dict[s
         refresh_cache=bool(args.refresh_panel_cache),
     )
     arrays = _build_arrays(panel, symbols)
-    specs = _candidate_specs(arrays, symbols)
+    unfiltered_specs = _candidate_specs(arrays, symbols)
+    specs, spec_filter = _filter_specs(unfiltered_specs, args)
     rows, results = _evaluate_specs(specs=specs, arrays=arrays, splits=splits)
     payload = {
         "artifact_kind": "profit_moonshot_fresh_start_overhaul_replay",
@@ -1878,6 +2335,7 @@ def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[dict[s
         "oos_end_date": oos_end.isoformat(),
         "split_windows": [split.as_payload() for split in splits],
         "data_metadata": data_metadata,
+        "spec_filter": spec_filter,
         "gate_policy": {
             "baseline_oos_return": BASELINE_OOS_RETURN,
             "shadow_oos_mdd": SHADOW_OOS_MDD,
@@ -1905,6 +2363,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
     parser.add_argument("--panel-cache-dir", default=str(DEFAULT_PANEL_CACHE_DIR))
     parser.add_argument("--refresh-panel-cache", action="store_true")
+    parser.add_argument("--spec-family", default="", help="Comma-separated candidate family allowlist.")
+    parser.add_argument("--spec-name-contains", default="", help="Comma-separated substrings; keep matching spec names.")
+    parser.add_argument("--max-specs", type=int, default=0, help="Optional cap after spec filters; 0 means no cap.")
     return parser.parse_args(argv)
 
 
@@ -1924,6 +2385,9 @@ def main(argv: list[str] | None = None) -> int:
             "exchange": str(args.exchange),
             "symbols": str(args.symbols),
             "oos_end_date": str(args.oos_end_date),
+            "spec_family": str(args.spec_family),
+            "spec_name_contains": str(args.spec_name_contains),
+            "max_specs": int(args.max_specs),
         },
         budget_bytes=PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES,
     )
@@ -1936,6 +2400,9 @@ def main(argv: list[str] | None = None) -> int:
                 "exchange": str(args.exchange),
                 "symbols": str(args.symbols),
                 "oos_end_date": str(args.oos_end_date),
+                "spec_family": str(args.spec_family),
+                "spec_name_contains": str(args.spec_name_contains),
+                "max_specs": int(args.max_specs),
             },
         )
         payload, rows = build_payload(args)
