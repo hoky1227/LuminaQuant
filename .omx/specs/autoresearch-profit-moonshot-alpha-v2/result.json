@@ -31,8 +31,60 @@
     "validation_sortino": 4.885875261022447,
     "validation_total_return": 0.19971302124703927
   },
+  "ci_evidence": [
+    {
+      "conclusion": "success",
+      "head_sha": "a1f4e0718975202f416b3e76e358c46a6a3d7ae8",
+      "passed": true,
+      "run_id": "25594783480",
+      "status": "completed",
+      "url": "https://github.com/hoky1227/Quants-agent/actions/runs/25594783480",
+      "workflow": "ci"
+    },
+    {
+      "conclusion": "success",
+      "head_sha": "a1f4e0718975202f416b3e76e358c46a6a3d7ae8",
+      "passed": true,
+      "run_id": "25594783476",
+      "status": "completed",
+      "url": "https://github.com/hoky1227/Quants-agent/actions/runs/25594783476",
+      "workflow": "private-ci"
+    }
+  ],
+  "ci_passed": true,
+  "ci_status": "success",
   "evidence": {
-    "ci_evidence": [],
+    "ci_evidence": [
+      {
+        "conclusion": "success",
+        "head_sha": "a1f4e0718975202f416b3e76e358c46a6a3d7ae8",
+        "passed": true,
+        "run_id": "25594783480",
+        "status": "completed",
+        "url": "https://github.com/hoky1227/Quants-agent/actions/runs/25594783480",
+        "workflow": "ci"
+      },
+      {
+        "conclusion": "success",
+        "head_sha": "a1f4e0718975202f416b3e76e358c46a6a3d7ae8",
+        "passed": true,
+        "run_id": "25594783476",
+        "status": "completed",
+        "url": "https://github.com/hoky1227/Quants-agent/actions/runs/25594783476",
+        "workflow": "private-ci"
+      }
+    ],
+    "completion_summary": "docs/session_handoff_20260509_profit_moonshot_monthly_budget_pass.md",
+    "git_evidence": [
+      {
+        "commit": "a1f4e0718975202f416b3e76e358c46a6a3d7ae8",
+        "pushed": true,
+        "ref": "main",
+        "remote": "private",
+        "success": true,
+        "summary": "git push private HEAD:main completed; private/main advanced to source Lore commit"
+      }
+    ],
     "portfolio_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_monthly_budget_v1/fresh_portfolio_tuning_latest.json",
     "portfolio_markdown": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_monthly_budget_v1/fresh_portfolio_tuning_latest.md",
     "rss_under_8gb_logs": [
@@ -67,7 +119,17 @@
       }
     ]
   },
-  "generated_at_utc": "2026-05-09T06:54:29.308545Z",
+  "generated_at_utc": "2026-05-09T07:03:48.698838Z",
+  "git_evidence": [
+    {
+      "commit": "a1f4e0718975202f416b3e76e358c46a6a3d7ae8",
+      "pushed": true,
+      "ref": "main",
+      "remote": "private",
+      "success": true,
+      "summary": "git push private HEAD:main completed; private/main advanced to source Lore commit"
+    }
+  ],
   "live_equivalent_selection_eligible": false,
   "memory_evidence": {
     "memory_summaries": [
@@ -81,13 +143,11 @@
     "time_max_rss_kb": 942604,
     "under_8gib": true
   },
-  "passed": false,
+  "passed": true,
   "passing_candidate_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/passing_candidate_latest.json",
-  "required_final_evidence": [
-    "git_push_if_code_changed",
-    "github_actions_ci_private_ci_green",
-    "mission_validator_pass"
-  ],
+  "pushed_commit": "a1f4e0718975202f416b3e76e358c46a6a3d7ae8",
+  "pushed_ref": "private/main",
+  "required_final_evidence": [],
   "research_success_candidate": true,
   "return_quality_contract": {
     "locked_oos_use": [
@@ -114,8 +174,8 @@
   },
   "schema_version": "1.1",
   "source_changed": true,
-  "status": "local_pass_pending_ci",
-  "summary": "Return-quality candidate passes replay and full local verification; awaiting source push plus GitHub Actions ci/private-ci evidence before final passed=true.",
+  "status": "passed",
+  "summary": "Return-quality candidate, full local verification, source push, and GitHub Actions ci/private-ci are green for the monthly-budget source Lore commit.",
   "supersedes": {
     "previous_candidate_reason": "Old target-budget candidate failed +2% monthly train/OOS and smart Sortino gates.",
     "previous_candidate_status": "superseded_return_quality_floor"

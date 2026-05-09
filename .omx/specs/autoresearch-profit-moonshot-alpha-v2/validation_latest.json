@@ -3,9 +3,9 @@
   "budget_bytes": 8589934592,
   "checks": [
     {
-      "detail": "result is not yet status=passed with passed=true",
+      "detail": "result has passed=true and status=passed",
       "name": "declared_pass_status",
-      "passed": false
+      "passed": true
     },
     {
       "detail": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/passing_candidate_latest.json",
@@ -33,18 +33,18 @@
       "passed": true
     },
     {
-      "detail": "missing successful CI evidence",
+      "detail": "4 CI evidence item(s)",
       "name": "ci_success_evidence",
-      "passed": false
+      "passed": true
     },
     {
-      "detail": "source_changed requires git push evidence",
+      "detail": "source unchanged or push evidence present",
       "name": "git_push_evidence_if_source_changed",
-      "passed": false
+      "passed": true
     }
   ],
-  "generated_at": "2026-05-09T06:59:45.199138Z",
-  "passed": false,
+  "generated_at": "2026-05-09T07:03:48.755045Z",
+  "passed": true,
   "result_path": ".omx/specs/autoresearch-profit-moonshot-alpha-v2/result.json",
   "rss_evidence": [
     {
@@ -61,6 +61,6 @@
     }
   ],
   "schema_version": "1.0",
-  "status": "running",
-  "summary": "mission evidence incomplete"
+  "status": "passed",
+  "summary": "mission evidence complete"
 }

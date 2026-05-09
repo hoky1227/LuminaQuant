@@ -32,3 +32,9 @@ A return-quality portfolio candidate now passes the clarified target: stable tra
 2. Commit source + artifacts with Lore message and push to `private/main`.
 3. Confirm GitHub Actions `ci` and `private-ci` green for the source commit.
 4. Record final CI/push evidence in `.omx/specs/autoresearch-profit-moonshot-alpha-v2/result.json` and rerun validator to passed.
+
+## Final source/CI evidence
+- Source Lore commit: `a1f4e0718975202f416b3e76e358c46a6a3d7ae8`, pushed to `private/main`.
+- GitHub Actions: `ci` run `25594783480` success; `private-ci` run `25594783476` success.
+- Final mission validator: `.omx/specs/autoresearch-profit-moonshot-alpha-v2/validation_latest.json` -> `passed=true`, `status=passed`.
+- OMX performance-goal and autoresearch-goal ledgers recorded pass verdicts for `profit-moonshot-return-quality` / `profit-moonshot-return-quality-alpha`.

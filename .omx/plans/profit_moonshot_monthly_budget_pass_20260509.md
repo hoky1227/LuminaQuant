@@ -26,3 +26,9 @@ Metrics:
 - Artifacts: `var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_monthly_budget_v1/`.
 - Passing candidate: `var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/passing_candidate_latest.json`.
 - Validator: return-quality and RSS checks pass; final pass awaits full tests/push/CI evidence.
+
+## Final verification closure
+- Local: targeted tests `14 passed`; full pytest `1208 passed in 289.27s`; full ruff passed; compileall passed; `git diff --check` passed.
+- Source commit: `a1f4e0718975202f416b3e76e358c46a6a3d7ae8` pushed to `private/main`.
+- GitHub Actions: `ci` `25594783480` success; `private-ci` `25594783476` success.
+- Mission validator: final pass recorded in `.omx/specs/autoresearch-profit-moonshot-alpha-v2/validation_latest.json`.
