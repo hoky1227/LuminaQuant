@@ -8,6 +8,19 @@
     "current_champion_oos_mdd": 0.001662,
     "current_champion_oos_return": 0.012181,
     "current_champion_oos_return_risk": 7.329121540312876,
+    "integer_leverage_audit_passed": true,
+    "integer_leverage_forced_base_failed_gates": [
+      "raw_train_monthly_return_gte_1pct",
+      "train_sortino_high"
+    ],
+    "integer_leverage_forced_base_leverage": 5.0,
+    "integer_leverage_forced_base_oos_return": 0.14637099461686787,
+    "integer_leverage_forced_base_oos_return_risk": 8.651441766471534,
+    "integer_leverage_forced_base_raw_train_monthlyized_return": 0.009074645454400176,
+    "integer_leverage_forced_base_train_sortino": 1.4814397638885402,
+    "integer_leverage_promoted_success_count": 0,
+    "integer_leverage_top40_peak_rss_mib": 2523.5234375,
+    "integer_leverage_top40_portfolio_spec_count": 158620,
     "locked_oos_calmar": 53.73501485217365,
     "locked_oos_max_drawdown": 0.008197728267604966,
     "locked_oos_monthlyized_return": 0.030883445250837083,
@@ -36,226 +49,194 @@
     "validation_sortino": 4.885875261022447,
     "validation_total_return": 0.19971302124703927
   },
-  "ci_evidence": [
-    {
-      "conclusion": "success",
-      "created_at": "2026-05-09T08:25:41Z",
-      "event": "push",
-      "head_sha": "6556254726db4f70fe8e7eb6d72a6fe9a352c78a",
-      "run_id": 25596474834,
-      "status": "completed",
-      "success": true,
-      "updated_at": "2026-05-09T08:28:57Z",
-      "url": "https://github.com/hoky1227/Quants-agent/actions/runs/25596474834",
-      "workflow": "ci"
-    },
-    {
-      "conclusion": "success",
-      "created_at": "2026-05-09T08:25:41Z",
-      "event": "push",
-      "head_sha": "6556254726db4f70fe8e7eb6d72a6fe9a352c78a",
-      "run_id": 25596474837,
-      "status": "completed",
-      "success": true,
-      "updated_at": "2026-05-09T08:26:03Z",
-      "url": "https://github.com/hoky1227/Quants-agent/actions/runs/25596474837",
-      "workflow": "private-ci"
-    }
-  ],
-  "ci_passed": true,
-  "ci_status": "success",
-  "completed_at_utc": "2026-05-09T08:29:40Z",
+  "ci_passed": false,
+  "ci_status": "pending",
   "current_base_retained": true,
   "evidence": {
-    "ci_evidence": [
-      {
-        "conclusion": "success",
-        "created_at": "2026-05-09T08:25:41Z",
-        "event": "push",
-        "head_sha": "6556254726db4f70fe8e7eb6d72a6fe9a352c78a",
-        "run_id": 25596474834,
-        "status": "completed",
-        "success": true,
-        "updated_at": "2026-05-09T08:28:57Z",
-        "url": "https://github.com/hoky1227/Quants-agent/actions/runs/25596474834",
-        "workflow": "ci"
-      },
-      {
-        "conclusion": "success",
-        "created_at": "2026-05-09T08:25:41Z",
-        "event": "push",
-        "head_sha": "6556254726db4f70fe8e7eb6d72a6fe9a352c78a",
-        "run_id": 25596474837,
-        "status": "completed",
-        "success": true,
-        "updated_at": "2026-05-09T08:26:03Z",
-        "url": "https://github.com/hoky1227/Quants-agent/actions/runs/25596474837",
-        "workflow": "private-ci"
-      }
-    ],
-    "git_evidence": [
-      {
-        "commit": "6556254726db4f70fe8e7eb6d72a6fe9a352c78a",
-        "pushed": true,
-        "ref": "refs/heads/main",
-        "remote": "private",
-        "repo": "hoky1227/Quants-agent",
-        "success": true,
-        "verified_at_utc": "2026-05-09T08:29:40Z"
-      }
-    ],
+    "audit_summary": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/integer_leverage_audit_20260509.json",
+    "ci_evidence": [],
+    "git_evidence": [],
     "heavy_mutex_evidence": [
       {
-        "completed_at": "2026-05-09T08:17:28Z",
+        "completed_at": "2026-05-09T12:50:07Z",
         "exclusive": true,
         "lock_path": "var/reports/exact_window_backtests/followup_status/portfolio_followup_heavy_run.lock",
         "overlap_check": "passed",
-        "started_at": "2026-05-09T08:13:08Z",
+        "path": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/runner_evidence_20260509/leader_integer_leverage_mutex_20260509.json",
+        "reason": "integer leverage rerun with forced current-base combo",
+        "started_at": "2026-05-09T12:42:56Z",
+        "status": "completed"
+      },
+      {
+        "completed_at": "2026-05-09T12:58:00Z",
+        "exclusive": true,
+        "lock_path": "var/reports/exact_window_backtests/followup_status/portfolio_followup_heavy_run.lock",
+        "overlap_check": "passed",
+        "path": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/runner_evidence_20260509/leader_integer_leverage_alpha_v2_mutex_20260509.json",
+        "reason": "integer leverage rerun on alpha_v2 merged candidate universe",
+        "started_at": "2026-05-09T12:50:45Z",
+        "status": "completed"
+      },
+      {
+        "completed_at": "2026-05-09T13:21:06Z",
+        "exclusive": true,
+        "lock_path": "var/reports/exact_window_backtests/followup_status/portfolio_followup_heavy_run.lock",
+        "overlap_check": "passed",
+        "path": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/runner_evidence_20260509/leader_integer_leverage_alpha_v2_top40_mutex_20260509.json",
+        "reason": "integer leverage alpha_v2 top40 wider search",
+        "started_at": "2026-05-09T12:58:32Z",
         "status": "completed"
       }
     ],
-    "portfolio_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/continued_optimization_20260509/fresh_portfolio_tuning_latest.json",
-    "portfolio_markdown": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/continued_optimization_20260509/fresh_portfolio_tuning_latest.md",
+    "portfolio_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/integer_leverage_alpha_v2_top40_20260509/fresh_portfolio_tuning_latest.json",
+    "portfolio_markdown": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/integer_leverage_alpha_v2_top40_20260509/fresh_portfolio_tuning_latest.md",
     "retained_base_candidate": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/continued_optimization_20260509/passing_candidate_latest.json",
     "rss_under_8gb_logs": [
-      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/continued_optimization_20260509/_memory_guard/profit_moonshot_fresh_portfolio_tuning_memory_latest.json",
-      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/continued_optimization_20260509/_memory_guard/profit_moonshot_fresh_portfolio_tuning_rss_latest.jsonl",
-      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/runner_evidence_20260509/leader_continued_optimization_time.log"
+      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/integer_leverage_20260509/_memory_guard/profit_moonshot_fresh_portfolio_tuning_memory_latest.json",
+      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/integer_leverage_20260509/_memory_guard/profit_moonshot_fresh_portfolio_tuning_rss_latest.jsonl",
+      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/runner_evidence_20260509/leader_integer_leverage_tuning_time.log",
+      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/integer_leverage_alpha_v2_20260509/_memory_guard/profit_moonshot_fresh_portfolio_tuning_memory_latest.json",
+      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/integer_leverage_alpha_v2_20260509/_memory_guard/profit_moonshot_fresh_portfolio_tuning_rss_latest.jsonl",
+      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/runner_evidence_20260509/leader_integer_leverage_alpha_v2_tuning_time.log",
+      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/integer_leverage_alpha_v2_top40_20260509/_memory_guard/profit_moonshot_fresh_portfolio_tuning_memory_latest.json",
+      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/integer_leverage_alpha_v2_top40_20260509/_memory_guard/profit_moonshot_fresh_portfolio_tuning_rss_latest.jsonl",
+      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/runner_evidence_20260509/leader_integer_leverage_alpha_v2_top40_tuning_time.log",
+      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/runner_evidence_20260509/leader_integer_full_pytest_time.log"
     ],
     "test_evidence": [
       {
         "command": "uv run --extra dev pytest -q tests/test_profit_moonshot_fresh_portfolio_tuning.py tests/test_profit_moonshot_pass_under_8gb_validator.py",
         "passed": true,
-        "summary": "22 passed in 0.09s"
+        "summary": "26 passed in 0.10s",
+        "time_log": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/runner_evidence_20260509/leader_integer_targeted_pytest_time.log"
       },
       {
         "command": "uv run --extra dev pytest -q",
         "passed": true,
-        "summary": "1216 passed in 227.75s (0:03:47)",
-        "time_max_rss_kb": 2732444
+        "summary": "1220 passed in 338.07s (0:05:38)",
+        "time_log": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/runner_evidence_20260509/leader_integer_full_pytest_time.log",
+        "time_max_rss_kb": 2673972
       },
       {
         "command": "uv run --extra dev ruff check .",
         "passed": true,
-        "summary": "All checks passed"
+        "summary": "All checks passed",
+        "time_log": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/runner_evidence_20260509/leader_integer_ruff_time.log"
       },
       {
         "command": "python3 -m compileall -q src scripts tests",
         "passed": true,
-        "summary": "passed"
+        "summary": "pass",
+        "time_log": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/runner_evidence_20260509/leader_integer_compileall_time.log"
       },
       {
         "command": "git diff --check",
         "passed": true,
-        "summary": "passed"
+        "summary": "pass",
+        "time_log": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/runner_evidence_20260509/leader_integer_diff_check_time.log"
       }
     ]
   },
-  "generated_at_utc": "2026-05-09T08:23:13.884984Z",
-  "git_evidence": [
-    {
-      "commit": "6556254726db4f70fe8e7eb6d72a6fe9a352c78a",
-      "pushed": true,
-      "ref": "refs/heads/main",
-      "remote": "private",
-      "repo": "hoky1227/Quants-agent",
-      "success": true,
-      "verified_at_utc": "2026-05-09T08:29:40Z"
-    }
-  ],
+  "git_evidence": [],
   "heavy_mutex_evidence": [
     {
-      "completed_at": "2026-05-09T08:17:28Z",
+      "completed_at": "2026-05-09T12:50:07Z",
       "exclusive": true,
       "lock_path": "var/reports/exact_window_backtests/followup_status/portfolio_followup_heavy_run.lock",
       "overlap_check": "passed",
-      "started_at": "2026-05-09T08:13:08Z",
+      "path": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/runner_evidence_20260509/leader_integer_leverage_mutex_20260509.json",
+      "reason": "integer leverage rerun with forced current-base combo",
+      "started_at": "2026-05-09T12:42:56Z",
+      "status": "completed"
+    },
+    {
+      "completed_at": "2026-05-09T12:58:00Z",
+      "exclusive": true,
+      "lock_path": "var/reports/exact_window_backtests/followup_status/portfolio_followup_heavy_run.lock",
+      "overlap_check": "passed",
+      "path": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/runner_evidence_20260509/leader_integer_leverage_alpha_v2_mutex_20260509.json",
+      "reason": "integer leverage rerun on alpha_v2 merged candidate universe",
+      "started_at": "2026-05-09T12:50:45Z",
+      "status": "completed"
+    },
+    {
+      "completed_at": "2026-05-09T13:21:06Z",
+      "exclusive": true,
+      "lock_path": "var/reports/exact_window_backtests/followup_status/portfolio_followup_heavy_run.lock",
+      "overlap_check": "passed",
+      "path": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/runner_evidence_20260509/leader_integer_leverage_alpha_v2_top40_mutex_20260509.json",
+      "reason": "integer leverage alpha_v2 top40 wider search",
+      "started_at": "2026-05-09T12:58:32Z",
       "status": "completed"
     }
   ],
-  "live_equivalent_selection_eligible": false,
-  "memory_evidence": {
-    "memory_summaries": [
-      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/continued_optimization_20260509/_memory_guard/profit_moonshot_fresh_portfolio_tuning_memory_latest.json"
-    ],
-    "portfolio_peak_rss_mib": 1239.703125,
-    "rss_under_8gb_logs": [
-      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/continued_optimization_20260509/_memory_guard/profit_moonshot_fresh_portfolio_tuning_memory_latest.json",
-      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/continued_optimization_20260509/_memory_guard/profit_moonshot_fresh_portfolio_tuning_rss_latest.jsonl",
-      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/runner_evidence_20260509/leader_continued_optimization_time.log"
-    ],
-    "time_max_rss_kb": 1269456,
-    "under_8gib": true
+  "integer_leverage_audit": {
+    "decision": "no_improvement_current_base_retained",
+    "leverage_verdict": "integer leverage can improve OOS return but is not promoted unless raw train/train quality/current-base gates pass",
+    "success_candidate_count": 0,
+    "summary_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/integer_leverage_audit_20260509.json",
+    "top40_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/integer_leverage_alpha_v2_top40_20260509/fresh_portfolio_tuning_latest.json",
+    "top40_markdown": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/integer_leverage_alpha_v2_top40_20260509/fresh_portfolio_tuning_latest.md"
   },
   "no_improvement_current_base_retained": true,
-  "passed": true,
-  "passing_candidate_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/continued_optimization_20260509/passing_candidate_latest.json",
-  "pushed_commit": "6556254726db4f70fe8e7eb6d72a6fe9a352c78a",
-  "pushed_ref": "private/main",
-  "required_final_evidence": [
-    "git_push",
-    "ci/private-ci green"
+  "notes": [
+    "No new candidate is promoted under integer/raw-train audit.",
+    "Current base remains the reference/no-improvement retained artifact.",
+    "CI evidence pending for the source/artifact commit."
   ],
+  "passed": false,
+  "passing_candidate_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/continued_optimization_20260509/passing_candidate_latest.json",
   "requires_heavy_mutex_evidence": true,
   "research_success_candidate": true,
-  "return_quality_contract": {
-    "current_base_train_val_stability_score": 16.576134102067016,
-    "locked_oos_use": [
-      "report",
-      "gate"
-    ],
-    "maximum_acceptable_oos_mdd": 0.25,
-    "minimum_oos_calmar": 1.0,
-    "minimum_oos_sharpe": 2.0,
-    "minimum_oos_smart_sortino": 3.0,
-    "minimum_oos_sortino": 3.0,
-    "minimum_stable_monthly_return": 0.02,
-    "minimum_train_calmar": 1.0,
-    "minimum_train_sharpe": 1.5,
-    "minimum_train_sortino": 1.5,
-    "minimum_val_calmar": 3.0,
-    "minimum_val_sharpe": 3.0,
-    "minimum_val_sortino": 3.0,
-    "requires_current_base_oos_return_gt_for_new_candidate": 0.06858164444753312,
-    "requires_current_base_oos_return_risk_gt_for_new_candidate": 8.365932879057214,
-    "requires_locked_oos_total_return_gt_current_champion": 0.012181,
-    "selection_inputs": [
-      "train",
-      "validation"
-    ]
-  },
+  "rss_under_8gb_logs": [
+    "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/integer_leverage_20260509/_memory_guard/profit_moonshot_fresh_portfolio_tuning_memory_latest.json",
+    "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/integer_leverage_20260509/_memory_guard/profit_moonshot_fresh_portfolio_tuning_rss_latest.jsonl",
+    "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/runner_evidence_20260509/leader_integer_leverage_tuning_time.log",
+    "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/integer_leverage_alpha_v2_20260509/_memory_guard/profit_moonshot_fresh_portfolio_tuning_memory_latest.json",
+    "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/integer_leverage_alpha_v2_20260509/_memory_guard/profit_moonshot_fresh_portfolio_tuning_rss_latest.jsonl",
+    "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/runner_evidence_20260509/leader_integer_leverage_alpha_v2_tuning_time.log",
+    "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/integer_leverage_alpha_v2_top40_20260509/_memory_guard/profit_moonshot_fresh_portfolio_tuning_memory_latest.json",
+    "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/integer_leverage_alpha_v2_top40_20260509/_memory_guard/profit_moonshot_fresh_portfolio_tuning_rss_latest.jsonl",
+    "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/runner_evidence_20260509/leader_integer_leverage_alpha_v2_top40_tuning_time.log",
+    "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/runner_evidence_20260509/leader_integer_full_pytest_time.log"
+  ],
   "schema_version": "1.2",
   "selection_outcome": "no_improvement_current_base_retained",
   "source_changed": true,
-  "status": "passed",
-  "summary": "Current-base-gated continuation is complete: no challenger beat the retained base; local verification, push, and GitHub Actions ci/private-ci are green.",
+  "status": "running",
   "test_evidence": [
     {
       "command": "uv run --extra dev pytest -q tests/test_profit_moonshot_fresh_portfolio_tuning.py tests/test_profit_moonshot_pass_under_8gb_validator.py",
       "passed": true,
-      "summary": "22 passed in 0.09s"
+      "summary": "26 passed in 0.10s",
+      "time_log": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/runner_evidence_20260509/leader_integer_targeted_pytest_time.log"
     },
     {
       "command": "uv run --extra dev pytest -q",
       "passed": true,
-      "summary": "1216 passed in 227.75s (0:03:47)",
-      "time_max_rss_kb": 2732444
+      "summary": "1220 passed in 338.07s (0:05:38)",
+      "time_log": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/runner_evidence_20260509/leader_integer_full_pytest_time.log",
+      "time_max_rss_kb": 2673972
     },
     {
       "command": "uv run --extra dev ruff check .",
       "passed": true,
-      "summary": "All checks passed"
+      "summary": "All checks passed",
+      "time_log": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/runner_evidence_20260509/leader_integer_ruff_time.log"
     },
     {
       "command": "python3 -m compileall -q src scripts tests",
       "passed": true,
-      "summary": "passed"
+      "summary": "pass",
+      "time_log": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/runner_evidence_20260509/leader_integer_compileall_time.log"
     },
     {
       "command": "git diff --check",
       "passed": true,
-      "summary": "passed"
+      "summary": "pass",
+      "time_log": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/runner_evidence_20260509/leader_integer_diff_check_time.log"
     }
   ],
-  "tests_passed": true
+  "tests_passed": true,
+  "updated_at_utc": "2026-05-09T13:30:47.371623Z"
 }

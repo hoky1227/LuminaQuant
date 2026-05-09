@@ -73,6 +73,9 @@ CURRENT_BASE_OOS_RETURN_RISK = CURRENT_BASE_OOS_RETURN / CURRENT_BASE_OOS_MDD
 BASELINE_OOS_RETURN = CURRENT_CHAMPION_OOS_RETURN
 SHADOW_OOS_MDD = 0.001778
 MIN_STABLE_MONTHLY_RETURN = 0.02
+MIN_BUFFERED_TRAIN_MONTHLY_RETURN = 0.0225
+MIN_RAW_TRAIN_MONTHLY_RETURN = 0.01
+MIN_RAW_VAL_MONTHLY_RETURN = 0.02
 MAX_ACCEPTABLE_OOS_MDD = 0.25
 SUCCESS_SHARPE = 2.0
 SUCCESS_SORTINO = 3.0
@@ -88,6 +91,7 @@ TARGET_BUDGET_TRAIN_RETURN = 0.05
 TARGET_BUDGET_VAL_RETURN = 0.04
 MIN_TARGET_BUDGET_LEVERAGE = 0.20
 MAX_TRAIN_VAL_MONTHLY_BUDGET_LEVERAGE = 6.0
+MIN_INTEGER_LEVERAGE = 1
 RUN_NAME = "profit_moonshot_fresh_portfolio_tuning"
 LOCKBOX_POLICY = {
     "selection_label": "train_val_validation_only",
@@ -1036,6 +1040,86 @@ def _max_train_val_mdd_leverage(
     return max(0.0, min(max_leverage, float(cap)))
 
 
+def _split_quality_for_leverage(
+    *,
+    fresh: Any,
+    combo_names: tuple[str, ...],
+    split_curves: dict[str, dict[str, list[float]]],
+    leverage: float,
+) -> dict[str, dict[str, float]]:
+    quality: dict[str, dict[str, float]] = {}
+    for split_name in ("train", "val"):
+        metrics = _split_metrics_for_leverage(
+            fresh=fresh,
+            combo_names=combo_names,
+            split_curves=split_curves,
+            split_name=split_name,
+            leverage=leverage,
+        )
+        quality[split_name] = {
+            "monthlyized_return": _monthlyized_return(metrics),
+            "total_return": _safe_float(metrics.get("total_return")),
+            "max_drawdown": _safe_float(metrics.get("max_drawdown"), 1.0),
+            "sharpe": _safe_float(metrics.get("sharpe")),
+            "sortino": _safe_float(metrics.get("sortino")),
+            "calmar": _safe_float(metrics.get("calmar")),
+        }
+    return quality
+
+
+def _integer_leverage_grid(
+    *,
+    fresh: Any,
+    combo_names: tuple[str, ...],
+    split_curves: dict[str, dict[str, list[float]]],
+    max_integer_leverage: int,
+    raw_train_monthly: float,
+    raw_val_monthly: float,
+) -> list[dict[str, Any]]:
+    grid: list[dict[str, Any]] = []
+    for leverage in range(MIN_INTEGER_LEVERAGE, max_integer_leverage + 1):
+        quality = _split_quality_for_leverage(
+            fresh=fresh,
+            combo_names=combo_names,
+            split_curves=split_curves,
+            leverage=float(leverage),
+        )
+        components = {
+            "train_monthlyized_return": quality["train"]["monthlyized_return"],
+            "validation_monthlyized_return": quality["val"]["monthlyized_return"],
+            "train_sharpe": quality["train"]["sharpe"],
+            "validation_sharpe": quality["val"]["sharpe"],
+            "train_sortino": quality["train"]["sortino"],
+            "validation_sortino": quality["val"]["sortino"],
+            "train_calmar": quality["train"]["calmar"],
+            "validation_calmar": quality["val"]["calmar"],
+            "train_max_drawdown": quality["train"]["max_drawdown"],
+            "validation_max_drawdown": quality["val"]["max_drawdown"],
+            "leverage": float(leverage),
+            "sleeve_count": float(len(combo_names)),
+        }
+        raw_quality_pass = (
+            raw_train_monthly >= MIN_RAW_TRAIN_MONTHLY_RETURN
+            and raw_val_monthly >= MIN_RAW_VAL_MONTHLY_RETURN
+        )
+        buffered_train_pass = (
+            components["train_monthlyized_return"] >= MIN_BUFFERED_TRAIN_MONTHLY_RETURN
+        )
+        val_floor_pass = components["validation_monthlyized_return"] >= MIN_STABLE_MONTHLY_RETURN
+        grid.append(
+            {
+                "leverage": leverage,
+                "score": _train_val_stability_score_from_components(components),
+                "components": components,
+                "raw_quality_pass": raw_quality_pass,
+                "buffered_train_pass": buffered_train_pass,
+                "val_floor_pass": val_floor_pass,
+                "train_val_gate_pass": raw_quality_pass and buffered_train_pass and val_floor_pass,
+            }
+        )
+    return grid
+
+
 def _train_val_monthly_return_leverage(
     *,
     fresh: Any,
@@ -1043,6 +1127,14 @@ def _train_val_monthly_return_leverage(
     split_curves: dict[str, dict[str, list[float]]],
 ) -> tuple[float, dict[str, Any]]:
     max_leverage = MAX_TRAIN_VAL_MONTHLY_BUDGET_LEVERAGE
+    raw_quality = _split_quality_for_leverage(
+        fresh=fresh,
+        combo_names=combo_names,
+        split_curves=split_curves,
+        leverage=1.0,
+    )
+    raw_train_monthly = raw_quality["train"]["monthlyized_return"]
+    raw_val_monthly = raw_quality["val"]["monthlyized_return"]
     train_required = _leverage_for_monthly_return(
         fresh=fresh,
         combo_names=combo_names,
@@ -1073,19 +1165,73 @@ def _train_val_monthly_return_leverage(
     )
     raw_required = max(train_required, val_required, 1.0)
     safe_cap = min(max_leverage, train_mdd_cap, val_mdd_cap)
-    leverage = max(MIN_TARGET_BUDGET_LEVERAGE, min(raw_required, safe_cap))
+    max_integer_leverage = max(
+        MIN_INTEGER_LEVERAGE,
+        math.floor(max(MIN_INTEGER_LEVERAGE, safe_cap)),
+    )
+    grid = _integer_leverage_grid(
+        fresh=fresh,
+        combo_names=combo_names,
+        split_curves=split_curves,
+        max_integer_leverage=max_integer_leverage,
+        raw_train_monthly=raw_train_monthly,
+        raw_val_monthly=raw_val_monthly,
+    )
+    train_val_pass_grid = [item for item in grid if bool(item["train_val_gate_pass"])]
+    floor_grid = [
+        item
+        for item in grid
+        if item["leverage"] >= math.ceil(raw_required - 1e-12)
+        and bool(item["buffered_train_pass"])
+        and bool(item["val_floor_pass"])
+    ]
+    selection_pool = train_val_pass_grid or floor_grid or grid
+    selected = max(
+        selection_pool,
+        key=lambda item: (
+            _safe_float(item.get("score")),
+            -int(item.get("leverage") or 0),
+        ),
+    )
+    leverage = float(selected["leverage"])
     diagnostics = {
         "selection_basis": "train_val_monthly_return_budget",
         "uses_locked_oos_for_selection": False,
         "target_monthly_return": MIN_STABLE_MONTHLY_RETURN,
+        "buffered_train_monthly_return": MIN_BUFFERED_TRAIN_MONTHLY_RETURN,
+        "minimum_raw_train_monthly_return": MIN_RAW_TRAIN_MONTHLY_RETURN,
+        "minimum_raw_val_monthly_return": MIN_RAW_VAL_MONTHLY_RETURN,
         "max_train_val_mdd_budget": MAX_ACCEPTABLE_OOS_MDD,
         "max_leverage": max_leverage,
+        "integer_leverage_only": True,
+        "integer_leverage_grid": [int(item["leverage"]) for item in grid],
         "train_required_leverage": float(train_required),
         "val_required_leverage": float(val_required),
         "train_mdd_cap_leverage": float(train_mdd_cap),
         "val_mdd_cap_leverage": float(val_mdd_cap),
+        "continuous_required_leverage": float(raw_required),
         "raw_required_leverage": float(raw_required),
+        "max_safe_integer_leverage": int(max_integer_leverage),
         "selected_leverage": float(leverage),
+        "selected_integer_leverage": int(selected["leverage"]),
+        "selected_grid_score": float(selected["score"]),
+        "selected_grid_train_val_gate_pass": bool(selected["train_val_gate_pass"]),
+        "raw_train_monthlyized_return": raw_train_monthly,
+        "raw_val_monthlyized_return": raw_val_monthly,
+        "raw_train_total_return": raw_quality["train"]["total_return"],
+        "raw_val_total_return": raw_quality["val"]["total_return"],
+        "leverage_grid": [
+            {
+                "leverage": int(item["leverage"]),
+                "score": float(item["score"]),
+                "train_monthlyized_return": float(item["components"]["train_monthlyized_return"]),
+                "val_monthlyized_return": float(item["components"]["validation_monthlyized_return"]),
+                "train_max_drawdown": float(item["components"]["train_max_drawdown"]),
+                "val_max_drawdown": float(item["components"]["validation_max_drawdown"]),
+                "train_val_gate_pass": bool(item["train_val_gate_pass"]),
+            }
+            for item in grid
+        ],
     }
     return leverage, diagnostics
 
@@ -1185,7 +1331,11 @@ def _improved_candidate_from_gates(gates: dict[str, bool]) -> bool:
         "train_return_beats_current_champion",
         "val_return_beats_current_champion",
         "train_monthly_return_gte_2pct",
+        "train_monthly_return_buffer_gte_2_25pct",
         "val_monthly_return_gte_2pct",
+        "raw_train_monthly_return_gte_1pct",
+        "raw_val_monthly_return_gte_2pct",
+        "integer_leverage",
         "train_sharpe_high",
         "train_sortino_high",
         "train_calmar_high",
@@ -1290,13 +1440,36 @@ def _combo_metrics(
     val_monthly_return = _monthlyized_return(val)
     oos_monthly_return = _monthlyized_return(oos)
     oos_smart_sortino = _smart_sortino(oos)
+    raw_train_monthly_return = _safe_float(
+        allocator_diagnostics.get("raw_train_monthlyized_return"),
+        train_monthly_return if leverage == 1.0 else -1.0,
+    )
+    raw_val_monthly_return = _safe_float(
+        allocator_diagnostics.get("raw_val_monthlyized_return"),
+        val_monthly_return if leverage == 1.0 else -1.0,
+    )
+    raw_train_total_return = _safe_float(
+        allocator_diagnostics.get("raw_train_total_return"),
+        train_return if leverage == 1.0 else -1.0,
+    )
+    raw_val_total_return = _safe_float(
+        allocator_diagnostics.get("raw_val_total_return"),
+        val_return if leverage == 1.0 else -1.0,
+    )
+    integer_leverage = math.isclose(float(leverage), float(round(leverage)), rel_tol=0.0, abs_tol=1e-9)
     gates = {
         "train_positive": train_return > 0.0,
         "val_positive": val_return > 0.0,
         "train_return_beats_current_champion": train_return > CURRENT_CHAMPION_TRAIN_RETURN,
         "val_return_beats_current_champion": val_return > CURRENT_CHAMPION_VAL_RETURN,
         "train_monthly_return_gte_2pct": train_monthly_return >= MIN_STABLE_MONTHLY_RETURN,
+        "train_monthly_return_buffer_gte_2_25pct": (
+            train_monthly_return >= MIN_BUFFERED_TRAIN_MONTHLY_RETURN
+        ),
         "val_monthly_return_gte_2pct": val_monthly_return >= MIN_STABLE_MONTHLY_RETURN,
+        "raw_train_monthly_return_gte_1pct": raw_train_monthly_return >= MIN_RAW_TRAIN_MONTHLY_RETURN,
+        "raw_val_monthly_return_gte_2pct": raw_val_monthly_return >= MIN_RAW_VAL_MONTHLY_RETURN,
+        "integer_leverage": integer_leverage,
         "train_sharpe_high": _safe_float(train.get("sharpe")) >= SUCCESS_TRAIN_SHARPE,
         "train_sortino_high": _safe_float(train.get("sortino")) >= SUCCESS_TRAIN_SORTINO,
         "train_calmar_high": _safe_float(train.get("calmar")) >= SUCCESS_TRAIN_CALMAR,
@@ -1324,8 +1497,17 @@ def _combo_metrics(
         "train_monthlyized_return": train_monthly_return,
         "val_monthlyized_return": val_monthly_return,
         "oos_monthlyized_return": oos_monthly_return,
+        "raw_train_monthlyized_return": raw_train_monthly_return,
+        "raw_val_monthlyized_return": raw_val_monthly_return,
+        "raw_train_total_return": raw_train_total_return,
+        "raw_val_total_return": raw_val_total_return,
+        "selected_integer_leverage": round(float(leverage)) if integer_leverage else None,
+        "continuous_required_leverage": allocator_diagnostics.get("continuous_required_leverage"),
         "oos_smart_sortino": oos_smart_sortino,
         "minimum_stable_monthly_return": MIN_STABLE_MONTHLY_RETURN,
+        "minimum_buffered_train_monthly_return": MIN_BUFFERED_TRAIN_MONTHLY_RETURN,
+        "minimum_raw_train_monthly_return": MIN_RAW_TRAIN_MONTHLY_RETURN,
+        "minimum_raw_val_monthly_return": MIN_RAW_VAL_MONTHLY_RETURN,
         "maximum_acceptable_oos_mdd": MAX_ACCEPTABLE_OOS_MDD,
         "minimum_oos_sharpe": SUCCESS_SHARPE,
         "minimum_oos_sortino": SUCCESS_SORTINO,
@@ -1381,6 +1563,12 @@ def _flatten_row(item: dict[str, Any]) -> dict[str, Any]:
             "train_monthlyized_return",
             "val_monthlyized_return",
             "oos_monthlyized_return",
+            "raw_train_monthlyized_return",
+            "raw_val_monthlyized_return",
+            "raw_train_total_return",
+            "raw_val_total_return",
+            "selected_integer_leverage",
+            "continuous_required_leverage",
             "oos_smart_sortino",
         ):
             row[key] = _safe_float(quality.get(key), 0.0)
@@ -1401,7 +1589,10 @@ def _flatten_row(item: dict[str, Any]) -> dict[str, Any]:
         for key in CURRENT_BASE_GATE_KEYS:
             row[key] = bool(dict(current_base.get("gates") or {}).get(key))
     if item.get("allocator_diagnostics"):
-        row["allocator_selection_basis"] = dict(item["allocator_diagnostics"]).get("selection_basis", "")
+        diagnostics = dict(item["allocator_diagnostics"])
+        row["allocator_selection_basis"] = diagnostics.get("selection_basis", "")
+        row["allocator_integer_leverage_only"] = bool(diagnostics.get("integer_leverage_only"))
+        row["allocator_selected_grid_score"] = _safe_float(diagnostics.get("selected_grid_score"), 0.0)
     for split_name, split in item["splits"].items():
         metrics = split["metrics"]
         for key in ("total_return", "cagr", "max_drawdown", "sharpe", "sortino", "calmar", "volatility"):
@@ -1465,6 +1656,8 @@ def _markdown(payload: dict[str, Any], rows: list[dict[str, Any]]) -> str:
         f"`{CURRENT_BASE_TRAIN_VAL_STABILITY_SCORE:.6f}`).",
         f"- No-improvement lifecycle: `{lifecycle.get('status', 'not_recorded')}`.",
         f"- Stable-return floor: train, validation, and locked-OOS monthlyized return `>={MIN_STABLE_MONTHLY_RETURN:.2%}`.",
+        f"- Train buffer: post-leverage train monthlyized return `>={MIN_BUFFERED_TRAIN_MONTHLY_RETURN:.2%}` and raw/unlevered train monthlyized return `>={MIN_RAW_TRAIN_MONTHLY_RETURN:.2%}`.",
+        "- Leverage policy: `train_val_monthly_return_budget` uses an integer train/validation-only grid; continuous floor-fitting leverage is diagnostic only.",
         f"- MDD budget: locked-OOS max drawdown `≤{MAX_ACCEPTABLE_OOS_MDD:.2%}`.",
         f"- Quality floors: OOS Sharpe `≥{SUCCESS_SHARPE:.1f}`, Sortino `≥{SUCCESS_SORTINO:.1f}`, smart Sortino `≥{SUCCESS_SMART_SORTINO:.1f}`, Calmar `≥{SUCCESS_CALMAR:.1f}`.",
         f"- Incumbent improvement still requires current-champion return/risk improvement from OOS return `>{CURRENT_CHAMPION_OOS_RETURN:.4%}`.",
@@ -1496,6 +1689,7 @@ def _markdown(payload: dict[str, Any], rows: list[dict[str, Any]]) -> str:
                 f"- val: `{_fmt_pct(split.get('val', {}).get('metrics', {}).get('total_return'))}`",
                 f"- locked OOS: `{_fmt_pct(split.get('oos', {}).get('metrics', {}).get('total_return'))}`, Sharpe `{_fmt_float(split.get('oos', {}).get('metrics', {}).get('sharpe'))}`, MDD `{_fmt_pct(split.get('oos', {}).get('metrics', {}).get('max_drawdown'))}`",
                 f"- monthlyized train/val/OOS: `{_fmt_pct((selected.get('return_quality') or {}).get('train_monthlyized_return'))}` / `{_fmt_pct((selected.get('return_quality') or {}).get('val_monthlyized_return'))}` / `{_fmt_pct((selected.get('return_quality') or {}).get('oos_monthlyized_return'))}`; smart Sortino `{_fmt_float((selected.get('return_quality') or {}).get('oos_smart_sortino'))}`",
+                f"- raw monthlyized train/val: `{_fmt_pct((selected.get('return_quality') or {}).get('raw_train_monthlyized_return'))}` / `{_fmt_pct((selected.get('return_quality') or {}).get('raw_val_monthlyized_return'))}`; leverage `{_fmt_float(selected.get('leverage'))}`",
                 f"- promotion status: `{selected.get('promotion_status')}` / failed gates: `{','.join(selected.get('failed_gates') or [])}`",
                 "",
             ]
@@ -1513,6 +1707,7 @@ def _markdown(payload: dict[str, Any], rows: list[dict[str, Any]]) -> str:
                 f"- val: `{_fmt_pct(split.get('val', {}).get('metrics', {}).get('total_return'))}`",
                 f"- locked OOS: `{_fmt_pct(split.get('oos', {}).get('metrics', {}).get('total_return'))}`, Sharpe `{_fmt_float(split.get('oos', {}).get('metrics', {}).get('sharpe'))}`, MDD `{_fmt_pct(split.get('oos', {}).get('metrics', {}).get('max_drawdown'))}`",
                 f"- monthlyized train/val/OOS: `{_fmt_pct((best_success.get('return_quality') or {}).get('train_monthlyized_return'))}` / `{_fmt_pct((best_success.get('return_quality') or {}).get('val_monthlyized_return'))}` / `{_fmt_pct((best_success.get('return_quality') or {}).get('oos_monthlyized_return'))}`; smart Sortino `{_fmt_float((best_success.get('return_quality') or {}).get('oos_smart_sortino'))}`",
+                f"- raw monthlyized train/val: `{_fmt_pct((best_success.get('return_quality') or {}).get('raw_train_monthlyized_return'))}` / `{_fmt_pct((best_success.get('return_quality') or {}).get('raw_val_monthlyized_return'))}`; leverage `{_fmt_float(best_success.get('leverage'))}`",
                 f"- promotion status: `{best_success.get('promotion_status')}` / failed gates: `{','.join(best_success.get('failed_gates') or [])}`",
                 "",
             ]
@@ -1606,6 +1801,24 @@ def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[dict[s
         family_quota=int(args.family_quota),
         calendar_neighborhood_reps=int(args.calendar_neighborhood_reps),
     )
+    current_base_sleeves = [str(name) for name in current_base_candidate.get("sleeves") or [] if str(name)]
+    if current_base_sleeves:
+        rows_by_name = {str(row.get("name") or ""): row for row in rows}
+        pool_names = {str(row.get("name") or "") for row in pool}
+        anchored_rows: list[dict[str, str]] = []
+        for name in current_base_sleeves:
+            row = rows_by_name.get(name)
+            if not row or name in pool_names:
+                continue
+            if _safe_float(row.get("train_total_return")) <= 0.0 or _safe_float(row.get("val_total_return")) <= 0.0:
+                continue
+            anchored_rows.append(row)
+            pool_names.add(name)
+        if anchored_rows:
+            pool.extend(anchored_rows)
+        pool_policy["current_base_anchor_names"] = current_base_sleeves
+        pool_policy["current_base_anchor_added"] = [str(row.get("name") or "") for row in anchored_rows]
+        pool_policy["current_base_anchor_selection_basis"] = "current_base_train_val_recheck_only"
     oos_end = datetime.fromisoformat(str(args.oos_end_date)).date()
     splits = fresh._split_windows(oos_end=oos_end)
     start = min(split.start for split in splits)
@@ -1637,34 +1850,48 @@ def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[dict[s
     max_k = max(2, min(int(args.max_sleeves), len(names))) if names else 0
     max_combos_per_size = max(1, int(args.max_combos_per_size))
     combo_limit_hits: dict[str, int] = {}
+    evaluated_combos: set[frozenset[str]] = set()
+    forced_combo_names: list[tuple[str, ...]] = []
+    if 2 <= len(current_base_sleeves) <= max_k and all(name in names for name in current_base_sleeves):
+        forced_combo_names.append(tuple(current_base_sleeves))
+
+    def _append_combo(combo: tuple[str, ...]) -> None:
+        combo_key = frozenset(combo)
+        if combo_key in evaluated_combos:
+            return
+        evaluated_combos.add(combo_key)
+        for mode in (
+            "equal_weight",
+            "additive_sleeves",
+            "train_val_target_return_budget",
+            "train_val_monthly_return_budget",
+            "validation_return_risk_weight",
+            "validation_drawdown_budget",
+            "cluster_capped_validation_weight",
+        ):
+            portfolio_items.append(
+                _combo_metrics(
+                    fresh=fresh,
+                    combo_names=combo,
+                    split_curves=split_curves,
+                    split_payloads=split_payloads,
+                    mode=mode,
+                    candidate_rows_by_name=candidate_rows_by_name,
+                    current_base_candidate=current_base_candidate,
+                    cluster_cap=float(args.cluster_cap),
+                    sleeve_cap=float(args.sleeve_cap),
+                    correlation_threshold=float(args.correlation_threshold),
+                )
+            )
+
+    for combo in forced_combo_names:
+        _append_combo(combo)
     for size in range(2, max_k + 1):
         total_for_size = math.comb(len(names), size)
         if total_for_size > max_combos_per_size:
             combo_limit_hits[str(size)] = int(total_for_size - max_combos_per_size)
         for combo in itertools.islice(itertools.combinations(names, size), max_combos_per_size):
-            for mode in (
-                "equal_weight",
-                "additive_sleeves",
-                "train_val_target_return_budget",
-                "train_val_monthly_return_budget",
-                "validation_return_risk_weight",
-                "validation_drawdown_budget",
-                "cluster_capped_validation_weight",
-            ):
-                portfolio_items.append(
-                    _combo_metrics(
-                        fresh=fresh,
-                        combo_names=combo,
-                        split_curves=split_curves,
-                        split_payloads=split_payloads,
-                        mode=mode,
-                        candidate_rows_by_name=candidate_rows_by_name,
-                        current_base_candidate=current_base_candidate,
-                        cluster_cap=float(args.cluster_cap),
-                        sleeve_cap=float(args.sleeve_cap),
-                        correlation_threshold=float(args.correlation_threshold),
-                    )
-                )
+            _append_combo(combo)
     portfolio_items.sort(key=_portfolio_report_sort_key)
     csv_rows = [_flatten_row(item) for item in portfolio_items]
     selected_by_validation = max(portfolio_items, key=_train_val_stability_sort_key, default={})
@@ -1713,6 +1940,7 @@ def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[dict[s
             "limit_hits_by_size": combo_limit_hits,
             "pool_order": pool_policy.get("pool_order"),
             "family_quota": int(args.family_quota),
+            "forced_current_base_combos": [list(combo) for combo in forced_combo_names],
         },
         "candidate_pool_policy": pool_policy,
         "allocator_policy": {
@@ -1732,6 +1960,11 @@ def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[dict[s
             "uses_locked_oos_for_selection": False,
             "train_val_stability_formula": "frozen_weighted_train_validation_score_v1",
             "train_val_stability_components": list(TRAIN_VAL_STABILITY_COMPONENTS),
+            "integer_leverage_only": True,
+            "integer_leverage_grid": list(range(MIN_INTEGER_LEVERAGE, int(MAX_TRAIN_VAL_MONTHLY_BUDGET_LEVERAGE) + 1)),
+            "minimum_buffered_train_monthly_return": MIN_BUFFERED_TRAIN_MONTHLY_RETURN,
+            "minimum_raw_train_monthly_return": MIN_RAW_TRAIN_MONTHLY_RETURN,
+            "minimum_raw_val_monthly_return": MIN_RAW_VAL_MONTHLY_RETURN,
         },
         "success_candidate_count": len(success_candidates),
         "best_success_candidate": best_success_candidate,

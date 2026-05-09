@@ -27,6 +27,8 @@ def _passing_candidate_payload() -> dict:
         "metrics": {
             "train_monthlyized_return": 0.030,
             "validation_monthlyized_return": 0.110,
+            "raw_train_monthlyized_return": 0.012,
+            "raw_val_monthlyized_return": 0.030,
             "train_max_drawdown": 0.050,
             "validation_max_drawdown": 0.040,
             "train_sharpe": 2.0,
@@ -186,6 +188,72 @@ def test_validator_rejects_candidate_that_beats_old_champion_but_not_current_bas
     assert details["current_champion_oos_return"] == validator.CURRENT_CHAMPION_OOS_RETURN
     assert details["current_base_oos_return"] == validator.CURRENT_BASE_OOS_RETURN
     assert details["locked_oos_total_return"] == pytest.approx(validator.CURRENT_BASE_OOS_RETURN - 0.001)
+
+
+def test_validator_rejects_floor_fit_candidate_with_weak_raw_train(tmp_path: Path) -> None:
+    candidate_path = tmp_path / "candidate.json"
+    rss_summary = tmp_path / "rss_summary.json"
+    result_path = tmp_path / "result.json"
+    candidate = _passing_candidate_payload()
+    candidate["metrics"]["train_monthlyized_return"] = 0.030
+    candidate["metrics"]["raw_train_monthlyized_return"] = validator.MIN_RAW_TRAIN_MONTHLY_RETURN - 0.001
+    _write_json(candidate_path, candidate)
+    _write_json(rss_summary, {"peak_rss_bytes": 512 * 1024 * 1024})
+    _write_json(
+        result_path,
+        {
+            "status": "passed",
+            "passed": True,
+            "source_changed": False,
+            "passing_candidate_artifact": "candidate.json",
+            "rss_under_8gb_logs": ["rss_summary.json"],
+            "tests_passed": True,
+            "ci_passed": True,
+        },
+    )
+
+    payload = validator.validate(result_path, repo_root=tmp_path)
+
+    assert payload["passed"] is False
+    quality_check = next(
+        check for check in payload["checks"] if check["name"] == "candidate_return_quality_contract"
+    )
+    details = json.loads(quality_check["detail"])
+    assert quality_check["passed"] is False
+    assert details["train_monthlyized_return"] >= validator.MIN_BUFFERED_TRAIN_MONTHLY_RETURN
+    assert details["raw_train_monthlyized_return"] < validator.MIN_RAW_TRAIN_MONTHLY_RETURN
+
+
+def test_validator_rejects_fractional_leverage_candidate(tmp_path: Path) -> None:
+    candidate_path = tmp_path / "candidate.json"
+    rss_summary = tmp_path / "rss_summary.json"
+    result_path = tmp_path / "result.json"
+    candidate = _passing_candidate_payload()
+    candidate["metrics"]["leverage"] = 2.5
+    _write_json(candidate_path, candidate)
+    _write_json(rss_summary, {"peak_rss_bytes": 512 * 1024 * 1024})
+    _write_json(
+        result_path,
+        {
+            "status": "passed",
+            "passed": True,
+            "source_changed": False,
+            "passing_candidate_artifact": "candidate.json",
+            "rss_under_8gb_logs": ["rss_summary.json"],
+            "tests_passed": True,
+            "ci_passed": True,
+        },
+    )
+
+    payload = validator.validate(result_path, repo_root=tmp_path)
+
+    assert payload["passed"] is False
+    quality_check = next(
+        check for check in payload["checks"] if check["name"] == "candidate_return_quality_contract"
+    )
+    details = json.loads(quality_check["detail"])
+    assert quality_check["passed"] is False
+    assert details["leverage"] == pytest.approx(2.5)
 
 
 def test_validator_accepts_no_improvement_current_base_retention(tmp_path: Path) -> None:

@@ -49,6 +49,9 @@ CURRENT_BASE_OOS_RETURN = 0.06858164444753312
 CURRENT_BASE_OOS_MDD = 0.008197728267604966
 CURRENT_BASE_OOS_RETURN_RISK = CURRENT_BASE_OOS_RETURN / CURRENT_BASE_OOS_MDD
 MIN_STABLE_MONTHLY_RETURN = 0.02
+MIN_BUFFERED_TRAIN_MONTHLY_RETURN = 0.0225
+MIN_RAW_TRAIN_MONTHLY_RETURN = 0.01
+MIN_RAW_VAL_MONTHLY_RETURN = 0.02
 MAX_ACCEPTABLE_OOS_MDD = 0.25
 MIN_OOS_SHARPE = 2.0
 MIN_OOS_SORTINO = 3.0
@@ -355,6 +358,19 @@ def _train_val_metric(
     return _safe_float(_split_metrics(source_candidate, split_name).get(metric_name))
 
 
+def _raw_monthlyized_return(sources: Iterable[Mapping[str, Any]], split_name: str) -> float | None:
+    aliases = {
+        "train": ("raw_train_monthlyized_return", "unlevered_train_monthlyized_return"),
+        "val": (
+            "raw_val_monthlyized_return",
+            "raw_validation_monthlyized_return",
+            "unlevered_val_monthlyized_return",
+            "unlevered_validation_monthlyized_return",
+        ),
+    }
+    return _first_float_from_sources(sources, aliases[split_name])
+
+
 def _candidate_leverage(
     sources: Iterable[Mapping[str, Any]],
     candidate_payload: Mapping[str, Any],
@@ -471,6 +487,8 @@ def _candidate_return_quality_check(
     train_monthly = _split_monthlyized_return(sources, source_candidate, "train")
     val_monthly = _split_monthlyized_return(sources, source_candidate, "val")
     oos_monthly = _split_monthlyized_return(sources, source_candidate, "oos")
+    raw_train_monthly = _raw_monthlyized_return(sources, "train")
+    raw_val_monthly = _raw_monthlyized_return(sources, "val")
     oos_return = _locked_oos_metric(sources, source_candidate, "total_return")
     oos_mdd = _locked_oos_metric(sources, source_candidate, "max_drawdown")
     oos_sharpe = _locked_oos_metric(sources, source_candidate, "sharpe")
@@ -511,6 +529,9 @@ def _candidate_return_quality_check(
         oos_smart_sortino = _smart_sortino(oos_monthly, oos_mdd, oos_sortino)
     details = {
         "minimum_stable_monthly_return": MIN_STABLE_MONTHLY_RETURN,
+        "minimum_buffered_train_monthly_return": MIN_BUFFERED_TRAIN_MONTHLY_RETURN,
+        "minimum_raw_train_monthly_return": MIN_RAW_TRAIN_MONTHLY_RETURN,
+        "minimum_raw_val_monthly_return": MIN_RAW_VAL_MONTHLY_RETURN,
         "maximum_acceptable_oos_mdd": MAX_ACCEPTABLE_OOS_MDD,
         "minimum_oos_sharpe": MIN_OOS_SHARPE,
         "minimum_oos_sortino": MIN_OOS_SORTINO,
@@ -529,6 +550,8 @@ def _candidate_return_quality_check(
         "no_improvement_base_retained": no_improvement_base_retained,
         "train_monthlyized_return": train_monthly,
         "val_monthlyized_return": val_monthly,
+        "raw_train_monthlyized_return": raw_train_monthly,
+        "raw_val_monthlyized_return": raw_val_monthly,
         "train_sharpe": train_sharpe,
         "train_sortino": train_sortino,
         "train_calmar": train_calmar,
@@ -573,9 +596,26 @@ def _candidate_return_quality_check(
             else train_val_stability_score > CURRENT_BASE_TRAIN_VAL_STABILITY_SCORE
         )
     )
+    raw_train_check = (
+        no_improvement_base_retained
+        if raw_train_monthly is None
+        else raw_train_monthly >= MIN_RAW_TRAIN_MONTHLY_RETURN
+    )
+    raw_val_check = (
+        no_improvement_base_retained
+        if raw_val_monthly is None
+        else raw_val_monthly >= MIN_RAW_VAL_MONTHLY_RETURN
+    )
+    integer_leverage_check = no_improvement_base_retained or abs(leverage - round(leverage)) <= 1e-9
     checks = (
         train_monthly is not None and train_monthly >= MIN_STABLE_MONTHLY_RETURN,
+        train_monthly is not None and train_monthly >= MIN_BUFFERED_TRAIN_MONTHLY_RETURN
+        if not no_improvement_base_retained
+        else train_monthly is not None and train_monthly >= MIN_STABLE_MONTHLY_RETURN,
         val_monthly is not None and val_monthly >= MIN_STABLE_MONTHLY_RETURN,
+        raw_train_check,
+        raw_val_check,
+        integer_leverage_check,
         train_sharpe is not None and train_sharpe >= MIN_TRAIN_SHARPE,
         train_sortino is not None and train_sortino >= MIN_TRAIN_SORTINO,
         train_calmar is not None and train_calmar >= MIN_TRAIN_CALMAR,

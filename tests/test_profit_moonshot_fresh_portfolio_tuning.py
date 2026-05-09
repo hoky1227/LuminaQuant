@@ -769,10 +769,122 @@ def test_train_val_monthly_return_budget_targets_two_percent_monthly_without_oos
 
     assert weights is None
     assert leverage > 1.0
+    assert leverage == float(round(leverage))
     assert MODULE._monthlyized_return(selected_train_metrics) >= MODULE.MIN_STABLE_MONTHLY_RETURN
     assert diagnostics["selection_basis"] == "train_val_monthly_return_budget"
     assert diagnostics["uses_locked_oos_for_selection"] is False
+    assert diagnostics["integer_leverage_only"] is True
+    assert diagnostics["selected_integer_leverage"] == round(leverage)
+    assert diagnostics["continuous_required_leverage"] > 1.0
+    assert diagnostics["raw_train_monthlyized_return"] < MODULE.MIN_STABLE_MONTHLY_RETURN
     assert diagnostics["target_monthly_return"] == MODULE.MIN_STABLE_MONTHLY_RETURN
+
+
+def test_train_val_monthly_return_budget_records_raw_floor_fit_gates() -> None:
+    class _Fresh:
+        HOURLY_PERIODS_PER_YEAR = 365 * 24
+
+        @staticmethod
+        def _metrics_from_equity_totals(equity: list[float], *, periods: int) -> dict[str, float]:
+            del periods
+            total_return = equity[-1] / 10_000.0 - 1.0
+            peak = equity[0]
+            max_drawdown = 0.0
+            for value in equity:
+                peak = max(peak, value)
+                if peak > 0.0:
+                    max_drawdown = max(max_drawdown, 1.0 - value / peak)
+            return {
+                "total_return": total_return,
+                "cagr": total_return,
+                "max_drawdown": max_drawdown,
+                "sharpe": 4.0,
+                "sortino": 4.0,
+                "calmar": total_return / max(max_drawdown, 1e-9),
+                "volatility": 0.01,
+            }
+
+    split_payloads = {
+        name: {split: {"round_trips": 8, "fills": 16} for split in ("train", "val", "oos")}
+        for name in ("sleeve_a", "sleeve_b")
+    }
+    split_curves = {
+        "sleeve_a": {
+            "train": [10_000.0, 10_500.0],
+            "val": [10_000.0, 10_600.0],
+            "oos": [10_000.0, 10_300.0],
+        },
+        "sleeve_b": {
+            "train": [10_000.0, 10_500.0],
+            "val": [10_000.0, 10_600.0],
+            "oos": [10_000.0, 10_300.0],
+        },
+    }
+
+    item = MODULE._combo_metrics(
+        fresh=_Fresh(),
+        combo_names=("sleeve_a", "sleeve_b"),
+        split_curves=split_curves,
+        split_payloads=split_payloads,
+        mode="train_val_monthly_return_budget",
+    )
+
+    assert item["leverage"] == float(round(item["leverage"]))
+    assert item["return_quality"]["raw_train_monthlyized_return"] < MODULE.MIN_RAW_TRAIN_MONTHLY_RETURN
+    assert item["return_quality"]["train_monthlyized_return"] >= MODULE.MIN_BUFFERED_TRAIN_MONTHLY_RETURN
+    assert item["gates"]["integer_leverage"] is True
+    assert item["gates"]["raw_train_monthly_return_gte_1pct"] is False
+    assert item["promotion_status"] == "diagnostic_not_promoted"
+
+
+def test_integer_leverage_grid_does_not_pick_highest_when_stability_worsens() -> None:
+    class _Fresh:
+        HOURLY_PERIODS_PER_YEAR = 365 * 24
+
+        @staticmethod
+        def _metrics_from_equity_totals(equity: list[float], *, periods: int) -> dict[str, float]:
+            del periods
+            total_return = equity[-1] / 10_000.0 - 1.0
+            peak = equity[0]
+            max_drawdown = 0.0
+            for value in equity:
+                peak = max(peak, value)
+                if peak > 0.0:
+                    max_drawdown = max(max_drawdown, 1.0 - value / peak)
+            return {
+                "total_return": total_return,
+                "cagr": total_return,
+                "max_drawdown": max_drawdown,
+                "sharpe": 3.5 / (1.0 + 30.0 * max_drawdown),
+                "sortino": 3.5 / (1.0 + 40.0 * max_drawdown),
+                "calmar": total_return / max(max_drawdown, 1e-9),
+                "volatility": max_drawdown,
+            }
+
+    split_curves = {
+        "sleeve_a": {
+            "train": [10_000.0, 10_200.0, 9_900.0, 10_700.0],
+            "val": [10_000.0, 10_400.0, 9_900.0, 11_200.0],
+            "oos": [10_000.0, 10_100.0],
+        },
+        "sleeve_b": {
+            "train": [10_000.0, 10_100.0, 9_900.0, 10_600.0],
+            "val": [10_000.0, 10_300.0, 9_900.0, 11_000.0],
+            "oos": [10_000.0, 10_100.0],
+        },
+    }
+
+    _, leverage, diagnostics = MODULE._mode_weights_and_leverage(
+        fresh=_Fresh(),
+        combo_names=("sleeve_a", "sleeve_b"),
+        split_curves=split_curves,
+        split_payloads={},
+        mode="train_val_monthly_return_budget",
+    )
+
+    assert diagnostics["max_safe_integer_leverage"] > leverage
+    assert leverage == 1.0
+    assert diagnostics["leverage_grid"][0]["score"] > diagnostics["leverage_grid"][-1]["score"]
 
 
 def test_monthly_return_failed_diagnostic_is_quarantined_not_promoted() -> None:
@@ -848,7 +960,11 @@ def test_success_requires_two_percent_monthly_return_and_quality_gates() -> None
             "train_return_beats_current_champion": True,
             "val_return_beats_current_champion": True,
             "train_monthly_return_gte_2pct": True,
+            "train_monthly_return_buffer_gte_2_25pct": True,
             "val_monthly_return_gte_2pct": True,
+            "raw_train_monthly_return_gte_1pct": True,
+            "raw_val_monthly_return_gte_2pct": True,
+            "integer_leverage": True,
             "train_sharpe_high": True,
             "train_sortino_high": True,
             "train_calmar_high": True,
@@ -875,6 +991,18 @@ def test_success_requires_two_percent_monthly_return_and_quality_gates() -> None
 
     failing = dict(passing["gates"], oos_monthly_return_gte_2pct=False)
     assert not MODULE._improved_candidate_from_gates(failing)
+
+    floor_fitted_train = dict(
+        passing["gates"],
+        train_monthly_return_buffer_gte_2_25pct=False,
+    )
+    assert not MODULE._improved_candidate_from_gates(floor_fitted_train)
+
+    weak_raw_train = dict(passing["gates"], raw_train_monthly_return_gte_1pct=False)
+    assert not MODULE._improved_candidate_from_gates(weak_raw_train)
+
+    fractional_leverage = dict(passing["gates"], integer_leverage=False)
+    assert not MODULE._improved_candidate_from_gates(fractional_leverage)
 
     no_incumbent_improvement = dict(passing["gates"], oos_return_beats_current_champion=False)
     assert not MODULE._improved_candidate_from_gates(no_incumbent_improvement)
