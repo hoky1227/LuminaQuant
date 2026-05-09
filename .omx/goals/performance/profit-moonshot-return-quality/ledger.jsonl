@@ -1,0 +1,2 @@
+{"ts":"2026-05-09T06:30:57.492Z","event":"workflow_created","status":"created","message":"Performance goal created with evaluator contract"}
+{"ts":"2026-05-09T06:30:57.652Z","event":"goal_handoff_emitted","status":"in_progress","message":"Emitted model-facing Codex goal handoff; shell command did not mutate Codex goal state"}

@@ -57,9 +57,16 @@ SUCCESS_SHARPE = 2.0
 SUCCESS_SORTINO = 3.0
 SUCCESS_SMART_SORTINO = 3.0
 SUCCESS_CALMAR = 1.0
+SUCCESS_TRAIN_SHARPE = 1.5
+SUCCESS_TRAIN_SORTINO = 1.5
+SUCCESS_TRAIN_CALMAR = 1.0
+SUCCESS_VAL_SHARPE = 3.0
+SUCCESS_VAL_SORTINO = 3.0
+SUCCESS_VAL_CALMAR = 3.0
 TARGET_BUDGET_TRAIN_RETURN = 0.05
 TARGET_BUDGET_VAL_RETURN = 0.04
 MIN_TARGET_BUDGET_LEVERAGE = 0.20
+MAX_TRAIN_VAL_MONTHLY_BUDGET_LEVERAGE = 6.0
 RUN_NAME = "profit_moonshot_fresh_portfolio_tuning"
 LOCKBOX_POLICY = {
     "selection_label": "train_val_validation_only",
@@ -318,7 +325,11 @@ def _combine_equity(
         returns.append(arr / 10_000.0 - 1.0)
     stacked = np.vstack(returns)
     if weights is None:
-        if mode in {"additive_sleeves", "train_val_target_return_budget"}:
+        if mode in {
+            "additive_sleeves",
+            "train_val_target_return_budget",
+            "train_val_monthly_return_budget",
+        }:
             weight_arr = np.ones(stacked.shape[0], dtype=float)
         elif mode == "equal_weight":
             weight_arr = np.full(stacked.shape[0], 1.0 / float(stacked.shape[0]), dtype=float)
@@ -582,6 +593,142 @@ def _train_val_target_return_leverage(
     }
 
 
+def _split_metrics_for_leverage(
+    *,
+    fresh: Any,
+    combo_names: tuple[str, ...],
+    split_curves: dict[str, dict[str, list[float]]],
+    split_name: str,
+    leverage: float,
+) -> dict[str, Any]:
+    equity = _combine_equity(
+        [split_curves[name][split_name] for name in combo_names],
+        mode="train_val_monthly_return_budget",
+        leverage=leverage,
+    )
+    if not equity:
+        return {}
+    return fresh._metrics_from_equity_totals(
+        equity,
+        periods=int(getattr(fresh, "HOURLY_PERIODS_PER_YEAR", 365 * 24)),
+    )
+
+
+def _leverage_for_monthly_return(
+    *,
+    fresh: Any,
+    combo_names: tuple[str, ...],
+    split_curves: dict[str, dict[str, list[float]]],
+    split_name: str,
+    max_leverage: float,
+) -> float:
+    base_metrics = _split_metrics_for_leverage(
+        fresh=fresh,
+        combo_names=combo_names,
+        split_curves=split_curves,
+        split_name=split_name,
+        leverage=1.0,
+    )
+    if _monthlyized_return(base_metrics) >= MIN_STABLE_MONTHLY_RETURN:
+        return 1.0
+    raw_total_return = _safe_float(base_metrics.get("total_return"))
+    raw_cagr = _safe_float(base_metrics.get("cagr"))
+    if raw_total_return <= 0.0 or raw_cagr <= -1.0:
+        return max_leverage
+    target_cagr = (1.0 + MIN_STABLE_MONTHLY_RETURN) ** 12.0 - 1.0
+    annualization = 1.0
+    if raw_total_return > -1.0 and raw_cagr > -1.0:
+        try:
+            annualization = math.log1p(raw_cagr) / math.log1p(raw_total_return)
+        except (ValueError, ZeroDivisionError):
+            annualization = 1.0
+    if not math.isfinite(annualization) or annualization <= 0.0:
+        annualization = 1.0
+    target_total_return = (1.0 + target_cagr) ** (1.0 / annualization) - 1.0
+    required = target_total_return / raw_total_return
+    if not math.isfinite(required):
+        return max_leverage
+    return max(1.0, min(max_leverage, float(required)))
+
+
+def _max_train_val_mdd_leverage(
+    *,
+    fresh: Any,
+    combo_names: tuple[str, ...],
+    split_curves: dict[str, dict[str, list[float]]],
+    split_name: str,
+    max_leverage: float,
+) -> float:
+    base_metrics = _split_metrics_for_leverage(
+        fresh=fresh,
+        combo_names=combo_names,
+        split_curves=split_curves,
+        split_name=split_name,
+        leverage=1.0,
+    )
+    raw_mdd = _safe_float(base_metrics.get("max_drawdown"), 0.0)
+    if raw_mdd <= 0.0:
+        return max_leverage
+    cap = MAX_ACCEPTABLE_OOS_MDD / raw_mdd
+    if not math.isfinite(cap):
+        return max_leverage
+    return max(0.0, min(max_leverage, float(cap)))
+
+
+def _train_val_monthly_return_leverage(
+    *,
+    fresh: Any,
+    combo_names: tuple[str, ...],
+    split_curves: dict[str, dict[str, list[float]]],
+) -> tuple[float, dict[str, Any]]:
+    max_leverage = MAX_TRAIN_VAL_MONTHLY_BUDGET_LEVERAGE
+    train_required = _leverage_for_monthly_return(
+        fresh=fresh,
+        combo_names=combo_names,
+        split_curves=split_curves,
+        split_name="train",
+        max_leverage=max_leverage,
+    )
+    val_required = _leverage_for_monthly_return(
+        fresh=fresh,
+        combo_names=combo_names,
+        split_curves=split_curves,
+        split_name="val",
+        max_leverage=max_leverage,
+    )
+    train_mdd_cap = _max_train_val_mdd_leverage(
+        fresh=fresh,
+        combo_names=combo_names,
+        split_curves=split_curves,
+        split_name="train",
+        max_leverage=max_leverage,
+    )
+    val_mdd_cap = _max_train_val_mdd_leverage(
+        fresh=fresh,
+        combo_names=combo_names,
+        split_curves=split_curves,
+        split_name="val",
+        max_leverage=max_leverage,
+    )
+    raw_required = max(train_required, val_required, 1.0)
+    safe_cap = min(max_leverage, train_mdd_cap, val_mdd_cap)
+    leverage = max(MIN_TARGET_BUDGET_LEVERAGE, min(raw_required, safe_cap))
+    diagnostics = {
+        "selection_basis": "train_val_monthly_return_budget",
+        "uses_locked_oos_for_selection": False,
+        "target_monthly_return": MIN_STABLE_MONTHLY_RETURN,
+        "max_train_val_mdd_budget": MAX_ACCEPTABLE_OOS_MDD,
+        "max_leverage": max_leverage,
+        "train_required_leverage": float(train_required),
+        "val_required_leverage": float(val_required),
+        "train_mdd_cap_leverage": float(train_mdd_cap),
+        "val_mdd_cap_leverage": float(val_mdd_cap),
+        "raw_required_leverage": float(raw_required),
+        "selected_leverage": float(leverage),
+    }
+    return leverage, diagnostics
+
+
 def _mode_weights_and_leverage(
     *,
     fresh: Any,
@@ -598,6 +745,13 @@ def _mode_weights_and_leverage(
         return None, 1.0, {}
     if mode == "train_val_target_return_budget":
         leverage, diagnostics = _train_val_target_return_leverage(
+            fresh=fresh,
+            combo_names=combo_names,
+            split_curves=split_curves,
+        )
+        return None, leverage, diagnostics
+    if mode == "train_val_monthly_return_budget":
+        leverage, diagnostics = _train_val_monthly_return_leverage(
             fresh=fresh,
             combo_names=combo_names,
             split_curves=split_curves,
@@ -671,6 +825,12 @@ def _improved_candidate_from_gates(gates: dict[str, bool]) -> bool:
         "val_return_beats_current_champion",
         "train_monthly_return_gte_2pct",
         "val_monthly_return_gte_2pct",
+        "train_sharpe_high",
+        "train_sortino_high",
+        "train_calmar_high",
+        "val_sharpe_high",
+        "val_sortino_high",
+        "val_calmar_high",
         "oos_monthly_return_gte_2pct",
         "oos_return_beats_current_champion",
         "oos_return_risk_beats_current_champion",
@@ -773,6 +933,12 @@ def _combo_metrics(
         "val_return_beats_current_champion": val_return > CURRENT_CHAMPION_VAL_RETURN,
         "train_monthly_return_gte_2pct": train_monthly_return >= MIN_STABLE_MONTHLY_RETURN,
         "val_monthly_return_gte_2pct": val_monthly_return >= MIN_STABLE_MONTHLY_RETURN,
+        "train_sharpe_high": _safe_float(train.get("sharpe")) >= SUCCESS_TRAIN_SHARPE,
+        "train_sortino_high": _safe_float(train.get("sortino")) >= SUCCESS_TRAIN_SORTINO,
+        "train_calmar_high": _safe_float(train.get("calmar")) >= SUCCESS_TRAIN_CALMAR,
+        "val_sharpe_high": _safe_float(val.get("sharpe")) >= SUCCESS_VAL_SHARPE,
+        "val_sortino_high": _safe_float(val.get("sortino")) >= SUCCESS_VAL_SORTINO,
+        "val_calmar_high": _safe_float(val.get("calmar")) >= SUCCESS_VAL_CALMAR,
         "oos_monthly_return_gte_2pct": oos_monthly_return >= MIN_STABLE_MONTHLY_RETURN,
         "oos_return_beats_current_champion": oos_return > CURRENT_CHAMPION_OOS_RETURN,
         "oos_return_risk_beats_current_champion": (
@@ -796,6 +962,12 @@ def _combo_metrics(
         "minimum_oos_sortino": SUCCESS_SORTINO,
         "minimum_oos_smart_sortino": SUCCESS_SMART_SORTINO,
         "minimum_oos_calmar": SUCCESS_CALMAR,
+        "minimum_train_sharpe": SUCCESS_TRAIN_SHARPE,
+        "minimum_train_sortino": SUCCESS_TRAIN_SORTINO,
+        "minimum_train_calmar": SUCCESS_TRAIN_CALMAR,
+        "minimum_val_sharpe": SUCCESS_VAL_SHARPE,
+        "minimum_val_sortino": SUCCESS_VAL_SORTINO,
+        "minimum_val_calmar": SUCCESS_VAL_CALMAR,
     }
     out["validation_score"] = (
         _safe_float(val.get("total_return")) * 100.0
@@ -1055,6 +1227,7 @@ def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[dict[s
                 "equal_weight",
                 "additive_sleeves",
                 "train_val_target_return_budget",
+                "train_val_monthly_return_budget",
                 "validation_return_risk_weight",
                 "validation_drawdown_budget",
                 "cluster_capped_validation_weight",
@@ -1120,6 +1293,7 @@ def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[dict[s
                 "equal_weight",
                 "additive_sleeves",
                 "train_val_target_return_budget",
+                "train_val_monthly_return_budget",
                 "validation_return_risk_weight",
                 "validation_drawdown_budget",
                 "cluster_capped_validation_weight",

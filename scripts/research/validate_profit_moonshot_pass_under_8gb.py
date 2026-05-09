@@ -39,6 +39,12 @@ MIN_OOS_SHARPE = 2.0
 MIN_OOS_SORTINO = 3.0
 MIN_OOS_SMART_SORTINO = 3.0
 MIN_OOS_CALMAR = 1.0
+MIN_TRAIN_SHARPE = 1.5
+MIN_TRAIN_SORTINO = 1.5
+MIN_TRAIN_CALMAR = 1.0
+MIN_VAL_SHARPE = 3.0
+MIN_VAL_SORTINO = 3.0
+MIN_VAL_CALMAR = 3.0
 _TIME_RSS_RE = re.compile(r"Maximum resident set size \(kbytes\):\s*(\d+)")
 
 
@@ -258,6 +264,26 @@ def _locked_oos_metric(
     return _safe_float(_split_metrics(source_candidate, "oos").get(metric_name))
 
 
+def _train_val_metric(
+    sources: Iterable[Mapping[str, Any]],
+    source_candidate: Mapping[str, Any],
+    split_name: str,
+    metric_name: str,
+) -> float | None:
+    aliases = {
+        ("train", "sharpe"): ("train_sharpe",),
+        ("train", "sortino"): ("train_sortino",),
+        ("train", "calmar"): ("train_calmar",),
+        ("val", "sharpe"): ("validation_sharpe", "val_sharpe"),
+        ("val", "sortino"): ("validation_sortino", "val_sortino"),
+        ("val", "calmar"): ("validation_calmar", "val_calmar"),
+    }
+    direct = _first_float_from_sources(sources, aliases[(split_name, metric_name)])
+    if direct is not None:
+        return direct
+    return _safe_float(_split_metrics(source_candidate, split_name).get(metric_name))
+
+
 def _smart_sortino(monthly_return: float | None, max_drawdown: float | None, sortino: float | None) -> float | None:
     if monthly_return is None or max_drawdown is None or sortino is None:
         return None
@@ -286,6 +312,12 @@ def _candidate_return_quality_check(
     oos_sortino = _locked_oos_metric(sources, source_candidate, "sortino")
     oos_smart_sortino = _locked_oos_metric(sources, source_candidate, "smart_sortino")
     oos_calmar = _locked_oos_metric(sources, source_candidate, "calmar")
+    train_sharpe = _train_val_metric(sources, source_candidate, "train", "sharpe")
+    train_sortino = _train_val_metric(sources, source_candidate, "train", "sortino")
+    train_calmar = _train_val_metric(sources, source_candidate, "train", "calmar")
+    val_sharpe = _train_val_metric(sources, source_candidate, "val", "sharpe")
+    val_sortino = _train_val_metric(sources, source_candidate, "val", "sortino")
+    val_calmar = _train_val_metric(sources, source_candidate, "val", "calmar")
     if oos_smart_sortino is None:
         oos_smart_sortino = _smart_sortino(oos_monthly, oos_mdd, oos_sortino)
     details = {
@@ -295,9 +327,21 @@ def _candidate_return_quality_check(
         "minimum_oos_sortino": MIN_OOS_SORTINO,
         "minimum_oos_smart_sortino": MIN_OOS_SMART_SORTINO,
         "minimum_oos_calmar": MIN_OOS_CALMAR,
+        "minimum_train_sharpe": MIN_TRAIN_SHARPE,
+        "minimum_train_sortino": MIN_TRAIN_SORTINO,
+        "minimum_train_calmar": MIN_TRAIN_CALMAR,
+        "minimum_val_sharpe": MIN_VAL_SHARPE,
+        "minimum_val_sortino": MIN_VAL_SORTINO,
+        "minimum_val_calmar": MIN_VAL_CALMAR,
         "current_champion_oos_return": CURRENT_CHAMPION_OOS_RETURN,
         "train_monthlyized_return": train_monthly,
         "val_monthlyized_return": val_monthly,
+        "train_sharpe": train_sharpe,
+        "train_sortino": train_sortino,
+        "train_calmar": train_calmar,
+        "val_sharpe": val_sharpe,
+        "val_sortino": val_sortino,
+        "val_calmar": val_calmar,
         "locked_oos_monthlyized_return": oos_monthly,
         "locked_oos_total_return": oos_return,
         "locked_oos_max_drawdown": oos_mdd,
@@ -309,6 +353,12 @@ def _candidate_return_quality_check(
     checks = (
         train_monthly is not None and train_monthly >= MIN_STABLE_MONTHLY_RETURN,
         val_monthly is not None and val_monthly >= MIN_STABLE_MONTHLY_RETURN,
+        train_sharpe is not None and train_sharpe >= MIN_TRAIN_SHARPE,
+        train_sortino is not None and train_sortino >= MIN_TRAIN_SORTINO,
+        train_calmar is not None and train_calmar >= MIN_TRAIN_CALMAR,
+        val_sharpe is not None and val_sharpe >= MIN_VAL_SHARPE,
+        val_sortino is not None and val_sortino >= MIN_VAL_SORTINO,
+        val_calmar is not None and val_calmar >= MIN_VAL_CALMAR,
         oos_monthly is not None and oos_monthly >= MIN_STABLE_MONTHLY_RETURN,
         oos_return is not None and oos_return > CURRENT_CHAMPION_OOS_RETURN,
         oos_mdd is not None and oos_mdd <= MAX_ACCEPTABLE_OOS_MDD,

@@ -5,91 +5,50 @@
     "current_champion_oos_mdd": 0.001662,
     "current_champion_oos_return": 0.012181,
     "current_champion_oos_return_risk": 7.329121540312876,
-    "locked_oos_max_drawdown": 0.001774102912063881,
-    "locked_oos_monthlyized_return": 0.006121025535450242,
-    "locked_oos_return_risk": 7.551493250827515,
-    "locked_oos_sharpe": 5.477385370503527,
-    "locked_oos_smart_sortino": 2.0593603686568986,
-    "locked_oos_total_return": 0.013397126166723838,
-    "oos_return_excess_vs_champion": 0.0012161261667238375,
-    "oos_return_risk_excess_vs_champion": 0.222371710514639,
-    "return_quality_contract_passed": false,
-    "shadow_oos_mdd_gate": 0.001778,
-    "train_monthlyized_return": 0.0044737445278342225,
-    "train_total_return": 0.055019331232847524,
-    "validation_monthlyized_return": 0.02044010271922625,
-    "validation_total_return": 0.040000000000000036
+    "locked_oos_calmar": 53.73501485217365,
+    "locked_oos_max_drawdown": 0.008197728267604966,
+    "locked_oos_monthlyized_return": 0.030883445250837083,
+    "locked_oos_return_risk": 8.365932879057214,
+    "locked_oos_round_trips": 33,
+    "locked_oos_sharpe": 5.653697867183353,
+    "locked_oos_smart_sortino": 7.153592515941036,
+    "locked_oos_sortino": 7.396117977603192,
+    "locked_oos_total_return": 0.06858164444753312,
+    "oos_return_excess_vs_champion": 0.05640064444753312,
+    "return_quality_contract_passed": true,
+    "train_calmar": 3.8842110332761934,
+    "train_max_drawdown": 0.06905953159200336,
+    "train_monthlyized_return": 0.020000000000000018,
+    "train_round_trips": 120,
+    "train_sharpe": 1.7212556285918195,
+    "train_sortino": 1.51511166991183,
+    "train_total_return": 0.26820739157769213,
+    "validation_calmar": 32.1417458698937,
+    "validation_max_drawdown": 0.06493479922326455,
+    "validation_monthlyized_return": 0.09848998131232078,
+    "validation_round_trips": 41,
+    "validation_sharpe": 4.09640969448007,
+    "validation_sortino": 4.885875261022447,
+    "validation_total_return": 0.19971302124703927
   },
-  "ci_evidence": [
-    {
-      "conclusion": "success",
-      "head_sha": "b340d388451a069414d57f3788ecf1981b3f6cca",
-      "passed": true,
-      "run_id": "25593434673",
-      "status": "completed",
-      "url": "https://github.com/hoky1227/Quants-agent/actions/runs/25593434673",
-      "workflow": "ci"
-    },
-    {
-      "conclusion": "success",
-      "head_sha": "b340d388451a069414d57f3788ecf1981b3f6cca",
-      "passed": true,
-      "run_id": "25593434668",
-      "status": "completed",
-      "url": "https://github.com/hoky1227/Quants-agent/actions/runs/25593434668",
-      "workflow": "private-ci"
-    }
-  ],
-  "ci_passed": true,
-  "ci_status": "success",
   "evidence": {
-    "ci_evidence": [
-      {
-        "conclusion": "success",
-        "head_sha": "b340d388451a069414d57f3788ecf1981b3f6cca",
-        "passed": true,
-        "run_id": "25593434673",
-        "status": "completed",
-        "url": "https://github.com/hoky1227/Quants-agent/actions/runs/25593434673",
-        "workflow": "ci"
-      },
-      {
-        "conclusion": "success",
-        "head_sha": "b340d388451a069414d57f3788ecf1981b3f6cca",
-        "passed": true,
-        "run_id": "25593434668",
-        "status": "completed",
-        "url": "https://github.com/hoky1227/Quants-agent/actions/runs/25593434668",
-        "workflow": "private-ci"
-      }
-    ],
-    "completion_summary": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/alpha_v2_completion_summary_20260509.md",
-    "git_evidence": [
-      {
-        "commit": "b340d388451a069414d57f3788ecf1981b3f6cca",
-        "pushed": true,
-        "ref": "main",
-        "remote": "private",
-        "success": true,
-        "summary": "git push private HEAD:main completed; private/main advanced to source Lore commit"
-      }
-    ],
-    "portfolio_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_target_budget_v1/fresh_portfolio_tuning_latest.json",
-    "portfolio_markdown": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_target_budget_v1/fresh_portfolio_tuning_latest.md",
+    "ci_evidence": [],
+    "portfolio_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_monthly_budget_v1/fresh_portfolio_tuning_latest.json",
+    "portfolio_markdown": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_monthly_budget_v1/fresh_portfolio_tuning_latest.md",
     "rss_under_8gb_logs": [
-      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_target_budget_v1/_memory_guard/profit_moonshot_fresh_portfolio_tuning_memory_latest.json",
-      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_target_budget_v1/_memory_guard/profit_moonshot_fresh_portfolio_tuning_rss_latest.jsonl"
+      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_monthly_budget_v1/_memory_guard/profit_moonshot_fresh_portfolio_tuning_memory_latest.json",
+      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_monthly_budget_v1/_memory_guard/profit_moonshot_fresh_portfolio_tuning_rss_latest.jsonl"
     ],
     "test_evidence": [
       {
-        "command": "uv run --extra dev pytest -q <targeted alpha-v2 tests>",
+        "command": "uv run --extra dev pytest -q tests/test_profit_moonshot_fresh_portfolio_tuning.py tests/test_profit_moonshot_pass_under_8gb_validator.py",
         "passed": true,
-        "summary": "9 passed in 0.10s"
+        "summary": "14 passed in 0.10s"
       },
       {
         "command": "uv run --extra dev pytest -q",
         "passed": true,
-        "summary": "1206 passed in 234.23s (0:03:54)"
+        "summary": "1208 passed in 289.27s (0:04:49)"
       },
       {
         "command": "uv run --extra dev ruff check .",
@@ -108,40 +67,28 @@
       }
     ]
   },
-  "generated_at_utc": "2026-05-09T05:58:26.825630Z",
-  "git_evidence": [
-    {
-      "commit": "b340d388451a069414d57f3788ecf1981b3f6cca",
-      "pushed": true,
-      "ref": "main",
-      "remote": "private",
-      "success": true,
-      "summary": "git push private HEAD:main completed; private/main advanced to source Lore commit"
-    }
-  ],
+  "generated_at_utc": "2026-05-09T06:54:29.308545Z",
   "live_equivalent_selection_eligible": false,
   "memory_evidence": {
     "memory_summaries": [
-      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_target_budget_v1/_memory_guard/profit_moonshot_fresh_portfolio_tuning_memory_latest.json"
+      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_monthly_budget_v1/_memory_guard/profit_moonshot_fresh_portfolio_tuning_memory_latest.json"
     ],
-    "portfolio_peak_rss_mib": 746.1875,
+    "portfolio_peak_rss_mib": 920.51171875,
     "rss_under_8gb_logs": [
-      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_target_budget_v1/_memory_guard/profit_moonshot_fresh_portfolio_tuning_memory_latest.json",
-      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_target_budget_v1/_memory_guard/profit_moonshot_fresh_portfolio_tuning_rss_latest.jsonl"
+      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_monthly_budget_v1/_memory_guard/profit_moonshot_fresh_portfolio_tuning_memory_latest.json",
+      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_monthly_budget_v1/_memory_guard/profit_moonshot_fresh_portfolio_tuning_rss_latest.jsonl"
     ],
+    "time_max_rss_kb": 942604,
     "under_8gib": true
   },
   "passed": false,
   "passing_candidate_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/passing_candidate_latest.json",
-  "pushed_commit": "b340d388451a069414d57f3788ecf1981b3f6cca",
-  "pushed_ref": "private/main",
   "required_final_evidence": [
-    "find_candidate_passing_return_quality_contract",
-    "local_tests",
-    "ci_private_ci_green",
-    "git_push_if_code_changed"
+    "git_push_if_code_changed",
+    "github_actions_ci_private_ci_green",
+    "mission_validator_pass"
   ],
-  "research_success_candidate": false,
+  "research_success_candidate": true,
   "return_quality_contract": {
     "locked_oos_use": [
       "report",
@@ -153,28 +100,36 @@
     "minimum_oos_smart_sortino": 3.0,
     "minimum_oos_sortino": 3.0,
     "minimum_stable_monthly_return": 0.02,
+    "minimum_train_calmar": 1.0,
+    "minimum_train_sharpe": 1.5,
+    "minimum_train_sortino": 1.5,
+    "minimum_val_calmar": 3.0,
+    "minimum_val_sharpe": 3.0,
+    "minimum_val_sortino": 3.0,
     "requires_locked_oos_total_return_gt_current_champion": 0.012181,
     "selection_inputs": [
       "train",
       "validation"
     ]
   },
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "source_changed": true,
-  "status": "superseded_return_quality_floor",
-  "summary": "Prior alpha-v2 source/CI evidence remains historical, but the candidate is not a pass under the 2026-05-09 return-quality contract.",
-  "superseded_at_utc": "2026-05-09T06:22:00Z",
-  "superseded_reason": "User raised the promotion target to stable ~2% monthly return with high Sharpe/Sortino/smart Sortino/Calmar and MDD allowed up to ~25%; the prior alpha-v2 candidate is low-return after monthlyization.",
+  "status": "local_pass_pending_ci",
+  "summary": "Return-quality candidate passes replay and full local verification; awaiting source push plus GitHub Actions ci/private-ci evidence before final passed=true.",
+  "supersedes": {
+    "previous_candidate_reason": "Old target-budget candidate failed +2% monthly train/OOS and smart Sortino gates.",
+    "previous_candidate_status": "superseded_return_quality_floor"
+  },
   "test_evidence": [
     {
-      "command": "uv run --extra dev pytest -q <targeted alpha-v2 tests>",
+      "command": "uv run --extra dev pytest -q tests/test_profit_moonshot_fresh_portfolio_tuning.py tests/test_profit_moonshot_pass_under_8gb_validator.py",
       "passed": true,
-      "summary": "9 passed in 0.10s"
+      "summary": "14 passed in 0.10s"
     },
     {
       "command": "uv run --extra dev pytest -q",
       "passed": true,
-      "summary": "1206 passed in 234.23s (0:03:54)"
+      "summary": "1208 passed in 289.27s (0:04:49)"
     },
     {
       "command": "uv run --extra dev ruff check .",

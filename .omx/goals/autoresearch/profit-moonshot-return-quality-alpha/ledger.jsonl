@@ -1,0 +1,2 @@
+{"ts":"2026-05-09T06:31:14.136Z","event":"workflow_created","slug":"profit-moonshot-return-quality-alpha","status":"created","message":"Autoresearch goal created: Profit moonshot return-quality alpha discovery: find stable train/validation-selected candidate with >=2% monthlyized train/val/OOS returns, OOS MDD <=25%, high Sharpe/Sortino/smart Sortino/Calmar, locked-OOS report/gate-only, <8GiB memory"}
+{"ts":"2026-05-09T06:31:14.317Z","event":"goal_handoff_emitted","slug":"profit-moonshot-return-quality-alpha","status":"in_progress"}

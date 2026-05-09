@@ -25,6 +25,12 @@ def _passing_candidate_payload() -> dict:
         "metrics": {
             "train_monthlyized_return": 0.025,
             "validation_monthlyized_return": 0.026,
+            "train_sharpe": 1.7,
+            "train_sortino": 1.8,
+            "train_calmar": 2.0,
+            "validation_sharpe": 3.5,
+            "validation_sortino": 3.6,
+            "validation_calmar": 4.0,
             "locked_oos_monthlyized_return": 0.024,
             "locked_oos_total_return": 0.05,
             "locked_oos_max_drawdown": 0.12,
