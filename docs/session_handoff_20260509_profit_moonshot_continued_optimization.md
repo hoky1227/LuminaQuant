@@ -57,3 +57,5 @@ Use this monthly-budget candidate as the continuation baseline. Search for addit
 - Heavy mutex evidence: `var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/runner_evidence_20260509/leader_heavy_mutex_20260509.json`; status `completed`, overlap `passed`.
 - Full local verification: targeted tests `22 passed`; full pytest `1216 passed in 227.75s (0:03:47)`; ruff `All checks passed`; compileall pass; git diff --check pass.
 - CI status: pending first push for this continuation commit.
+- Push/CI finalization: Lore commit `6556254726db4f70fe8e7eb6d72a6fe9a352c78a` pushed to `private/main`; GitHub Actions `private-ci` run `25596474837` success and `ci` run `25596474834` success.
+- Mission validator finalization: `.omx/specs/autoresearch-profit-moonshot-alpha-v2/validation_latest.json` now `status=passed`, `passed=true`, including CI, git push, mutex, and RSS-under-8GiB evidence.
