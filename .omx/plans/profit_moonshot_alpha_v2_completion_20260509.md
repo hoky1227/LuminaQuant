@@ -30,4 +30,6 @@ Team `profit-moonshot-alpha-56afab4e` is `phase=complete` with 13/13 tasks compl
 - Ruff: `uv run --extra dev ruff check .` -> passed.
 - Compileall: `python3 -m compileall -q src scripts tests` -> passed.
 - Whitespace: `git diff --check` -> passed.
-- Pending: mission validator after push/CI.
+- Source Lore commit `b340d38` pushed to `private/main`.
+- GitHub Actions: `ci` `25593434673` success; `private-ci` `25593434668` success.
+- Mission validator: updated after CI and expected to pass.

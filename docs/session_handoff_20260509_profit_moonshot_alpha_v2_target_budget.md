@@ -32,7 +32,9 @@ A passing research candidate was found without promoting standalone non-calendar
 - Ruff: `uv run --extra dev ruff check .` -> passed.
 - Compileall: `python3 -m compileall -q src scripts tests` -> passed.
 - Whitespace: `git diff --check` -> passed.
-- Remaining final checks: Lore commit/push, `ci`/`private-ci` green.
+- Source Lore commit `b340d38` pushed to `private/main`.
+- GitHub Actions: `ci` `25593434673` success; `private-ci` `25593434668` success.
+- Mission validator: updated after CI and expected to pass.
 
 ## Risks / directives
 - Do not promote `selected_by_validation` if it is `diagnostic_not_promoted`; use `best_success_candidate` for passing row evidence.

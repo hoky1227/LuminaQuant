@@ -27,4 +27,4 @@
 ## Verification status
 - Targeted alpha-v2 tests: `9 passed in 0.10s`.
 - Full pytest: `1206 passed in 234.23s (0:03:54)`.
-- Full ruff, compileall, and git diff check passed. Remaining before final handoff: Lore commit/push, GitHub Actions `ci`/`private-ci` green, final evaluator update.
+- Full ruff, compileall, and git diff check passed. Source Lore commit `b340d38` was pushed to `private/main`; GitHub Actions `ci` run `25593434673` and `private-ci` run `25593434668` completed `success`.

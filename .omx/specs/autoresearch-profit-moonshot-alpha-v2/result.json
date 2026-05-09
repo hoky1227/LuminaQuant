@@ -15,11 +15,60 @@
     "train_total_return": 0.055019331232847524,
     "validation_total_return": 0.040000000000000036
   },
-  "ci_evidence": [],
+  "ci_evidence": [
+    {
+      "conclusion": "success",
+      "head_sha": "b340d388451a069414d57f3788ecf1981b3f6cca",
+      "passed": true,
+      "run_id": "25593434673",
+      "status": "completed",
+      "url": "https://github.com/hoky1227/Quants-agent/actions/runs/25593434673",
+      "workflow": "ci"
+    },
+    {
+      "conclusion": "success",
+      "head_sha": "b340d388451a069414d57f3788ecf1981b3f6cca",
+      "passed": true,
+      "run_id": "25593434668",
+      "status": "completed",
+      "url": "https://github.com/hoky1227/Quants-agent/actions/runs/25593434668",
+      "workflow": "private-ci"
+    }
+  ],
+  "ci_passed": true,
+  "ci_status": "success",
   "evidence": {
-    "ci_evidence": [],
+    "ci_evidence": [
+      {
+        "conclusion": "success",
+        "head_sha": "b340d388451a069414d57f3788ecf1981b3f6cca",
+        "passed": true,
+        "run_id": "25593434673",
+        "status": "completed",
+        "url": "https://github.com/hoky1227/Quants-agent/actions/runs/25593434673",
+        "workflow": "ci"
+      },
+      {
+        "conclusion": "success",
+        "head_sha": "b340d388451a069414d57f3788ecf1981b3f6cca",
+        "passed": true,
+        "run_id": "25593434668",
+        "status": "completed",
+        "url": "https://github.com/hoky1227/Quants-agent/actions/runs/25593434668",
+        "workflow": "private-ci"
+      }
+    ],
     "completion_summary": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/alpha_v2_completion_summary_20260509.md",
-    "git_evidence": [],
+    "git_evidence": [
+      {
+        "commit": "b340d388451a069414d57f3788ecf1981b3f6cca",
+        "pushed": true,
+        "ref": "main",
+        "remote": "private",
+        "success": true,
+        "summary": "git push private HEAD:main completed; private/main advanced to source Lore commit"
+      }
+    ],
     "portfolio_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_target_budget_v1/fresh_portfolio_tuning_latest.json",
     "portfolio_markdown": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_target_budget_v1/fresh_portfolio_tuning_latest.md",
     "rss_under_8gb_logs": [
@@ -54,8 +103,17 @@
       }
     ]
   },
-  "generated_at_utc": "2026-05-09T05:51:51.998255Z",
-  "git_evidence": [],
+  "generated_at_utc": "2026-05-09T05:58:26.825630Z",
+  "git_evidence": [
+    {
+      "commit": "b340d388451a069414d57f3788ecf1981b3f6cca",
+      "pushed": true,
+      "ref": "main",
+      "remote": "private",
+      "success": true,
+      "summary": "git push private HEAD:main completed; private/main advanced to source Lore commit"
+    }
+  ],
   "live_equivalent_selection_eligible": false,
   "memory_evidence": {
     "memory_summaries": [
@@ -68,17 +126,16 @@
     ],
     "under_8gib": true
   },
-  "passed": false,
+  "passed": true,
   "passing_candidate_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/passing_candidate_latest.json",
-  "required_final_evidence": [
-    "git_push_if_code_changed",
-    "ci_green_after_push"
-  ],
+  "pushed_commit": "b340d388451a069414d57f3788ecf1981b3f6cca",
+  "pushed_ref": "private/main",
+  "required_final_evidence": [],
   "research_success_candidate": true,
   "schema_version": "1.0",
   "source_changed": true,
-  "status": "local_verified_ci_pending",
-  "summary": "Local candidate, tests, ruff, compileall, and diff-check evidence are green; push and GitHub Actions CI evidence still pending at this artifact snapshot.",
+  "status": "passed",
+  "summary": "Candidate, local tests, memory guard, source push, and GitHub Actions ci/private-ci evidence are green for the source Lore commit.",
   "test_evidence": [
     {
       "command": "uv run --extra dev pytest -q <targeted alpha-v2 tests>",
@@ -105,5 +162,6 @@
       "passed": true,
       "summary": "passed"
     }
-  ]
+  ],
+  "tests_passed": true
 }
