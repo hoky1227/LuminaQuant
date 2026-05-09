@@ -44,11 +44,32 @@ DEFAULT_CANDIDATE_CSV = (
     / "var/reports/profit_moonshot_20260501/current_tail_20260508/all_family_expansion"
     / "fresh_start_overhaul_replay_candidates.csv"
 )
+DEFAULT_CURRENT_BASE_ARTIFACT = (
+    REPO_ROOT
+    / "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/passing_candidate_latest.json"
+)
 CURRENT_CHAMPION_TRAIN_RETURN = 0.035993
 CURRENT_CHAMPION_VAL_RETURN = 0.026755
 CURRENT_CHAMPION_OOS_RETURN = 0.012181
 CURRENT_CHAMPION_OOS_MDD = 0.001662
 CURRENT_CHAMPION_OOS_RETURN_RISK = CURRENT_CHAMPION_OOS_RETURN / CURRENT_CHAMPION_OOS_MDD
+CURRENT_BASE_TRAIN_MONTHLY_RETURN = 0.020000000000000018
+CURRENT_BASE_VAL_MONTHLY_RETURN = 0.09848998131232078
+CURRENT_BASE_TRAIN_RETURN = 0.26820739157769213
+CURRENT_BASE_VAL_RETURN = 0.19971302124703927
+CURRENT_BASE_TRAIN_MDD = 0.06905953159200336
+CURRENT_BASE_VAL_MDD = 0.06493479922326455
+CURRENT_BASE_TRAIN_SHARPE = 1.7212556285918195
+CURRENT_BASE_VAL_SHARPE = 4.09640969448007
+CURRENT_BASE_TRAIN_SORTINO = 1.51511166991183
+CURRENT_BASE_VAL_SORTINO = 4.885875261022447
+CURRENT_BASE_TRAIN_CALMAR = 3.8842110332761934
+CURRENT_BASE_VAL_CALMAR = 32.1417458698937
+CURRENT_BASE_LEVERAGE = 2.3427334297703024
+CURRENT_BASE_SLEEVE_COUNT = 4
+CURRENT_BASE_OOS_RETURN = 0.06858164444753312
+CURRENT_BASE_OOS_MDD = 0.008197728267604966
+CURRENT_BASE_OOS_RETURN_RISK = CURRENT_BASE_OOS_RETURN / CURRENT_BASE_OOS_MDD
 BASELINE_OOS_RETURN = CURRENT_CHAMPION_OOS_RETURN
 SHADOW_OOS_MDD = 0.001778
 MIN_STABLE_MONTHLY_RETURN = 0.02
@@ -78,9 +99,31 @@ LOCKBOX_POLICY = {
     "oos_is_report_only": True,
     "oos_is_gate_only": True,
     "current_champion_oos_return": CURRENT_CHAMPION_OOS_RETURN,
+    "current_base_oos_return": CURRENT_BASE_OOS_RETURN,
+    "current_base_oos_return_risk": CURRENT_BASE_OOS_RETURN_RISK,
     "minimum_stable_monthly_return": MIN_STABLE_MONTHLY_RETURN,
     "maximum_acceptable_oos_mdd": MAX_ACCEPTABLE_OOS_MDD,
 }
+
+CURRENT_BASE_GATE_KEYS = (
+    "train_val_stability_beats_current_base",
+    "oos_return_beats_current_base",
+    "oos_return_risk_beats_current_base",
+)
+TRAIN_VAL_STABILITY_COMPONENTS = (
+    "train_monthlyized_return",
+    "validation_monthlyized_return",
+    "train_sharpe",
+    "validation_sharpe",
+    "train_sortino",
+    "validation_sortino",
+    "train_calmar",
+    "validation_calmar",
+    "train_max_drawdown",
+    "validation_max_drawdown",
+    "leverage",
+    "sleeve_count",
+)
 
 
 def _load_fresh_module() -> Any:
@@ -97,6 +140,324 @@ def _load_fresh_module() -> Any:
 def _read_rows(path: Path) -> list[dict[str, str]]:
     with path.open(encoding="utf-8") as handle:
         return list(csv.DictReader(handle))
+
+
+def _resolve_repo_path(value: Any) -> Path | None:
+    token = str(value or "").strip()
+    if not token or token.lower() in {"none", "null", "false"}:
+        return None
+    path = Path(token)
+    return path if path.is_absolute() else REPO_ROOT / path
+
+
+def _load_json_mapping(path: Path) -> dict[str, Any]:
+    if not path.exists() or path.suffix.lower() != ".json":
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    return dict(payload) if isinstance(payload, dict) else {}
+
+
+def _candidate_by_name(payload: dict[str, Any], name: str) -> dict[str, Any]:
+    for key in ("best_success_candidate", "selected_by_validation", "diagnostic_best_oos", "candidate"):
+        candidate = payload.get(key)
+        if not isinstance(candidate, dict):
+            continue
+        if not name or str(candidate.get("name") or "") == name:
+            return dict(candidate)
+    return dict(payload) if all(key in payload for key in ("splits", "gates")) else {}
+
+
+def _load_current_base_candidate(path_value: Any) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Load the current retained base without making it a train/val selector input."""
+    path = _resolve_repo_path(path_value)
+    policy: dict[str, Any] = {
+        "selection_inputs": ["train", "validation"],
+        "locked_oos_use": ["report", "gate"],
+        "uses_locked_oos_for_selection": False,
+        "train_val_stability_formula": "frozen_weighted_train_validation_score_v1",
+        "current_base_train_val_stability_score": CURRENT_BASE_TRAIN_VAL_STABILITY_SCORE,
+        "train_val_stability_components": list(TRAIN_VAL_STABILITY_COMPONENTS),
+        "current_base_gate_keys": list(CURRENT_BASE_GATE_KEYS),
+        "current_base_artifact": str(path) if path is not None else "",
+        "current_base_available": False,
+    }
+    if path is None:
+        policy["status"] = "disabled"
+        return {}, policy
+
+    payload = _load_json_mapping(path)
+    if not payload:
+        policy["status"] = "missing_or_invalid"
+        return {}, policy
+
+    candidate = dict(payload)
+    source_path = _resolve_repo_path(payload.get("source_artifact"))
+    if source_path is not None:
+        source_payload = _load_json_mapping(source_path)
+        source_candidate = _candidate_by_name(source_payload, str(payload.get("name") or ""))
+        if source_candidate:
+            candidate = source_candidate
+            candidate.setdefault("source_artifact", str(source_path))
+            candidate.setdefault("candidate_artifact", str(path))
+    elif any(isinstance(payload.get(key), dict) for key in ("best_success_candidate", "selected_by_validation")):
+        candidate = _candidate_by_name(payload, "")
+
+    if candidate:
+        policy["status"] = "loaded"
+        policy["current_base_available"] = True
+        policy["current_base_name"] = str(candidate.get("name") or payload.get("name") or "")
+    else:
+        policy["status"] = "candidate_not_found"
+    return candidate, policy
+
+
+def _metrics_sources(candidate: dict[str, Any]) -> list[dict[str, Any]]:
+    sources: list[dict[str, Any]] = []
+    for key in ("return_quality", "metrics"):
+        value = candidate.get(key)
+        if isinstance(value, dict):
+            sources.append(value)
+    sources.append(candidate)
+    return sources
+
+
+def _split_payload(candidate: dict[str, Any], split_name: str) -> dict[str, Any]:
+    splits = candidate.get("splits")
+    if not isinstance(splits, dict):
+        return {}
+    split = splits.get(split_name)
+    return dict(split) if isinstance(split, dict) else {}
+
+
+def _split_metric(candidate: dict[str, Any], split_name: str, metric_name: str) -> float:
+    split = _split_payload(candidate, split_name)
+    metrics = split.get("metrics")
+    if isinstance(metrics, dict) and metric_name in metrics:
+        return _safe_float(metrics.get(metric_name))
+    if metric_name == "round_trips" and "round_trips" in split:
+        return _safe_float(split.get("round_trips"))
+
+    aliases = {
+        ("train", "total_return"): ("train_total_return",),
+        ("train", "monthlyized_return"): ("train_monthlyized_return", "train_monthly_return"),
+        ("train", "max_drawdown"): ("train_max_drawdown",),
+        ("train", "sharpe"): ("train_sharpe",),
+        ("train", "sortino"): ("train_sortino",),
+        ("train", "calmar"): ("train_calmar",),
+        ("train", "round_trips"): ("train_round_trips",),
+        ("val", "total_return"): ("validation_total_return", "val_total_return"),
+        ("val", "monthlyized_return"): (
+            "validation_monthlyized_return",
+            "val_monthlyized_return",
+            "validation_monthly_return",
+            "val_monthly_return",
+        ),
+        ("val", "max_drawdown"): ("validation_max_drawdown", "val_max_drawdown"),
+        ("val", "sharpe"): ("validation_sharpe", "val_sharpe"),
+        ("val", "sortino"): ("validation_sortino", "val_sortino"),
+        ("val", "calmar"): ("validation_calmar", "val_calmar"),
+        ("val", "round_trips"): ("validation_round_trips", "val_round_trips"),
+        ("oos", "total_return"): ("locked_oos_total_return", "oos_total_return"),
+        ("oos", "monthlyized_return"): (
+            "locked_oos_monthlyized_return",
+            "oos_monthlyized_return",
+            "locked_oos_monthly_return",
+            "oos_monthly_return",
+        ),
+        ("oos", "max_drawdown"): ("locked_oos_max_drawdown", "oos_max_drawdown"),
+        ("oos", "sharpe"): ("locked_oos_sharpe", "oos_sharpe"),
+        ("oos", "sortino"): ("locked_oos_sortino", "oos_sortino"),
+        ("oos", "calmar"): ("locked_oos_calmar", "oos_calmar"),
+        ("oos", "round_trips"): ("locked_oos_round_trips", "oos_round_trips"),
+    }
+    for source in _metrics_sources(candidate):
+        for alias in aliases.get((split_name, metric_name), ()):
+            if alias in source:
+                return _safe_float(source.get(alias))
+
+    if metric_name == "monthlyized_return":
+        cagr = _split_metric(candidate, split_name, "cagr")
+        if cagr > -1.0:
+            return float((1.0 + cagr) ** (1.0 / 12.0) - 1.0)
+    return 0.0
+
+
+def _candidate_leverage(candidate: dict[str, Any]) -> float:
+    for source in _metrics_sources(candidate):
+        if "leverage" in source:
+            return _safe_float(source.get("leverage"), 1.0)
+    return _safe_float(candidate.get("leverage"), 1.0)
+
+
+def _candidate_sleeve_count(candidate: dict[str, Any]) -> int:
+    for source in _metrics_sources(candidate):
+        if "sleeve_count" in source:
+            return round(_safe_float(source.get("sleeve_count"), 0.0))
+    sleeves = candidate.get("sleeves")
+    if isinstance(sleeves, list | tuple):
+        return len(sleeves)
+    return round(_safe_float(candidate.get("sleeve_count"), 0.0))
+
+
+def _train_val_stability_component_payload(candidate: dict[str, Any]) -> dict[str, float]:
+    return {
+        "train_monthlyized_return": _split_metric(candidate, "train", "monthlyized_return"),
+        "validation_monthlyized_return": _split_metric(candidate, "val", "monthlyized_return"),
+        "train_sharpe": _split_metric(candidate, "train", "sharpe"),
+        "validation_sharpe": _split_metric(candidate, "val", "sharpe"),
+        "train_sortino": _split_metric(candidate, "train", "sortino"),
+        "validation_sortino": _split_metric(candidate, "val", "sortino"),
+        "train_calmar": _split_metric(candidate, "train", "calmar"),
+        "validation_calmar": _split_metric(candidate, "val", "calmar"),
+        "train_max_drawdown": _split_metric(candidate, "train", "max_drawdown"),
+        "validation_max_drawdown": _split_metric(candidate, "val", "max_drawdown"),
+        "leverage": _candidate_leverage(candidate),
+        "sleeve_count": float(_candidate_sleeve_count(candidate)),
+    }
+
+
+def _train_val_stability_score_from_components(
+    components: dict[str, float],
+    *,
+    base_leverage: float = CURRENT_BASE_LEVERAGE,
+    base_sleeve_count: int = CURRENT_BASE_SLEEVE_COUNT,
+) -> float:
+    """Frozen H2 train/validation-only score; locked-OOS is intentionally absent."""
+    return (
+        35.0 * min(float(components["train_monthlyized_return"]), 0.06)
+        + 45.0 * min(float(components["validation_monthlyized_return"]), 0.12)
+        + 0.40 * float(components["train_sharpe"])
+        + 0.60 * float(components["validation_sharpe"])
+        + 0.35 * float(components["train_sortino"])
+        + 0.55 * float(components["validation_sortino"])
+        + 0.20 * min(float(components["train_calmar"]), 20.0)
+        + 0.30 * min(float(components["validation_calmar"]), 60.0)
+        - 35.0 * float(components["train_max_drawdown"])
+        - 45.0 * float(components["validation_max_drawdown"])
+        - 0.15 * max(0.0, float(components["leverage"]) - float(base_leverage))
+        - 0.25 * max(0.0, float(components["sleeve_count"]) - float(base_sleeve_count))
+    )
+
+
+CURRENT_BASE_TRAIN_VAL_STABILITY_SCORE = _train_val_stability_score_from_components(
+    {
+        "train_monthlyized_return": CURRENT_BASE_TRAIN_MONTHLY_RETURN,
+        "validation_monthlyized_return": CURRENT_BASE_VAL_MONTHLY_RETURN,
+        "train_sharpe": CURRENT_BASE_TRAIN_SHARPE,
+        "validation_sharpe": CURRENT_BASE_VAL_SHARPE,
+        "train_sortino": CURRENT_BASE_TRAIN_SORTINO,
+        "validation_sortino": CURRENT_BASE_VAL_SORTINO,
+        "train_calmar": CURRENT_BASE_TRAIN_CALMAR,
+        "validation_calmar": CURRENT_BASE_VAL_CALMAR,
+        "train_max_drawdown": CURRENT_BASE_TRAIN_MDD,
+        "validation_max_drawdown": CURRENT_BASE_VAL_MDD,
+        "leverage": CURRENT_BASE_LEVERAGE,
+        "sleeve_count": float(CURRENT_BASE_SLEEVE_COUNT),
+    }
+)
+
+
+def _train_val_stability_score(
+    candidate: dict[str, Any],
+    *,
+    base_candidate: dict[str, Any] | None = None,
+) -> float:
+    base_leverage = _candidate_leverage(base_candidate) if base_candidate else CURRENT_BASE_LEVERAGE
+    base_sleeve_count = (
+        _candidate_sleeve_count(base_candidate) if base_candidate else CURRENT_BASE_SLEEVE_COUNT
+    )
+    return _train_val_stability_score_from_components(
+        _train_val_stability_component_payload(candidate),
+        base_leverage=base_leverage,
+        base_sleeve_count=base_sleeve_count,
+    )
+
+
+def _current_base_comparison(
+    item: dict[str, Any],
+    current_base_candidate: dict[str, Any],
+) -> dict[str, Any]:
+    item_components = _train_val_stability_component_payload(item)
+    base_components = _train_val_stability_component_payload(current_base_candidate)
+    item_score = _train_val_stability_score(item, base_candidate=current_base_candidate)
+    base_score = _train_val_stability_score(current_base_candidate, base_candidate=current_base_candidate)
+    oos_return = _split_metric(item, "oos", "total_return")
+    oos_mdd = _split_metric(item, "oos", "max_drawdown")
+    base_oos_return = _split_metric(current_base_candidate, "oos", "total_return")
+    base_oos_mdd = _split_metric(current_base_candidate, "oos", "max_drawdown")
+    oos_return_risk = _return_risk_score(oos_return, oos_mdd)
+    base_oos_return_risk = _return_risk_score(base_oos_return, base_oos_mdd)
+    gates = {
+        "train_val_stability_beats_current_base": item_score > base_score,
+        "oos_return_beats_current_base": oos_return > base_oos_return,
+        "oos_return_risk_beats_current_base": oos_return_risk > base_oos_return_risk,
+    }
+    return {
+        "current_base_name": str(current_base_candidate.get("name") or ""),
+        "train_val_stability_formula": "frozen_weighted_train_validation_score_v1",
+        "candidate_train_val_stability": item_components,
+        "current_base_train_val_stability": base_components,
+        "candidate_train_val_stability_score": item_score,
+        "current_base_train_val_stability_score": base_score,
+        "candidate_oos_return": oos_return,
+        "current_base_oos_return": base_oos_return,
+        "candidate_oos_return_risk": oos_return_risk,
+        "current_base_oos_return_risk": base_oos_return_risk,
+        "gates": gates,
+    }
+
+
+def _compact_current_base_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
+    if not candidate:
+        return {}
+    return {
+        "name": candidate.get("name"),
+        "mode": candidate.get("mode"),
+        "sleeves": list(candidate.get("sleeves") or []),
+        "leverage": _safe_float(candidate.get("leverage"), 1.0),
+        "source_artifact": candidate.get("source_artifact"),
+        "candidate_artifact": candidate.get("candidate_artifact"),
+        "train_val_stability": _train_val_stability_component_payload(candidate),
+        "train_val_stability_score": _train_val_stability_score(candidate, base_candidate=candidate),
+        "locked_oos": {
+            "total_return": _split_metric(candidate, "oos", "total_return"),
+            "max_drawdown": _split_metric(candidate, "oos", "max_drawdown"),
+            "return_risk": _return_risk_score(
+                _split_metric(candidate, "oos", "total_return"),
+                _split_metric(candidate, "oos", "max_drawdown"),
+            ),
+        },
+    }
+
+
+def _no_improvement_lifecycle(
+    *,
+    current_base_candidate: dict[str, Any],
+    selected_by_validation: dict[str, Any],
+    best_success_candidate: dict[str, Any],
+    success_candidate_count: int,
+) -> dict[str, Any]:
+    if not current_base_candidate:
+        status = "current_base_unavailable"
+    elif success_candidate_count > 0:
+        status = "improvement_found"
+    else:
+        status = "no_improvement_current_base_retained"
+    return {
+        "status": status,
+        "no_improvement": bool(current_base_candidate) and success_candidate_count == 0,
+        "current_base_retained": bool(current_base_candidate) and success_candidate_count == 0,
+        "current_base_name": current_base_candidate.get("name") if current_base_candidate else "",
+        "selected_by_train_val_name": selected_by_validation.get("name") if selected_by_validation else "",
+        "best_improvement_candidate_name": (
+            best_success_candidate.get("name") if best_success_candidate else ""
+        ),
+        "success_candidate_count": int(success_candidate_count),
+        "selection_basis": "train_val_stability_then_locked_oos_current_base_gates",
+    }
 
 
 def _validation_score(row: dict[str, str]) -> float:
@@ -818,7 +1179,7 @@ def _smart_sortino(metrics: dict[str, Any]) -> float:
 
 
 def _improved_candidate_from_gates(gates: dict[str, bool]) -> bool:
-    required = (
+    required = [
         "train_positive",
         "val_positive",
         "train_return_beats_current_champion",
@@ -840,7 +1201,9 @@ def _improved_candidate_from_gates(gates: dict[str, bool]) -> bool:
         "oos_smart_sortino_high",
         "oos_calmar_high",
         "oos_trades_not_starved",
-    )
+    ]
+    if any(key in gates for key in CURRENT_BASE_GATE_KEYS):
+        required.extend(CURRENT_BASE_GATE_KEYS)
     return all(bool(gates.get(key)) for key in required)
 
 
@@ -874,6 +1237,7 @@ def _combo_metrics(
     split_payloads: dict[str, dict[str, dict[str, Any]]],
     mode: str,
     candidate_rows_by_name: dict[str, dict[str, Any]] | None = None,
+    current_base_candidate: dict[str, Any] | None = None,
     cluster_cap: float = 0.50,
     sleeve_cap: float = 0.35,
     correlation_threshold: float = 0.85,
@@ -951,6 +1315,11 @@ def _combo_metrics(
         "oos_calmar_high": _safe_float(oos.get("calmar")) >= SUCCESS_CALMAR,
         "oos_trades_not_starved": int(out["splits"]["oos"].get("round_trips") or 0) >= 5,
     }
+    train_val_stability = _train_val_stability_component_payload(out)
+    train_val_stability_score = _train_val_stability_score(
+        out,
+        base_candidate=current_base_candidate,
+    )
     out["return_quality"] = {
         "train_monthlyized_return": train_monthly_return,
         "val_monthlyized_return": val_monthly_return,
@@ -968,7 +1337,13 @@ def _combo_metrics(
         "minimum_val_sharpe": SUCCESS_VAL_SHARPE,
         "minimum_val_sortino": SUCCESS_VAL_SORTINO,
         "minimum_val_calmar": SUCCESS_VAL_CALMAR,
+        "train_val_stability_score": train_val_stability_score,
+        "current_base_train_val_stability_score": CURRENT_BASE_TRAIN_VAL_STABILITY_SCORE,
+        "current_base_oos_return": CURRENT_BASE_OOS_RETURN,
+        "current_base_oos_return_risk": CURRENT_BASE_OOS_RETURN_RISK,
     }
+    out["train_val_stability"] = train_val_stability
+    out["train_val_stability_score"] = train_val_stability_score
     out["validation_score"] = (
         _safe_float(val.get("total_return")) * 100.0
         + _safe_float(train.get("total_return")) * 25.0
@@ -976,6 +1351,10 @@ def _combo_metrics(
         - _safe_float(val.get("max_drawdown"), 1.0) * 50.0
         + math.log1p(max(1, int(out["splits"]["val"].get("round_trips") or 0))) * 0.01
     )
+    if current_base_candidate:
+        current_base_comparison = _current_base_comparison(out, current_base_candidate)
+        out["current_base_comparison"] = current_base_comparison
+        gates.update(current_base_comparison["gates"])
     out["gates"] = gates
     return _with_promotion_labels(out)
 
@@ -989,6 +1368,7 @@ def _flatten_row(item: dict[str, Any]) -> dict[str, Any]:
         "weights": ",".join(f"{float(weight):.6f}" for weight in item.get("weights") or []),
         "leverage": _safe_float(item.get("leverage"), 1.0),
         "validation_score": item["validation_score"],
+        "train_val_stability_score": _train_val_stability_sort_key(item),
         "success_candidate": item["success_candidate"],
         "improved_candidate": item.get("improved_candidate", False),
         "diagnostic_not_promoted": item.get("diagnostic_not_promoted", False),
@@ -1004,6 +1384,22 @@ def _flatten_row(item: dict[str, Any]) -> dict[str, Any]:
             "oos_smart_sortino",
         ):
             row[key] = _safe_float(quality.get(key), 0.0)
+    if item.get("train_val_stability"):
+        for key, value in dict(item["train_val_stability"]).items():
+            row[f"train_val_stability_{key}"] = _safe_float(value, 0.0)
+    if item.get("current_base_comparison"):
+        current_base = dict(item["current_base_comparison"])
+        row["current_base_name"] = current_base.get("current_base_name", "")
+        row["current_base_train_val_stability_score"] = _safe_float(
+            current_base.get("current_base_train_val_stability_score"), 0.0
+        )
+        row["current_base_oos_return"] = _safe_float(current_base.get("current_base_oos_return"), 0.0)
+        row["current_base_oos_return_risk"] = _safe_float(
+            current_base.get("current_base_oos_return_risk"), 0.0
+        )
+        row["candidate_oos_return_risk"] = _safe_float(current_base.get("candidate_oos_return_risk"), 0.0)
+        for key in CURRENT_BASE_GATE_KEYS:
+            row[key] = bool(dict(current_base.get("gates") or {}).get(key))
     if item.get("allocator_diagnostics"):
         row["allocator_selection_basis"] = dict(item["allocator_diagnostics"]).get("selection_basis", "")
     for split_name, split in item["splits"].items():
@@ -1046,6 +1442,8 @@ def _markdown(payload: dict[str, Any], rows: list[dict[str, Any]]) -> str:
     memory_summary = payload.get("memory_summary") or {}
     lockbox_policy = payload.get("lockbox_policy") or LOCKBOX_POLICY
     combo_limit = payload.get("combo_limit_policy") or {}
+    base_policy = payload.get("base_policy") or {}
+    lifecycle = payload.get("no_improvement_lifecycle") or {}
     lines = [
         "# Profit moonshot fresh portfolio tuning",
         "",
@@ -1054,12 +1452,18 @@ def _markdown(payload: dict[str, Any], rows: list[dict[str, Any]]) -> str:
         "## Policy",
         "",
         "- Sleeve universe is restricted to train-positive and validation-positive fresh-start candidates.",
-        "- Portfolio selection is validation-primary; locked-OOS is report-only / gate-only.",
+        "- Portfolio selection is train/validation-stability primary; locked-OOS is report-only / gate-only.",
         "- `diagnostic_best_oos` is not a deployable selection if it differs from validation selection.",
         f"- Selection label: `{lockbox_policy.get('selection_label')}`.",
         f"- Locked-OOS label: `{lockbox_policy.get('locked_oos_label')}`.",
         f"- Locked-OOS gate label: `{lockbox_policy.get('locked_oos_gate_label')}`.",
         f"- Diagnostic quarantine label: `{lockbox_policy.get('diagnostic_not_promoted_label')}`.",
+        f"- Current-base artifact: `{base_policy.get('current_base_artifact', '')}`.",
+        f"- Current-base status: `{base_policy.get('status', 'not_recorded')}`.",
+        "- Train/validation stability objective: "
+        f"`frozen_weighted_train_validation_score_v1` (current base "
+        f"`{CURRENT_BASE_TRAIN_VAL_STABILITY_SCORE:.6f}`).",
+        f"- No-improvement lifecycle: `{lifecycle.get('status', 'not_recorded')}`.",
         f"- Stable-return floor: train, validation, and locked-OOS monthlyized return `>={MIN_STABLE_MONTHLY_RETURN:.2%}`.",
         f"- MDD budget: locked-OOS max drawdown `≤{MAX_ACCEPTABLE_OOS_MDD:.2%}`.",
         f"- Quality floors: OOS Sharpe `≥{SUCCESS_SHARPE:.1f}`, Sortino `≥{SUCCESS_SORTINO:.1f}`, smart Sortino `≥{SUCCESS_SMART_SORTINO:.1f}`, Calmar `≥{SUCCESS_CALMAR:.1f}`.",
@@ -1102,7 +1506,7 @@ def _markdown(payload: dict[str, Any], rows: list[dict[str, Any]]) -> str:
             [
                 "## Best success candidate",
                 "",
-                "- Ranked by train/validation validation score after all locked-OOS gates pass.",
+                "- Ranked by the frozen train/validation stability score after all locked-OOS gates pass.",
                 f"- `{best_success.get('name')}`",
                 f"- sleeves: `{', '.join(best_success.get('sleeves') or [])}`",
                 f"- train: `{_fmt_pct(split.get('train', {}).get('metrics', {}).get('total_return'))}`",
@@ -1169,10 +1573,21 @@ def _markdown(payload: dict[str, Any], rows: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _train_val_stability_sort_key(item: dict[str, Any]) -> float:
+    if "train_val_stability_score" in item:
+        return _safe_float(item.get("train_val_stability_score"))
+    quality = item.get("return_quality")
+    if isinstance(quality, dict) and "train_val_stability_score" in quality:
+        return _safe_float(quality.get("train_val_stability_score"))
+    if item.get("train_val_stability"):
+        return _train_val_stability_score(item)
+    return _safe_float(item.get("validation_score"))
+
+
 def _portfolio_report_sort_key(item: dict[str, Any]) -> tuple[bool, float, bool, str]:
     return (
         not bool(item["success_candidate"]),
-        -_safe_float(item.get("validation_score")),
+        -_train_val_stability_sort_key(item),
         item.get("promotion_status") == LOCKBOX_POLICY["diagnostic_not_promoted_label"],
         str(item.get("name") or ""),
     )
@@ -1181,6 +1596,10 @@ def _portfolio_report_sort_key(item: dict[str, Any]) -> tuple[bool, float, bool,
 def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     fresh = _load_fresh_module()
     rows = _read_rows(Path(args.candidate_csv))
+    current_base_path = "" if bool(getattr(args, "no_current_base", False)) else getattr(
+        args, "current_base_artifact", str(DEFAULT_CURRENT_BASE_ARTIFACT)
+    )
+    current_base_candidate, base_policy = _load_current_base_candidate(current_base_path)
     pool, pool_policy = _candidate_pool_with_metadata(
         rows,
         top_n=int(args.top_n),
@@ -1240,6 +1659,7 @@ def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[dict[s
                         split_payloads=split_payloads,
                         mode=mode,
                         candidate_rows_by_name=candidate_rows_by_name,
+                        current_base_candidate=current_base_candidate,
                         cluster_cap=float(args.cluster_cap),
                         sleeve_cap=float(args.sleeve_cap),
                         correlation_threshold=float(args.correlation_threshold),
@@ -1247,12 +1667,19 @@ def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[dict[s
                 )
     portfolio_items.sort(key=_portfolio_report_sort_key)
     csv_rows = [_flatten_row(item) for item in portfolio_items]
-    selected_by_validation = max(portfolio_items, key=lambda item: item["validation_score"], default={})
+    selected_by_validation = max(portfolio_items, key=_train_val_stability_sort_key, default={})
     success_candidates = [item for item in portfolio_items if bool(item["success_candidate"])]
     best_success_candidate = max(
         success_candidates,
-        key=lambda item: item["validation_score"],
+        key=_train_val_stability_sort_key,
         default={},
+    )
+    retained_base_candidate = _compact_current_base_candidate(current_base_candidate)
+    selected_best_candidate = best_success_candidate or retained_base_candidate
+    selection_outcome = (
+        "improved_success_candidate"
+        if best_success_candidate
+        else "no_improvement_current_base_retained" if retained_base_candidate else "no_improvement_no_base"
     )
     diagnostic_best_oos = max(
         portfolio_items,
@@ -1301,17 +1728,30 @@ def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[dict[s
             "cluster_cap": float(args.cluster_cap),
             "sleeve_cap": float(args.sleeve_cap),
             "correlation_threshold": float(args.correlation_threshold),
-            "selection_basis": "train_val_only",
+            "selection_basis": "train_val_stability_only",
             "uses_locked_oos_for_selection": False,
+            "train_val_stability_formula": "frozen_weighted_train_validation_score_v1",
+            "train_val_stability_components": list(TRAIN_VAL_STABILITY_COMPONENTS),
         },
         "success_candidate_count": len(success_candidates),
         "best_success_candidate": best_success_candidate,
+        "selected_best_candidate": selected_best_candidate,
+        "selection_outcome": selection_outcome,
         "selected_by_validation": selected_by_validation,
+        "selected_by_train_val_stability": selected_by_validation,
         "diagnostic_best_oos": diagnostic_best_oos,
         "diagnostic_quarantine": diagnostic_quarantine[:50],
         "data_metadata": data_metadata,
         "peak_rss_mib": _rss_mib(),
         "lockbox_policy": dict(LOCKBOX_POLICY),
+        "base_policy": base_policy,
+        "current_base_candidate": retained_base_candidate,
+        "no_improvement_lifecycle": _no_improvement_lifecycle(
+            current_base_candidate=current_base_candidate,
+            selected_by_validation=selected_by_validation,
+            best_success_candidate=best_success_candidate,
+            success_candidate_count=len(success_candidates),
+        ),
         "memory_policy": memory_policy_payload(budget_bytes=PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES),
     }
     return payload, csv_rows
@@ -1324,6 +1764,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--symbols", default="BTC/USDT,ETH/USDT,SOL/USDT,BNB/USDT,TRX/USDT")
     parser.add_argument("--oos-end-date", default="2026-05-06")
     parser.add_argument("--candidate-csv", default=str(DEFAULT_CANDIDATE_CSV))
+    parser.add_argument("--current-base-artifact", default=str(DEFAULT_CURRENT_BASE_ARTIFACT))
+    parser.add_argument("--no-current-base", action="store_true")
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
     parser.add_argument("--top-n", type=int, default=18)
     parser.add_argument("--family-quota", type=int, default=0)
@@ -1356,6 +1798,8 @@ def main(argv: list[str] | None = None) -> int:
             "sleeve_cap": float(args.sleeve_cap),
             "correlation_threshold": float(args.correlation_threshold),
             "max_sleeves": int(args.max_sleeves),
+            "current_base_artifact": str(args.current_base_artifact),
+            "no_current_base": bool(args.no_current_base),
             "locked_oos_label": LOCKBOX_POLICY["locked_oos_label"],
             "locked_oos_gate_label": LOCKBOX_POLICY["locked_oos_gate_label"],
             "selection_label": LOCKBOX_POLICY["selection_label"],
@@ -1372,6 +1816,8 @@ def main(argv: list[str] | None = None) -> int:
                 "family_quota": int(args.family_quota),
                 "calendar_neighborhood_reps": int(args.calendar_neighborhood_reps),
                 "max_sleeves": int(args.max_sleeves),
+                "current_base_artifact": str(args.current_base_artifact),
+                "no_current_base": bool(args.no_current_base),
             },
         )
         payload, rows = build_payload(args)

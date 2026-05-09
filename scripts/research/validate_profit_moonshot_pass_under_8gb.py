@@ -33,6 +33,21 @@ DEFAULT_REPORT_DIR = (
 DEFAULT_MARKDOWN_PATH = DEFAULT_REPORT_DIR / "mission_validation_latest.md"
 EIGHT_GIB_BYTES = 8 * 1024 * 1024 * 1024
 CURRENT_CHAMPION_OOS_RETURN = 0.012181
+CURRENT_BASE_TRAIN_MONTHLY_RETURN = 0.020000000000000018
+CURRENT_BASE_VAL_MONTHLY_RETURN = 0.09848998131232078
+CURRENT_BASE_TRAIN_MDD = 0.06905953159200336
+CURRENT_BASE_VAL_MDD = 0.06493479922326455
+CURRENT_BASE_TRAIN_SHARPE = 1.7212556285918195
+CURRENT_BASE_VAL_SHARPE = 4.09640969448007
+CURRENT_BASE_TRAIN_SORTINO = 1.51511166991183
+CURRENT_BASE_VAL_SORTINO = 4.885875261022447
+CURRENT_BASE_TRAIN_CALMAR = 3.8842110332761934
+CURRENT_BASE_VAL_CALMAR = 32.1417458698937
+CURRENT_BASE_LEVERAGE = 2.3427334297703024
+CURRENT_BASE_SLEEVE_COUNT = 4
+CURRENT_BASE_OOS_RETURN = 0.06858164444753312
+CURRENT_BASE_OOS_MDD = 0.008197728267604966
+CURRENT_BASE_OOS_RETURN_RISK = CURRENT_BASE_OOS_RETURN / CURRENT_BASE_OOS_MDD
 MIN_STABLE_MONTHLY_RETURN = 0.02
 MAX_ACCEPTABLE_OOS_MDD = 0.25
 MIN_OOS_SHARPE = 2.0
@@ -150,10 +165,52 @@ def _candidate_label_ok(result: Mapping[str, Any], candidate_payload: Mapping[st
         for value in (
             result.get("research_success_candidate"),
             result.get("live_equivalent_selection_eligible"),
+            result.get("current_base_retained"),
+            result.get("no_improvement_current_base_retained"),
             candidate_payload.get("research_success_candidate"),
             candidate_payload.get("live_equivalent_selection_eligible"),
+            candidate_payload.get("current_base_retained"),
+            candidate_payload.get("no_improvement_current_base_retained"),
             _nested_get(candidate_payload, "labels", "research_success_candidate"),
             _nested_get(candidate_payload, "labels", "live_equivalent_selection_eligible"),
+            _nested_get(candidate_payload, "labels", "current_base_retained"),
+            _nested_get(candidate_payload, "labels", "no_improvement_current_base_retained"),
+        )
+    )
+
+
+def _no_improvement_base_retained(
+    result: Mapping[str, Any],
+    candidate_payload: Mapping[str, Any],
+) -> bool:
+    labels = _as_mapping(candidate_payload.get("labels"))
+    lifecycle = _as_mapping(result.get("no_improvement_lifecycle"))
+    outcome_values = {
+        str(result.get("selection_outcome") or "").strip().lower(),
+        str(result.get("promotion_status") or "").strip().lower(),
+        str(candidate_payload.get("selection_outcome") or "").strip().lower(),
+        str(candidate_payload.get("promotion_status") or "").strip().lower(),
+        str(lifecycle.get("status") or "").strip().lower(),
+    }
+    return any(
+        value
+        in {
+            "no_improvement_current_base_retained",
+            "no_improvement_base_preserved",
+            "current_base_retained",
+        }
+        for value in outcome_values
+    ) or any(
+        _truthy(value)
+        for value in (
+            result.get("current_base_retained"),
+            result.get("no_improvement_current_base_retained"),
+            lifecycle.get("current_base_retained"),
+            lifecycle.get("no_improvement"),
+            candidate_payload.get("current_base_retained"),
+            candidate_payload.get("no_improvement_current_base_retained"),
+            labels.get("current_base_retained"),
+            labels.get("no_improvement_current_base_retained"),
         )
     )
 
@@ -164,7 +221,15 @@ def _source_candidate_from_artifact(candidate_payload: Mapping[str, Any], *, rep
         return {}
     source_payload = _load_json(source_path)
     candidate_name = str(candidate_payload.get("name") or "")
-    for key in ("best_success_candidate", "selected_by_validation", "diagnostic_best_oos", "candidate"):
+    for key in (
+        "best_success_candidate",
+        "selected_best_candidate",
+        "selected_by_train_val_stability",
+        "selected_by_validation",
+        "diagnostic_best_oos",
+        "current_base_candidate",
+        "candidate",
+    ):
         source_candidate = source_payload.get(key)
         if not isinstance(source_candidate, Mapping):
             continue
@@ -191,8 +256,10 @@ def _metric_sources(
     for source in (
         candidate_payload.get("return_quality"),
         candidate_payload.get("metrics"),
+        candidate_payload.get("train_val_stability"),
         result.get("candidate_metrics"),
         source_candidate.get("return_quality"),
+        source_candidate.get("train_val_stability"),
     ):
         if isinstance(source, Mapping):
             sources.append(source)
@@ -271,9 +338,13 @@ def _train_val_metric(
     metric_name: str,
 ) -> float | None:
     aliases = {
+        ("train", "total_return"): ("train_total_return",),
+        ("train", "max_drawdown"): ("train_max_drawdown",),
         ("train", "sharpe"): ("train_sharpe",),
         ("train", "sortino"): ("train_sortino",),
         ("train", "calmar"): ("train_calmar",),
+        ("val", "total_return"): ("validation_total_return", "val_total_return"),
+        ("val", "max_drawdown"): ("validation_max_drawdown", "val_max_drawdown"),
         ("val", "sharpe"): ("validation_sharpe", "val_sharpe"),
         ("val", "sortino"): ("validation_sortino", "val_sortino"),
         ("val", "calmar"): ("validation_calmar", "val_calmar"),
@@ -282,6 +353,100 @@ def _train_val_metric(
     if direct is not None:
         return direct
     return _safe_float(_split_metrics(source_candidate, split_name).get(metric_name))
+
+
+def _candidate_leverage(
+    sources: Iterable[Mapping[str, Any]],
+    candidate_payload: Mapping[str, Any],
+    source_candidate: Mapping[str, Any],
+) -> float:
+    direct = _first_float_from_sources(sources, ("leverage",))
+    if direct is not None:
+        return direct
+    parsed = _safe_float(candidate_payload.get("leverage"))
+    if parsed is not None:
+        return parsed
+    parsed = _safe_float(source_candidate.get("leverage"))
+    return 1.0 if parsed is None else parsed
+
+
+def _candidate_sleeve_count(
+    sources: Iterable[Mapping[str, Any]],
+    candidate_payload: Mapping[str, Any],
+    source_candidate: Mapping[str, Any],
+) -> int:
+    direct = _first_float_from_sources(sources, ("sleeve_count",))
+    if direct is not None:
+        return round(direct)
+    for payload in (candidate_payload, source_candidate):
+        parsed = _safe_float(payload.get("sleeve_count"))
+        if parsed is not None:
+            return round(parsed)
+        sleeves = payload.get("sleeves")
+        if isinstance(sleeves, list | tuple):
+            return len(sleeves)
+    return 0
+
+
+def _train_val_stability_score(
+    *,
+    train_monthly: float | None,
+    val_monthly: float | None,
+    train_sharpe: float | None,
+    val_sharpe: float | None,
+    train_sortino: float | None,
+    val_sortino: float | None,
+    train_calmar: float | None,
+    val_calmar: float | None,
+    train_mdd: float | None,
+    val_mdd: float | None,
+    leverage: float,
+    sleeve_count: int,
+) -> float | None:
+    values = (
+        train_monthly,
+        val_monthly,
+        train_sharpe,
+        val_sharpe,
+        train_sortino,
+        val_sortino,
+        train_calmar,
+        val_calmar,
+        train_mdd,
+        val_mdd,
+    )
+    if any(value is None for value in values):
+        return None
+    return (
+        35.0 * min(float(train_monthly), 0.06)
+        + 45.0 * min(float(val_monthly), 0.12)
+        + 0.40 * float(train_sharpe)
+        + 0.60 * float(val_sharpe)
+        + 0.35 * float(train_sortino)
+        + 0.55 * float(val_sortino)
+        + 0.20 * min(float(train_calmar), 20.0)
+        + 0.30 * min(float(val_calmar), 60.0)
+        - 35.0 * float(train_mdd)
+        - 45.0 * float(val_mdd)
+        - 0.15 * max(0.0, float(leverage) - CURRENT_BASE_LEVERAGE)
+        - 0.25 * max(0.0, float(sleeve_count) - CURRENT_BASE_SLEEVE_COUNT)
+    )
+
+
+CURRENT_BASE_TRAIN_VAL_STABILITY_SCORE = _train_val_stability_score(
+    train_monthly=CURRENT_BASE_TRAIN_MONTHLY_RETURN,
+    val_monthly=CURRENT_BASE_VAL_MONTHLY_RETURN,
+    train_sharpe=CURRENT_BASE_TRAIN_SHARPE,
+    val_sharpe=CURRENT_BASE_VAL_SHARPE,
+    train_sortino=CURRENT_BASE_TRAIN_SORTINO,
+    val_sortino=CURRENT_BASE_VAL_SORTINO,
+    train_calmar=CURRENT_BASE_TRAIN_CALMAR,
+    val_calmar=CURRENT_BASE_VAL_CALMAR,
+    train_mdd=CURRENT_BASE_TRAIN_MDD,
+    val_mdd=CURRENT_BASE_VAL_MDD,
+    leverage=CURRENT_BASE_LEVERAGE,
+    sleeve_count=CURRENT_BASE_SLEEVE_COUNT,
+)
 
 
 def _smart_sortino(monthly_return: float | None, max_drawdown: float | None, sortino: float | None) -> float | None:
@@ -315,9 +480,33 @@ def _candidate_return_quality_check(
     train_sharpe = _train_val_metric(sources, source_candidate, "train", "sharpe")
     train_sortino = _train_val_metric(sources, source_candidate, "train", "sortino")
     train_calmar = _train_val_metric(sources, source_candidate, "train", "calmar")
+    train_mdd = _train_val_metric(sources, source_candidate, "train", "max_drawdown")
     val_sharpe = _train_val_metric(sources, source_candidate, "val", "sharpe")
     val_sortino = _train_val_metric(sources, source_candidate, "val", "sortino")
     val_calmar = _train_val_metric(sources, source_candidate, "val", "calmar")
+    val_mdd = _train_val_metric(sources, source_candidate, "val", "max_drawdown")
+    leverage = _candidate_leverage(sources, candidate_payload, source_candidate)
+    sleeve_count = _candidate_sleeve_count(sources, candidate_payload, source_candidate)
+    oos_return_risk = (
+        None
+        if oos_return is None or oos_mdd is None or oos_mdd <= 0.0
+        else float(oos_return) / float(oos_mdd)
+    )
+    train_val_stability_score = _train_val_stability_score(
+        train_monthly=train_monthly,
+        val_monthly=val_monthly,
+        train_sharpe=train_sharpe,
+        val_sharpe=val_sharpe,
+        train_sortino=train_sortino,
+        val_sortino=val_sortino,
+        train_calmar=train_calmar,
+        val_calmar=val_calmar,
+        train_mdd=train_mdd,
+        val_mdd=val_mdd,
+        leverage=leverage,
+        sleeve_count=sleeve_count,
+    )
+    no_improvement_base_retained = _no_improvement_base_retained(result, candidate_payload)
     if oos_smart_sortino is None:
         oos_smart_sortino = _smart_sortino(oos_monthly, oos_mdd, oos_sortino)
     details = {
@@ -334,22 +523,56 @@ def _candidate_return_quality_check(
         "minimum_val_sortino": MIN_VAL_SORTINO,
         "minimum_val_calmar": MIN_VAL_CALMAR,
         "current_champion_oos_return": CURRENT_CHAMPION_OOS_RETURN,
+        "current_base_oos_return": CURRENT_BASE_OOS_RETURN,
+        "current_base_oos_return_risk": CURRENT_BASE_OOS_RETURN_RISK,
+        "current_base_train_val_stability_score": CURRENT_BASE_TRAIN_VAL_STABILITY_SCORE,
+        "no_improvement_base_retained": no_improvement_base_retained,
         "train_monthlyized_return": train_monthly,
         "val_monthlyized_return": val_monthly,
         "train_sharpe": train_sharpe,
         "train_sortino": train_sortino,
         "train_calmar": train_calmar,
+        "train_max_drawdown": train_mdd,
         "val_sharpe": val_sharpe,
         "val_sortino": val_sortino,
         "val_calmar": val_calmar,
+        "val_max_drawdown": val_mdd,
+        "leverage": leverage,
+        "sleeve_count": sleeve_count,
+        "train_val_stability_score": train_val_stability_score,
         "locked_oos_monthlyized_return": oos_monthly,
         "locked_oos_total_return": oos_return,
         "locked_oos_max_drawdown": oos_mdd,
+        "locked_oos_return_risk": oos_return_risk,
         "locked_oos_sharpe": oos_sharpe,
         "locked_oos_sortino": oos_sortino,
         "locked_oos_smart_sortino": oos_smart_sortino,
         "locked_oos_calmar": oos_calmar,
     }
+    current_base_return_check = (
+        oos_return is not None
+        and (
+            oos_return >= CURRENT_BASE_OOS_RETURN
+            if no_improvement_base_retained
+            else oos_return > CURRENT_BASE_OOS_RETURN
+        )
+    )
+    current_base_return_risk_check = (
+        oos_return_risk is not None
+        and (
+            oos_return_risk >= CURRENT_BASE_OOS_RETURN_RISK
+            if no_improvement_base_retained
+            else oos_return_risk > CURRENT_BASE_OOS_RETURN_RISK
+        )
+    )
+    current_base_train_val_check = (
+        train_val_stability_score is not None
+        and (
+            train_val_stability_score >= CURRENT_BASE_TRAIN_VAL_STABILITY_SCORE
+            if no_improvement_base_retained
+            else train_val_stability_score > CURRENT_BASE_TRAIN_VAL_STABILITY_SCORE
+        )
+    )
     checks = (
         train_monthly is not None and train_monthly >= MIN_STABLE_MONTHLY_RETURN,
         val_monthly is not None and val_monthly >= MIN_STABLE_MONTHLY_RETURN,
@@ -361,6 +584,9 @@ def _candidate_return_quality_check(
         val_calmar is not None and val_calmar >= MIN_VAL_CALMAR,
         oos_monthly is not None and oos_monthly >= MIN_STABLE_MONTHLY_RETURN,
         oos_return is not None and oos_return > CURRENT_CHAMPION_OOS_RETURN,
+        current_base_return_check,
+        current_base_return_risk_check,
+        current_base_train_val_check,
         oos_mdd is not None and oos_mdd <= MAX_ACCEPTABLE_OOS_MDD,
         oos_sharpe is not None and oos_sharpe >= MIN_OOS_SHARPE,
         oos_sortino is not None and oos_sortino >= MIN_OOS_SORTINO,
@@ -514,6 +740,65 @@ def _has_success_evidence(items: list[Any], *, accepted_keys: tuple[str, ...]) -
     return False
 
 
+def _mutex_evidence_items(result: Mapping[str, Any]) -> list[Any]:
+    items: list[Any] = []
+    evidence = _as_mapping(result.get("evidence"))
+    memory = _as_mapping(result.get("memory_evidence"))
+    for source in (result, evidence, memory):
+        for key in ("heavy_mutex_evidence", "mutex_evidence", "exclusive_run_evidence"):
+            items.extend(_as_list(source.get(key)))
+    return [item for item in items if item not in (None, "", [], {})]
+
+
+def _mutex_evidence_check(result: Mapping[str, Any]) -> EvidenceCheck:
+    items = _mutex_evidence_items(result)
+    required = bool(result.get("requires_heavy_mutex_evidence") is True or items)
+    if not required:
+        return EvidenceCheck(
+            "heavy_run_mutex_evidence",
+            True,
+            "not required by result; no heavy replay evidence declared",
+        )
+
+    ok_items = 0
+    details: list[dict[str, Any]] = []
+    for item in items:
+        if isinstance(item, Mapping):
+            status = str(item.get("status") or item.get("conclusion") or "").strip().lower()
+            lock_path = str(item.get("lock_path") or item.get("path") or "").strip()
+            exclusive = _truthy(item.get("exclusive")) or _truthy(item.get("exclusive_lock"))
+            overlap_ok = str(item.get("overlap_check") or item.get("overlap_status") or "").lower() in {
+                "passed",
+                "pass",
+                "ok",
+                "no_overlap",
+                "none",
+            }
+            passed = bool(lock_path and exclusive and (status in {"passed", "completed", "success"} or overlap_ok))
+            ok_items += int(passed)
+            details.append(
+                {
+                    "lock_path": lock_path,
+                    "status": status,
+                    "exclusive": exclusive,
+                    "overlap_ok": overlap_ok,
+                    "passed": passed,
+                }
+            )
+        else:
+            text = str(item or "").strip()
+            passed = bool(text)
+            ok_items += int(passed)
+            details.append({"text": text, "passed": passed})
+    return EvidenceCheck(
+        "heavy_run_mutex_evidence",
+        ok_items > 0,
+        json.dumps(details, ensure_ascii=False, sort_keys=True)
+        if details
+        else "requires_heavy_mutex_evidence=true but no mutex evidence present",
+    )
+
+
 def validate(result_path: Path = DEFAULT_RESULT_PATH, *, repo_root: Path = REPO_ROOT) -> dict[str, Any]:
     """Return a mission validation payload without mutating mission result state."""
     result = _load_json(result_path)
@@ -580,6 +865,7 @@ def validate(result_path: Path = DEFAULT_RESULT_PATH, *, repo_root: Path = REPO_
             json.dumps(rss_details, ensure_ascii=False, sort_keys=True) if rss_details else "missing RSS evidence paths",
         )
     )
+    checks.append(_mutex_evidence_check(result))
 
     tests_items = _evidence_items(result, "test_evidence", "tests_and_ci_evidence", "tests")
     tests_ok = bool(result.get("tests_passed") is True or _has_success_evidence(tests_items, accepted_keys=("passed", "success")))

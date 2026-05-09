@@ -1,7 +1,10 @@
 {
   "artifact_kind": "autoresearch_profit_moonshot_alpha_v2_result",
-  "candidate_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/passing_candidate_latest.json",
+  "candidate_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/continued_optimization_20260509/passing_candidate_latest.json",
   "candidate_metrics": {
+    "current_base_oos_return": 0.06858164444753312,
+    "current_base_oos_return_risk": 8.365932879057214,
+    "current_base_train_val_stability_score": 16.576134102067016,
     "current_champion_oos_mdd": 0.001662,
     "current_champion_oos_return": 0.012181,
     "current_champion_oos_return_risk": 7.329121540312876,
@@ -16,6 +19,7 @@
     "locked_oos_total_return": 0.06858164444753312,
     "oos_return_excess_vs_champion": 0.05640064444753312,
     "return_quality_contract_passed": true,
+    "selection_outcome": "no_improvement_current_base_retained",
     "train_calmar": 3.8842110332761934,
     "train_max_drawdown": 0.06905953159200336,
     "train_monthlyized_return": 0.020000000000000018,
@@ -23,6 +27,7 @@
     "train_sharpe": 1.7212556285918195,
     "train_sortino": 1.51511166991183,
     "train_total_return": 0.26820739157769213,
+    "train_val_stability_score": 16.576134102067016,
     "validation_calmar": 32.1417458698937,
     "validation_max_drawdown": 0.06493479922326455,
     "validation_monthlyized_return": 0.09848998131232078,
@@ -31,76 +36,42 @@
     "validation_sortino": 4.885875261022447,
     "validation_total_return": 0.19971302124703927
   },
-  "ci_evidence": [
-    {
-      "conclusion": "success",
-      "head_sha": "a1f4e0718975202f416b3e76e358c46a6a3d7ae8",
-      "passed": true,
-      "run_id": "25594783480",
-      "status": "completed",
-      "url": "https://github.com/hoky1227/Quants-agent/actions/runs/25594783480",
-      "workflow": "ci"
-    },
-    {
-      "conclusion": "success",
-      "head_sha": "a1f4e0718975202f416b3e76e358c46a6a3d7ae8",
-      "passed": true,
-      "run_id": "25594783476",
-      "status": "completed",
-      "url": "https://github.com/hoky1227/Quants-agent/actions/runs/25594783476",
-      "workflow": "private-ci"
-    }
-  ],
-  "ci_passed": true,
-  "ci_status": "success",
+  "ci_evidence": [],
+  "ci_passed": false,
+  "ci_status": "pending",
+  "current_base_retained": true,
   "evidence": {
-    "ci_evidence": [
+    "ci_evidence": [],
+    "git_evidence": [],
+    "heavy_mutex_evidence": [
       {
-        "conclusion": "success",
-        "head_sha": "a1f4e0718975202f416b3e76e358c46a6a3d7ae8",
-        "passed": true,
-        "run_id": "25594783480",
-        "status": "completed",
-        "url": "https://github.com/hoky1227/Quants-agent/actions/runs/25594783480",
-        "workflow": "ci"
-      },
-      {
-        "conclusion": "success",
-        "head_sha": "a1f4e0718975202f416b3e76e358c46a6a3d7ae8",
-        "passed": true,
-        "run_id": "25594783476",
-        "status": "completed",
-        "url": "https://github.com/hoky1227/Quants-agent/actions/runs/25594783476",
-        "workflow": "private-ci"
+        "completed_at": "2026-05-09T08:17:28Z",
+        "exclusive": true,
+        "lock_path": "var/reports/exact_window_backtests/followup_status/portfolio_followup_heavy_run.lock",
+        "overlap_check": "passed",
+        "started_at": "2026-05-09T08:13:08Z",
+        "status": "completed"
       }
     ],
-    "completion_summary": "docs/session_handoff_20260509_profit_moonshot_monthly_budget_pass.md",
-    "git_evidence": [
-      {
-        "commit": "a1f4e0718975202f416b3e76e358c46a6a3d7ae8",
-        "pushed": true,
-        "ref": "main",
-        "remote": "private",
-        "success": true,
-        "summary": "git push private HEAD:main completed; private/main advanced to source Lore commit"
-      }
-    ],
-    "portfolio_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_monthly_budget_v1/fresh_portfolio_tuning_latest.json",
-    "portfolio_markdown": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_monthly_budget_v1/fresh_portfolio_tuning_latest.md",
+    "portfolio_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/continued_optimization_20260509/fresh_portfolio_tuning_latest.json",
+    "portfolio_markdown": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/continued_optimization_20260509/fresh_portfolio_tuning_latest.md",
+    "retained_base_candidate": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/continued_optimization_20260509/passing_candidate_latest.json",
     "rss_under_8gb_logs": [
-      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_monthly_budget_v1/_memory_guard/profit_moonshot_fresh_portfolio_tuning_memory_latest.json",
-      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_monthly_budget_v1/_memory_guard/profit_moonshot_fresh_portfolio_tuning_rss_latest.jsonl"
+      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/continued_optimization_20260509/_memory_guard/profit_moonshot_fresh_portfolio_tuning_memory_latest.json",
+      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/continued_optimization_20260509/_memory_guard/profit_moonshot_fresh_portfolio_tuning_rss_latest.jsonl",
+      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/runner_evidence_20260509/leader_continued_optimization_time.log"
     ],
     "test_evidence": [
       {
         "command": "uv run --extra dev pytest -q tests/test_profit_moonshot_fresh_portfolio_tuning.py tests/test_profit_moonshot_pass_under_8gb_validator.py",
         "passed": true,
-        "summary": "14 passed in 0.10s"
+        "summary": "22 passed in 0.09s"
       },
       {
         "command": "uv run --extra dev pytest -q",
         "passed": true,
-        "summary": "1208 passed in 289.27s (0:04:49)"
+        "summary": "1216 passed in 227.75s (0:03:47)",
+        "time_max_rss_kb": 2732444
       },
       {
         "command": "uv run --extra dev ruff check .",
@@ -119,37 +90,43 @@
       }
     ]
   },
-  "generated_at_utc": "2026-05-09T07:03:48.698838Z",
-  "git_evidence": [
+  "generated_at_utc": "2026-05-09T08:23:13.884984Z",
+  "git_evidence": [],
+  "heavy_mutex_evidence": [
     {
-      "commit": "a1f4e0718975202f416b3e76e358c46a6a3d7ae8",
-      "pushed": true,
-      "ref": "main",
-      "remote": "private",
-      "success": true,
-      "summary": "git push private HEAD:main completed; private/main advanced to source Lore commit"
+      "completed_at": "2026-05-09T08:17:28Z",
+      "exclusive": true,
+      "lock_path": "var/reports/exact_window_backtests/followup_status/portfolio_followup_heavy_run.lock",
+      "overlap_check": "passed",
+      "started_at": "2026-05-09T08:13:08Z",
+      "status": "completed"
     }
   ],
   "live_equivalent_selection_eligible": false,
   "memory_evidence": {
     "memory_summaries": [
-      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_monthly_budget_v1/_memory_guard/profit_moonshot_fresh_portfolio_tuning_memory_latest.json"
+      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/continued_optimization_20260509/_memory_guard/profit_moonshot_fresh_portfolio_tuning_memory_latest.json"
     ],
-    "portfolio_peak_rss_mib": 920.51171875,
+    "portfolio_peak_rss_mib": 1239.703125,
     "rss_under_8gb_logs": [
-      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_monthly_budget_v1/_memory_guard/profit_moonshot_fresh_portfolio_tuning_memory_latest.json",
-      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_monthly_budget_v1/_memory_guard/profit_moonshot_fresh_portfolio_tuning_rss_latest.jsonl"
+      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/continued_optimization_20260509/_memory_guard/profit_moonshot_fresh_portfolio_tuning_memory_latest.json",
+      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/continued_optimization_20260509/_memory_guard/profit_moonshot_fresh_portfolio_tuning_rss_latest.jsonl",
+      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/runner_evidence_20260509/leader_continued_optimization_time.log"
     ],
-    "time_max_rss_kb": 942604,
+    "time_max_rss_kb": 1269456,
     "under_8gib": true
   },
-  "passed": true,
-  "passing_candidate_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/passing_candidate_latest.json",
-  "pushed_commit": "a1f4e0718975202f416b3e76e358c46a6a3d7ae8",
-  "pushed_ref": "private/main",
-  "required_final_evidence": [],
+  "no_improvement_current_base_retained": true,
+  "passed": false,
+  "passing_candidate_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/continued_optimization_20260509/passing_candidate_latest.json",
+  "required_final_evidence": [
+    "git_push",
+    "ci/private-ci green"
+  ],
+  "requires_heavy_mutex_evidence": true,
   "research_success_candidate": true,
   "return_quality_contract": {
+    "current_base_train_val_stability_score": 16.576134102067016,
     "locked_oos_use": [
       "report",
       "gate"
@@ -166,30 +143,30 @@
     "minimum_val_calmar": 3.0,
     "minimum_val_sharpe": 3.0,
     "minimum_val_sortino": 3.0,
+    "requires_current_base_oos_return_gt_for_new_candidate": 0.06858164444753312,
+    "requires_current_base_oos_return_risk_gt_for_new_candidate": 8.365932879057214,
     "requires_locked_oos_total_return_gt_current_champion": 0.012181,
     "selection_inputs": [
       "train",
       "validation"
     ]
   },
-  "schema_version": "1.1",
+  "schema_version": "1.2",
+  "selection_outcome": "no_improvement_current_base_retained",
   "source_changed": true,
-  "status": "passed",
-  "summary": "Return-quality candidate, full local verification, source push, and GitHub Actions ci/private-ci are green for the monthly-budget source Lore commit.",
-  "supersedes": {
-    "previous_candidate_reason": "Old target-budget candidate failed +2% monthly train/OOS and smart Sortino gates.",
-    "previous_candidate_status": "superseded_return_quality_floor"
-  },
+  "status": "running",
+  "summary": "Local continuation replay and full verification are green; push and GitHub Actions CI are pending.",
   "test_evidence": [
     {
       "command": "uv run --extra dev pytest -q tests/test_profit_moonshot_fresh_portfolio_tuning.py tests/test_profit_moonshot_pass_under_8gb_validator.py",
       "passed": true,
-      "summary": "14 passed in 0.10s"
+      "summary": "22 passed in 0.09s"
     },
     {
       "command": "uv run --extra dev pytest -q",
       "passed": true,
-      "summary": "1208 passed in 289.27s (0:04:49)"
+      "summary": "1216 passed in 227.75s (0:03:47)",
+      "time_max_rss_kb": 2732444
     },
     {
       "command": "uv run --extra dev ruff check .",
