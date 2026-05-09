@@ -42,3 +42,8 @@ The suspicious “more leverage always looks better” result is not accepted as
 
 ## Next steps
 Run final full verification, update `.omx/specs/autoresearch-profit-moonshot-alpha-v2/result.json`, commit with Lore protocol, push to `private/main`, and verify both `ci` and `private-ci` green.
+
+## Final CI / validator evidence
+- Lore commit `6055d691b07fac1d54362c51157935d628f3f129` pushed to `private/main`.
+- GitHub Actions: `private-ci` run `25602373489` success; `ci` run `25602373501` success.
+- Final mission validator: `.omx/specs/autoresearch-profit-moonshot-alpha-v2/validation_latest.json` -> `status=passed`, `passed=true`.

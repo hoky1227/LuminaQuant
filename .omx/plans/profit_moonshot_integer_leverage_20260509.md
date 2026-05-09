@@ -56,3 +56,8 @@ The exact current-base sleeve tuple was forced through the integer grid. Its int
 - Compileall: `python3 -m compileall -q src scripts tests` -> pass.
 - Whitespace: `git diff --check` -> pass.
 - Mission result updated with integer-leverage audit evidence; validator and GitHub Actions finalization pending until source commit is pushed.
+
+## Source push / CI finalization
+- Source/evidence Lore commit: `6055d691b07fac1d54362c51157935d628f3f129`, pushed to `private/main`.
+- GitHub Actions for `6055d69`: `private-ci` run `25602373489` success; `ci` run `25602373501` success.
+- Mission validator: `.omx/specs/autoresearch-profit-moonshot-alpha-v2/validation_latest.json` -> `status=passed`, `passed=true`.

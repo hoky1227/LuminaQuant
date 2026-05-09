@@ -49,13 +49,75 @@
     "validation_sortino": 4.885875261022447,
     "validation_total_return": 0.19971302124703927
   },
-  "ci_passed": false,
-  "ci_status": "pending",
+  "ci_evidence": [
+    {
+      "conclusion": "success",
+      "created_at": "2026-05-09T13:32:17Z",
+      "event": "push",
+      "head_sha": "6055d691b07fac1d54362c51157935d628f3f129",
+      "run_id": 25602373501,
+      "status": "completed",
+      "success": true,
+      "updated_at": "2026-05-09T13:35:27Z",
+      "url": "https://github.com/hoky1227/Quants-agent/actions/runs/25602373501",
+      "workflow": "ci"
+    },
+    {
+      "conclusion": "success",
+      "created_at": "2026-05-09T13:32:17Z",
+      "event": "push",
+      "head_sha": "6055d691b07fac1d54362c51157935d628f3f129",
+      "run_id": 25602373489,
+      "status": "completed",
+      "success": true,
+      "updated_at": "2026-05-09T13:32:49Z",
+      "url": "https://github.com/hoky1227/Quants-agent/actions/runs/25602373489",
+      "workflow": "private-ci"
+    }
+  ],
+  "ci_passed": true,
+  "ci_status": "success",
+  "completed_at_utc": "2026-05-09T13:36:05.647050Z",
   "current_base_retained": true,
   "evidence": {
     "audit_summary": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/integer_leverage_audit_20260509.json",
-    "ci_evidence": [],
-    "git_evidence": [],
+    "ci_evidence": [
+      {
+        "conclusion": "success",
+        "created_at": "2026-05-09T13:32:17Z",
+        "event": "push",
+        "head_sha": "6055d691b07fac1d54362c51157935d628f3f129",
+        "run_id": 25602373501,
+        "status": "completed",
+        "success": true,
+        "updated_at": "2026-05-09T13:35:27Z",
+        "url": "https://github.com/hoky1227/Quants-agent/actions/runs/25602373501",
+        "workflow": "ci"
+      },
+      {
+        "conclusion": "success",
+        "created_at": "2026-05-09T13:32:17Z",
+        "event": "push",
+        "head_sha": "6055d691b07fac1d54362c51157935d628f3f129",
+        "run_id": 25602373489,
+        "status": "completed",
+        "success": true,
+        "updated_at": "2026-05-09T13:32:49Z",
+        "url": "https://github.com/hoky1227/Quants-agent/actions/runs/25602373489",
+        "workflow": "private-ci"
+      }
+    ],
+    "git_evidence": [
+      {
+        "commit": "6055d691b07fac1d54362c51157935d628f3f129",
+        "pushed": true,
+        "ref": "refs/heads/main",
+        "remote": "private",
+        "repo": "hoky1227/Quants-agent",
+        "success": true,
+        "verified_at_utc": "2026-05-09T13:36:05.647050Z"
+      }
+    ],
     "heavy_mutex_evidence": [
       {
         "completed_at": "2026-05-09T12:50:07Z",
@@ -137,7 +199,17 @@
       }
     ]
   },
-  "git_evidence": [],
+  "git_evidence": [
+    {
+      "commit": "6055d691b07fac1d54362c51157935d628f3f129",
+      "pushed": true,
+      "ref": "refs/heads/main",
+      "remote": "private",
+      "repo": "hoky1227/Quants-agent",
+      "success": true,
+      "verified_at_utc": "2026-05-09T13:36:05.647050Z"
+    }
+  ],
   "heavy_mutex_evidence": [
     {
       "completed_at": "2026-05-09T12:50:07Z",
@@ -182,10 +254,12 @@
   "notes": [
     "No new candidate is promoted under integer/raw-train audit.",
     "Current base remains the reference/no-improvement retained artifact.",
-    "CI evidence pending for the source/artifact commit."
+    "Source/evidence commit 6055d691b07fac1d54362c51157935d628f3f129 pushed to private/main; ci and private-ci succeeded."
   ],
-  "passed": false,
+  "passed": true,
   "passing_candidate_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/continued_optimization_20260509/passing_candidate_latest.json",
+  "pushed_commit": "6055d691b07fac1d54362c51157935d628f3f129",
+  "pushed_ref": "private/main",
   "requires_heavy_mutex_evidence": true,
   "research_success_candidate": true,
   "rss_under_8gb_logs": [
@@ -203,7 +277,7 @@
   "schema_version": "1.2",
   "selection_outcome": "no_improvement_current_base_retained",
   "source_changed": true,
-  "status": "running",
+  "status": "passed",
   "test_evidence": [
     {
       "command": "uv run --extra dev pytest -q tests/test_profit_moonshot_fresh_portfolio_tuning.py tests/test_profit_moonshot_pass_under_8gb_validator.py",
@@ -238,5 +312,5 @@
     }
   ],
   "tests_passed": true,
-  "updated_at_utc": "2026-05-09T13:30:47.371623Z"
+  "updated_at_utc": "2026-05-09T13:36:05.647050Z"
 }
