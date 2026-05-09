@@ -1,0 +1,109 @@
+{
+  "artifact_kind": "autoresearch_profit_moonshot_alpha_v2_result",
+  "candidate_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/passing_candidate_latest.json",
+  "candidate_metrics": {
+    "current_champion_oos_mdd": 0.001662,
+    "current_champion_oos_return": 0.012181,
+    "current_champion_oos_return_risk": 7.329121540312876,
+    "locked_oos_max_drawdown": 0.001774102912063881,
+    "locked_oos_return_risk": 7.551493250827515,
+    "locked_oos_sharpe": 5.477385370503527,
+    "locked_oos_total_return": 0.013397126166723838,
+    "oos_return_excess_vs_champion": 0.0012161261667238375,
+    "oos_return_risk_excess_vs_champion": 0.222371710514639,
+    "shadow_oos_mdd_gate": 0.001778,
+    "train_total_return": 0.055019331232847524,
+    "validation_total_return": 0.040000000000000036
+  },
+  "ci_evidence": [],
+  "evidence": {
+    "ci_evidence": [],
+    "completion_summary": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/alpha_v2_completion_summary_20260509.md",
+    "git_evidence": [],
+    "portfolio_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_target_budget_v1/fresh_portfolio_tuning_latest.json",
+    "portfolio_markdown": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_target_budget_v1/fresh_portfolio_tuning_latest.md",
+    "rss_under_8gb_logs": [
+      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_target_budget_v1/_memory_guard/profit_moonshot_fresh_portfolio_tuning_memory_latest.json",
+      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_target_budget_v1/_memory_guard/profit_moonshot_fresh_portfolio_tuning_rss_latest.jsonl"
+    ],
+    "test_evidence": [
+      {
+        "command": "uv run --extra dev pytest -q <targeted alpha-v2 tests>",
+        "passed": true,
+        "summary": "9 passed in 0.10s"
+      },
+      {
+        "command": "uv run --extra dev pytest -q",
+        "passed": true,
+        "summary": "1206 passed in 234.23s (0:03:54)"
+      },
+      {
+        "command": "uv run --extra dev ruff check .",
+        "passed": true,
+        "summary": "All checks passed"
+      },
+      {
+        "command": "python3 -m compileall -q src scripts tests",
+        "passed": true,
+        "summary": "passed"
+      },
+      {
+        "command": "git diff --check",
+        "passed": true,
+        "summary": "passed"
+      }
+    ]
+  },
+  "generated_at_utc": "2026-05-09T05:51:51.998255Z",
+  "git_evidence": [],
+  "live_equivalent_selection_eligible": false,
+  "memory_evidence": {
+    "memory_summaries": [
+      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_target_budget_v1/_memory_guard/profit_moonshot_fresh_portfolio_tuning_memory_latest.json"
+    ],
+    "portfolio_peak_rss_mib": 746.1875,
+    "rss_under_8gb_logs": [
+      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_target_budget_v1/_memory_guard/profit_moonshot_fresh_portfolio_tuning_memory_latest.json",
+      "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_target_budget_v1/_memory_guard/profit_moonshot_fresh_portfolio_tuning_rss_latest.jsonl"
+    ],
+    "under_8gib": true
+  },
+  "passed": false,
+  "passing_candidate_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/passing_candidate_latest.json",
+  "required_final_evidence": [
+    "git_push_if_code_changed",
+    "ci_green_after_push"
+  ],
+  "research_success_candidate": true,
+  "schema_version": "1.0",
+  "source_changed": true,
+  "status": "local_verified_ci_pending",
+  "summary": "Local candidate, tests, ruff, compileall, and diff-check evidence are green; push and GitHub Actions CI evidence still pending at this artifact snapshot.",
+  "test_evidence": [
+    {
+      "command": "uv run --extra dev pytest -q <targeted alpha-v2 tests>",
+      "passed": true,
+      "summary": "9 passed in 0.10s"
+    },
+    {
+      "command": "uv run --extra dev pytest -q",
+      "passed": true,
+      "summary": "1206 passed in 234.23s (0:03:54)"
+    },
+    {
+      "command": "uv run --extra dev ruff check .",
+      "passed": true,
+      "summary": "All checks passed"
+    },
+    {
+      "command": "python3 -m compileall -q src scripts tests",
+      "passed": true,
+      "summary": "passed"
+    },
+    {
+      "command": "git diff --check",
+      "passed": true,
+      "summary": "passed"
+    }
+  ]
+}

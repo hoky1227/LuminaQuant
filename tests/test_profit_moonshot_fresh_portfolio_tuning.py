@@ -134,6 +134,7 @@ def _minimal_payload(tmp_path: Path) -> dict[str, Any]:
         "candidate_sleeve_count": 2,
         "portfolio_spec_count": 1,
         "success_candidate_count": 1,
+        "best_success_candidate": selected,
         "selected_by_validation": selected,
         "diagnostic_best_oos": selected,
         "data_metadata": {"source": "unit"},
@@ -230,6 +231,7 @@ def test_tuning_main_wraps_artifacts_with_memory_guard_and_lockbox_labels(
 
     rendered = (output_dir / "fresh_portfolio_tuning_latest.md").read_text(encoding="utf-8")
     assert "Locked-OOS label: `locked_oos_report_only`" in rendered
+    assert "## Best success candidate" in rendered
     assert "locked OOS" in rendered
 
 
@@ -363,6 +365,44 @@ def test_cluster_capped_validation_weight_caps_correlated_calendar_cluster() -> 
     assert sum(weights[:2]) <= 0.500001
     assert abs(sum(weights) - 1.0) < 1e-9
     assert diagnostics["selection_basis"] == "train_val_only_cluster_capped"
+
+
+def test_train_val_target_return_budget_scales_without_oos_selection() -> None:
+    class _Fresh:
+        HOURLY_PERIODS_PER_YEAR = 365 * 24
+
+        @staticmethod
+        def _metrics_from_equity_totals(equity: list[float], *, periods: int) -> dict[str, float]:
+            del periods
+            return {"total_return": equity[-1] / 10_000.0 - 1.0}
+
+    split_curves = {
+        "sleeve_a": {
+            "train": [10_000.0, 10_400.0],
+            "val": [10_000.0, 10_350.0],
+            "oos": [10_000.0, 10_200.0],
+        },
+        "sleeve_b": {
+            "train": [10_000.0, 10_300.0],
+            "val": [10_000.0, 10_250.0],
+            "oos": [10_000.0, 10_180.0],
+        },
+    }
+
+    weights, leverage, diagnostics = MODULE._mode_weights_and_leverage(
+        fresh=_Fresh(),
+        combo_names=("sleeve_a", "sleeve_b"),
+        split_curves=split_curves,
+        split_payloads={},
+        mode="train_val_target_return_budget",
+    )
+
+    assert weights is None
+    assert leverage == pytest.approx(MODULE.TARGET_BUDGET_TRAIN_RETURN / 0.07)
+    assert diagnostics["selection_basis"] == "train_val_target_return_budget"
+    assert diagnostics["uses_locked_oos_for_selection"] is False
+    assert diagnostics["raw_train_return"] == pytest.approx(0.07)
+    assert diagnostics["raw_val_return"] == pytest.approx(0.06)
 
 
 def test_mdd_failed_diagnostic_is_quarantined_not_promoted() -> None:

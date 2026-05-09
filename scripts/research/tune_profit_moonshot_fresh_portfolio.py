@@ -52,6 +52,9 @@ CURRENT_CHAMPION_OOS_RETURN_RISK = CURRENT_CHAMPION_OOS_RETURN / CURRENT_CHAMPIO
 BASELINE_OOS_RETURN = CURRENT_CHAMPION_OOS_RETURN
 SHADOW_OOS_MDD = 0.001778
 SUCCESS_SHARPE = 1.0
+TARGET_BUDGET_TRAIN_RETURN = 0.05
+TARGET_BUDGET_VAL_RETURN = 0.04
+MIN_TARGET_BUDGET_LEVERAGE = 0.20
 RUN_NAME = "profit_moonshot_fresh_portfolio_tuning"
 LOCKBOX_POLICY = {
     "selection_label": "train_val_validation_only",
@@ -308,7 +311,7 @@ def _combine_equity(
         returns.append(arr / 10_000.0 - 1.0)
     stacked = np.vstack(returns)
     if weights is None:
-        if mode == "additive_sleeves":
+        if mode in {"additive_sleeves", "train_val_target_return_budget"}:
             weight_arr = np.ones(stacked.shape[0], dtype=float)
         elif mode == "equal_weight":
             weight_arr = np.full(stacked.shape[0], 1.0 / float(stacked.shape[0]), dtype=float)
@@ -531,6 +534,47 @@ def _cluster_capped_validation_weights(
     return weights, diagnostics
 
 
+def _train_val_target_return_leverage(
+    *,
+    fresh: Any,
+    combo_names: tuple[str, ...],
+    split_curves: dict[str, dict[str, list[float]]],
+) -> tuple[float, dict[str, Any]]:
+    split_returns: dict[str, float] = {}
+    for split_name in ("train", "val"):
+        equity = _combine_equity(
+            [split_curves[name][split_name] for name in combo_names],
+            mode="additive_sleeves",
+            weights=None,
+            leverage=1.0,
+        )
+        metrics = fresh._metrics_from_equity_totals(
+            equity,
+            periods=int(getattr(fresh, "HOURLY_PERIODS_PER_YEAR", 365 * 24)),
+        )
+        split_returns[split_name] = _safe_float(metrics.get("total_return"))
+
+    required_leverages: list[float] = []
+    if split_returns["train"] > 0.0:
+        required_leverages.append(TARGET_BUDGET_TRAIN_RETURN / split_returns["train"])
+    if split_returns["val"] > 0.0:
+        required_leverages.append(TARGET_BUDGET_VAL_RETURN / split_returns["val"])
+    raw_leverage = max(required_leverages, default=1.0)
+    if not math.isfinite(raw_leverage):
+        raw_leverage = 1.0
+    leverage = max(MIN_TARGET_BUDGET_LEVERAGE, min(1.0, float(raw_leverage)))
+    return leverage, {
+        "selection_basis": "train_val_target_return_budget",
+        "uses_locked_oos_for_selection": False,
+        "target_train_return": TARGET_BUDGET_TRAIN_RETURN,
+        "target_val_return": TARGET_BUDGET_VAL_RETURN,
+        "raw_train_return": split_returns["train"],
+        "raw_val_return": split_returns["val"],
+        "raw_required_leverage": float(raw_leverage),
+        "min_leverage": MIN_TARGET_BUDGET_LEVERAGE,
+    }
+
+
 def _mode_weights_and_leverage(
     *,
     fresh: Any,
@@ -545,6 +589,13 @@ def _mode_weights_and_leverage(
 ) -> tuple[list[float] | None, float, dict[str, Any]]:
     if mode in {"additive_sleeves", "equal_weight"}:
         return None, 1.0, {}
+    if mode == "train_val_target_return_budget":
+        leverage, diagnostics = _train_val_target_return_leverage(
+            fresh=fresh,
+            combo_names=combo_names,
+            split_curves=split_curves,
+        )
+        return None, leverage, diagnostics
     weights = _validation_return_risk_weights(combo_names=combo_names, split_payloads=split_payloads)
     if mode == "validation_return_risk_weight":
         return weights, 1.0, {"selection_basis": "train_val_validation_return_risk"}
@@ -751,6 +802,7 @@ def _fmt_float(value: Any) -> str:
 
 def _markdown(payload: dict[str, Any], rows: list[dict[str, Any]]) -> str:
     selected = payload.get("selected_by_validation") or {}
+    best_success = payload.get("best_success_candidate") or {}
     best_oos = payload.get("diagnostic_best_oos") or {}
     quarantine = payload.get("diagnostic_quarantine") or []
     memory_policy = payload.get("memory_policy") or {}
@@ -800,6 +852,22 @@ def _markdown(payload: dict[str, Any], rows: list[dict[str, Any]]) -> str:
                 f"- val: `{_fmt_pct(split.get('val', {}).get('metrics', {}).get('total_return'))}`",
                 f"- locked OOS: `{_fmt_pct(split.get('oos', {}).get('metrics', {}).get('total_return'))}`, Sharpe `{_fmt_float(split.get('oos', {}).get('metrics', {}).get('sharpe'))}`, MDD `{_fmt_pct(split.get('oos', {}).get('metrics', {}).get('max_drawdown'))}`",
                 f"- promotion status: `{selected.get('promotion_status')}` / failed gates: `{','.join(selected.get('failed_gates') or [])}`",
+                "",
+            ]
+        )
+    if best_success:
+        split = best_success.get("splits", {})
+        lines.extend(
+            [
+                "## Best success candidate",
+                "",
+                "- Ranked by train/validation validation score after all locked-OOS gates pass.",
+                f"- `{best_success.get('name')}`",
+                f"- sleeves: `{', '.join(best_success.get('sleeves') or [])}`",
+                f"- train: `{_fmt_pct(split.get('train', {}).get('metrics', {}).get('total_return'))}`",
+                f"- val: `{_fmt_pct(split.get('val', {}).get('metrics', {}).get('total_return'))}`",
+                f"- locked OOS: `{_fmt_pct(split.get('oos', {}).get('metrics', {}).get('total_return'))}`, Sharpe `{_fmt_float(split.get('oos', {}).get('metrics', {}).get('sharpe'))}`, MDD `{_fmt_pct(split.get('oos', {}).get('metrics', {}).get('max_drawdown'))}`",
+                f"- promotion status: `{best_success.get('promotion_status')}` / failed gates: `{','.join(best_success.get('failed_gates') or [])}`",
                 "",
             ]
         )
@@ -914,6 +982,7 @@ def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[dict[s
             for mode in (
                 "equal_weight",
                 "additive_sleeves",
+                "train_val_target_return_budget",
                 "validation_return_risk_weight",
                 "validation_drawdown_budget",
                 "cluster_capped_validation_weight",
@@ -934,6 +1003,12 @@ def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[dict[s
     portfolio_items.sort(key=_portfolio_report_sort_key)
     csv_rows = [_flatten_row(item) for item in portfolio_items]
     selected_by_validation = max(portfolio_items, key=lambda item: item["validation_score"], default={})
+    success_candidates = [item for item in portfolio_items if bool(item["success_candidate"])]
+    best_success_candidate = max(
+        success_candidates,
+        key=lambda item: item["validation_score"],
+        default={},
+    )
     diagnostic_best_oos = max(
         portfolio_items,
         key=lambda item: (
@@ -972,6 +1047,7 @@ def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[dict[s
             "modes": [
                 "equal_weight",
                 "additive_sleeves",
+                "train_val_target_return_budget",
                 "validation_return_risk_weight",
                 "validation_drawdown_budget",
                 "cluster_capped_validation_weight",
@@ -982,7 +1058,8 @@ def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[dict[s
             "selection_basis": "train_val_only",
             "uses_locked_oos_for_selection": False,
         },
-        "success_candidate_count": sum(1 for item in portfolio_items if bool(item["success_candidate"])),
+        "success_candidate_count": len(success_candidates),
+        "best_success_candidate": best_success_candidate,
         "selected_by_validation": selected_by_validation,
         "diagnostic_best_oos": diagnostic_best_oos,
         "diagnostic_quarantine": diagnostic_quarantine[:50],

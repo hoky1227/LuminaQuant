@@ -1135,6 +1135,17 @@ def _candidate_signal(spec: FreshSpec, arrays: dict[str, Any], idx: int) -> tupl
                 candidates.append((abs(ret), symbol, "SHORT"))
             if spec.allow_long and ret <= -spec.threshold:
                 candidates.append((abs(ret), symbol, "LONG"))
+        elif spec.family == "compression_expansion_downside_short":
+            comp_key = f"{prefix}_rv_{spec.rv_lookback_bars}h"
+            rv = _array_value(arrays, comp_key, idx)
+            rv_mean_key = f"{prefix}_rv_24h_mean_72h"
+            rv_mean = _array_value(arrays, rv_mean_key, idx)
+            if not math.isfinite(rv) or not math.isfinite(rv_mean) or rv_mean <= 0.0:
+                continue
+            if rv / rv_mean > spec.compression_quantile:
+                continue
+            if spec.allow_short and ret <= -spec.threshold:
+                candidates.append((abs(ret), symbol, "SHORT"))
     if not candidates:
         return "", "", veto_reason or "signal_missing"
     candidates.sort(reverse=True, key=lambda item: item[0])
@@ -1194,8 +1205,119 @@ def _calendar_spread_signal(
     return "", "", "", "signal_missing"
 
 
+def _residual_pair_spread_signal(
+    spec: FreshSpec, arrays: dict[str, Any], idx: int
+) -> tuple[str, str, str, str]:
+    """Select a market-neutral residual mean-reversion pair.
+
+    The rule is intentionally train/validation-selectable and OOS-blind: at a
+    bar it longs the most negative cross-sectional residual and shorts the most
+    positive residual when both legs exceed the configured z threshold.
+    """
+    blocked = _entry_window_block_reason(spec, arrays, idx)
+    if blocked:
+        return "", "", "", blocked
+    if not spec.allow_long or not spec.allow_short:
+        return "", "", "", "pair_requires_both_sides"
+
+    lookback = int(spec.lookback_bars)
+    threshold = max(0.0, float(spec.threshold))
+    symbols = tuple(arrays["symbols"])
+    prefixes = tuple(arrays.get("symbol_prefixes") or tuple(_symbol_prefix(symbol) for symbol in symbols))
+    long_leg: tuple[float, str] | None = None
+    short_leg: tuple[float, str] | None = None
+
+    for symbol, prefix in zip(symbols, prefixes, strict=True):
+        close = _array_value(arrays, f"{prefix}_close", idx)
+        if not math.isfinite(close) or close <= 0.0:
+            continue
+        rv_key = f"{prefix}_rv_{spec.rv_lookback_bars}h"
+        if spec.max_rv > 0.0:
+            rv = _array_value(arrays, rv_key, idx)
+            if not math.isfinite(rv) or rv > spec.max_rv:
+                continue
+        resid_z = _array_value(arrays, f"{prefix}_resid_z_{lookback}h", idx)
+        if not math.isfinite(resid_z):
+            continue
+        if resid_z <= -threshold and (long_leg is None or resid_z < long_leg[0]):
+            long_leg = (resid_z, symbol)
+        if resid_z >= threshold and (short_leg is None or resid_z > short_leg[0]):
+            short_leg = (resid_z, symbol)
+
+    if long_leg is None or short_leg is None:
+        return "", "", "", "signal_missing"
+    long_symbol = long_leg[1]
+    short_symbol = short_leg[1]
+    if long_symbol == short_symbol:
+        return "", "", "", "pair_symbol_overlap"
+    spread_z = short_leg[0] - long_leg[0]
+    min_spread_z = threshold * 2.0
+    if spread_z < min_spread_z:
+        return "", "", "", "pair_spread_z_too_small"
+    return long_symbol, short_symbol, "LONG_SPREAD", ""
+
+
+def _residual_pair_momentum_spread_signal(
+    spec: FreshSpec, arrays: dict[str, Any], idx: int
+) -> tuple[str, str, str, str]:
+    """Select a market-neutral residual momentum pair.
+
+    This is the inverse of residual mean reversion: it longs the strongest
+    positive residual and shorts the weakest negative residual when both legs
+    clear the configured z threshold.  It uses the same two-leg execution
+    engine, so the only selection input is the current train/validation-visible
+    bar state.
+    """
+    blocked = _entry_window_block_reason(spec, arrays, idx)
+    if blocked:
+        return "", "", "", blocked
+    if not spec.allow_long or not spec.allow_short:
+        return "", "", "", "pair_requires_both_sides"
+
+    lookback = int(spec.lookback_bars)
+    threshold = max(0.0, float(spec.threshold))
+    symbols = tuple(arrays["symbols"])
+    prefixes = tuple(arrays.get("symbol_prefixes") or tuple(_symbol_prefix(symbol) for symbol in symbols))
+    long_leg: tuple[float, str] | None = None
+    short_leg: tuple[float, str] | None = None
+
+    for symbol, prefix in zip(symbols, prefixes, strict=True):
+        close = _array_value(arrays, f"{prefix}_close", idx)
+        if not math.isfinite(close) or close <= 0.0:
+            continue
+        rv_key = f"{prefix}_rv_{spec.rv_lookback_bars}h"
+        if spec.max_rv > 0.0:
+            rv = _array_value(arrays, rv_key, idx)
+            if not math.isfinite(rv) or rv > spec.max_rv:
+                continue
+        resid_z = _array_value(arrays, f"{prefix}_resid_z_{lookback}h", idx)
+        if not math.isfinite(resid_z):
+            continue
+        if resid_z >= threshold and (long_leg is None or resid_z > long_leg[0]):
+            long_leg = (resid_z, symbol)
+        if resid_z <= -threshold and (short_leg is None or resid_z < short_leg[0]):
+            short_leg = (resid_z, symbol)
+
+    if long_leg is None or short_leg is None:
+        return "", "", "", "signal_missing"
+    long_symbol = long_leg[1]
+    short_symbol = short_leg[1]
+    if long_symbol == short_symbol:
+        return "", "", "", "pair_symbol_overlap"
+    spread_z = long_leg[0] - short_leg[0]
+    min_spread_z = threshold * 2.0
+    if spread_z < min_spread_z:
+        return "", "", "", "pair_spread_z_too_small"
+    return long_symbol, short_symbol, "LONG_SPREAD", ""
+
+
 def _run_calendar_spread_split(
-    *, spec: FreshSpec, arrays: dict[str, Any], split: SplitWindow, include_equity: bool = False
+    *,
+    spec: FreshSpec,
+    arrays: dict[str, Any],
+    split: SplitWindow,
+    include_equity: bool = False,
+    signal_func: Any | None = None,
 ) -> dict[str, Any]:
     timestamps = arrays["timestamp"]
     start_ts = int(datetime.combine(split.start, datetime.min.time(), tzinfo=UTC).timestamp())
@@ -1288,6 +1410,7 @@ def _run_calendar_spread_split(
             "signed_qty": float(order_qty if action == "BUY" else -order_qty),
         }
 
+    spread_signal = signal_func or _calendar_spread_signal
     for idx_raw in indices:
         idx = int(idx_raw)
         if legs:
@@ -1309,7 +1432,7 @@ def _run_calendar_spread_split(
                 cooldown -= 1
                 record_reject("cooldown")
             else:
-                long_symbol, short_symbol, direction, reason = _calendar_spread_signal(spec, arrays, idx)
+                long_symbol, short_symbol, direction, reason = spread_signal(spec, arrays, idx)
                 if not long_symbol or not short_symbol or not direction:
                     record_reject(reason or "signal_missing")
                 else:
@@ -1378,6 +1501,22 @@ def _run_split(
 ) -> dict[str, Any]:
     if spec.family == "calendar_spread":
         return _run_calendar_spread_split(spec=spec, arrays=arrays, split=split, include_equity=include_equity)
+    if spec.family == "residual_pair_reversion_spread":
+        return _run_calendar_spread_split(
+            spec=spec,
+            arrays=arrays,
+            split=split,
+            include_equity=include_equity,
+            signal_func=_residual_pair_spread_signal,
+        )
+    if spec.family == "residual_pair_momentum_spread":
+        return _run_calendar_spread_split(
+            spec=spec,
+            arrays=arrays,
+            split=split,
+            include_equity=include_equity,
+            signal_func=_residual_pair_momentum_spread_signal,
+        )
     timestamps = arrays["timestamp"]
     start_ts = int(datetime.combine(split.start, datetime.min.time(), tzinfo=UTC).timestamp())
     end_ts = int(datetime.combine(split.end + timedelta(days=1), datetime.min.time(), tzinfo=UTC).timestamp()) - 1
@@ -2072,6 +2211,73 @@ def _candidate_specs(arrays: dict[str, Any], symbols: list[str]) -> list[FreshSp
                         calendar_short_symbol="ETHUSDT",
                         spread_hedge_ratio=hedge,
                     )
+    pair_sessions = {
+        "all": (),
+        "postfund": (2, 3, 10, 11, 18, 19),
+        "asiaus": (0, 1, 2, 13, 14, 15, 16, 20, 21),
+    }
+    for lookback in (12, 24):
+        for threshold in (0.50, 0.75, 1.00, 1.50):
+            for hold in (48, 72, 120):
+                for scale in (1.0, 2.0, 3.0):
+                    for stop in (0.006, 0.010):
+                        for take in (0.012, 0.024, 0.040):
+                            for session_label, hours in pair_sessions.items():
+                                name = (
+                                    f"fresh_pair_resid_revert_spread_lb{lookback}_"
+                                    f"z{int(threshold*100):03d}_h{hold}_"
+                                    f"sc{str(scale).replace('.', '')}_"
+                                    f"st{int(stop*10000)}_tp{int(take*10000)}_{session_label}"
+                                )
+                                specs[name] = FreshSpec(
+                                    name=name,
+                                    family="residual_pair_reversion_spread",
+                                    lookback_bars=lookback,
+                                    threshold=threshold,
+                                    hold_bars=hold,
+                                    cooldown_bars=max(1, hold // 4),
+                                    stop_loss_pct=stop,
+                                    take_profit_pct=take,
+                                    min_abs_return=0.0,
+                                    entry_hours=hours,
+                                    allow_long=True,
+                                    allow_short=True,
+                                    long_allocation_scale=scale,
+                                    short_allocation_scale=scale,
+                                    spread_hedge_ratio=1.0,
+                                )
+    momentum_sessions = {
+        "all": (),
+        "asiaus": (0, 1, 2, 13, 14, 15, 16, 20, 21),
+    }
+    for lookback in (12, 24, 48):
+        for threshold in (0.75, 1.00, 1.50, 2.00):
+            for hold in (24, 48, 72):
+                for scale in (0.5, 1.0, 2.0):
+                    for stop in (0.006, 0.010):
+                        for session_label, hours in momentum_sessions.items():
+                            name = (
+                                f"fresh_pair_resid_mom_spread_lb{lookback}_"
+                                f"z{int(threshold*100):03d}_h{hold}_"
+                                f"sc{str(scale).replace('.', '')}_st{int(stop*10000)}_{session_label}"
+                            )
+                            specs[name] = FreshSpec(
+                                name=name,
+                                family="residual_pair_momentum_spread",
+                                lookback_bars=lookback,
+                                threshold=threshold,
+                                hold_bars=hold,
+                                cooldown_bars=max(1, hold // 3),
+                                stop_loss_pct=stop,
+                                take_profit_pct=0.030,
+                                min_abs_return=0.0,
+                                entry_hours=hours,
+                                allow_long=True,
+                                allow_short=True,
+                                long_allocation_scale=scale,
+                                short_allocation_scale=scale,
+                                spread_hedge_ratio=1.0,
+                            )
     for lookback in (6, 12, 24):
         for threshold in (0.006, 0.010, 0.014):
             for comp in (0.55, 0.70, 0.85):
@@ -2115,6 +2321,38 @@ def _candidate_specs(arrays: dict[str, Any], symbols: list[str]) -> list[FreshSp
                         trailing_stop_floor_pct=0.005,
                         trailing_stop_cap_pct=0.014,
                     )
+    for lookback in (6, 12, 24):
+        for threshold in (0.010, 0.014, 0.020):
+            for comp in (0.55, 0.70):
+                for hold in (12, 24):
+                    for scale in (0.5, 1.0):
+                        for stop in (0.006, 0.010):
+                            for take in (0.012, 0.025):
+                                name = (
+                                    f"fresh_compression_downside_short_lb{lookback}_"
+                                    f"thr{int(threshold*10000)}_c{int(comp*100)}_h{hold}_"
+                                    f"sc{str(scale).replace('.', '')}_st{int(stop*10000)}_tp{int(take*10000)}"
+                                )
+                                specs[name] = FreshSpec(
+                                    name=name,
+                                    family="compression_expansion_downside_short",
+                                    lookback_bars=lookback,
+                                    threshold=threshold,
+                                    hold_bars=hold,
+                                    cooldown_bars=max(1, hold // 3),
+                                    stop_loss_pct=stop,
+                                    take_profit_pct=take,
+                                    rv_lookback_bars=24,
+                                    compression_lookback_bars=72,
+                                    compression_quantile=comp,
+                                    allow_long=False,
+                                    allow_short=True,
+                                    long_allocation_scale=0.0,
+                                    short_allocation_scale=scale,
+                                    trailing_stop_rv_multiple=1.0,
+                                    trailing_stop_floor_pct=0.004,
+                                    trailing_stop_cap_pct=0.010,
+                                )
     return list(specs.values())
 
 

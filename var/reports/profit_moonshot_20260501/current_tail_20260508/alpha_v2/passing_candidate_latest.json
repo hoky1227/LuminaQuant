@@ -1,0 +1,85 @@
+{
+  "allocator_diagnostics": {
+    "min_leverage": 0.2,
+    "raw_required_leverage": 0.3518254541668833,
+    "raw_train_return": 0.15638246346652895,
+    "raw_val_return": 0.1136927403240886,
+    "selection_basis": "train_val_target_return_budget",
+    "target_train_return": 0.05,
+    "target_val_return": 0.04,
+    "uses_locked_oos_for_selection": false
+  },
+  "artifact_kind": "profit_moonshot_alpha_v2_passing_candidate",
+  "failed_gates": [],
+  "gates": {
+    "oos_mdd_beats_shadow": true,
+    "oos_return_beats_current_champion": true,
+    "oos_return_risk_beats_current_champion": true,
+    "oos_sharpe_gt_1": true,
+    "oos_trades_not_starved": true,
+    "train_positive": true,
+    "train_return_beats_current_champion": true,
+    "val_positive": true,
+    "val_return_beats_current_champion": true
+  },
+  "generated_at_utc": "2026-05-09T05:51:51.998255Z",
+  "improved_candidate": true,
+  "labels": {
+    "live_equivalent_selection_eligible": false,
+    "locked_oos_policy": "report_only_gate_only",
+    "promotion_status": "improved_success_candidate",
+    "research_success_candidate": true,
+    "selection_basis": "train_val_only"
+  },
+  "leverage": 0.3518254541668833,
+  "live_equivalent_selection_eligible": false,
+  "locked_oos_selection_policy": {
+    "locked_oos_use": [
+      "report",
+      "gate"
+    ],
+    "selection_inputs": [
+      "train",
+      "validation"
+    ],
+    "uses_locked_oos_for_selection": false
+  },
+  "memory_evidence": {
+    "memory_summary_path": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_target_budget_v1/_memory_guard/profit_moonshot_fresh_portfolio_tuning_memory_latest.json",
+    "peak_rss_mib_payload": 746.1875,
+    "rss_log_path": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_target_budget_v1/_memory_guard/profit_moonshot_fresh_portfolio_tuning_rss_latest.jsonl",
+    "under_8gib": true
+  },
+  "metrics": {
+    "current_champion_oos_mdd": 0.001662,
+    "current_champion_oos_return": 0.012181,
+    "current_champion_oos_return_risk": 7.329121540312876,
+    "locked_oos_max_drawdown": 0.001774102912063881,
+    "locked_oos_return_risk": 7.551493250827515,
+    "locked_oos_sharpe": 5.477385370503527,
+    "locked_oos_total_return": 0.013397126166723838,
+    "oos_return_excess_vs_champion": 0.0012161261667238375,
+    "oos_return_risk_excess_vs_champion": 0.222371710514639,
+    "shadow_oos_mdd_gate": 0.001778,
+    "train_total_return": 0.055019331232847524,
+    "validation_total_return": 0.040000000000000036
+  },
+  "mode": "train_val_target_return_budget",
+  "name": "fresh_portfolio_train_val_target_return_budget_fresh_calendar_trx_takeprofit_sethusdt_thr180_h168_ls620_ss120_tp600__fresh_calendar_trx_takeprofit_sethusdt_thr120_h120_ls620_ss120_tp600__fresh_calendar_trx_takeprofit_sethusdt_thr180_h168_ls590_ss120_tp600__fresh_calendar_trx_takeprofit_sethusdt_thr180_h168_ls560_ss120_tp600",
+  "notes": [
+    "Selected as best success candidate among rows that pass all locked-OOS gates; selected_by_validation remains a diagnostic_not_promoted additive row because it fails MDD/return-risk gates.",
+    "Standalone residual-pair momentum/reversion and compression downside probes remain diagnostic/no-go and are not promoted."
+  ],
+  "research_success_candidate": true,
+  "schema_version": "1.0",
+  "sleeves": [
+    "fresh_calendar_trx_takeprofit_sethusdt_thr180_h168_ls620_ss120_tp600",
+    "fresh_calendar_trx_takeprofit_sethusdt_thr120_h120_ls620_ss120_tp600",
+    "fresh_calendar_trx_takeprofit_sethusdt_thr180_h168_ls590_ss120_tp600",
+    "fresh_calendar_trx_takeprofit_sethusdt_thr180_h168_ls560_ss120_tp600"
+  ],
+  "source_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_target_budget_v1/fresh_portfolio_tuning_latest.json",
+  "source_csv": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_target_budget_v1/fresh_portfolio_tuning_candidates.csv",
+  "source_markdown": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_target_budget_v1/fresh_portfolio_tuning_latest.md",
+  "success_candidate": true
+}

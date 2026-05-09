@@ -1,0 +1,61 @@
+{
+  "artifact_kind": "profit_moonshot_pass_under_8gb_mission_validation",
+  "budget_bytes": 8589934592,
+  "checks": [
+    {
+      "detail": "result is not yet status=passed with passed=true",
+      "name": "declared_pass_status",
+      "passed": false
+    },
+    {
+      "detail": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/passing_candidate_latest.json",
+      "name": "passing_candidate_artifact_exists",
+      "passed": true
+    },
+    {
+      "detail": "research/live-equivalent success label present",
+      "name": "candidate_lifecycle_label",
+      "passed": true
+    },
+    {
+      "detail": "[{\"exists\": true, \"path\": \"var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_target_budget_v1/_memory_guard/profit_moonshot_fresh_portfolio_tuning_memory_latest.json\", \"peak_rss_bytes\": 771981312, \"under_8gib\": true}, {\"exists\": true, \"path\": \"var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_target_budget_v1/_memory_guard/profit_moonshot_fresh_portfolio_tuning_rss_latest.jsonl\", \"peak_rss_bytes\": 771981312, \"under_8gib\": true}]",
+      "name": "rss_under_8gib_evidence",
+      "passed": true
+    },
+    {
+      "detail": "10 test evidence item(s)",
+      "name": "local_tests_evidence",
+      "passed": true
+    },
+    {
+      "detail": "missing successful CI evidence",
+      "name": "ci_success_evidence",
+      "passed": false
+    },
+    {
+      "detail": "source_changed requires git push evidence",
+      "name": "git_push_evidence_if_source_changed",
+      "passed": false
+    }
+  ],
+  "generated_at": "2026-05-09T05:53:01.884856Z",
+  "passed": false,
+  "result_path": ".omx/specs/autoresearch-profit-moonshot-alpha-v2/result.json",
+  "rss_evidence": [
+    {
+      "exists": true,
+      "path": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_target_budget_v1/_memory_guard/profit_moonshot_fresh_portfolio_tuning_memory_latest.json",
+      "peak_rss_bytes": 771981312,
+      "under_8gib": true
+    },
+    {
+      "exists": true,
+      "path": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_target_budget_v1/_memory_guard/profit_moonshot_fresh_portfolio_tuning_rss_latest.jsonl",
+      "peak_rss_bytes": 771981312,
+      "under_8gib": true
+    }
+  ],
+  "schema_version": "1.0",
+  "status": "running",
+  "summary": "mission evidence incomplete"
+}

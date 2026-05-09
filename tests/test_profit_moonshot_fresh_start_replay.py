@@ -545,6 +545,167 @@ def test_calendar_spread_split_runs_two_legs_and_reports_equity() -> None:
     assert result["metrics"]["total_return"] > 0.0
 
 
+def test_residual_pair_reversion_spread_signal_selects_extreme_pair() -> None:
+    datetimes = [datetime(2026, 5, 1, hour, tzinfo=UTC) for hour in range(8)]
+    arrays = {
+        "datetime": datetimes,
+        "timestamp": np.array([int(item.timestamp()) for item in datetimes]),
+        "symbols": ("BTC/USDT", "TRX/USDT", "ETH/USDT"),
+        "symbol_prefixes": ("btcusdt", "trxusdt", "ethusdt"),
+        "btcusdt_close": np.full(8, 100.0),
+        "trxusdt_close": np.full(8, 50.0),
+        "ethusdt_close": np.full(8, 75.0),
+        "btcusdt_resid_z_24h": np.full(8, 2.2),
+        "trxusdt_resid_z_24h": np.full(8, -2.4),
+        "ethusdt_resid_z_24h": np.full(8, -0.2),
+    }
+    spec = FreshSpec(
+        name="residual_pair_smoke",
+        family="residual_pair_reversion_spread",
+        lookback_bars=24,
+        threshold=1.0,
+        hold_bars=4,
+        cooldown_bars=0,
+        stop_loss_pct=0.01,
+        take_profit_pct=0.02,
+    )
+
+    assert MODULE._residual_pair_spread_signal(spec, arrays, 7) == (
+        "TRX/USDT",
+        "BTC/USDT",
+        "LONG_SPREAD",
+        "",
+    )
+
+
+def test_residual_pair_momentum_spread_signal_selects_extreme_pair() -> None:
+    datetimes = [datetime(2026, 5, 1, hour, tzinfo=UTC) for hour in range(8)]
+    arrays = {
+        "datetime": datetimes,
+        "timestamp": np.array([int(item.timestamp()) for item in datetimes]),
+        "symbols": ("BTC/USDT", "TRX/USDT", "ETH/USDT"),
+        "symbol_prefixes": ("btcusdt", "trxusdt", "ethusdt"),
+        "btcusdt_close": np.full(8, 100.0),
+        "trxusdt_close": np.full(8, 50.0),
+        "ethusdt_close": np.full(8, 75.0),
+        "btcusdt_resid_z_24h": np.full(8, 2.2),
+        "trxusdt_resid_z_24h": np.full(8, -2.4),
+        "ethusdt_resid_z_24h": np.full(8, 0.2),
+    }
+    spec = FreshSpec(
+        name="residual_pair_momentum_smoke",
+        family="residual_pair_momentum_spread",
+        lookback_bars=24,
+        threshold=1.0,
+        hold_bars=4,
+        cooldown_bars=0,
+        stop_loss_pct=0.01,
+        take_profit_pct=0.02,
+    )
+
+    assert MODULE._residual_pair_momentum_spread_signal(spec, arrays, 7) == (
+        "BTC/USDT",
+        "TRX/USDT",
+        "LONG_SPREAD",
+        "",
+    )
+
+
+def test_residual_pair_reversion_spread_split_runs_two_legs_and_reports_equity() -> None:
+    datetimes = [datetime(2026, 5, 1, hour, tzinfo=UTC) for hour in range(12)]
+    timestamps = np.array([int(item.timestamp()) for item in datetimes])
+    long_close = np.linspace(100.0, 106.0, len(datetimes))
+    short_close = np.linspace(100.0, 95.0, len(datetimes))
+    flat_close = np.full(len(datetimes), 100.0)
+    arrays = {
+        "datetime": datetimes,
+        "timestamp": timestamps,
+        "symbols": ("BTC/USDT", "TRX/USDT", "ETH/USDT"),
+        "symbol_prefixes": ("btcusdt", "trxusdt", "ethusdt"),
+        "btcusdt_open": short_close,
+        "btcusdt_high": short_close * 1.001,
+        "btcusdt_low": short_close * 0.999,
+        "btcusdt_close": short_close,
+        "btcusdt_volume": np.full(len(datetimes), 1_000.0),
+        "trxusdt_open": long_close,
+        "trxusdt_high": long_close * 1.001,
+        "trxusdt_low": long_close * 0.999,
+        "trxusdt_close": long_close,
+        "trxusdt_volume": np.full(len(datetimes), 1_000.0),
+        "ethusdt_open": flat_close,
+        "ethusdt_high": flat_close * 1.001,
+        "ethusdt_low": flat_close * 0.999,
+        "ethusdt_close": flat_close,
+        "ethusdt_volume": np.full(len(datetimes), 1_000.0),
+        "btcusdt_resid_z_24h": np.full(len(datetimes), 2.1),
+        "trxusdt_resid_z_24h": np.full(len(datetimes), -2.3),
+        "ethusdt_resid_z_24h": np.zeros(len(datetimes)),
+    }
+    spec = FreshSpec(
+        name="residual_pair_spread_smoke",
+        family="residual_pair_reversion_spread",
+        lookback_bars=24,
+        threshold=1.0,
+        hold_bars=4,
+        cooldown_bars=0,
+        stop_loss_pct=0.01,
+        take_profit_pct=0.001,
+        long_allocation_scale=2.0,
+        short_allocation_scale=2.0,
+        spread_hedge_ratio=1.0,
+    )
+
+    result = MODULE._run_split(
+        spec=spec,
+        arrays=arrays,
+        split=MODULE.SplitWindow(name="train", start=date(2026, 5, 1), end=date(2026, 5, 1), role="train"),
+        include_equity=True,
+    )
+
+    assert result["round_trips"] >= 1
+    assert result["fills"] >= 4
+    assert len(result["equity_history"]) == len(datetimes)
+    assert result["metrics"]["total_return"] > 0.0
+
+
+def test_compression_expansion_downside_short_is_short_only() -> None:
+    dt = [datetime(2026, 5, 1, hour, tzinfo=UTC) for hour in range(8)]
+    arrays = {
+        "datetime": dt,
+        "symbols": ("BTC/USDT", "ETH/USDT"),
+        "symbol_prefixes": ("btcusdt", "ethusdt"),
+        "btcusdt_close": np.full(8, 100.0),
+        "ethusdt_close": np.full(8, 50.0),
+        "btcusdt_ret_12h": np.full(8, -0.02),
+        "ethusdt_ret_12h": np.full(8, 0.03),
+        "btcusdt_rv_24h": np.full(8, 0.004),
+        "ethusdt_rv_24h": np.full(8, 0.004),
+        "btcusdt_rv_24h_mean_72h": np.full(8, 0.010),
+        "ethusdt_rv_24h_mean_72h": np.full(8, 0.010),
+    }
+    spec = FreshSpec(
+        name="compression_downside_short_smoke",
+        family="compression_expansion_downside_short",
+        lookback_bars=12,
+        threshold=0.01,
+        hold_bars=4,
+        cooldown_bars=0,
+        stop_loss_pct=0.006,
+        take_profit_pct=0.012,
+        compression_quantile=0.55,
+        allow_long=False,
+        allow_short=True,
+    )
+
+    symbol, side, reason = MODULE._candidate_signal(spec, arrays, 7)
+    assert reason == ""
+    assert (symbol, side) == ("BTC/USDT", "SHORT")
+
+    arrays["btcusdt_ret_12h"] = np.full(8, 0.02)
+    symbol, side, reason = MODULE._candidate_signal(spec, arrays, 7)
+    assert (symbol, side, reason) == ("", "", "signal_missing")
+
+
 def test_spec_filters_are_train_validation_universe_controls() -> None:
     args = MODULE.parse_args(
         [
@@ -610,9 +771,15 @@ def test_candidate_specs_include_external_inspired_families() -> None:
     assert "compression_breakout_fade" in families
     assert "funding_carry_momentum" in families
     assert "calendar_spread" in families
+    assert "residual_pair_reversion_spread" in families
+    assert "residual_pair_momentum_spread" in families
+    assert "compression_expansion_downside_short" in families
     names = {spec.name for spec in specs}
     assert any(name.startswith("fresh_calendar_trx_veto_") for name in names)
     assert any(name.startswith("fresh_calendar_trx_daywin_") for name in names)
+    assert any(name.startswith("fresh_pair_resid_revert_spread_") for name in names)
+    assert any(name.startswith("fresh_pair_resid_mom_spread_") for name in names)
+    assert any(name.startswith("fresh_compression_downside_short_") for name in names)
 
 
 def test_joined_panel_reuses_cache_without_reloading_sources(
