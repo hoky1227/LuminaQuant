@@ -36,18 +36,33 @@ from lumina_quant.portfolio_split_contract import (  # noqa: E402
 
 FRESH_PATH = REPO_ROOT / "scripts/research/replay_profit_moonshot_fresh_start.py"
 DEFAULT_OUTPUT_DIR = (
-    REPO_ROOT / "var/reports/profit_moonshot_20260501/current_tail_20260507/fresh_overhaul"
+    REPO_ROOT
+    / "var/reports/profit_moonshot_20260501/current_tail_20260508/h1_h2_calendar_allocator"
 )
-DEFAULT_CANDIDATE_CSV = DEFAULT_OUTPUT_DIR / "fresh_start_overhaul_replay_candidates.csv"
-BASELINE_OOS_RETURN = 0.008284
+DEFAULT_CANDIDATE_CSV = (
+    REPO_ROOT
+    / "var/reports/profit_moonshot_20260501/current_tail_20260508/all_family_expansion"
+    / "fresh_start_overhaul_replay_candidates.csv"
+)
+CURRENT_CHAMPION_TRAIN_RETURN = 0.035993
+CURRENT_CHAMPION_VAL_RETURN = 0.026755
+CURRENT_CHAMPION_OOS_RETURN = 0.012181
+CURRENT_CHAMPION_OOS_MDD = 0.001662
+CURRENT_CHAMPION_OOS_RETURN_RISK = CURRENT_CHAMPION_OOS_RETURN / CURRENT_CHAMPION_OOS_MDD
+BASELINE_OOS_RETURN = CURRENT_CHAMPION_OOS_RETURN
 SHADOW_OOS_MDD = 0.001778
 SUCCESS_SHARPE = 1.0
 RUN_NAME = "profit_moonshot_fresh_portfolio_tuning"
 LOCKBOX_POLICY = {
     "selection_label": "train_val_validation_only",
     "locked_oos_label": "locked_oos_report_only",
+    "locked_oos_gate_label": "locked_oos_gate_only",
     "diagnostic_best_oos_label": "diagnostic_locked_oos_not_selection_authority",
+    "diagnostic_not_promoted_label": "diagnostic_not_promoted",
+    "improved_label": "train_val_ranked_locked_oos_gate_passed",
     "oos_is_report_only": True,
+    "oos_is_gate_only": True,
+    "current_champion_oos_return": CURRENT_CHAMPION_OOS_RETURN,
 }
 
 
@@ -76,7 +91,99 @@ def _validation_score(row: dict[str, str]) -> float:
     return val_ret * 100.0 + train_ret * 25.0 + val_sharpe * 0.15 - val_mdd * 50.0 + math.log1p(trips) * 0.01
 
 
-def _candidate_pool(rows: list[dict[str, str]], *, top_n: int, family_quota: int = 0) -> list[dict[str, str]]:
+def _row_filters(row: dict[str, Any]) -> dict[str, Any]:
+    raw = row.get("filters") or {}
+    if isinstance(raw, dict):
+        return dict(raw)
+    if not isinstance(raw, str) or not raw.strip():
+        return {}
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return dict(payload) if isinstance(payload, dict) else {}
+
+
+def _calendar_neighborhood_key(row: dict[str, Any]) -> tuple[Any, ...] | None:
+    if str(row.get("family") or "").strip() != "calendar_rotation":
+        return None
+    filters = _row_filters(row)
+    long_symbol = str(filters.get("calendar_long_symbol") or "dynamic_long").upper()
+    short_symbol = str(filters.get("calendar_short_symbol") or "dynamic_short").upper()
+    hold_bars = round(_safe_float(filters.get("hold_bars"), _safe_float(row.get("hold_bars"), 0.0)))
+    hold_bucket = int(round(hold_bars / 24.0) * 24) if hold_bars > 0 else 0
+    threshold = _safe_float(filters.get("threshold"), _safe_float(row.get("threshold"), 0.0))
+    take_profit = _safe_float(filters.get("take_profit_pct"), _safe_float(row.get("take_profit_pct"), 0.0))
+    threshold_bucket = round(threshold / 0.003) if threshold > 0.0 else 0
+    take_profit_bucket = round(take_profit / 0.012) if take_profit > 0.0 else 0
+    return (
+        "calendar_rotation",
+        long_symbol,
+        short_symbol,
+        hold_bucket,
+        threshold_bucket,
+        take_profit_bucket,
+    )
+
+
+def _quantile(values: list[float], q: float) -> float:
+    if not values:
+        return 0.0
+    arr = sorted(float(item) for item in values)
+    if len(arr) == 1:
+        return arr[0]
+    pos = min(max(float(q), 0.0), 1.0) * float(len(arr) - 1)
+    lo = math.floor(pos)
+    hi = math.ceil(pos)
+    if lo == hi:
+        return arr[lo]
+    frac = pos - float(lo)
+    return arr[lo] * (1.0 - frac) + arr[hi] * frac
+
+
+def _calendar_neighborhood_score(group_rows: list[dict[str, str]]) -> float:
+    train_returns = [_safe_float(row.get("train_total_return")) for row in group_rows]
+    val_returns = [_safe_float(row.get("val_total_return")) for row in group_rows]
+    val_mdds = [_safe_float(row.get("val_max_drawdown"), 1.0) for row in group_rows]
+    trips = sum(max(0.0, _safe_float(row.get("val_round_trips"))) for row in group_rows)
+    train_median = _quantile(train_returns, 0.50)
+    val_median = _quantile(val_returns, 0.50)
+    val_lq = _quantile(val_returns, 0.25)
+    val_mdd_median = _quantile(val_mdds, 0.50)
+    dispersion = float(np.std(np.asarray(val_returns, dtype=float))) if len(val_returns) > 1 else 0.0
+    return (
+        val_median * 100.0
+        + train_median * 25.0
+        + val_lq * 20.0
+        - val_mdd_median * 50.0
+        - dispersion * 75.0
+        + math.log1p(max(1.0, trips)) * 0.01
+    )
+
+
+def _append_unique(
+    selected: list[dict[str, str]],
+    selected_names: set[str],
+    rows: list[dict[str, str]],
+    *,
+    limit: int,
+) -> None:
+    for row in rows:
+        if len(selected) >= limit:
+            return
+        name = str(row.get("name") or "")
+        if name and name not in selected_names:
+            selected.append(row)
+            selected_names.add(name)
+
+
+def _candidate_pool_with_metadata(
+    rows: list[dict[str, str]],
+    *,
+    top_n: int,
+    family_quota: int = 0,
+    calendar_neighborhood_reps: int = 0,
+) -> tuple[list[dict[str, str]], dict[str, Any]]:
     eligible = [
         row
         for row in rows
@@ -86,36 +193,94 @@ def _candidate_pool(rows: list[dict[str, str]], *, top_n: int, family_quota: int
     ]
     eligible.sort(key=_validation_score, reverse=True)
     limit = max(0, int(top_n))
-    if limit == 0 or family_quota <= 0:
-        return eligible[:limit]
+    metadata: dict[str, Any] = {
+        "selection_basis": "train_val_only",
+        "pool_order": "validation_score_descending_after_calendar_neighborhood_reps",
+        "calendar_neighborhood_reps": max(0, int(calendar_neighborhood_reps)),
+        "family_quota": int(family_quota),
+        "uses_locked_oos_for_selection": False,
+        "calendar_neighborhoods": [],
+    }
+    if limit == 0:
+        return [], metadata
 
     selected: list[dict[str, str]] = []
     selected_names: set[str] = set()
-    families = sorted(
-        {row.get("family") or "unknown" for row in eligible},
-        key=lambda family: max(
-            (_validation_score(row) for row in eligible if (row.get("family") or "unknown") == family),
-            default=float("-inf"),
-        ),
-        reverse=True,
-    )
-    for family in families:
-        family_rows = [row for row in eligible if (row.get("family") or "unknown") == family]
-        for row in family_rows[: max(0, int(family_quota))]:
-            name = str(row.get("name") or "")
-            if name and name not in selected_names:
-                selected.append(row)
-                selected_names.add(name)
-            if len(selected) >= limit:
-                return selected
+    groups: dict[tuple[Any, ...], list[dict[str, str]]] = {}
     for row in eligible:
-        name = str(row.get("name") or "")
-        if name and name not in selected_names:
-            selected.append(row)
-            selected_names.add(name)
-        if len(selected) >= limit:
-            break
-    return selected
+        key = _calendar_neighborhood_key(row)
+        if key is not None:
+            groups.setdefault(key, []).append(row)
+
+    scored_groups: list[dict[str, Any]] = []
+    representatives: list[dict[str, str]] = []
+    for key, group_rows in groups.items():
+        representative = max(group_rows, key=_validation_score)
+        representatives.append(representative)
+        scored_groups.append(
+            {
+                "key": list(key),
+                "score": float(_calendar_neighborhood_score(group_rows)),
+                "size": len(group_rows),
+                "representative": representative.get("name"),
+                "train_median_return": _quantile(
+                    [_safe_float(row.get("train_total_return")) for row in group_rows], 0.50
+                ),
+                "val_median_return": _quantile(
+                    [_safe_float(row.get("val_total_return")) for row in group_rows], 0.50
+                ),
+                "val_lower_quartile_return": _quantile(
+                    [_safe_float(row.get("val_total_return")) for row in group_rows], 0.25
+                ),
+            }
+        )
+    scored_groups.sort(key=lambda item: (item["score"], item["size"]), reverse=True)
+    metadata["calendar_neighborhoods"] = scored_groups[:25]
+
+    if calendar_neighborhood_reps > 0:
+        representatives_by_name = {str(row.get("name") or ""): row for row in representatives}
+        ordered_reps = [
+            representatives_by_name[str(item.get("representative") or "")]
+            for item in scored_groups[: max(0, int(calendar_neighborhood_reps))]
+            if str(item.get("representative") or "") in representatives_by_name
+        ]
+        _append_unique(selected, selected_names, ordered_reps, limit=limit)
+
+    if family_quota > 0:
+        families = sorted(
+            {row.get("family") or "unknown" for row in eligible},
+            key=lambda family: max(
+                (_validation_score(row) for row in eligible if (row.get("family") or "unknown") == family),
+                default=float("-inf"),
+            ),
+            reverse=True,
+        )
+        for family in families:
+            family_rows = [row for row in eligible if (row.get("family") or "unknown") == family]
+            _append_unique(selected, selected_names, family_rows[: max(0, int(family_quota))], limit=limit)
+            if len(selected) >= limit:
+                metadata["selected_names"] = [row.get("name") for row in selected]
+                return selected, metadata
+
+    _append_unique(selected, selected_names, eligible, limit=limit)
+    metadata["selected_names"] = [row.get("name") for row in selected]
+    return selected, metadata
+
+
+def _candidate_pool(
+    rows: list[dict[str, str]],
+    *,
+    top_n: int,
+    family_quota: int = 0,
+    calendar_neighborhood_reps: int = 0,
+) -> list[dict[str, str]]:
+    pool, _metadata = _candidate_pool_with_metadata(
+        rows,
+        top_n=top_n,
+        family_quota=family_quota,
+        calendar_neighborhood_reps=calendar_neighborhood_reps,
+    )
+    return pool
 
 
 def _rss_mib() -> float:
@@ -180,6 +345,192 @@ def _validation_return_risk_weights(
     return _normalize_weights(raw)
 
 
+def _train_val_mdd_budget_weights(
+    *,
+    combo_names: tuple[str, ...],
+    split_payloads: dict[str, dict[str, dict[str, Any]]],
+) -> list[float]:
+    raw: list[float] = []
+    for name in combo_names:
+        train_metrics = split_payloads[name]["train"].get("metrics") or {}
+        val_metrics = split_payloads[name]["val"].get("metrics") or {}
+        train_ret = max(0.0, _safe_float(train_metrics.get("total_return")))
+        val_ret = max(0.0, _safe_float(val_metrics.get("total_return")))
+        val_sharpe = max(0.0, _safe_float(val_metrics.get("sharpe")))
+        train_mdd = _safe_float(train_metrics.get("max_drawdown"), 1.0)
+        val_mdd = _safe_float(val_metrics.get("max_drawdown"), 1.0)
+        mdd_budget = max(1e-6, train_mdd, val_mdd)
+        raw.append((val_ret * 4.0 + train_ret + val_sharpe * 0.01) / mdd_budget)
+    return _normalize_weights(raw)
+
+
+def _calendar_cluster_key(row: dict[str, Any] | None, name: str) -> tuple[Any, ...]:
+    if not row or str(row.get("family") or "").strip() != "calendar_rotation":
+        return ("non_calendar", name)
+    filters = _row_filters(row)
+    long_symbol = str(filters.get("calendar_long_symbol") or "dynamic_long").upper()
+    short_symbol = str(filters.get("calendar_short_symbol") or "dynamic_short").upper()
+    hold_bars = round(_safe_float(filters.get("hold_bars"), 0.0))
+    take_profit = _safe_float(filters.get("take_profit_pct"), 0.0)
+    take_profit_bucket = round(take_profit / 0.012) if take_profit > 0.0 else 0
+    return ("calendar_rotation", long_symbol, short_symbol, hold_bars, take_profit_bucket)
+
+
+def _curve_return_vector(curves: dict[str, list[float]]) -> np.ndarray:
+    vectors: list[np.ndarray] = []
+    for split_name in ("train", "val"):
+        arr = np.asarray(curves.get(split_name) or [], dtype=float)
+        if arr.size >= 2:
+            vectors.append(np.diff(arr / 10_000.0))
+    if not vectors:
+        return np.asarray([], dtype=float)
+    return np.concatenate(vectors)
+
+
+def _curve_corr(lhs: np.ndarray, rhs: np.ndarray) -> float:
+    n = min(int(lhs.size), int(rhs.size))
+    if n < 2:
+        return 0.0
+    left = lhs[-n:]
+    right = rhs[-n:]
+    if float(np.std(left)) <= 0.0 or float(np.std(right)) <= 0.0:
+        return 0.0
+    corr = float(np.corrcoef(left, right)[0, 1])
+    return corr if math.isfinite(corr) else 0.0
+
+
+def _cluster_assignments(
+    *,
+    combo_names: tuple[str, ...],
+    split_curves: dict[str, dict[str, list[float]]],
+    candidate_rows_by_name: dict[str, dict[str, Any]],
+    correlation_threshold: float,
+) -> dict[str, str]:
+    clusters: list[dict[str, Any]] = []
+    assignments: dict[str, str] = {}
+    for name in combo_names:
+        key = _calendar_cluster_key(candidate_rows_by_name.get(name), name)
+        vector = _curve_return_vector(split_curves.get(name, {}))
+        assigned_id = ""
+        for cluster in clusters:
+            if cluster["key"] != key:
+                continue
+            if _curve_corr(vector, cluster["prototype"]) >= correlation_threshold:
+                assigned_id = str(cluster["id"])
+                break
+        if not assigned_id:
+            assigned_id = f"cluster_{len(clusters) + 1}"
+            clusters.append({"id": assigned_id, "key": key, "prototype": vector})
+        assignments[name] = assigned_id
+    return assignments
+
+
+def _cap_cluster_weights(
+    raw_weights: list[float],
+    *,
+    cluster_ids: list[str],
+    cluster_cap: float,
+    sleeve_cap: float,
+) -> list[float]:
+    weights = _normalize_weights(raw_weights)
+    if not weights:
+        return []
+    cluster_cap = max(0.01, min(1.0, float(cluster_cap)))
+    sleeve_cap = max(0.01, min(1.0, float(sleeve_cap)))
+    weights = [min(weight, sleeve_cap) for weight in weights]
+    for _ in range(12):
+        excess = 0.0
+        for idx, weight in enumerate(list(weights)):
+            if weight > sleeve_cap:
+                excess += weight - sleeve_cap
+                weights[idx] = sleeve_cap
+        cluster_sums = {
+            cluster_id: sum(weight for weight, cid in zip(weights, cluster_ids, strict=True) if cid == cluster_id)
+            for cluster_id in set(cluster_ids)
+        }
+        for cluster_id, total in cluster_sums.items():
+            if total <= cluster_cap:
+                continue
+            scale = cluster_cap / total
+            for idx, cid in enumerate(cluster_ids):
+                if cid == cluster_id:
+                    old = weights[idx]
+                    weights[idx] = old * scale
+                    excess += old - weights[idx]
+        if excess <= 1e-12:
+            break
+        cluster_sums = {
+            cluster_id: sum(weight for weight, cid in zip(weights, cluster_ids, strict=True) if cid == cluster_id)
+            for cluster_id in set(cluster_ids)
+        }
+        capacities = [
+            max(0.0, min(sleeve_cap - weight, cluster_cap - cluster_sums[cid]))
+            for weight, cid in zip(weights, cluster_ids, strict=True)
+        ]
+        total_capacity = sum(capacities)
+        if total_capacity <= 1e-12:
+            break
+        for idx, capacity in enumerate(capacities):
+            weights[idx] += excess * capacity / total_capacity
+    total = sum(weights)
+    if total > 0.0 and abs(total - 1.0) > 1e-9:
+        missing = 1.0 - total
+        if missing > 0.0:
+            cluster_sums = {
+                cluster_id: sum(
+                    weight for weight, cid in zip(weights, cluster_ids, strict=True) if cid == cluster_id
+                )
+                for cluster_id in set(cluster_ids)
+            }
+            capacities = [
+                max(0.0, min(sleeve_cap - weight, cluster_cap - cluster_sums[cid]))
+                for weight, cid in zip(weights, cluster_ids, strict=True)
+            ]
+            total_capacity = sum(capacities)
+            if total_capacity > 1e-12:
+                for idx, capacity in enumerate(capacities):
+                    weights[idx] += missing * capacity / total_capacity
+        else:
+            weights = [weight / total for weight in weights]
+    return weights
+
+
+def _cluster_capped_validation_weights(
+    *,
+    combo_names: tuple[str, ...],
+    split_curves: dict[str, dict[str, list[float]]],
+    split_payloads: dict[str, dict[str, dict[str, Any]]],
+    candidate_rows_by_name: dict[str, dict[str, Any]],
+    cluster_cap: float,
+    sleeve_cap: float,
+    correlation_threshold: float,
+) -> tuple[list[float], dict[str, Any]]:
+    raw_weights = _train_val_mdd_budget_weights(combo_names=combo_names, split_payloads=split_payloads)
+    assignments = _cluster_assignments(
+        combo_names=combo_names,
+        split_curves=split_curves,
+        candidate_rows_by_name=candidate_rows_by_name,
+        correlation_threshold=correlation_threshold,
+    )
+    cluster_ids = [assignments[name] for name in combo_names]
+    weights = _cap_cluster_weights(raw_weights, cluster_ids=cluster_ids, cluster_cap=cluster_cap, sleeve_cap=sleeve_cap)
+    cluster_weights = {
+        cluster_id: sum(weight for weight, cid in zip(weights, cluster_ids, strict=True) if cid == cluster_id)
+        for cluster_id in sorted(set(cluster_ids))
+    }
+    diagnostics = {
+        "selection_basis": "train_val_only_cluster_capped",
+        "uses_locked_oos_for_selection": False,
+        "cluster_cap": float(cluster_cap),
+        "sleeve_cap": float(sleeve_cap),
+        "correlation_threshold": float(correlation_threshold),
+        "clusters": dict(assignments),
+        "cluster_weights": cluster_weights,
+        "raw_train_val_mdd_budget_weights": [float(item) for item in raw_weights],
+    }
+    return weights, diagnostics
+
+
 def _mode_weights_and_leverage(
     *,
     fresh: Any,
@@ -187,12 +538,16 @@ def _mode_weights_and_leverage(
     split_curves: dict[str, dict[str, list[float]]],
     split_payloads: dict[str, dict[str, dict[str, Any]]],
     mode: str,
-) -> tuple[list[float] | None, float]:
+    candidate_rows_by_name: dict[str, dict[str, Any]] | None = None,
+    cluster_cap: float = 0.50,
+    sleeve_cap: float = 0.35,
+    correlation_threshold: float = 0.85,
+) -> tuple[list[float] | None, float, dict[str, Any]]:
     if mode in {"additive_sleeves", "equal_weight"}:
-        return None, 1.0
+        return None, 1.0, {}
     weights = _validation_return_risk_weights(combo_names=combo_names, split_payloads=split_payloads)
     if mode == "validation_return_risk_weight":
-        return weights, 1.0
+        return weights, 1.0, {"selection_basis": "train_val_validation_return_risk"}
     if mode == "validation_drawdown_budget":
         validation_equity = _combine_equity(
             [split_curves[name]["val"] for name in combo_names],
@@ -207,8 +562,63 @@ def _mode_weights_and_leverage(
         val_mdd = _safe_float(validation_metrics.get("max_drawdown"), 1.0)
         target_val_mdd = SHADOW_OOS_MDD * 0.75
         leverage = 1.0 if val_mdd <= 0.0 else target_val_mdd / val_mdd
-        return weights, max(0.20, min(6.0, float(leverage)))
+        return weights, max(0.20, min(6.0, float(leverage))), {
+            "selection_basis": "train_val_validation_drawdown_budget",
+            "target_val_mdd": target_val_mdd,
+        }
+    if mode == "cluster_capped_validation_weight":
+        capped_weights, diagnostics = _cluster_capped_validation_weights(
+            combo_names=combo_names,
+            split_curves=split_curves,
+            split_payloads=split_payloads,
+            candidate_rows_by_name=candidate_rows_by_name or {},
+            cluster_cap=cluster_cap,
+            sleeve_cap=sleeve_cap,
+            correlation_threshold=correlation_threshold,
+        )
+        return capped_weights, 1.0, diagnostics
     raise ValueError(f"unknown combine mode: {mode}")
+
+
+def _return_risk_score(total_return: Any, max_drawdown: Any) -> float:
+    return _safe_float(total_return) / max(1e-9, _safe_float(max_drawdown, 1.0))
+
+
+def _improved_candidate_from_gates(gates: dict[str, bool]) -> bool:
+    required = (
+        "train_positive",
+        "val_positive",
+        "train_return_beats_current_champion",
+        "val_return_beats_current_champion",
+        "oos_return_beats_current_champion",
+        "oos_return_risk_beats_current_champion",
+        "oos_mdd_beats_shadow",
+        "oos_sharpe_gt_1",
+        "oos_trades_not_starved",
+    )
+    return all(bool(gates.get(key)) for key in required)
+
+
+def _with_promotion_labels(item: dict[str, Any]) -> dict[str, Any]:
+    gates = {str(key): bool(value) for key, value in dict(item.get("gates") or {}).items()}
+    failed_gates = [key for key, ok in gates.items() if not ok]
+    improved = _improved_candidate_from_gates(gates)
+    item["gates"] = gates
+    item["failed_gates"] = failed_gates
+    item["improved_candidate"] = improved
+    item["success_candidate"] = improved
+    item["diagnostic_not_promoted"] = not improved
+    item["promotion_status"] = (
+        "improved_success_candidate" if improved else LOCKBOX_POLICY["diagnostic_not_promoted_label"]
+    )
+    item["locked_oos_policy"] = {
+        "selection_basis": "train_val_only",
+        "locked_oos_label": LOCKBOX_POLICY["locked_oos_label"],
+        "oos_is_report_only": True,
+        "oos_is_gate_only": True,
+        "uses_locked_oos_for_selection": False,
+    }
+    return item
 
 
 def _combo_metrics(
@@ -218,6 +628,10 @@ def _combo_metrics(
     split_curves: dict[str, dict[str, list[float]]],
     split_payloads: dict[str, dict[str, dict[str, Any]]],
     mode: str,
+    candidate_rows_by_name: dict[str, dict[str, Any]] | None = None,
+    cluster_cap: float = 0.50,
+    sleeve_cap: float = 0.35,
+    correlation_threshold: float = 0.85,
 ) -> dict[str, Any]:
     out: dict[str, Any] = {
         "name": f"fresh_portfolio_{mode}_" + "__".join(combo_names),
@@ -226,15 +640,21 @@ def _combo_metrics(
         "sleeve_count": len(combo_names),
         "splits": {},
     }
-    weights, leverage = _mode_weights_and_leverage(
+    weights, leverage, allocator_diagnostics = _mode_weights_and_leverage(
         fresh=fresh,
         combo_names=combo_names,
         split_curves=split_curves,
         split_payloads=split_payloads,
         mode=mode,
+        candidate_rows_by_name=candidate_rows_by_name,
+        cluster_cap=cluster_cap,
+        sleeve_cap=sleeve_cap,
+        correlation_threshold=correlation_threshold,
     )
     out["weights"] = [float(item) for item in weights] if weights is not None else []
     out["leverage"] = float(leverage)
+    if allocator_diagnostics:
+        out["allocator_diagnostics"] = allocator_diagnostics
     for split_name in ("train", "val", "oos"):
         curves = [split_curves[name][split_name] for name in combo_names]
         equity = _combine_equity(curves, mode=mode, weights=weights, leverage=leverage)
@@ -253,16 +673,23 @@ def _combo_metrics(
     train = out["splits"]["train"]["metrics"]
     val = out["splits"]["val"]["metrics"]
     oos = out["splits"]["oos"]["metrics"]
+    train_return = _safe_float(train.get("total_return"))
+    val_return = _safe_float(val.get("total_return"))
+    oos_return = _safe_float(oos.get("total_return"))
+    oos_mdd = _safe_float(oos.get("max_drawdown"), 1.0)
     gates = {
-        "train_positive": _safe_float(train.get("total_return")) > 0.0,
-        "val_positive": _safe_float(val.get("total_return")) > 0.0,
-        "oos_return_beats_incumbent": _safe_float(oos.get("total_return")) > BASELINE_OOS_RETURN,
-        "oos_mdd_beats_shadow": _safe_float(oos.get("max_drawdown"), 1.0) < SHADOW_OOS_MDD,
+        "train_positive": train_return > 0.0,
+        "val_positive": val_return > 0.0,
+        "train_return_beats_current_champion": train_return > CURRENT_CHAMPION_TRAIN_RETURN,
+        "val_return_beats_current_champion": val_return > CURRENT_CHAMPION_VAL_RETURN,
+        "oos_return_beats_current_champion": oos_return > CURRENT_CHAMPION_OOS_RETURN,
+        "oos_return_risk_beats_current_champion": (
+            _return_risk_score(oos_return, oos_mdd) > CURRENT_CHAMPION_OOS_RETURN_RISK
+        ),
+        "oos_mdd_beats_shadow": oos_mdd < SHADOW_OOS_MDD,
         "oos_sharpe_gt_1": _safe_float(oos.get("sharpe")) > SUCCESS_SHARPE,
         "oos_trades_not_starved": int(out["splits"]["oos"].get("round_trips") or 0) >= 5,
     }
-    out["gates"] = gates
-    out["success_candidate"] = all(gates.values())
     out["validation_score"] = (
         _safe_float(val.get("total_return")) * 100.0
         + _safe_float(train.get("total_return")) * 25.0
@@ -270,7 +697,8 @@ def _combo_metrics(
         - _safe_float(val.get("max_drawdown"), 1.0) * 50.0
         + math.log1p(max(1, int(out["splits"]["val"].get("round_trips") or 0))) * 0.01
     )
-    return out
+    out["gates"] = gates
+    return _with_promotion_labels(out)
 
 
 def _flatten_row(item: dict[str, Any]) -> dict[str, Any]:
@@ -283,8 +711,13 @@ def _flatten_row(item: dict[str, Any]) -> dict[str, Any]:
         "leverage": _safe_float(item.get("leverage"), 1.0),
         "validation_score": item["validation_score"],
         "success_candidate": item["success_candidate"],
-        "failed_gates": ",".join(key for key, ok in item["gates"].items() if not ok),
+        "improved_candidate": item.get("improved_candidate", False),
+        "diagnostic_not_promoted": item.get("diagnostic_not_promoted", False),
+        "promotion_status": item.get("promotion_status", ""),
+        "failed_gates": ",".join(item.get("failed_gates") or []),
     }
+    if item.get("allocator_diagnostics"):
+        row["allocator_selection_basis"] = dict(item["allocator_diagnostics"]).get("selection_basis", "")
     for split_name, split in item["splits"].items():
         metrics = split["metrics"]
         for key in ("total_return", "max_drawdown", "sharpe", "sortino", "volatility"):
@@ -319,6 +752,7 @@ def _fmt_float(value: Any) -> str:
 def _markdown(payload: dict[str, Any], rows: list[dict[str, Any]]) -> str:
     selected = payload.get("selected_by_validation") or {}
     best_oos = payload.get("diagnostic_best_oos") or {}
+    quarantine = payload.get("diagnostic_quarantine") or []
     memory_policy = payload.get("memory_policy") or {}
     memory_summary = payload.get("memory_summary") or {}
     lockbox_policy = payload.get("lockbox_policy") or LOCKBOX_POLICY
@@ -331,10 +765,13 @@ def _markdown(payload: dict[str, Any], rows: list[dict[str, Any]]) -> str:
         "## Policy",
         "",
         "- Sleeve universe is restricted to train-positive and validation-positive fresh-start candidates.",
-        "- Portfolio selection is validation-primary; OOS is report-only.",
+        "- Portfolio selection is validation-primary; locked-OOS is report-only / gate-only.",
         "- `diagnostic_best_oos` is not a deployable selection if it differs from validation selection.",
         f"- Selection label: `{lockbox_policy.get('selection_label')}`.",
         f"- Locked-OOS label: `{lockbox_policy.get('locked_oos_label')}`.",
+        f"- Locked-OOS gate label: `{lockbox_policy.get('locked_oos_gate_label')}`.",
+        f"- Diagnostic quarantine label: `{lockbox_policy.get('diagnostic_not_promoted_label')}`.",
+        f"- Improved threshold: OOS return `>{CURRENT_CHAMPION_OOS_RETURN:.4%}` plus current-champion return/risk gates.",
         "",
         "## Runtime guard",
         "",
@@ -362,7 +799,7 @@ def _markdown(payload: dict[str, Any], rows: list[dict[str, Any]]) -> str:
                 f"- train: `{_fmt_pct(split.get('train', {}).get('metrics', {}).get('total_return'))}`",
                 f"- val: `{_fmt_pct(split.get('val', {}).get('metrics', {}).get('total_return'))}`",
                 f"- locked OOS: `{_fmt_pct(split.get('oos', {}).get('metrics', {}).get('total_return'))}`, Sharpe `{_fmt_float(split.get('oos', {}).get('metrics', {}).get('sharpe'))}`, MDD `{_fmt_pct(split.get('oos', {}).get('metrics', {}).get('max_drawdown'))}`",
-                f"- success: `{selected.get('success_candidate')}` / failed gates: `{','.join(k for k, ok in (selected.get('gates') or {}).items() if not ok)}`",
+                f"- promotion status: `{selected.get('promotion_status')}` / failed gates: `{','.join(selected.get('failed_gates') or [])}`",
                 "",
             ]
         )
@@ -376,9 +813,31 @@ def _markdown(payload: dict[str, Any], rows: list[dict[str, Any]]) -> str:
                 f"- train: `{_fmt_pct(split.get('train', {}).get('metrics', {}).get('total_return'))}`",
                 f"- val: `{_fmt_pct(split.get('val', {}).get('metrics', {}).get('total_return'))}`",
                 f"- locked OOS: `{_fmt_pct(split.get('oos', {}).get('metrics', {}).get('total_return'))}`, Sharpe `{_fmt_float(split.get('oos', {}).get('metrics', {}).get('sharpe'))}`, MDD `{_fmt_pct(split.get('oos', {}).get('metrics', {}).get('max_drawdown'))}`",
+                f"- promotion status: `{best_oos.get('promotion_status')}`",
                 "",
             ]
         )
+    if quarantine:
+        lines.extend(
+            [
+                "## H6 diagnostic quarantine",
+                "",
+                "- High-return locked-OOS diagnostics that fail promotion gates are retained as research evidence only.",
+                "- Quarantined rows use the explicit `diagnostic_not_promoted` label and are not promoted success.",
+                "",
+                "| rank | name | mode | locked OOS | locked OOS MDD | failed gates |",
+                "|---:|---|---|---:|---:|---|",
+            ]
+        )
+        for idx, item in enumerate(quarantine[:10], start=1):
+            split = item.get("splits", {})
+            oos = split.get("oos", {}).get("metrics", {})
+            lines.append(
+                f"| {idx} | `{item.get('name')}` | `{item.get('mode')}` | "
+                f"{_fmt_pct(oos.get('total_return'))} | {_fmt_pct(oos.get('max_drawdown'))} | "
+                f"`{','.join(item.get('failed_gates') or [])}` |"
+            )
+        lines.append("")
     lines.extend(
         [
             "## Top rows",
@@ -398,10 +857,24 @@ def _markdown(payload: dict[str, Any], rows: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _portfolio_report_sort_key(item: dict[str, Any]) -> tuple[bool, float, bool, str]:
+    return (
+        not bool(item["success_candidate"]),
+        -_safe_float(item.get("validation_score")),
+        item.get("promotion_status") == LOCKBOX_POLICY["diagnostic_not_promoted_label"],
+        str(item.get("name") or ""),
+    )
+
+
 def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     fresh = _load_fresh_module()
     rows = _read_rows(Path(args.candidate_csv))
-    pool = _candidate_pool(rows, top_n=int(args.top_n), family_quota=int(args.family_quota))
+    pool, pool_policy = _candidate_pool_with_metadata(
+        rows,
+        top_n=int(args.top_n),
+        family_quota=int(args.family_quota),
+        calendar_neighborhood_reps=int(args.calendar_neighborhood_reps),
+    )
     oos_end = datetime.fromisoformat(str(args.oos_end_date)).date()
     splits = fresh._split_windows(oos_end=oos_end)
     start = min(split.start for split in splits)
@@ -413,6 +886,7 @@ def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[dict[s
     arrays = fresh._build_arrays(panel, symbols)
     specs_by_name = {spec.name: spec for spec in fresh._candidate_specs(arrays, symbols)}
     pool = [row for row in pool if row["name"] in specs_by_name]
+    candidate_rows_by_name = {row["name"]: dict(row) for row in pool}
 
     split_curves: dict[str, dict[str, list[float]]] = {}
     split_payloads: dict[str, dict[str, dict[str, Any]]] = {}
@@ -442,6 +916,7 @@ def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[dict[s
                 "additive_sleeves",
                 "validation_return_risk_weight",
                 "validation_drawdown_budget",
+                "cluster_capped_validation_weight",
             ):
                 portfolio_items.append(
                     _combo_metrics(
@@ -450,15 +925,13 @@ def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[dict[s
                         split_curves=split_curves,
                         split_payloads=split_payloads,
                         mode=mode,
+                        candidate_rows_by_name=candidate_rows_by_name,
+                        cluster_cap=float(args.cluster_cap),
+                        sleeve_cap=float(args.sleeve_cap),
+                        correlation_threshold=float(args.correlation_threshold),
                     )
                 )
-    portfolio_items.sort(
-        key=lambda item: (
-            not bool(item["success_candidate"]),
-            -_safe_float(item["splits"]["oos"]["metrics"].get("total_return")),
-            -_safe_float(item["splits"]["oos"]["metrics"].get("sharpe")),
-        )
-    )
+    portfolio_items.sort(key=_portfolio_report_sort_key)
     csv_rows = [_flatten_row(item) for item in portfolio_items]
     selected_by_validation = max(portfolio_items, key=lambda item: item["validation_score"], default={})
     diagnostic_best_oos = max(
@@ -469,6 +942,19 @@ def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[dict[s
         ),
         default={},
     )
+    diagnostic_quarantine = sorted(
+        [
+            item
+            for item in portfolio_items
+            if bool(item.get("diagnostic_not_promoted"))
+            and _safe_float(item["splits"]["oos"]["metrics"].get("total_return")) > CURRENT_CHAMPION_OOS_RETURN
+        ],
+        key=lambda item: (
+            _safe_float(item["splits"]["oos"]["metrics"].get("total_return")),
+            -_safe_float(item["splits"]["oos"]["metrics"].get("max_drawdown"), 1.0),
+        ),
+        reverse=True,
+    )
     payload = {
         "artifact_kind": "profit_moonshot_fresh_portfolio_tuning",
         "generated_at_utc": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
@@ -478,12 +964,28 @@ def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[dict[s
         "combo_limit_policy": {
             "max_combos_per_size": max_combos_per_size,
             "limit_hits_by_size": combo_limit_hits,
-            "pool_order": "validation_score_descending",
+            "pool_order": pool_policy.get("pool_order"),
             "family_quota": int(args.family_quota),
+        },
+        "candidate_pool_policy": pool_policy,
+        "allocator_policy": {
+            "modes": [
+                "equal_weight",
+                "additive_sleeves",
+                "validation_return_risk_weight",
+                "validation_drawdown_budget",
+                "cluster_capped_validation_weight",
+            ],
+            "cluster_cap": float(args.cluster_cap),
+            "sleeve_cap": float(args.sleeve_cap),
+            "correlation_threshold": float(args.correlation_threshold),
+            "selection_basis": "train_val_only",
+            "uses_locked_oos_for_selection": False,
         },
         "success_candidate_count": sum(1 for item in portfolio_items if bool(item["success_candidate"])),
         "selected_by_validation": selected_by_validation,
         "diagnostic_best_oos": diagnostic_best_oos,
+        "diagnostic_quarantine": diagnostic_quarantine[:50],
         "data_metadata": data_metadata,
         "peak_rss_mib": _rss_mib(),
         "lockbox_policy": dict(LOCKBOX_POLICY),
@@ -502,6 +1004,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
     parser.add_argument("--top-n", type=int, default=18)
     parser.add_argument("--family-quota", type=int, default=0)
+    parser.add_argument("--calendar-neighborhood-reps", type=int, default=8)
+    parser.add_argument("--cluster-cap", type=float, default=0.50)
+    parser.add_argument("--sleeve-cap", type=float, default=0.35)
+    parser.add_argument("--correlation-threshold", type=float, default=0.85)
     parser.add_argument("--max-sleeves", type=int, default=5)
     parser.add_argument("--max-combos-per-size", type=int, default=12_000)
     return parser.parse_args(argv)
@@ -522,8 +1028,13 @@ def main(argv: list[str] | None = None) -> int:
             "script": Path(__file__).name,
             "top_n": int(args.top_n),
             "family_quota": int(args.family_quota),
+            "calendar_neighborhood_reps": int(args.calendar_neighborhood_reps),
+            "cluster_cap": float(args.cluster_cap),
+            "sleeve_cap": float(args.sleeve_cap),
+            "correlation_threshold": float(args.correlation_threshold),
             "max_sleeves": int(args.max_sleeves),
             "locked_oos_label": LOCKBOX_POLICY["locked_oos_label"],
+            "locked_oos_gate_label": LOCKBOX_POLICY["locked_oos_gate_label"],
             "selection_label": LOCKBOX_POLICY["selection_label"],
         },
         budget_bytes=PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES,
@@ -536,6 +1047,7 @@ def main(argv: list[str] | None = None) -> int:
                 "candidate_csv": str(args.candidate_csv),
                 "top_n": int(args.top_n),
                 "family_quota": int(args.family_quota),
+                "calendar_neighborhood_reps": int(args.calendar_neighborhood_reps),
                 "max_sleeves": int(args.max_sleeves),
             },
         )

@@ -266,3 +266,167 @@ def test_tuning_main_finalizes_failed_guard_when_payload_build_crashes(
     assert guards[0].finalize_calls[0]["status"] == "failed"
     assert guards[0].finalize_calls[0]["error"] == "candidate build failed"
     assert guards[0].released is True
+
+
+def _calendar_row(
+    name: str,
+    *,
+    train: float,
+    val: float,
+    val_mdd: float = 0.001,
+    val_sharpe: float = 2.0,
+    trips: int = 8,
+    long_symbol: str = "TRXUSDT",
+    short_symbol: str = "ETHUSDT",
+    threshold: float = 0.018,
+    hold_bars: int = 168,
+    take_profit: float = 0.060,
+) -> dict[str, str]:
+    return {
+        "name": name,
+        "family": "calendar_rotation",
+        "filters": json.dumps(
+            {
+                "family": "calendar_rotation",
+                "calendar_long_symbol": long_symbol,
+                "calendar_short_symbol": short_symbol,
+                "threshold": threshold,
+                "hold_bars": hold_bars,
+                "take_profit_pct": take_profit,
+            },
+            sort_keys=True,
+        ),
+        "train_total_return": str(train),
+        "val_total_return": str(val),
+        "val_max_drawdown": str(val_mdd),
+        "val_sharpe": str(val_sharpe),
+        "val_round_trips": str(trips),
+    }
+
+
+def test_calendar_neighborhood_representatives_are_train_val_stability_first() -> None:
+    stable_a = _calendar_row("stable_a", train=0.055, val=0.041, threshold=0.0180)
+    stable_b = _calendar_row("stable_b", train=0.052, val=0.039, threshold=0.0184)
+    fragile_spike = _calendar_row("fragile_spike", train=0.060, val=0.070, threshold=0.030)
+    fragile_neighbor = _calendar_row("fragile_neighbor", train=0.001, val=0.001, threshold=0.0304)
+
+    selected = MODULE._candidate_pool(
+        [fragile_spike, fragile_neighbor, stable_a, stable_b],
+        top_n=2,
+        calendar_neighborhood_reps=1,
+    )
+
+    assert selected[0]["name"] == "stable_a"
+    assert {row["name"] for row in selected} == {"stable_a", "fragile_spike"}
+
+
+def test_cluster_capped_validation_weight_caps_correlated_calendar_cluster() -> None:
+    rows = {
+        "cal_a": _calendar_row("cal_a", train=0.06, val=0.05),
+        "cal_b": _calendar_row("cal_b", train=0.055, val=0.048),
+        "cal_c": _calendar_row(
+            "cal_c",
+            train=0.05,
+            val=0.042,
+            short_symbol="BTCUSDT",
+            threshold=0.024,
+            take_profit=0.030,
+        ),
+    }
+    split_payloads = {
+        name: {
+            "train": {"metrics": {"total_return": 0.05, "max_drawdown": 0.002, "sharpe": 2.0}},
+            "val": {"metrics": {"total_return": 0.05, "max_drawdown": 0.002, "sharpe": 2.0}},
+        }
+        for name in rows
+    }
+    split_curves = {
+        "cal_a": {"train": [10000, 10050, 10100, 10150], "val": [10000, 10040, 10090, 10140]},
+        "cal_b": {"train": [10000, 10049, 10099, 10149], "val": [10000, 10041, 10091, 10139]},
+        "cal_c": {"train": [10000, 10020, 10010, 10080], "val": [10000, 9990, 10020, 10070]},
+    }
+
+    weights, diagnostics = MODULE._cluster_capped_validation_weights(
+        combo_names=("cal_a", "cal_b", "cal_c"),
+        split_curves=split_curves,
+        split_payloads=split_payloads,
+        candidate_rows_by_name=rows,
+        cluster_cap=0.50,
+        sleeve_cap=0.60,
+        correlation_threshold=0.95,
+    )
+
+    clusters = diagnostics["clusters"]
+    shared_cluster = clusters["cal_a"]
+    assert clusters["cal_b"] == shared_cluster
+    assert clusters["cal_c"] != shared_cluster
+    assert sum(weights[:2]) <= 0.500001
+    assert abs(sum(weights) - 1.0) < 1e-9
+    assert diagnostics["selection_basis"] == "train_val_only_cluster_capped"
+
+
+def test_mdd_failed_diagnostic_is_quarantined_not_promoted() -> None:
+    item = {
+        "name": "diagnostic_high_oos_failed_mdd",
+        "mode": "additive_sleeves",
+        "gates": {
+            "train_positive": True,
+            "val_positive": True,
+            "oos_return_beats_current_champion": True,
+            "oos_mdd_beats_shadow": False,
+        },
+        "success_candidate": False,
+        "splits": {
+            "train": {"metrics": {"total_return": 0.20}},
+            "val": {"metrics": {"total_return": 0.19}},
+            "oos": {"metrics": {"total_return": 0.03971, "max_drawdown": 0.008977}},
+        },
+    }
+
+    labeled = MODULE._with_promotion_labels(item)
+
+    assert labeled["diagnostic_not_promoted"] is True
+    assert labeled["promotion_status"] == "diagnostic_not_promoted"
+    assert labeled["improved_candidate"] is False
+    assert labeled["success_candidate"] is False
+    assert "oos_mdd_beats_shadow" in labeled["failed_gates"]
+
+
+def test_report_order_uses_validation_before_locked_oos_diagnostics() -> None:
+    validation_leader = {
+        "name": "validation_leader",
+        "success_candidate": False,
+        "promotion_status": "diagnostic_not_promoted",
+        "validation_score": 10.0,
+    }
+    oos_spike = {
+        "name": "oos_spike",
+        "success_candidate": False,
+        "promotion_status": "diagnostic_not_promoted",
+        "validation_score": 4.0,
+    }
+
+    ordered = sorted([oos_spike, validation_leader], key=MODULE._portfolio_report_sort_key)
+
+    assert [item["name"] for item in ordered] == ["validation_leader", "oos_spike"]
+
+
+def test_success_requires_current_champion_oos_threshold_and_return_risk_gate() -> None:
+    passing = {
+        "gates": {
+            "train_positive": True,
+            "val_positive": True,
+            "train_return_beats_current_champion": True,
+            "val_return_beats_current_champion": True,
+            "oos_return_beats_current_champion": True,
+            "oos_return_risk_beats_current_champion": True,
+            "oos_mdd_beats_shadow": True,
+            "oos_sharpe_gt_1": True,
+            "oos_trades_not_starved": True,
+        }
+    }
+    assert MODULE._improved_candidate_from_gates(passing["gates"])
+    assert MODULE.CURRENT_CHAMPION_OOS_RETURN == 0.012181
+
+    failing = dict(passing["gates"], oos_return_beats_current_champion=False)
+    assert not MODULE._improved_candidate_from_gates(failing)
