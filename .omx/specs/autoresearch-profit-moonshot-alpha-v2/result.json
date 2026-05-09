@@ -6,13 +6,18 @@
     "current_champion_oos_return": 0.012181,
     "current_champion_oos_return_risk": 7.329121540312876,
     "locked_oos_max_drawdown": 0.001774102912063881,
+    "locked_oos_monthlyized_return": 0.006121025535450242,
     "locked_oos_return_risk": 7.551493250827515,
     "locked_oos_sharpe": 5.477385370503527,
+    "locked_oos_smart_sortino": 2.0593603686568986,
     "locked_oos_total_return": 0.013397126166723838,
     "oos_return_excess_vs_champion": 0.0012161261667238375,
     "oos_return_risk_excess_vs_champion": 0.222371710514639,
+    "return_quality_contract_passed": false,
     "shadow_oos_mdd_gate": 0.001778,
+    "train_monthlyized_return": 0.0044737445278342225,
     "train_total_return": 0.055019331232847524,
+    "validation_monthlyized_return": 0.02044010271922625,
     "validation_total_return": 0.040000000000000036
   },
   "ci_evidence": [
@@ -126,16 +131,40 @@
     ],
     "under_8gib": true
   },
-  "passed": true,
+  "passed": false,
   "passing_candidate_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/passing_candidate_latest.json",
   "pushed_commit": "b340d388451a069414d57f3788ecf1981b3f6cca",
   "pushed_ref": "private/main",
-  "required_final_evidence": [],
-  "research_success_candidate": true,
+  "required_final_evidence": [
+    "find_candidate_passing_return_quality_contract",
+    "local_tests",
+    "ci_private_ci_green",
+    "git_push_if_code_changed"
+  ],
+  "research_success_candidate": false,
+  "return_quality_contract": {
+    "locked_oos_use": [
+      "report",
+      "gate"
+    ],
+    "maximum_acceptable_oos_mdd": 0.25,
+    "minimum_oos_calmar": 1.0,
+    "minimum_oos_sharpe": 2.0,
+    "minimum_oos_smart_sortino": 3.0,
+    "minimum_oos_sortino": 3.0,
+    "minimum_stable_monthly_return": 0.02,
+    "requires_locked_oos_total_return_gt_current_champion": 0.012181,
+    "selection_inputs": [
+      "train",
+      "validation"
+    ]
+  },
   "schema_version": "1.0",
   "source_changed": true,
-  "status": "passed",
-  "summary": "Candidate, local tests, memory guard, source push, and GitHub Actions ci/private-ci evidence are green for the source Lore commit.",
+  "status": "superseded_return_quality_floor",
+  "summary": "Prior alpha-v2 source/CI evidence remains historical, but the candidate is not a pass under the 2026-05-09 return-quality contract.",
+  "superseded_at_utc": "2026-05-09T06:22:00Z",
+  "superseded_reason": "User raised the promotion target to stable ~2% monthly return with high Sharpe/Sortino/smart Sortino/Calmar and MDD allowed up to ~25%; the prior alpha-v2 candidate is low-return after monthlyization.",
   "test_evidence": [
     {
       "command": "uv run --extra dev pytest -q <targeted alpha-v2 tests>",

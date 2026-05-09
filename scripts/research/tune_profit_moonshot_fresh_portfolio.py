@@ -51,7 +51,12 @@ CURRENT_CHAMPION_OOS_MDD = 0.001662
 CURRENT_CHAMPION_OOS_RETURN_RISK = CURRENT_CHAMPION_OOS_RETURN / CURRENT_CHAMPION_OOS_MDD
 BASELINE_OOS_RETURN = CURRENT_CHAMPION_OOS_RETURN
 SHADOW_OOS_MDD = 0.001778
-SUCCESS_SHARPE = 1.0
+MIN_STABLE_MONTHLY_RETURN = 0.02
+MAX_ACCEPTABLE_OOS_MDD = 0.25
+SUCCESS_SHARPE = 2.0
+SUCCESS_SORTINO = 3.0
+SUCCESS_SMART_SORTINO = 3.0
+SUCCESS_CALMAR = 1.0
 TARGET_BUDGET_TRAIN_RETURN = 0.05
 TARGET_BUDGET_VAL_RETURN = 0.04
 MIN_TARGET_BUDGET_LEVERAGE = 0.20
@@ -66,6 +71,8 @@ LOCKBOX_POLICY = {
     "oos_is_report_only": True,
     "oos_is_gate_only": True,
     "current_champion_oos_return": CURRENT_CHAMPION_OOS_RETURN,
+    "minimum_stable_monthly_return": MIN_STABLE_MONTHLY_RETURN,
+    "maximum_acceptable_oos_mdd": MAX_ACCEPTABLE_OOS_MDD,
 }
 
 
@@ -635,16 +642,43 @@ def _return_risk_score(total_return: Any, max_drawdown: Any) -> float:
     return _safe_float(total_return) / max(1e-9, _safe_float(max_drawdown, 1.0))
 
 
+def _monthlyized_return(metrics: dict[str, Any]) -> float:
+    """Return geometric monthly return from the annualized split CAGR."""
+    cagr = _safe_float(metrics.get("cagr"), -1.0)
+    if cagr <= -1.0:
+        return -1.0
+    return float((1.0 + cagr) ** (1.0 / 12.0) - 1.0)
+
+
+def _smart_sortino(metrics: dict[str, Any]) -> float:
+    """Sortino penalized for missing the monthly return floor and for using MDD budget.
+
+    This local "smart sortino" is deliberately stricter than raw Sortino: a low
+    return / tiny-drawdown row cannot pass only because the denominator is small.
+    """
+    monthly_return = _monthlyized_return(metrics)
+    return_floor_factor = max(0.0, min(1.0, monthly_return / MIN_STABLE_MONTHLY_RETURN))
+    mdd = max(0.0, _safe_float(metrics.get("max_drawdown"), 1.0))
+    drawdown_budget_factor = max(0.0, 1.0 - min(mdd, MAX_ACCEPTABLE_OOS_MDD) / MAX_ACCEPTABLE_OOS_MDD)
+    return _safe_float(metrics.get("sortino")) * return_floor_factor * drawdown_budget_factor
+
+
 def _improved_candidate_from_gates(gates: dict[str, bool]) -> bool:
     required = (
         "train_positive",
         "val_positive",
         "train_return_beats_current_champion",
         "val_return_beats_current_champion",
+        "train_monthly_return_gte_2pct",
+        "val_monthly_return_gte_2pct",
+        "oos_monthly_return_gte_2pct",
         "oos_return_beats_current_champion",
         "oos_return_risk_beats_current_champion",
-        "oos_mdd_beats_shadow",
-        "oos_sharpe_gt_1",
+        "oos_mdd_within_25pct_budget",
+        "oos_sharpe_high",
+        "oos_sortino_high",
+        "oos_smart_sortino_high",
+        "oos_calmar_high",
         "oos_trades_not_starved",
     )
     return all(bool(gates.get(key)) for key in required)
@@ -728,18 +762,40 @@ def _combo_metrics(
     val_return = _safe_float(val.get("total_return"))
     oos_return = _safe_float(oos.get("total_return"))
     oos_mdd = _safe_float(oos.get("max_drawdown"), 1.0)
+    train_monthly_return = _monthlyized_return(train)
+    val_monthly_return = _monthlyized_return(val)
+    oos_monthly_return = _monthlyized_return(oos)
+    oos_smart_sortino = _smart_sortino(oos)
     gates = {
         "train_positive": train_return > 0.0,
         "val_positive": val_return > 0.0,
         "train_return_beats_current_champion": train_return > CURRENT_CHAMPION_TRAIN_RETURN,
         "val_return_beats_current_champion": val_return > CURRENT_CHAMPION_VAL_RETURN,
+        "train_monthly_return_gte_2pct": train_monthly_return >= MIN_STABLE_MONTHLY_RETURN,
+        "val_monthly_return_gte_2pct": val_monthly_return >= MIN_STABLE_MONTHLY_RETURN,
+        "oos_monthly_return_gte_2pct": oos_monthly_return >= MIN_STABLE_MONTHLY_RETURN,
         "oos_return_beats_current_champion": oos_return > CURRENT_CHAMPION_OOS_RETURN,
         "oos_return_risk_beats_current_champion": (
             _return_risk_score(oos_return, oos_mdd) > CURRENT_CHAMPION_OOS_RETURN_RISK
         ),
-        "oos_mdd_beats_shadow": oos_mdd < SHADOW_OOS_MDD,
-        "oos_sharpe_gt_1": _safe_float(oos.get("sharpe")) > SUCCESS_SHARPE,
+        "oos_mdd_within_25pct_budget": oos_mdd <= MAX_ACCEPTABLE_OOS_MDD,
+        "oos_sharpe_high": _safe_float(oos.get("sharpe")) >= SUCCESS_SHARPE,
+        "oos_sortino_high": _safe_float(oos.get("sortino")) >= SUCCESS_SORTINO,
+        "oos_smart_sortino_high": oos_smart_sortino >= SUCCESS_SMART_SORTINO,
+        "oos_calmar_high": _safe_float(oos.get("calmar")) >= SUCCESS_CALMAR,
         "oos_trades_not_starved": int(out["splits"]["oos"].get("round_trips") or 0) >= 5,
+    }
+    out["return_quality"] = {
+        "train_monthlyized_return": train_monthly_return,
+        "val_monthlyized_return": val_monthly_return,
+        "oos_monthlyized_return": oos_monthly_return,
+        "oos_smart_sortino": oos_smart_sortino,
+        "minimum_stable_monthly_return": MIN_STABLE_MONTHLY_RETURN,
+        "maximum_acceptable_oos_mdd": MAX_ACCEPTABLE_OOS_MDD,
+        "minimum_oos_sharpe": SUCCESS_SHARPE,
+        "minimum_oos_sortino": SUCCESS_SORTINO,
+        "minimum_oos_smart_sortino": SUCCESS_SMART_SORTINO,
+        "minimum_oos_calmar": SUCCESS_CALMAR,
     }
     out["validation_score"] = (
         _safe_float(val.get("total_return")) * 100.0
@@ -767,11 +823,20 @@ def _flatten_row(item: dict[str, Any]) -> dict[str, Any]:
         "promotion_status": item.get("promotion_status", ""),
         "failed_gates": ",".join(item.get("failed_gates") or []),
     }
+    if item.get("return_quality"):
+        quality = dict(item["return_quality"])
+        for key in (
+            "train_monthlyized_return",
+            "val_monthlyized_return",
+            "oos_monthlyized_return",
+            "oos_smart_sortino",
+        ):
+            row[key] = _safe_float(quality.get(key), 0.0)
     if item.get("allocator_diagnostics"):
         row["allocator_selection_basis"] = dict(item["allocator_diagnostics"]).get("selection_basis", "")
     for split_name, split in item["splits"].items():
         metrics = split["metrics"]
-        for key in ("total_return", "max_drawdown", "sharpe", "sortino", "volatility"):
+        for key in ("total_return", "cagr", "max_drawdown", "sharpe", "sortino", "calmar", "volatility"):
             row[f"{split_name}_{key}"] = _safe_float(metrics.get(key), 0.0)
         row[f"{split_name}_round_trips"] = int(split.get("round_trips") or 0)
     return row
@@ -823,7 +888,10 @@ def _markdown(payload: dict[str, Any], rows: list[dict[str, Any]]) -> str:
         f"- Locked-OOS label: `{lockbox_policy.get('locked_oos_label')}`.",
         f"- Locked-OOS gate label: `{lockbox_policy.get('locked_oos_gate_label')}`.",
         f"- Diagnostic quarantine label: `{lockbox_policy.get('diagnostic_not_promoted_label')}`.",
-        f"- Improved threshold: OOS return `>{CURRENT_CHAMPION_OOS_RETURN:.4%}` plus current-champion return/risk gates.",
+        f"- Stable-return floor: train, validation, and locked-OOS monthlyized return `>={MIN_STABLE_MONTHLY_RETURN:.2%}`.",
+        f"- MDD budget: locked-OOS max drawdown `≤{MAX_ACCEPTABLE_OOS_MDD:.2%}`.",
+        f"- Quality floors: OOS Sharpe `≥{SUCCESS_SHARPE:.1f}`, Sortino `≥{SUCCESS_SORTINO:.1f}`, smart Sortino `≥{SUCCESS_SMART_SORTINO:.1f}`, Calmar `≥{SUCCESS_CALMAR:.1f}`.",
+        f"- Incumbent improvement still requires current-champion return/risk improvement from OOS return `>{CURRENT_CHAMPION_OOS_RETURN:.4%}`.",
         "",
         "## Runtime guard",
         "",
@@ -851,6 +919,7 @@ def _markdown(payload: dict[str, Any], rows: list[dict[str, Any]]) -> str:
                 f"- train: `{_fmt_pct(split.get('train', {}).get('metrics', {}).get('total_return'))}`",
                 f"- val: `{_fmt_pct(split.get('val', {}).get('metrics', {}).get('total_return'))}`",
                 f"- locked OOS: `{_fmt_pct(split.get('oos', {}).get('metrics', {}).get('total_return'))}`, Sharpe `{_fmt_float(split.get('oos', {}).get('metrics', {}).get('sharpe'))}`, MDD `{_fmt_pct(split.get('oos', {}).get('metrics', {}).get('max_drawdown'))}`",
+                f"- monthlyized train/val/OOS: `{_fmt_pct((selected.get('return_quality') or {}).get('train_monthlyized_return'))}` / `{_fmt_pct((selected.get('return_quality') or {}).get('val_monthlyized_return'))}` / `{_fmt_pct((selected.get('return_quality') or {}).get('oos_monthlyized_return'))}`; smart Sortino `{_fmt_float((selected.get('return_quality') or {}).get('oos_smart_sortino'))}`",
                 f"- promotion status: `{selected.get('promotion_status')}` / failed gates: `{','.join(selected.get('failed_gates') or [])}`",
                 "",
             ]
@@ -867,6 +936,7 @@ def _markdown(payload: dict[str, Any], rows: list[dict[str, Any]]) -> str:
                 f"- train: `{_fmt_pct(split.get('train', {}).get('metrics', {}).get('total_return'))}`",
                 f"- val: `{_fmt_pct(split.get('val', {}).get('metrics', {}).get('total_return'))}`",
                 f"- locked OOS: `{_fmt_pct(split.get('oos', {}).get('metrics', {}).get('total_return'))}`, Sharpe `{_fmt_float(split.get('oos', {}).get('metrics', {}).get('sharpe'))}`, MDD `{_fmt_pct(split.get('oos', {}).get('metrics', {}).get('max_drawdown'))}`",
+                f"- monthlyized train/val/OOS: `{_fmt_pct((best_success.get('return_quality') or {}).get('train_monthlyized_return'))}` / `{_fmt_pct((best_success.get('return_quality') or {}).get('val_monthlyized_return'))}` / `{_fmt_pct((best_success.get('return_quality') or {}).get('oos_monthlyized_return'))}`; smart Sortino `{_fmt_float((best_success.get('return_quality') or {}).get('oos_smart_sortino'))}`",
                 f"- promotion status: `{best_success.get('promotion_status')}` / failed gates: `{','.join(best_success.get('failed_gates') or [])}`",
                 "",
             ]
@@ -881,6 +951,7 @@ def _markdown(payload: dict[str, Any], rows: list[dict[str, Any]]) -> str:
                 f"- train: `{_fmt_pct(split.get('train', {}).get('metrics', {}).get('total_return'))}`",
                 f"- val: `{_fmt_pct(split.get('val', {}).get('metrics', {}).get('total_return'))}`",
                 f"- locked OOS: `{_fmt_pct(split.get('oos', {}).get('metrics', {}).get('total_return'))}`, Sharpe `{_fmt_float(split.get('oos', {}).get('metrics', {}).get('sharpe'))}`, MDD `{_fmt_pct(split.get('oos', {}).get('metrics', {}).get('max_drawdown'))}`",
+                f"- monthlyized locked OOS: `{_fmt_pct((best_oos.get('return_quality') or {}).get('oos_monthlyized_return'))}`; smart Sortino `{_fmt_float((best_oos.get('return_quality') or {}).get('oos_smart_sortino'))}`",
                 f"- promotion status: `{best_oos.get('promotion_status')}`",
                 "",
             ]
@@ -910,16 +981,17 @@ def _markdown(payload: dict[str, Any], rows: list[dict[str, Any]]) -> str:
         [
             "## Top rows",
             "",
-            "| rank | name | mode | leverage | success | train | val | locked OOS | locked OOS MDD | locked OOS Sharpe | failed gates |",
-            "|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---|",
+            "| rank | name | mode | leverage | success | train | val | locked OOS | OOS monthly | OOS MDD | OOS Sharpe | smart Sortino | failed gates |",
+            "|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|",
         ]
     )
     for idx, row in enumerate(rows[:15], start=1):
         lines.append(
             f"| {idx} | `{row['name']}` | `{row['mode']}` | {_fmt_float(row.get('leverage'))} | {row['success_candidate']} | "
             f"{_fmt_pct(row['train_total_return'])} | {_fmt_pct(row['val_total_return'])} | "
-            f"{_fmt_pct(row['oos_total_return'])} | {_fmt_pct(row['oos_max_drawdown'])} | "
-            f"{_fmt_float(row['oos_sharpe'])} | `{row['failed_gates']}` |"
+            f"{_fmt_pct(row['oos_total_return'])} | {_fmt_pct(row.get('oos_monthlyized_return'))} | "
+            f"{_fmt_pct(row['oos_max_drawdown'])} | {_fmt_float(row['oos_sharpe'])} | "
+            f"{_fmt_float(row.get('oos_smart_sortino'))} | `{row['failed_gates']}` |"
         )
     lines.append("")
     return "\n".join(lines)

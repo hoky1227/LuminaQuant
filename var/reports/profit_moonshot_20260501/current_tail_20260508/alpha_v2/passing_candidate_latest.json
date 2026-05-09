@@ -9,8 +9,12 @@
     "target_val_return": 0.04,
     "uses_locked_oos_for_selection": false
   },
-  "artifact_kind": "profit_moonshot_alpha_v2_passing_candidate",
-  "failed_gates": [],
+  "artifact_kind": "profit_moonshot_alpha_v2_superseded_candidate",
+  "failed_gates": [
+    "train_monthly_return_gte_2pct",
+    "oos_monthly_return_gte_2pct",
+    "oos_smart_sortino_high"
+  ],
   "gates": {
     "oos_mdd_beats_shadow": true,
     "oos_return_beats_current_champion": true,
@@ -23,13 +27,14 @@
     "val_return_beats_current_champion": true
   },
   "generated_at_utc": "2026-05-09T05:51:51.998255Z",
-  "improved_candidate": true,
+  "improved_candidate": false,
   "labels": {
     "live_equivalent_selection_eligible": false,
     "locked_oos_policy": "report_only_gate_only",
-    "promotion_status": "improved_success_candidate",
-    "research_success_candidate": true,
-    "selection_basis": "train_val_only"
+    "promotion_status": "superseded_return_quality_floor",
+    "research_success_candidate": false,
+    "selection_basis": "train_val_only",
+    "superseded_by_return_quality_floor": true
   },
   "leverage": 0.3518254541668833,
   "live_equivalent_selection_eligible": false,
@@ -55,22 +60,44 @@
     "current_champion_oos_return": 0.012181,
     "current_champion_oos_return_risk": 7.329121540312876,
     "locked_oos_max_drawdown": 0.001774102912063881,
+    "locked_oos_monthlyized_return": 0.006121025535450242,
     "locked_oos_return_risk": 7.551493250827515,
     "locked_oos_sharpe": 5.477385370503527,
+    "locked_oos_smart_sortino": 2.0593603686568986,
     "locked_oos_total_return": 0.013397126166723838,
     "oos_return_excess_vs_champion": 0.0012161261667238375,
     "oos_return_risk_excess_vs_champion": 0.222371710514639,
     "shadow_oos_mdd_gate": 0.001778,
+    "train_monthlyized_return": 0.0044737445278342225,
     "train_total_return": 0.055019331232847524,
+    "validation_monthlyized_return": 0.02044010271922625,
     "validation_total_return": 0.040000000000000036
   },
   "mode": "train_val_target_return_budget",
   "name": "fresh_portfolio_train_val_target_return_budget_fresh_calendar_trx_takeprofit_sethusdt_thr180_h168_ls620_ss120_tp600__fresh_calendar_trx_takeprofit_sethusdt_thr120_h120_ls620_ss120_tp600__fresh_calendar_trx_takeprofit_sethusdt_thr180_h168_ls590_ss120_tp600__fresh_calendar_trx_takeprofit_sethusdt_thr180_h168_ls560_ss120_tp600",
   "notes": [
     "Selected as best success candidate among rows that pass all locked-OOS gates; selected_by_validation remains a diagnostic_not_promoted additive row because it fails MDD/return-risk gates.",
-    "Standalone residual-pair momentum/reversion and compression downside probes remain diagnostic/no-go and are not promoted."
+    "Standalone residual-pair momentum/reversion and compression downside probes remain diagnostic/no-go and are not promoted.",
+    "Superseded on 2026-05-09: locked-OOS total return +1.3397% is only +0.6121% monthlyized; train monthlyized return is +0.4474%; smart Sortino under the new return-quality penalty is 2.0594 < 3.0."
   ],
-  "research_success_candidate": true,
+  "research_success_candidate": false,
+  "return_quality_contract": {
+    "locked_oos_use": [
+      "report",
+      "gate"
+    ],
+    "maximum_acceptable_oos_mdd": 0.25,
+    "minimum_oos_calmar": 1.0,
+    "minimum_oos_sharpe": 2.0,
+    "minimum_oos_smart_sortino": 3.0,
+    "minimum_oos_sortino": 3.0,
+    "minimum_stable_monthly_return": 0.02,
+    "requires_locked_oos_total_return_gt_current_champion": 0.012181,
+    "selection_inputs": [
+      "train",
+      "validation"
+    ]
+  },
   "schema_version": "1.0",
   "sleeves": [
     "fresh_calendar_trx_takeprofit_sethusdt_thr180_h168_ls620_ss120_tp600",
@@ -81,5 +108,7 @@
   "source_artifact": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_target_budget_v1/fresh_portfolio_tuning_latest.json",
   "source_csv": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_target_budget_v1/fresh_portfolio_tuning_candidates.csv",
   "source_markdown": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_target_budget_v1/fresh_portfolio_tuning_latest.md",
-  "success_candidate": true
+  "success_candidate": false,
+  "superseded_at_utc": "2026-05-09T06:22:00Z",
+  "superseded_reason": "Fails the 2026-05-09 return-quality contract: stable return must be >=2%/month on train, validation, and locked-OOS; MDD budget is relaxed to <=25% but low monthly return is not promotable."
 }

@@ -32,6 +32,13 @@ DEFAULT_REPORT_DIR = (
 )
 DEFAULT_MARKDOWN_PATH = DEFAULT_REPORT_DIR / "mission_validation_latest.md"
 EIGHT_GIB_BYTES = 8 * 1024 * 1024 * 1024
+CURRENT_CHAMPION_OOS_RETURN = 0.012181
+MIN_STABLE_MONTHLY_RETURN = 0.02
+MAX_ACCEPTABLE_OOS_MDD = 0.25
+MIN_OOS_SHARPE = 2.0
+MIN_OOS_SORTINO = 3.0
+MIN_OOS_SMART_SORTINO = 3.0
+MIN_OOS_CALMAR = 1.0
 _TIME_RSS_RE = re.compile(r"Maximum resident set size \(kbytes\):\s*(\d+)")
 
 
@@ -142,6 +149,178 @@ def _candidate_label_ok(result: Mapping[str, Any], candidate_payload: Mapping[st
             _nested_get(candidate_payload, "labels", "research_success_candidate"),
             _nested_get(candidate_payload, "labels", "live_equivalent_selection_eligible"),
         )
+    )
+
+
+def _source_candidate_from_artifact(candidate_payload: Mapping[str, Any], *, repo_root: Path) -> dict[str, Any]:
+    source_path = _resolve_path(candidate_payload.get("source_artifact"), repo_root=repo_root)
+    if source_path is None or not source_path.exists() or source_path.suffix.lower() != ".json":
+        return {}
+    source_payload = _load_json(source_path)
+    candidate_name = str(candidate_payload.get("name") or "")
+    for key in ("best_success_candidate", "selected_by_validation", "diagnostic_best_oos", "candidate"):
+        source_candidate = source_payload.get(key)
+        if not isinstance(source_candidate, Mapping):
+            continue
+        if not candidate_name or str(source_candidate.get("name") or "") == candidate_name:
+            return dict(source_candidate)
+    if all(key in source_payload for key in ("splits", "gates")):
+        return dict(source_payload)
+    return {}
+
+
+def _monthlyized_from_cagr(cagr: Any) -> float | None:
+    parsed = _safe_float(cagr)
+    if parsed is None or parsed <= -1.0:
+        return None
+    return float((1.0 + parsed) ** (1.0 / 12.0) - 1.0)
+
+
+def _metric_sources(
+    result: Mapping[str, Any],
+    candidate_payload: Mapping[str, Any],
+    source_candidate: Mapping[str, Any],
+) -> list[Mapping[str, Any]]:
+    sources: list[Mapping[str, Any]] = []
+    for source in (
+        candidate_payload.get("return_quality"),
+        candidate_payload.get("metrics"),
+        result.get("candidate_metrics"),
+        source_candidate.get("return_quality"),
+    ):
+        if isinstance(source, Mapping):
+            sources.append(source)
+    return sources
+
+
+def _first_float_from_sources(sources: Iterable[Mapping[str, Any]], keys: Iterable[str]) -> float | None:
+    for source in sources:
+        for key in keys:
+            parsed = _safe_float(source.get(key))
+            if parsed is not None:
+                return parsed
+    return None
+
+
+def _split_metrics(source_candidate: Mapping[str, Any], split_name: str) -> dict[str, Any]:
+    splits = source_candidate.get("splits")
+    if not isinstance(splits, Mapping):
+        return {}
+    split = splits.get(split_name)
+    if not isinstance(split, Mapping):
+        return {}
+    metrics = split.get("metrics")
+    return dict(metrics) if isinstance(metrics, Mapping) else {}
+
+
+def _split_monthlyized_return(
+    sources: Iterable[Mapping[str, Any]],
+    source_candidate: Mapping[str, Any],
+    split_name: str,
+) -> float | None:
+    key_aliases = {
+        "train": ("train_monthlyized_return", "train_monthly_return"),
+        "val": (
+            "val_monthlyized_return",
+            "validation_monthlyized_return",
+            "val_monthly_return",
+            "validation_monthly_return",
+        ),
+        "oos": (
+            "oos_monthlyized_return",
+            "locked_oos_monthlyized_return",
+            "oos_monthly_return",
+            "locked_oos_monthly_return",
+        ),
+    }
+    direct = _first_float_from_sources(sources, key_aliases[split_name])
+    if direct is not None:
+        return direct
+    return _monthlyized_from_cagr(_split_metrics(source_candidate, split_name).get("cagr"))
+
+
+def _locked_oos_metric(
+    sources: Iterable[Mapping[str, Any]],
+    source_candidate: Mapping[str, Any],
+    metric_name: str,
+) -> float | None:
+    aliases = {
+        "total_return": ("locked_oos_total_return", "oos_total_return"),
+        "max_drawdown": ("locked_oos_max_drawdown", "oos_max_drawdown"),
+        "sharpe": ("locked_oos_sharpe", "oos_sharpe"),
+        "sortino": ("locked_oos_sortino", "oos_sortino"),
+        "smart_sortino": ("locked_oos_smart_sortino", "oos_smart_sortino"),
+        "calmar": ("locked_oos_calmar", "oos_calmar"),
+    }
+    direct = _first_float_from_sources(sources, aliases[metric_name])
+    if direct is not None:
+        return direct
+    return _safe_float(_split_metrics(source_candidate, "oos").get(metric_name))
+
+
+def _smart_sortino(monthly_return: float | None, max_drawdown: float | None, sortino: float | None) -> float | None:
+    if monthly_return is None or max_drawdown is None or sortino is None:
+        return None
+    return_floor_factor = max(0.0, min(1.0, monthly_return / MIN_STABLE_MONTHLY_RETURN))
+    drawdown_budget_factor = max(
+        0.0,
+        1.0 - min(max(0.0, max_drawdown), MAX_ACCEPTABLE_OOS_MDD) / MAX_ACCEPTABLE_OOS_MDD,
+    )
+    return sortino * return_floor_factor * drawdown_budget_factor
+
+
+def _candidate_return_quality_check(
+    result: Mapping[str, Any],
+    candidate_payload: Mapping[str, Any],
+    *,
+    repo_root: Path,
+) -> EvidenceCheck:
+    source_candidate = _source_candidate_from_artifact(candidate_payload, repo_root=repo_root)
+    sources = _metric_sources(result, candidate_payload, source_candidate)
+    train_monthly = _split_monthlyized_return(sources, source_candidate, "train")
+    val_monthly = _split_monthlyized_return(sources, source_candidate, "val")
+    oos_monthly = _split_monthlyized_return(sources, source_candidate, "oos")
+    oos_return = _locked_oos_metric(sources, source_candidate, "total_return")
+    oos_mdd = _locked_oos_metric(sources, source_candidate, "max_drawdown")
+    oos_sharpe = _locked_oos_metric(sources, source_candidate, "sharpe")
+    oos_sortino = _locked_oos_metric(sources, source_candidate, "sortino")
+    oos_smart_sortino = _locked_oos_metric(sources, source_candidate, "smart_sortino")
+    oos_calmar = _locked_oos_metric(sources, source_candidate, "calmar")
+    if oos_smart_sortino is None:
+        oos_smart_sortino = _smart_sortino(oos_monthly, oos_mdd, oos_sortino)
+    details = {
+        "minimum_stable_monthly_return": MIN_STABLE_MONTHLY_RETURN,
+        "maximum_acceptable_oos_mdd": MAX_ACCEPTABLE_OOS_MDD,
+        "minimum_oos_sharpe": MIN_OOS_SHARPE,
+        "minimum_oos_sortino": MIN_OOS_SORTINO,
+        "minimum_oos_smart_sortino": MIN_OOS_SMART_SORTINO,
+        "minimum_oos_calmar": MIN_OOS_CALMAR,
+        "current_champion_oos_return": CURRENT_CHAMPION_OOS_RETURN,
+        "train_monthlyized_return": train_monthly,
+        "val_monthlyized_return": val_monthly,
+        "locked_oos_monthlyized_return": oos_monthly,
+        "locked_oos_total_return": oos_return,
+        "locked_oos_max_drawdown": oos_mdd,
+        "locked_oos_sharpe": oos_sharpe,
+        "locked_oos_sortino": oos_sortino,
+        "locked_oos_smart_sortino": oos_smart_sortino,
+        "locked_oos_calmar": oos_calmar,
+    }
+    checks = (
+        train_monthly is not None and train_monthly >= MIN_STABLE_MONTHLY_RETURN,
+        val_monthly is not None and val_monthly >= MIN_STABLE_MONTHLY_RETURN,
+        oos_monthly is not None and oos_monthly >= MIN_STABLE_MONTHLY_RETURN,
+        oos_return is not None and oos_return > CURRENT_CHAMPION_OOS_RETURN,
+        oos_mdd is not None and oos_mdd <= MAX_ACCEPTABLE_OOS_MDD,
+        oos_sharpe is not None and oos_sharpe >= MIN_OOS_SHARPE,
+        oos_sortino is not None and oos_sortino >= MIN_OOS_SORTINO,
+        oos_smart_sortino is not None and oos_smart_sortino >= MIN_OOS_SMART_SORTINO,
+        oos_calmar is not None and oos_calmar >= MIN_OOS_CALMAR,
+    )
+    return EvidenceCheck(
+        "candidate_return_quality_contract",
+        all(checks),
+        json.dumps(details, ensure_ascii=False, sort_keys=True),
     )
 
 
@@ -317,6 +496,15 @@ def validate(result_path: Path = DEFAULT_RESULT_PATH, *, repo_root: Path = REPO_
             "candidate_lifecycle_label",
             label_ok,
             "research/live-equivalent success label present" if label_ok else "missing research_success_candidate/live_equivalent label",
+        )
+    )
+    checks.append(
+        _candidate_return_quality_check(result, candidate_payload, repo_root=repo_root)
+        if candidate_exists
+        else EvidenceCheck(
+            "candidate_return_quality_contract",
+            False,
+            "missing passing candidate artifact for return-quality validation",
         )
     )
 

@@ -1,5 +1,8 @@
 # Profit moonshot alpha-v2 target-budget handoff — 2026-05-09
 
+> **Superseded on 2026-05-09:** this file records the old alpha-v2 target-budget result. After the user clarified that return must be stable around `+2%` monthly and MDD can be tolerated up to `25%`, the candidate is no longer a pass. See `.omx/plans/profit_moonshot_return_quality_contract_20260509.md` and `docs/session_handoff_20260509_profit_moonshot_return_quality_reassessment.md`.
+
+
 ## Status
 A passing research candidate was found without promoting standalone non-calendar alpha or locked-OOS diagnostics. The candidate is a drawdown/return-budgeted calendar sleeve portfolio selected with train/validation-only inputs.
 

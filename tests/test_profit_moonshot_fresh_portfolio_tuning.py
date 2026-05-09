@@ -119,9 +119,17 @@ def _minimal_payload(tmp_path: Path) -> dict[str, Any]:
         "gates": {
             "train_positive": True,
             "val_positive": True,
-            "oos_return_beats_incumbent": True,
-            "oos_mdd_beats_shadow": True,
-            "oos_sharpe_gt_1": True,
+            "train_return_beats_current_champion": True,
+            "val_return_beats_current_champion": True,
+            "train_monthly_return_gte_2pct": True,
+            "val_monthly_return_gte_2pct": True,
+            "oos_monthly_return_gte_2pct": True,
+            "oos_return_risk_beats_current_champion": True,
+            "oos_mdd_within_25pct_budget": True,
+            "oos_sharpe_high": True,
+            "oos_sortino_high": True,
+            "oos_smart_sortino_high": True,
+            "oos_calmar_high": True,
             "oos_trades_not_starved": True,
         },
         "success_candidate": True,
@@ -405,15 +413,26 @@ def test_train_val_target_return_budget_scales_without_oos_selection() -> None:
     assert diagnostics["raw_val_return"] == pytest.approx(0.06)
 
 
-def test_mdd_failed_diagnostic_is_quarantined_not_promoted() -> None:
+def test_monthly_return_failed_diagnostic_is_quarantined_not_promoted() -> None:
     item = {
-        "name": "diagnostic_high_oos_failed_mdd",
+        "name": "diagnostic_high_oos_failed_monthly_return",
         "mode": "additive_sleeves",
         "gates": {
             "train_positive": True,
             "val_positive": True,
+            "train_return_beats_current_champion": True,
+            "val_return_beats_current_champion": True,
+            "train_monthly_return_gte_2pct": False,
+            "val_monthly_return_gte_2pct": True,
+            "oos_monthly_return_gte_2pct": False,
             "oos_return_beats_current_champion": True,
-            "oos_mdd_beats_shadow": False,
+            "oos_return_risk_beats_current_champion": True,
+            "oos_mdd_within_25pct_budget": True,
+            "oos_sharpe_high": True,
+            "oos_sortino_high": True,
+            "oos_smart_sortino_high": False,
+            "oos_calmar_high": True,
+            "oos_trades_not_starved": True,
         },
         "success_candidate": False,
         "splits": {
@@ -429,7 +448,8 @@ def test_mdd_failed_diagnostic_is_quarantined_not_promoted() -> None:
     assert labeled["promotion_status"] == "diagnostic_not_promoted"
     assert labeled["improved_candidate"] is False
     assert labeled["success_candidate"] is False
-    assert "oos_mdd_beats_shadow" in labeled["failed_gates"]
+    assert "oos_monthly_return_gte_2pct" in labeled["failed_gates"]
+    assert "oos_smart_sortino_high" in labeled["failed_gates"]
 
 
 def test_report_order_uses_validation_before_locked_oos_diagnostics() -> None:
@@ -451,22 +471,32 @@ def test_report_order_uses_validation_before_locked_oos_diagnostics() -> None:
     assert [item["name"] for item in ordered] == ["validation_leader", "oos_spike"]
 
 
-def test_success_requires_current_champion_oos_threshold_and_return_risk_gate() -> None:
+def test_success_requires_two_percent_monthly_return_and_quality_gates() -> None:
     passing = {
         "gates": {
             "train_positive": True,
             "val_positive": True,
             "train_return_beats_current_champion": True,
             "val_return_beats_current_champion": True,
+            "train_monthly_return_gte_2pct": True,
+            "val_monthly_return_gte_2pct": True,
+            "oos_monthly_return_gte_2pct": True,
             "oos_return_beats_current_champion": True,
             "oos_return_risk_beats_current_champion": True,
-            "oos_mdd_beats_shadow": True,
-            "oos_sharpe_gt_1": True,
+            "oos_mdd_within_25pct_budget": True,
+            "oos_sharpe_high": True,
+            "oos_sortino_high": True,
+            "oos_smart_sortino_high": True,
+            "oos_calmar_high": True,
             "oos_trades_not_starved": True,
         }
     }
     assert MODULE._improved_candidate_from_gates(passing["gates"])
-    assert MODULE.CURRENT_CHAMPION_OOS_RETURN == 0.012181
+    assert MODULE.MIN_STABLE_MONTHLY_RETURN == 0.02
+    assert MODULE.MAX_ACCEPTABLE_OOS_MDD == 0.25
 
-    failing = dict(passing["gates"], oos_return_beats_current_champion=False)
+    failing = dict(passing["gates"], oos_monthly_return_gte_2pct=False)
     assert not MODULE._improved_candidate_from_gates(failing)
+
+    no_incumbent_improvement = dict(passing["gates"], oos_return_beats_current_champion=False)
+    assert not MODULE._improved_candidate_from_gates(no_incumbent_improvement)

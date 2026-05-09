@@ -1,5 +1,8 @@
 # Profit moonshot alpha-v2 completion plan/result — 2026-05-09
 
+> **Superseded on 2026-05-09:** this file records the old alpha-v2 target-budget result. After the user clarified that return must be stable around `+2%` monthly and MDD can be tolerated up to `25%`, the candidate is no longer a pass. See `.omx/plans/profit_moonshot_return_quality_contract_20260509.md` and `docs/session_handoff_20260509_profit_moonshot_return_quality_reassessment.md`.
+
+
 ## Stop condition
 Complete only when the passing candidate is committed/pushed to `private/main`, local verification is green, GitHub Actions `ci` and `private-ci` are green, and the performance-goal evaluator passes.
 

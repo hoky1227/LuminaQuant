@@ -3,9 +3,9 @@
   "budget_bytes": 8589934592,
   "checks": [
     {
-      "detail": "result has passed=true and status=passed",
+      "detail": "result is not yet status=passed with passed=true",
       "name": "declared_pass_status",
-      "passed": true
+      "passed": false
     },
     {
       "detail": "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/passing_candidate_latest.json",
@@ -13,9 +13,14 @@
       "passed": true
     },
     {
-      "detail": "research/live-equivalent success label present",
+      "detail": "missing research_success_candidate/live_equivalent label",
       "name": "candidate_lifecycle_label",
-      "passed": true
+      "passed": false
+    },
+    {
+      "detail": "{\"current_champion_oos_return\": 0.012181, \"locked_oos_calmar\": 42.825182534712944, \"locked_oos_max_drawdown\": 0.001774102912063881, \"locked_oos_monthlyized_return\": 0.006121025535450242, \"locked_oos_sharpe\": 5.477385370503527, \"locked_oos_smart_sortino\": 2.0593603686568986, \"locked_oos_sortino\": 6.776899962963284, \"locked_oos_total_return\": 0.013397126166723838, \"maximum_acceptable_oos_mdd\": 0.25, \"minimum_oos_calmar\": 1.0, \"minimum_oos_sharpe\": 2.0, \"minimum_oos_smart_sortino\": 3.0, \"minimum_oos_sortino\": 3.0, \"minimum_stable_monthly_return\": 0.02, \"train_monthlyized_return\": 0.0044737445278342225, \"val_monthlyized_return\": 0.02044010271922625}",
+      "name": "candidate_return_quality_contract",
+      "passed": false
     },
     {
       "detail": "[{\"exists\": true, \"path\": \"var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_target_budget_v1/_memory_guard/profit_moonshot_fresh_portfolio_tuning_memory_latest.json\", \"peak_rss_bytes\": 771981312, \"under_8gib\": true}, {\"exists\": true, \"path\": \"var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/portfolio_target_budget_v1/_memory_guard/profit_moonshot_fresh_portfolio_tuning_rss_latest.jsonl\", \"peak_rss_bytes\": 771981312, \"under_8gib\": true}]",
@@ -38,8 +43,8 @@
       "passed": true
     }
   ],
-  "generated_at": "2026-05-09T05:58:26.869708Z",
-  "passed": true,
+  "generated_at": "2026-05-09T06:20:26.806177Z",
+  "passed": false,
   "result_path": ".omx/specs/autoresearch-profit-moonshot-alpha-v2/result.json",
   "rss_evidence": [
     {
@@ -56,6 +61,6 @@
     }
   ],
   "schema_version": "1.0",
-  "status": "passed",
-  "summary": "mission evidence complete"
+  "status": "running",
+  "summary": "mission evidence incomplete"
 }
