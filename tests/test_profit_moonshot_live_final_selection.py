@@ -80,11 +80,13 @@ def _split(
     }
 
 
-def _candidate(name: str, *, train_return: float, val_return: float, oos_return: float) -> dict:
+def _candidate(
+    name: str, *, train_return: float, val_return: float, oos_return: float, sleeves: list[str] | None = None
+) -> dict:
     return {
         "name": name,
         "leverage": 3.0,
-        "sleeves": ["a", "b", "c"],
+        "sleeves": sleeves if sleeves is not None else ["a", "b", "c"],
         "splits": {
             "train": _split(
                 total_return=train_return,
@@ -108,6 +110,24 @@ def _candidate(name: str, *, train_return: float, val_return: float, oos_return:
                 calmar=20.0,
                 smart_sortino=5.0,
             ),
+        },
+        "selection_policy": {
+            "selection_inputs": ["train", "validation"],
+            "locked_oos": "report_only_gate_only",
+            "uses_locked_oos_for_selection": False,
+        },
+    }
+
+
+def _candidate_with_sleeves(name: str, sleeve_names: list[str], *, oos_return: float = 0.10) -> dict:
+    return {
+        "name": name,
+        "leverage": 3.0,
+        "sleeves": sleeve_names,
+        "splits": {
+            "train": _split(total_return=0.2, max_drawdown=0.04, sharpe=3.0, sortino=4.0, calmar=10.0),
+            "val": _split(total_return=0.2, max_drawdown=0.03, sharpe=6.0, sortino=7.0, calmar=30.0),
+            "oos": _split(total_return=oos_return, max_drawdown=0.02, sharpe=5.0, sortino=6.0, calmar=20.0, smart_sortino=4.5),
         },
         "selection_policy": {
             "selection_inputs": ["train", "validation"],
@@ -286,6 +306,8 @@ def test_payload_ranks_by_train_validation_not_locked_oos_and_labels_hybrid() ->
     candidate_hybrid = next(row for row in payload["rows"] if row["kind"] == "candidate_hybrid")
     assert candidate_hybrid["candidate_derived"] is True
     assert candidate_hybrid["benchmark_only"] is False
+    assert candidate_hybrid["strategy_validity"]["pass"] is True
+    assert candidate_hybrid["strategy_validity"]["primary_signal_type"] == "state_signal"
     assert candidate_hybrid["decision_gates"]["selection_firewall"] is True
     assert candidate_hybrid["decision_gates"]["liquidation_evidence_available"] is False
     assert candidate_hybrid["decision_gates"]["deployable_candidate"] is False
@@ -318,8 +340,71 @@ def test_candidate_hybrid_uses_dynamic_replay_metrics_and_margin_evidence() -> N
     assert row["splits"]["oos"]["total_return"] == pytest.approx(0.07)
     assert row["liquidation"]["evidence_available"] is True
     assert row["liquidation"]["minimum_margin_buffer"] == pytest.approx(1000.0)
+
+
+def test_calendar_sleeve_rejected_by_strategy_validity_gate() -> None:
+    payload = MODULE.build_final_selection_payload(
+        refresh_payload={"ohlcv_results": []},
+        candidate_portfolio_payload={"selected_by_train_val_stability": _candidate_with_sleeves(
+            "calendar_candidate",
+            [
+                "fresh_calendar_trx_takeprofit_sethusdt_thr180_h168_ls620_ss120_tp600",
+            ],
+            oos_return=0.12,
+        )},
+        liquidation_payload={"current_base_reference_result": _candidate("current_base", train_return=0.10, val_return=0.08, oos_return=0.05)},
+        candidate_hybrid_payload={},
+        legacy_hybrid_payload={},
+        source_artifacts={
+            "candidate_portfolio_json": "candidate.json",
+        },
+        time_logs=[],
+        required_symbols=["BTC/USDT", "ETH/USDT"],
+    )
+
+    row = next(row for row in payload["rows"] if row["name"] == "calendar_candidate")
+    assert row["decision_gates"]["strategy_validity"]["pass"] is False
+    assert row["strategy_validity"]["primary_signal_type"] == "calendar_primary"
+    assert "calendar_fixed_month_alpha" in row["decision_gates"]["strategy_validity"]["rejection_reasons"]
+    assert row["decision_gates"]["deployable_candidate"] is False
+    assert "strategy_validity_rejected" in row["rejection_reasons"]
+
+
+def test_dynamic_sleeve_rows_keep_strategy_validity_metadata() -> None:
+    payload = MODULE.build_final_selection_payload(
+        refresh_payload={"ohlcv_results": []},
+        candidate_portfolio_payload={
+            "selected_by_train_val_stability": _candidate_with_sleeves(
+                "dynamic_candidate",
+                ["fresh_pair_resid_revert_spread_lb24_z150_h120_sc10_st100_tp400_all"],
+                oos_return=0.11,
+            )
+        },
+        liquidation_payload={"current_base_reference_result": _candidate("current_base", train_return=0.10, val_return=0.08, oos_return=0.05)},
+        candidate_hybrid_payload={},
+        legacy_hybrid_payload={},
+        source_artifacts={
+            "candidate_portfolio_json": "candidate.json",
+        },
+        time_logs=[],
+        required_symbols=["BTC/USDT", "ETH/USDT"],
+    )
+    row = next(row for row in payload["rows"] if row["name"] == "dynamic_candidate")
+    validity = row["strategy_validity"]
+    required = {
+        "pass",
+        "primary_signal_type",
+        "primary_signal_evidence",
+        "rejection_reasons",
+        "audited_sleeves",
+        "audit_sources",
+    }
+    assert required.issubset(set(validity))
+    assert validity["pass"] is True
     assert row["decision_gates"]["liquidation_gate"] is True
     assert row["decision_gates"]["live_integer_source_leverage"] is True
+    assert row["strategy_validity"]["audit_sources"] == ["candidate.json"]
+    assert row["strategy_validity"]["pass"] is True
 
 
 def test_candidate_hybrid_fractional_source_leverage_blocks_promotion() -> None:
@@ -349,6 +434,45 @@ def test_candidate_hybrid_fractional_source_leverage_blocks_promotion() -> None:
     assert row["non_integer_source_leverages"][0]["source_id"] == "b"
     assert row["non_integer_source_leverages"][0]["leverage"] == pytest.approx(2.3427334297703024)
     assert "live_integer_source_leverage" in row["rejection_reasons"]
+
+
+def test_strategy_validity_blocks_calendar_primary() -> None:
+    refresh_payload = {
+        "ohlcv_results": [
+            {"symbol": "BTC/USDT", "after_ohlcv_max_utc": "2026-05-10T23:59:30Z"},
+            {"symbol": "ETH/USDT", "after_ohlcv_max_utc": "2026-05-10T23:59:30Z"},
+        ]
+    }
+    candidate_portfolio = {
+        "selected_by_train_val_stability": _candidate(
+            "calendar_only_primary",
+            train_return=0.60,
+            val_return=0.45,
+            oos_return=0.25,
+            sleeves=["fresh_calendar_rot_lbtcusdt_sethusdt_lb168_thr20_h336_sc80_st0", "fresh_pair_resid_revert_spread_lb24_z150_h120_sc10_st100_tp400_all"],
+        )
+    }
+
+    payload = MODULE.build_final_selection_payload(
+        refresh_payload=refresh_payload,
+        candidate_portfolio_payload=candidate_portfolio,
+        liquidation_payload=_liquidation_payload(),
+        candidate_hybrid_payload={},
+        legacy_hybrid_payload={},
+        source_artifacts={"candidate_portfolio_json": "candidate_portfolio.json"},
+        time_logs=[],
+        required_symbols=["BTC/USDT", "ETH/USDT"],
+    )
+
+    row = next(row for row in payload["rows"] if row["name"] == "calendar_only_primary")
+    assert row["strategy_validity"]["pass"] is False
+    assert row["strategy_validity"]["primary_signal_type"] == "calendar_primary"
+    assert "calendar_fixed_month_alpha" in row["strategy_validity"]["rejection_reasons"]
+    assert row["strategy_validity"]["audit_sources"] == ["candidate_portfolio.json"]
+    assert "strategy_validity_passed" in row["decision_gates"]
+    assert row["decision_gates"]["strategy_validity_passed"] is False
+    assert "calendar_fixed_month_alpha" in row["rejection_reasons"]
+    assert payload["winner"] is None or payload["winner"]["name"] != "calendar_only_primary"
 
 
 def test_fractional_leverage_blocks_live_candidate_promotion() -> None:

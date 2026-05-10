@@ -55,7 +55,39 @@ METRICS_EXPLANATION = {
     "account_wipeout": "Whether an event wiped the whole account; any true value blocks promotion.",
     "live_integer_leverage": "Whether the row uses a positive integer leverage supported by the live venue/runner.",
     "live_integer_source_leverage": "For hybrid rows, whether every active source candidate also uses positive integer leverage.",
+    "strategy_validity_passed": "Source-aware thesis/rule validation of the primary signal and source sleeves.",
     "memory_max_rss": "Maximum resident set size evidence; must stay below 8 GiB.",
+}
+
+_CALENDAR_FAMILY_PREFIXES = (
+    "fresh_calendar_",
+    "calendar_",
+    "calendar_rotation",
+    "calendar_spread",
+)
+_STATEFUL_DYNAMIC_PREFIXES = (
+    "candidate_hybrid_input_",
+    "fresh_pair_",
+    "fresh_funding_",
+    "fresh_flow_",
+    "fresh_market_",
+    "fresh_residual_",
+    "fresh_spread_",
+    "fresh_trend_",
+    "fresh_adaptive_",
+    "fresh_cross_",
+    "fresh_cross_sectional_",
+    "fresh_compression_",
+    "fresh_oi_",
+    "fresh_basis_",
+)
+_REQUIRED_STRATEGY_VALIDITY_KEYS = {
+    "pass",
+    "primary_signal_type",
+    "primary_signal_evidence",
+    "rejection_reasons",
+    "audited_sleeves",
+    "audit_sources",
 }
 
 
@@ -409,6 +441,38 @@ def _selection_policy(raw: Mapping[str, Any], *, benchmark_only: bool = False) -
     }
 
 
+def _is_calendar_sleeve(sleeve_name: Any) -> bool:
+    token = str(sleeve_name or "").strip().lower()
+    if not token:
+        return False
+    return any(prefix in token for prefix in _CALENDAR_FAMILY_PREFIXES)
+
+
+def _sleeve_family_from_name(sleeve_name: Any) -> str:
+    token = str(sleeve_name or "").strip().lower()
+    if not token:
+        return "missing"
+    if _is_calendar_sleeve(token):
+        return "calendar_rotation"
+    if token.startswith("fresh_pair_"):
+        return "pair_residual"
+    if token.startswith("fresh_funding_"):
+        return "funding_state"
+    if token.startswith("fresh_flow_"):
+        return "flow_state"
+    if token.startswith("fresh_market_"):
+        return "market_state"
+    if token.startswith("fresh_residual_"):
+        return "residual_state"
+    if token.startswith("fresh_spread_"):
+        return "spread_state"
+    if token.startswith("fresh_trend_"):
+        return "trend_state"
+    if any(token.startswith(prefix) for prefix in _STATEFUL_DYNAMIC_PREFIXES):
+        return "stateful_dynamic"
+    return "unknown_non_calendar"
+
+
 def _liquidation_summary(splits: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
     split_values = [_as_dict(splits.get(name)) for name in ("train", "validation", "oos")]
     total_liquidations = sum(int(_safe_float(split.get("liquidation_count"), 0.0)) for split in split_values)
@@ -439,6 +503,132 @@ def _current_base_oos(row: Mapping[str, Any] | None) -> dict[str, float]:
     }
 
 
+CALENDAR_PRIMARY_REASONS = (
+    "calendar_primary_alpha_unsupported",
+    "calendar_fixed_month_alpha",
+    "fixed_asset_calendar_target",
+)
+CALENDAR_PRIMARY_TOKEN_RE = re.compile(
+    r"\bfresh_calendar_(?:(?:rot|takeprofit|dynamic|spread|seasonal)_)?[a-z]+_?(?:seth(?:usdt)?|tr[xu]usdt|btcusdt|ethusdt|usdt)?\b",
+    re.IGNORECASE,
+)
+
+
+def _classify_sleeve_signal(sleeve_name: str) -> dict[str, Any]:
+    sleeve = str(sleeve_name or "").strip()
+    family = _sleeve_family_from_name(sleeve)
+    if family == "missing":
+        return {
+            "sleeve": sleeve,
+            "family": family,
+            "pass": False,
+            "primary_signal_type": "missing",
+            "primary_signal_evidence": "empty_sleeve_name",
+            "rejection_reasons": ["strategy_source_row_missing_sleeves"],
+        }
+    if family == "calendar_rotation":
+        match = CALENDAR_PRIMARY_TOKEN_RE.search(sleeve.lower())
+        evidence = match.group(0) if match else sleeve
+        return {
+            "sleeve": sleeve,
+            "family": family,
+            "pass": False,
+            "primary_signal_type": "calendar_primary",
+            "primary_signal_evidence": evidence,
+            "rejection_reasons": list(CALENDAR_PRIMARY_REASONS),
+        }
+    signal_type = "state_signal" if family != "unknown_non_calendar" else "unknown_non_calendar"
+    return {
+        "sleeve": sleeve,
+        "family": family,
+        "pass": True,
+        "primary_signal_type": signal_type,
+        "primary_signal_evidence": family,
+        "rejection_reasons": [],
+    }
+
+
+def _strategy_validity_metadata_present(strategy_validity: Mapping[str, Any] | None) -> bool:
+    return isinstance(strategy_validity, Mapping) and _REQUIRED_STRATEGY_VALIDITY_KEYS.issubset(
+        set(strategy_validity)
+    )
+
+
+def _strategy_validity_passes(strategy_validity: Mapping[str, Any] | None) -> bool:
+    return _strategy_validity_metadata_present(strategy_validity) and bool(
+        _as_dict(strategy_validity).get("pass")
+    )
+
+
+def _strategy_validity(
+    *,
+    kind: str,
+    name: str,
+    raw: Mapping[str, Any],
+    source_artifact: str,
+    candidate_derived: bool,
+    benchmark_only: bool,
+) -> dict[str, Any]:
+    existing = _as_dict(raw.get("strategy_validity"))
+    if _strategy_validity_metadata_present(existing):
+        return dict(existing)
+
+    sleeves = [str(s) for s in _as_list(raw.get("sleeves")) if str(s)]
+    audit_sources = [str(source_artifact)] if source_artifact else ["inline_final_selection_audit"]
+    if not sleeves and (not candidate_derived or benchmark_only or kind in {"cash", "legacy_hybrid_benchmark"}):
+        return {
+            "pass": True,
+            "primary_signal_type": "non_candidate_row",
+            "primary_signal_evidence": f"{kind}:{name} is non-promotable row class",
+            "audited_sleeves": [],
+            "audit_sources": audit_sources,
+            "rejection_reasons": [],
+        }
+
+    if not sleeves:
+        return {
+            "pass": False,
+            "primary_signal_type": "unknown",
+            "primary_signal_evidence": "no sleeves present",
+            "audited_sleeves": [],
+            "audit_sources": audit_sources,
+            "rejection_reasons": ["strategy_source_row_missing_sleeves"],
+        }
+
+    audited_sleeves = [_classify_sleeve_signal(sleeve) for sleeve in sleeves]
+    rejected_sleeves = [item for item in audited_sleeves if not bool(item.get("pass"))]
+    rejection_reasons = sorted(
+        {
+            str(reason)
+            for sleeve_audit in rejected_sleeves
+            for reason in _as_list(sleeve_audit.get("rejection_reasons"))
+            if str(reason)
+        }
+    )
+    if rejected_sleeves:
+        primary_signal_evidence = "; ".join(
+            f"{item.get('sleeve')}={item.get('primary_signal_evidence')}" for item in rejected_sleeves[:5]
+        )
+        return {
+            "pass": False,
+            "primary_signal_type": "calendar_primary",
+            "primary_signal_evidence": primary_signal_evidence,
+            "audited_sleeves": audited_sleeves,
+            "audit_sources": audit_sources,
+            "rejection_reasons": rejection_reasons,
+        }
+
+    families = sorted({str(item.get("family")) for item in audited_sleeves})
+    return {
+        "pass": True,
+        "primary_signal_type": "state_signal",
+        "primary_signal_evidence": f"all_active_sleeves_non_calendar:{','.join(families)}",
+        "audited_sleeves": audited_sleeves,
+        "audit_sources": audit_sources,
+        "rejection_reasons": [],
+    }
+
+
 def _decision_gates(
     *,
     kind: str,
@@ -451,6 +641,7 @@ def _decision_gates(
     splits: Mapping[str, Mapping[str, Any]],
     liquidation: Mapping[str, Any],
     current_base_oos: Mapping[str, Any],
+    strategy_validity: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
     oos = _as_dict(splits.get("oos"))
     oos_return = _safe_float(oos.get("total_return"))
@@ -462,6 +653,8 @@ def _decision_gates(
     liquidation_count = int(_safe_float(liquidation.get("liquidation_count"), 0.0))
     selection_firewall = not bool(selection_policy.get("uses_locked_oos_for_selection"))
     locked_oos_ok = str(selection_policy.get("locked_oos") or "") == "report_only_gate_only"
+    strategy_validity_present = _strategy_validity_metadata_present(strategy_validity)
+    strategy_validity_pass = _strategy_validity_passes(strategy_validity)
     live_integer_leverage = _live_integer_leverage_supported(leverage)
     evidence_available = bool(liquidation.get("evidence_available")) or kind in {"current_base", "direct_candidate"}
     margin_buffer_positive = margin_buffer is None or _safe_float(margin_buffer) > 0.0
@@ -487,6 +680,7 @@ def _decision_gates(
         and not bool(diagnostic_not_promoted)
         and selection_firewall
         and locked_oos_ok
+        and strategy_validity_pass
         and live_integer_leverage
         and live_integer_source_leverage
         and liquidation_gate
@@ -497,6 +691,8 @@ def _decision_gates(
         "deployable_candidate": deployable,
         "selection_firewall": selection_firewall,
         "locked_oos_report_gate_only": locked_oos_ok,
+        "strategy_validity_metadata_present": strategy_validity_present,
+        "strategy_validity_passed": strategy_validity_pass,
         "live_integer_leverage": live_integer_leverage,
         "live_integer_source_leverage": bool(live_integer_source_leverage),
         "liquidation_gate": liquidation_gate,
@@ -512,6 +708,8 @@ def _decision_gates(
         "oos_smart_sortino_ok": _safe_float(oos.get("smart_sortino")) >= MIN_OOS_SMART_SORTINO,
         "oos_calmar_ok": _safe_float(oos.get("calmar")) >= MIN_OOS_CALMAR,
         "diagnostic_not_promoted": bool(diagnostic_not_promoted),
+        "strategy_validity": strategy_validity,
+        "strategy_validity_pass": strategy_validity_pass,
     }
 
 
@@ -536,6 +734,14 @@ def _comparison_row(
     liquidation = _liquidation_summary(splits)
     leverage = _candidate_leverage(raw)
     live_integer_source_leverage = bool(raw.get("_live_integer_source_leverage", True))
+    strategy_validity = _strategy_validity(
+        kind=kind,
+        name=name,
+        raw=raw,
+        source_artifact=source_artifact,
+        candidate_derived=candidate_derived,
+        benchmark_only=bool(benchmark_only),
+    )
     gates = _decision_gates(
         kind=kind,
         leverage=leverage,
@@ -547,6 +753,7 @@ def _comparison_row(
         splits=splits,
         liquidation=liquidation,
         current_base_oos=current_base_oos,
+        strategy_validity=strategy_validity,
     )
     return {
         "name": name,
@@ -564,23 +771,37 @@ def _comparison_row(
         "train_val_stability_formula": "frozen_weighted_train_validation_score_v1",
         "splits": splits,
         "liquidation": liquidation,
+        "strategy_validity": strategy_validity,
         "non_integer_source_leverages": list(raw.get("_non_integer_source_leverages") or []),
         "decision_gates": gates,
-        "rejection_reasons": _rejection_reasons(gates),
+        "rejection_reasons": _rejection_reasons(gates, strategy_validity),
     }
 
 
-def _rejection_reasons(gates: Mapping[str, Any]) -> list[str]:
+def _rejection_reasons(gates: Mapping[str, Any], strategy_validity: Mapping[str, Any] | None = None) -> list[str]:
     if bool(gates.get("deployable_candidate")):
         return []
     reasons = []
+    strategy_gate = gates.get("strategy_validity")
+    if not isinstance(strategy_gate, Mapping):
+        reasons.append("strategy_validity_missing")
+    else:
+        for reason in _as_list(strategy_gate.get("rejection_reasons")):
+            if isinstance(reason, str) and reason not in reasons:
+                reasons.append(reason)
+        if not bool(strategy_gate.get("pass")) and "strategy_validity_rejected" not in reasons:
+            reasons.append("strategy_validity_rejected")
     for key, value in gates.items():
-        if key in {"deployable_candidate", "diagnostic_not_promoted"}:
+        if key in {"deployable_candidate", "diagnostic_not_promoted", "strategy_validity", "strategy_validity_pass"}:
             continue
         if value is False:
             reasons.append(key)
     if gates.get("diagnostic_not_promoted"):
         reasons.append("diagnostic_not_promoted")
+    if strategy_validity is not None and not bool(strategy_validity.get("pass")):
+        reasons.extend(
+            [str(item) for item in strategy_validity.get("rejection_reasons", []) if str(item) not in reasons]
+        )
     return reasons or ["not_candidate_live_promotion_row"]
 
 
@@ -982,6 +1203,10 @@ def build_final_selection_payload(
             "ranking_formula": "frozen_weighted_train_validation_score_v1",
             "benchmark_only_rows_ineligible": True,
             "live_integer_leverage_required": True,
+            "live_integer_source_leverage_required": True,
+            "strategy_validity_required": True,
+            "calendar_primary_alpha_rejected": True,
+            "no_new_alpha_search": True,
         },
         "data_cutoff": data_cutoff,
         "source_artifacts": sources,
@@ -1019,6 +1244,7 @@ def _winner_summary(row: Mapping[str, Any] | None) -> dict[str, Any] | None:
         "oos_return_mdd": _as_dict(_as_dict(row.get("splits")).get("oos")).get("return_mdd"),
         "liquidation_count": _as_dict(row.get("liquidation")).get("liquidation_count"),
         "minimum_margin_buffer": _as_dict(row.get("liquidation")).get("minimum_margin_buffer"),
+        "strategy_validity": row.get("strategy_validity"),
     }
 
 
@@ -1035,6 +1261,8 @@ def _rejected_alternatives(rows: Iterable[Mapping[str, Any]], winner: Mapping[st
                 "kind": row.get("kind"),
                 "candidate_derived": row.get("candidate_derived"),
                 "benchmark_only": row.get("benchmark_only"),
+                "strategy_validity_pass": _as_dict(row.get("strategy_validity")).get("pass"),
+                "primary_signal_type": _as_dict(row.get("strategy_validity")).get("primary_signal_type"),
                 "reasons": list(row.get("rejection_reasons") or []),
             }
         )
@@ -1054,8 +1282,8 @@ def build_markdown(payload: Mapping[str, Any]) -> str:
         "",
         "## Comparison rows",
         "",
-        "| Kind | Name | Leverage | Integer live | Candidate-derived | Benchmark-only | TV score | OOS return | OOS MDD | OOS return/MDD | Liq | Min buffer | Deployable |",
-        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| Kind | Name | Leverage | Integer live | Strategy pass | Primary signal | Candidate-derived | Benchmark-only | TV score | OOS return | OOS MDD | OOS return/MDD | Liq | Min buffer | Deployable |",
+        "|---|---|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for row in list(payload.get("rows") or []):
         if not isinstance(row, Mapping):
@@ -1063,10 +1291,12 @@ def build_markdown(payload: Mapping[str, Any]) -> str:
         oos = _as_dict(_as_dict(row.get("splits")).get("oos"))
         liq = _as_dict(row.get("liquidation"))
         gates = _as_dict(row.get("decision_gates"))
+        validity = _as_dict(row.get("strategy_validity"))
         lines.append(
             "| "
             f"`{row.get('kind')}` | `{row.get('name')}` | {_fmt_float(row.get('leverage'))} | "
-            f"`{bool(gates.get('live_integer_leverage'))}` | `{bool(row.get('candidate_derived'))}` | "
+            f"`{bool(gates.get('live_integer_leverage'))}` | `{bool(validity.get('pass'))}` | "
+            f"`{validity.get('primary_signal_type', '')}` | `{bool(row.get('candidate_derived'))}` | "
             f"`{bool(row.get('benchmark_only'))}` | {_fmt_float(row.get('train_val_stability_score'))} | "
             f"{_fmt_pct(oos.get('total_return'))} | {_fmt_pct(oos.get('max_drawdown'))} | "
             f"{_fmt_float(oos.get('return_mdd'))} | {liq.get('liquidation_count')} | "
