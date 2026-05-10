@@ -1,18 +1,20 @@
+......................................................                   [100%]
+54 passed in 0.19s
 	Command being timed: ".venv/bin/pytest tests/test_profit_moonshot_live_final_selection.py tests/test_profit_moonshot_liquidation_aware_validation.py tests/test_profit_moonshot_fresh_portfolio_tuning.py tests/test_profit_moonshot_pass_under_8gb_validator.py tests/test_hybrid_online_portfolio.py -q"
-	User time (seconds): 2.07
-	System time (seconds): 0.13
-	Percent of CPU this job got: 285%
-	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:00.77
+	User time (seconds): 1.98
+	System time (seconds): 0.16
+	Percent of CPU this job got: 173%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:01.23
 	Average shared text size (kbytes): 0
 	Average unshared data size (kbytes): 0
 	Average stack size (kbytes): 0
 	Average total size (kbytes): 0
-	Maximum resident set size (kbytes): 175596
+	Maximum resident set size (kbytes): 175916
 	Average resident set size (kbytes): 0
 	Major (requiring I/O) page faults: 0
-	Minor (reclaiming a frame) page faults: 27769
-	Voluntary context switches: 22
-	Involuntary context switches: 61
+	Minor (reclaiming a frame) page faults: 27796
+	Voluntary context switches: 19
+	Involuntary context switches: 199
 	Swaps: 0
 	File system inputs: 0
 	File system outputs: 736

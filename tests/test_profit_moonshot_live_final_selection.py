@@ -149,6 +149,28 @@ def _candidate_portfolio_payload() -> dict:
     }
 
 
+def _candidate_hybrid_payload() -> dict:
+    candidate_hybrid = _candidate("candidate_hybrid_train_val", train_return=0.28, val_return=0.24, oos_return=0.12)
+    for split_payload in candidate_hybrid["splits"].values():
+        split_payload.pop("minimum_margin_buffer", None)
+        split_payload.pop("minimum_margin_ratio", None)
+    candidate_hybrid["liquidation_evidence_note"] = "no dynamic-weight liquidation replay"
+    return {
+        "artifact_kind": "profit_moonshot_candidate_hybrid",
+        "oos_end_date": "2026-05-10",
+        "selection_policy": {
+            "selection_inputs": ["train", "validation"],
+            "locked_oos": "report_only_gate_only",
+            "uses_locked_oos_for_selection": False,
+        },
+        "selected_by_train_validation": candidate_hybrid,
+        "tuning_results": [
+            _candidate("candidate_hybrid_alt", train_return=0.20, val_return=0.18, oos_return=0.20)
+        ],
+        "memory_summary": {"peak_rss_bytes": 64 * 1024 * 1024, "under_8gib": True},
+    }
+
+
 def test_latest_complete_oos_end_date_uses_previous_day_for_intraday_minimum() -> None:
     refresh_payload = {
         "ohlcv_results": [
@@ -211,10 +233,12 @@ def test_payload_ranks_by_train_validation_not_locked_oos_and_labels_hybrid() ->
         refresh_payload=refresh_payload,
         candidate_portfolio_payload=_candidate_portfolio_payload(),
         liquidation_payload=_liquidation_payload(),
+        candidate_hybrid_payload=_candidate_hybrid_payload(),
         legacy_hybrid_payload=legacy_hybrid,
         source_artifacts={
             "refresh_json": "refresh.json",
             "candidate_portfolio_json": "candidate.json",
+            "candidate_hybrid_json": "candidate_hybrid.json",
             "liquidation_json": "liquidation.json",
             "legacy_hybrid_json": "hybrid.json",
         },
@@ -229,10 +253,16 @@ def test_payload_ranks_by_train_validation_not_locked_oos_and_labels_hybrid() ->
     assert legacy["candidate_derived"] is False
     assert legacy["benchmark_only"] is True
     assert legacy["decision_gates"]["eligible_for_candidate_live_promotion"] is False
-    assert all(row["kind"] != "candidate_hybrid" for row in payload["rows"])
+    candidate_hybrid = next(row for row in payload["rows"] if row["kind"] == "candidate_hybrid")
+    assert candidate_hybrid["candidate_derived"] is True
+    assert candidate_hybrid["benchmark_only"] is False
+    assert candidate_hybrid["decision_gates"]["selection_firewall"] is True
+    assert candidate_hybrid["decision_gates"]["liquidation_evidence_available"] is False
+    assert candidate_hybrid["decision_gates"]["deployable_candidate"] is False
     assert "return_mdd" in payload["metrics_explanation"]
     assert "minimum_margin_buffer" in payload["metrics_explanation"]
     assert payload["source_artifacts"]["refresh_json"] == "refresh.json"
+    assert payload["source_artifacts"]["candidate_hybrid_json"] == "candidate_hybrid.json"
 
 
 def test_account_wipeout_blocks_candidate_even_with_positive_return() -> None:

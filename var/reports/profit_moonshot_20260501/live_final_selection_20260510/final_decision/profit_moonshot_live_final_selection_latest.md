@@ -1,6 +1,6 @@
 # Profit moonshot live final selection
 
-- generated_at_utc: `2026-05-10T06:22:30.183809Z`
+- generated_at_utc: `2026-05-10T06:57:09.986014Z`
 - status: `promote_candidate`
 - recommendation: `promote`
 - latest_complete_oos_end_date: `2026-05-09`
@@ -31,6 +31,16 @@
 | `candidate_portfolio` | `fresh_portfolio_train_val_monthly_return_budget_fresh_calendar_trx_takeprofit_sethusdt_thr180_h168_ls620_ss120_tp600__fresh_calendar_trx_takeprofit_sethusdt_thr150_h168_ls620_ss120_tp600__fresh_calendar_trx_takeprofit_sethusdt_thr120_h120_ls620_ss120_tp600` | `True` | `False` | 17.727529 | 16.7216% | 2.4813% | 6.739180 | 0 |  | `False` |
 | `candidate_portfolio` | `fresh_portfolio_train_val_monthly_return_budget_fresh_calendar_trx_takeprofit_sethusdt_thr150_h168_ls620_ss120_tp600__fresh_calendar_trx_takeprofit_sethusdt_thr120_h120_ls620_ss120_tp600__fresh_calendar_trx_takeprofit_sethusdt_thr180_h168_ls560_ss120_tp600__fresh_pair_resid_revert_spread_lb24_z150_h120_sc10_st100_tp400_all` | `True` | `False` | 18.096540 | 16.6148% | 2.4291% | 6.839757 | 0 |  | `False` |
 | `candidate_portfolio` | `fresh_portfolio_train_val_monthly_return_budget_fresh_calendar_trx_takeprofit_sethusdt_thr150_h168_ls620_ss120_tp600__fresh_calendar_trx_takeprofit_sethusdt_thr120_h120_ls620_ss120_tp600__fresh_calendar_trx_takeprofit_sethusdt_thr180_h168_ls600_ss120_tp600` | `True` | `False` | 17.720865 | 16.5360% | 2.4665% | 6.704321 | 0 |  | `False` |
+| `candidate_hybrid` | `candidate_hybrid_online_rank_01_candidate_hybrid_input_05_fresh_portfolio_train_val_monthly_` | `True` | `False` | 24.434216 | 7.3573% | 2.6858% | 2.739325 | 0 |  | `False` |
+| `candidate_hybrid` | `candidate_hybrid_online_rank_02_candidate_hybrid_input_05_fresh_portfolio_train_val_monthly_` | `True` | `False` | 24.434213 | 7.3589% | 2.6843% | 2.741413 | 0 |  | `False` |
+| `candidate_hybrid` | `candidate_hybrid_online_rank_03_candidate_hybrid_input_04_fresh_portfolio_train_val_monthly_` | `True` | `False` | 24.346681 | 7.3573% | 2.6858% | 2.739325 | 0 |  | `False` |
+| `candidate_hybrid` | `candidate_hybrid_online_rank_04_candidate_hybrid_input_04_fresh_portfolio_train_val_monthly_` | `True` | `False` | 24.346678 | 7.3589% | 2.6843% | 2.741413 | 0 |  | `False` |
+| `candidate_hybrid` | `candidate_hybrid_online_rank_05_candidate_hybrid_input_05_fresh_portfolio_train_val_monthly_` | `True` | `False` | 24.018674 | 7.4299% | 2.5947% | 2.863506 | 0 |  | `False` |
+| `candidate_hybrid` | `candidate_hybrid_online_rank_06_candidate_hybrid_input_05_fresh_portfolio_train_val_monthly_` | `True` | `False` | 24.018671 | 7.4313% | 2.5934% | 2.865494 | 0 |  | `False` |
+| `candidate_hybrid` | `candidate_hybrid_online_rank_07_candidate_hybrid_input_04_fresh_portfolio_train_val_monthly_` | `True` | `False` | 23.931713 | 7.4299% | 2.5947% | 2.863506 | 0 |  | `False` |
+| `candidate_hybrid` | `candidate_hybrid_online_rank_08_candidate_hybrid_input_04_fresh_portfolio_train_val_monthly_` | `True` | `False` | 23.931711 | 7.4313% | 2.5934% | 2.865494 | 0 |  | `False` |
+| `candidate_hybrid` | `candidate_hybrid_online_rank_09_candidate_hybrid_input_02_fresh_portfolio_train_val_monthly_` | `True` | `False` | 23.855553 | 7.3573% | 2.6858% | 2.739325 | 0 |  | `False` |
+| `candidate_hybrid` | `candidate_hybrid_online_rank_10_candidate_hybrid_input_02_fresh_portfolio_train_val_monthly_` | `True` | `False` | 23.855550 | 7.3589% | 2.6843% | 2.741413 | 0 |  | `False` |
 | `legacy_hybrid_benchmark` | `legacy_hybrid_benchmark` | `False` | `True` | 19.066699 | 0.1618% | 0.4897% | 0.330422 | 0 |  | `False` |
 | `cash` | `cash` | `False` | `True` | 0.000000 | 0.0000% | 0.0000% |  | 0 |  | `False` |
 
@@ -63,23 +73,16 @@
 - under_8gib: `True`
 - `artifact_memory_summary` `1`: max_rss_mib=`4333.371`, under_8gib=`True`
 - `artifact_memory_summary` `2`: max_rss_mib=`56.461`, under_8gib=`True`
-- `artifact_memory_summary` `3`: max_rss_mib=`71.562`, under_8gib=`True`
+- `artifact_memory_summary` `3`: max_rss_mib=`54.5`, under_8gib=`True`
+- `artifact_memory_summary` `4`: max_rss_mib=`71.562`, under_8gib=`True`
 - `time_log` `var/reports/profit_moonshot_20260501/live_final_selection_20260510/runner_evidence/data_refresh_time.log`: max_rss_mib=`5069.789`, under_8gib=`True`
 - `time_log` `var/reports/profit_moonshot_20260501/live_final_selection_20260510/runner_evidence/candidate_tuning_time.log`: max_rss_mib=`4403.059`, under_8gib=`True`
+- `time_log` `var/reports/profit_moonshot_20260501/live_final_selection_20260510/runner_evidence/candidate_hybrid_time.log`: max_rss_mib=`320.172`, under_8gib=`True`
 - `time_log` `var/reports/profit_moonshot_20260501/live_final_selection_20260510/runner_evidence/liquidation_validation_time.log`: max_rss_mib=`261.203`, under_8gib=`True`
 - `time_log` `var/reports/profit_moonshot_20260501/live_final_selection_20260510/runner_evidence/hybrid_tuning_time.log`: max_rss_mib=`70.281`, under_8gib=`True`
 - `time_log` `var/reports/profit_moonshot_20260501/live_final_selection_20260510/runner_evidence/hybrid_final_time.log`: max_rss_mib=`71.996`, under_8gib=`True`
-- `time_log` `var/reports/profit_moonshot_20260501/live_final_selection_20260510/runner_evidence/targeted_tests_time.log`: max_rss_mib=`171.48`, under_8gib=`True`
-- `time_log` `var/reports/profit_moonshot_20260501/live_final_selection_20260510/runner_evidence/full_pytest_time.log`: max_rss_mib=`2697.0`, under_8gib=`True`
-- `time_log` `var/reports/profit_moonshot_20260501/live_final_selection_20260510/runner_evidence/ruff_time.log`: max_rss_mib=`18.441`, under_8gib=`True`
-- `time_log` `var/reports/profit_moonshot_20260501/live_final_selection_20260510/runner_evidence/compileall_time.log`: max_rss_mib=`64.57`, under_8gib=`True`
-- `time_log` `var/reports/profit_moonshot_20260501/live_final_selection_20260510/runner_evidence/git_diff_check_time.log`: max_rss_mib=`5.785`, under_8gib=`True`
-
-## Verification evidence
-
-- targeted pytest: `54 passed`
-- full pytest: `1236 passed`
-- ruff: `All checks passed`
-- compileall: `exit 0`
-- git diff --check: `exit 0`
-- CI after push: `pending`
+- `time_log` `var/reports/profit_moonshot_20260501/live_final_selection_20260510/runner_evidence/targeted_tests_time.log`: max_rss_mib=`171.793`, under_8gib=`True`
+- `time_log` `var/reports/profit_moonshot_20260501/live_final_selection_20260510/runner_evidence/full_pytest_time.log`: max_rss_mib=`2723.211`, under_8gib=`True`
+- `time_log` `var/reports/profit_moonshot_20260501/live_final_selection_20260510/runner_evidence/ruff_time.log`: max_rss_mib=`26.016`, under_8gib=`True`
+- `time_log` `var/reports/profit_moonshot_20260501/live_final_selection_20260510/runner_evidence/compileall_time.log`: max_rss_mib=`16.0`, under_8gib=`True`
+- `time_log` `var/reports/profit_moonshot_20260501/live_final_selection_20260510/runner_evidence/git_diff_check_time.log`: max_rss_mib=`6.609`, under_8gib=`True`

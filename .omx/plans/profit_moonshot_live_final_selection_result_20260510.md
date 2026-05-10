@@ -56,3 +56,12 @@ Use **`fresh_portfolio_train_val_monthly_return_budget_fresh_calendar_trx_takepr
 - Candidate tuning: `var/reports/profit_moonshot_20260501/live_final_selection_20260510/candidate_portfolio/fresh_portfolio_tuning_latest.json`
 - Liquidation validation: `var/reports/profit_moonshot_20260501/live_final_selection_20260510/liquidation_validation/liquidation_aware_current_base_latest.json`
 - Hybrid tuning/final: `var/reports/profit_moonshot_20260501/live_final_selection_20260510/hybrid_tuning/hybrid_online_tuning_latest.json`, `var/reports/profit_moonshot_20260501/live_final_selection_20260510/hybrid_final/hybrid_online_portfolio_latest.json`
+
+## Candidate-derived hybrid addendum
+
+Implemented and ran the missing candidate-based hybrid lane (separate from legacy hybrid). The candidate-hybrid runner reconstructs candidate portfolio streams from refreshed profit-moonshot candidate rows and tunes the online allocator on train/validation only.
+
+- Artifact: `var/reports/profit_moonshot_20260501/live_final_selection_20260510/candidate_hybrid/candidate_hybrid_latest.json`
+- Selected candidate-hybrid: OOS return `+7.3573%`, MDD `2.6858%`, return/MDD `2.7393`, Sharpe `3.5505`, Sortino `4.9816`, smart Sortino `4.4464`, Calmar `17.5808`.
+- Gate result: comparison-only, not promoted; it lacks dynamic-weight liquidation replay evidence and fails to beat current-base return/MDD.
+- Final selection unchanged: zero-liquidation 5x direct candidate remains recommended.

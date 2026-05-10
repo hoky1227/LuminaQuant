@@ -589,13 +589,15 @@ def run_hybrid_online_allocator(
     config: HybridOnlineConfig,
     refreshed_health_metrics: dict[str, dict[str, Any]] | None = None,
     split_config: HybridSplitConfig | None = None,
+    default_name: str | None = None,
 ) -> dict[str, Any]:
     split_config = split_config or HybridSplitConfig()
     ordered_days, matrix, _meta = _DYN._build_daily_panel(rows)
     ids = [str(row.get("candidate_id") or row.get("name")) for row in rows]
     name_by_id = {str(row.get("candidate_id") or row.get("name")): str(row.get("name") or "") for row in rows}
     row_by_id = {str(row.get("candidate_id") or row.get("name")): row for row in rows}
-    default_id = _historical_default_name(rows)
+    requested_default = str(default_name or "").strip()
+    default_id = requested_default if requested_default in ids else _historical_default_name(rows)
     previous_default_id = default_id
     score_history: list[dict[str, Any]] = []
     allocations: list[dict[str, Any]] = []

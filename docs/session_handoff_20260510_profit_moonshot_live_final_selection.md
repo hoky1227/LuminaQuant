@@ -63,3 +63,19 @@ Use **`fresh_portfolio_train_val_monthly_return_budget_fresh_calendar_trx_takepr
 - Keep locked-OOS gate-only/report-only; never optimize selection using OOS.
 - Forced current-base 5x is acceptable only under the relaxed tiny-liquidation rule, but the recommended live candidate has stricter zero-liquidation evidence.
 - Use a staged live rollout with ordinary operational kill-switches; this repository run is backtest/replay evidence, not a live order instruction.
+
+## Candidate-derived hybrid addendum
+
+After user review, the missing non-legacy candidate-hybrid lane was implemented and rerun. This is **not** the legacy hybrid benchmark: it reconstructs profit-moonshot candidate portfolio return streams from candidate rows, tunes an online allocator using train/validation only, and keeps locked-OOS report-only/gate-only.
+
+- Artifact: `var/reports/profit_moonshot_20260501/live_final_selection_20260510/candidate_hybrid/candidate_hybrid_latest.json`
+- Report: `var/reports/profit_moonshot_20260501/live_final_selection_20260510/candidate_hybrid/candidate_hybrid_latest.md`
+- Final decision artifact now includes `candidate_hybrid` rows (`10` rows in the final comparison surface).
+- Candidate-hybrid selected row: `candidate_hybrid_online_rank_01_candidate_hybrid_input_05_fresh_portfolio_train_val_monthly_`
+- Train: return 33.5524%, MDD 7.0280%, return/MDD 4.7741, Sharpe 1.5649, Sortino 1.7402, smart Sortino 1.2510, Calmar 4.7741.
+- Validation: return 19.1320%, MDD 3.5874%, return/MDD 5.3331, Sharpe 4.2026, Sortino 7.9196, smart Sortino 6.7832, Calmar 54.4563.
+- OOS: return 7.3573%, MDD 2.6858%, return/MDD 2.7393, Sharpe 3.5505, Sortino 4.9816, smart Sortino 4.4464, Calmar 17.5808.
+- Final allocation cash weight: approximately 0%; selected weights are spread over candidate-derived input portfolios, not the legacy hybrid sleeves.
+- Memory: candidate-hybrid time log max RSS 327,856 KiB / artifact peak RSS 320.172 MiB, below 8 GiB.
+
+Decision impact: candidate-hybrid is useful comparison evidence, but it is **not live-promoted** because (1) it does not beat current-base return/MDD (`2.7393` vs current-base `6.9169`), and (2) it does not yet have a dedicated dynamic-weight liquidation replay/margin-buffer proof. The live recommendation therefore remains the zero-liquidation 5x direct candidate.

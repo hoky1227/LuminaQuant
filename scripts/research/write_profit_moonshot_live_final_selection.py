@@ -2,8 +2,9 @@
 """Write the profit-moonshot live final-selection comparison artifact.
 
 The writer is intentionally artifact-only: it normalizes existing refresh,
-candidate-tuning, liquidation-aware replay, and optional legacy-hybrid benchmark
-JSONs into one final decision surface. It does not run research/backtests.
+candidate-tuning, candidate-derived hybrid, liquidation-aware replay, and
+optional legacy-hybrid benchmark JSONs into one final decision surface. It does
+not run research/backtests.
 """
 
 from __future__ import annotations
@@ -59,6 +60,7 @@ METRICS_EXPLANATION = {
 class SourceArtifacts:
     refresh_json: str = ""
     candidate_portfolio_json: str = ""
+    candidate_hybrid_json: str = ""
     liquidation_json: str = ""
     legacy_hybrid_json: str = ""
 
@@ -608,6 +610,22 @@ def _candidate_portfolio_rows(candidate_payload: Mapping[str, Any]) -> list[tupl
     return out
 
 
+def _candidate_hybrid_rows(candidate_hybrid_payload: Mapping[str, Any]) -> list[tuple[str, str, Mapping[str, Any]]]:
+    keys = [
+        ("candidate_hybrid", "selected_by_train_validation"),
+        ("candidate_hybrid", "best_candidate_hybrid"),
+    ]
+    out: list[tuple[str, str, Mapping[str, Any]]] = []
+    for kind, key in keys:
+        raw = candidate_hybrid_payload.get(key)
+        if isinstance(raw, Mapping) and raw:
+            out.append((kind, key, raw))
+    for index, raw in enumerate(_as_list(candidate_hybrid_payload.get("tuning_results"))[:10], start=1):
+        if isinstance(raw, Mapping) and raw:
+            out.append(("candidate_hybrid", f"tuning_results_top_{index:02d}", raw))
+    return out
+
+
 def _legacy_hybrid_raw(legacy_hybrid_payload: Mapping[str, Any]) -> dict[str, Any]:
     if not legacy_hybrid_payload:
         return {}
@@ -764,6 +782,7 @@ def build_final_selection_payload(
     refresh_payload: Mapping[str, Any],
     candidate_portfolio_payload: Mapping[str, Any],
     liquidation_payload: Mapping[str, Any],
+    candidate_hybrid_payload: Mapping[str, Any] | None = None,
     legacy_hybrid_payload: Mapping[str, Any] | None = None,
     source_artifacts: Mapping[str, str] | SourceArtifacts | None = None,
     time_logs: Iterable[Path | str] | None = None,
@@ -778,6 +797,7 @@ def build_final_selection_payload(
         latest_complete_oos_end_date=str(data_cutoff["latest_complete_oos_end_date"]),
         artifacts=(
             ("candidate_portfolio", candidate_portfolio_payload),
+            ("candidate_hybrid", candidate_hybrid_payload or {}),
             ("liquidation", liquidation_payload),
             ("legacy_hybrid", legacy_hybrid_payload or {}),
         ),
@@ -785,6 +805,8 @@ def build_final_selection_payload(
     data_cutoff.update(cutoff_gate)
 
     artifacts_for_memory = [refresh_payload, candidate_portfolio_payload, liquidation_payload]
+    if candidate_hybrid_payload:
+        artifacts_for_memory.append(candidate_hybrid_payload)
     if legacy_hybrid_payload:
         artifacts_for_memory.append(legacy_hybrid_payload)
     memory_ledger = build_memory_ledger(artifacts=artifacts_for_memory, time_logs=list(time_logs or []))
@@ -842,6 +864,22 @@ def build_final_selection_payload(
                 kind=kind,
                 raw=raw,
                 source_artifact=sources.get("candidate_portfolio_json", ""),
+                candidate_derived=True,
+                benchmark_only=False,
+                current_base_oos=base_oos,
+                diagnostic_not_promoted=bool(raw.get("diagnostic_not_promoted")),
+            ),
+        )
+
+    for kind, source_key, raw in _candidate_hybrid_rows(candidate_hybrid_payload or {}):
+        name = str(raw.get("name") or source_key)
+        _add_unique(
+            rows,
+            _comparison_row(
+                name=name,
+                kind=kind,
+                raw=raw,
+                source_artifact=sources.get("candidate_hybrid_json", ""),
                 candidate_derived=True,
                 benchmark_only=False,
                 current_base_oos=base_oos,
@@ -1024,6 +1062,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--refresh-json", required=True)
     parser.add_argument("--candidate-portfolio-json", required=True)
+    parser.add_argument("--candidate-hybrid-json", default="")
     parser.add_argument("--liquidation-json", required=True)
     parser.add_argument("--legacy-hybrid-json", default="")
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
@@ -1036,16 +1075,19 @@ def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     refresh_path = Path(args.refresh_json)
     candidate_path = Path(args.candidate_portfolio_json)
+    candidate_hybrid_path = Path(args.candidate_hybrid_json) if str(args.candidate_hybrid_json).strip() else None
     liquidation_path = Path(args.liquidation_json)
     hybrid_path = Path(args.legacy_hybrid_json) if str(args.legacy_hybrid_json).strip() else None
     payload = build_final_selection_payload(
         refresh_payload=_read_json(refresh_path),
         candidate_portfolio_payload=_read_json(candidate_path),
         liquidation_payload=_read_json(liquidation_path),
+        candidate_hybrid_payload=_read_json(candidate_hybrid_path),
         legacy_hybrid_payload=_read_json(hybrid_path),
         source_artifacts={
             "refresh_json": str(refresh_path),
             "candidate_portfolio_json": str(candidate_path),
+            "candidate_hybrid_json": str(candidate_hybrid_path or ""),
             "liquidation_json": str(liquidation_path),
             "legacy_hybrid_json": str(hybrid_path or ""),
         },
