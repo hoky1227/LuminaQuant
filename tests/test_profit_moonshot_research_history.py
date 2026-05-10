@@ -16,6 +16,7 @@ SPEC.loader.exec_module(MODULE)
 
 REQUIRED_TOP_LEVEL = {
     "strategy_chronology",
+    "git_commit_history",
     "source_history_inventory",
     "source_search_ledger",
     "decision_log",
@@ -84,6 +85,7 @@ def test_research_history_payload_schema_and_duplicate_ledger_collapse(tmp_path:
     payload = MODULE.build_research_history_payload(
         roots=[docs, plans, reports],
         generated_at_utc="2026-05-10T12:00:00Z",
+        include_git_history=False,
     )
 
     assert REQUIRED_TOP_LEVEL.issubset(payload)
@@ -119,7 +121,11 @@ def test_research_history_writer_emits_markdown_and_json(tmp_path: Path) -> None
     output_doc = tmp_path / "docs" / "profit_moonshot_research_history_20260510.md"
     report_dir = tmp_path / "var" / "reports" / "profit_moonshot_20260501" / "research_history"
 
-    payload = MODULE.build_research_history_payload(roots=[source_root], generated_at_utc="2026-05-10T12:00:00Z")
+    payload = MODULE.build_research_history_payload(
+        roots=[source_root],
+        generated_at_utc="2026-05-10T12:00:00Z",
+        include_git_history=False,
+    )
     paths = MODULE.write_research_history_outputs(payload, docs_path=output_doc, report_dir=report_dir)
 
     assert paths["docs_markdown"] == output_doc
@@ -127,4 +133,31 @@ def test_research_history_writer_emits_markdown_and_json(tmp_path: Path) -> None
     assert (report_dir / "profit_moonshot_research_history_latest.md").exists()
     json_payload = json.loads((report_dir / "profit_moonshot_research_history_latest.json").read_text(encoding="utf-8"))
     assert json_payload["generation_metadata"]["schema_version"] == MODULE.SCHEMA_VERSION
+    assert json_payload["generation_metadata"]["date_range"] == "2026-03-01..2026-05-10"
     assert "source/search ledger" in output_doc.read_text(encoding="utf-8").lower()
+
+
+def test_git_commit_history_discovers_march_research_and_filters_runtime(monkeypatch) -> None:
+    research_sha = "a" * 40
+    runtime_sha = "b" * 40
+    raw = (
+        f"{research_sha}\x1f2026-03-14\x1fTune portfolio walk-forward research lane\x1f"
+        "Validated candidate ensemble context.\x1e"
+        f"{runtime_sha}\x1f2026-03-14\x1fomx(team): auto-checkpoint worker-1 [1]\x1f"
+        "runtime scaffold\x1e"
+    )
+
+    class Result:
+        returncode = 0
+        stdout = raw
+
+    def fake_run(*args, **kwargs):
+        return Result()
+
+    monkeypatch.setattr(MODULE.subprocess, "run", fake_run)
+    items = MODULE.discover_git_commit_history()
+
+    assert [item["commit_hash"] for item in items] == [research_sha]
+    assert items[0]["research_date"] == "2026-03-14"
+    assert items[0]["source_type"] == "git_commit"
+    assert "dynamic_portfolio_allocator" in items[0]["associated_strategy_families"]

@@ -78,7 +78,19 @@ Research history was regenerated after this run:
 - `var/reports/profit_moonshot_20260501/research_history/profit_moonshot_research_history_latest.json`
 - `var/reports/profit_moonshot_20260501/research_history/profit_moonshot_research_history_latest.md`
 
-The regenerated ledger now has `inventory_count=775`, `ledger_count=774`, and includes the full non-calendar dynamic restart artifacts plus external reference clusters to avoid repeating prior searches.
+The regenerated ledger was corrected from May-only scope to `2026-03-01..2026-05-10`.
+It now includes semantic git history from the March/April predecessor research lanes plus local artifacts:
+
+- `git_commit_count=278`
+- `artifact_inventory_count=2384`
+- `inventory_count=2667`
+- `ledger_count=2666`
+- `strategy_chronology=15`
+
+The chronology now covers raw-first/live-data foundations, exact-window/timeframe sweeps,
+dynamic portfolio/walk-forward work, strict latest-tail validation, regime/pair challengers,
+portfolio-superiority/leverage work, hybrid reboot, production carry/trend lanes,
+late-April live-equivalent filtering, and the May profit-moonshot restart.
 
 ## Verification
 
@@ -86,7 +98,7 @@ The regenerated ledger now has `inventory_count=775`, `ledger_count=774`, and in
 - Portfolio tuning: exit `0`, max RSS `276524 kB`.
 - Candidate hybrid fail-closed artifact: exit `0`, max RSS `258516 kB`.
 - Final decision rebuild: exit `0`, max RSS `34944 kB`.
-- Research-history regeneration: exit `0`, max RSS `190944 kB`.
+- Research-history regeneration: exit `0`, max RSS `192972 kB`.
 - Targeted leader regression before full replay: `20 passed`, max RSS `174872 kB`.
 
 ## Next instructions

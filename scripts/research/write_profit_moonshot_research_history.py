@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import UTC, datetime
@@ -21,17 +22,60 @@ SCHEMA_VERSION = "profit_moonshot_research_history.v1"
 DEFAULT_ROOTS = (
     Path("docs"),
     Path(".omx/plans"),
-    Path("var/reports/profit_moonshot_20260501"),
+    Path("var/reports"),
 )
 DEFAULT_DOCS_PATH = Path("docs/profit_moonshot_research_history_20260510.md")
 DEFAULT_REPORT_DIR = Path("var/reports/profit_moonshot_20260501/research_history")
 DEFAULT_NOTEPAD_PATH = Path(".omx/notepad.md")
 DATE_RE = re.compile(r"20(26)[-_]?(0[1-9]|1[0-2])[-_]?(0[1-9]|[12]\d|3[01])")
-DATE_TOKEN_RE = re.compile(r"(2026)[-_]?(05)[-_]?(0[1-9]|10)")
-PROFIT_MOONSHOT_RE = re.compile(r"profit[-_ ]moonshot|moonshot", re.IGNORECASE)
+DATE_TOKEN_RE = re.compile(r"(2026)[-_]?(0[3-5])[-_]?(0[1-9]|[12]\d|3[01])")
+RESEARCH_PATH_RE = re.compile(
+    r"profit[-_ ]moonshot|moonshot|portfolio|candidate|research|alpha|strategy|"
+    r"backtest|validation|live[-_ ]equivalent|exact[-_ ]window|regime|allocator|"
+    r"hybrid|leverage|carry|trend|pair|reboot|raw[-_ ]first|oos|walk[-_ ]forward",
+    re.IGNORECASE,
+)
 TEXT_SUFFIXES = {".md", ".json", ".csv", ".log", ".txt", ".jsonl"}
-START_DATE = "2026-05-01"
+START_DATE = "2026-03-01"
 END_DATE = "2026-05-10"
+
+GIT_RESEARCH_KEYWORDS = (
+    "profit",
+    "moonshot",
+    "portfolio",
+    "candidate",
+    "research",
+    "alpha",
+    "strategy",
+    "backtest",
+    "validation",
+    "validate",
+    "live-equivalent",
+    "live equivalent",
+    "exact-window",
+    "exact window",
+    "regime",
+    "allocator",
+    "hybrid",
+    "leverage",
+    "kelly",
+    "carry",
+    "trend",
+    "pair",
+    "reboot",
+    "raw-first",
+    "raw first",
+    "oos",
+    "walk-forward",
+    "walk forward",
+)
+
+GIT_NON_RESEARCH_PREFIXES = (
+    "omx(team): auto-checkpoint",
+    "omx(team): merge",
+    "merge commit",
+    "merge pull request",
+)
 
 KNOWN_EXTERNAL_CLUSTERS: tuple[dict[str, Any], ...] = (
     {
@@ -126,11 +170,11 @@ KNOWN_EXTERNAL_CLUSTERS: tuple[dict[str, Any], ...] = (
 
 NOT_RECONSTRUCTABLE_ITEMS: tuple[dict[str, str], ...] = (
     {
-        "inventory_id": "agent_logs:prior_web_search_prompts_20260501_20260510",
-        "research_date": "2026-05-01..2026-05-10",
+        "inventory_id": "agent_logs:prior_web_search_prompts_20260301_20260510",
+        "research_date": "2026-03-01..2026-05-10",
         "source_type": "agent_log",
         "query_or_title": "Prior transient web-search prompts and tmux pane transcripts",
-        "normalized_key": "agent_log:prior_web_search_prompts_20260501_20260510",
+        "normalized_key": "agent_log:prior_web_search_prompts_20260301_20260510",
         "path_or_url": "transient:unpersisted_agent_search_prompts",
         "not_reconstructable_reason": (
             "The durable repo contains handoff summaries and artifact paths, but not every transient "
@@ -230,6 +274,17 @@ def _families_from_text(value: str) -> list[str]:
         ("hybrid", "dynamic_hybrid_allocator"),
         ("portfolio", "dynamic_portfolio_allocator"),
         ("external", "external_venue_expansion"),
+        ("live-equivalent", "live_equivalent_validation"),
+        ("live equivalent", "live_equivalent_validation"),
+        ("exact-window", "exact_window_validation"),
+        ("exact window", "exact_window_validation"),
+        ("timeframe", "timeframe_sweep"),
+        ("raw-first", "raw_first_data_pipeline"),
+        ("raw first", "raw_first_data_pipeline"),
+        ("regime", "regime_switching_allocator"),
+        ("kelly", "regime_switching_allocator"),
+        ("walk-forward", "walk_forward_validation"),
+        ("walk forward", "walk_forward_validation"),
         ("source", "source_history_ledger"),
         ("ledger", "source_history_ledger"),
     )
@@ -245,7 +300,7 @@ def _should_include_path(path: Path) -> bool:
     path_text = str(path).replace("\\", "/")
     if not DATE_TOKEN_RE.search(path_text):
         return False
-    return bool(PROFIT_MOONSHOT_RE.search(path_text))
+    return bool(RESEARCH_PATH_RE.search(path_text))
 
 
 def discover_source_history_inventory(roots: Iterable[Path | str]) -> list[dict[str, Any]]:
@@ -307,6 +362,12 @@ def _what_was_used_for_families(families: Sequence[str]) -> str:
         return "Used to require conservative liquidation, margin-buffer, and account-wipeout evidence."
     if "source_history_ledger" in families:
         return "Used to seed durable source/history inventory and duplicate-search guards."
+    if "raw_first_data_pipeline" in families or "live_equivalent_validation" in families:
+        return "Used to establish raw-first/live-equivalent data and execution parity before trusting research metrics."
+    if "exact_window_validation" in families or "timeframe_sweep" in families:
+        return "Used to control split-window/timeframe evidence and prevent accidental validation drift."
+    if "regime_switching_allocator" in families or "dynamic_portfolio_allocator" in families:
+        return "Used as allocator and portfolio-selection history for later moonshot/live-promotion gates."
     return "Used as historical context for dynamic restart candidate families and rejection decisions."
 
 
@@ -317,7 +378,126 @@ def _decision_impact_for_families(families: Sequence[str]) -> str:
         return "Non-integer leverage rows are benchmark-only and cannot be live promoted."
     if "dynamic_hybrid_allocator" in families:
         return "Hybrids inherit source candidate validity, leverage, liquidation, and source-ledger gates."
+    if "raw_first_data_pipeline" in families:
+        return "Raw-first/live data assumptions must stay explicit before comparing strategy performance."
+    if "exact_window_validation" in families or "timeframe_sweep" in families:
+        return "Later candidates should inherit exact split/timeframe validation rather than rerun ambiguous windows."
+    if "regime_switching_allocator" in families:
+        return "Regime-switching and Kelly-style allocators remain historical context unless current live gates pass."
     return "Preserves prior research evidence for train/validation-only dynamic restart decisions."
+
+
+def _is_research_commit(subject: str, body: str = "") -> bool:
+    text = f"{subject}\n{body}".lower()
+    stripped = subject.lower().strip()
+    if any(stripped.startswith(prefix) for prefix in GIT_NON_RESEARCH_PREFIXES):
+        return False
+    return any(keyword in text for keyword in GIT_RESEARCH_KEYWORDS)
+
+
+def parse_git_log_records(raw: str) -> list[dict[str, str]]:
+    """Parse a NUL-free git log stream using unit separators.
+
+    The format is `%H%x1f%ad%x1f%s%x1f%b%x1e`, which keeps commit subjects and
+    bodies reconstructable without depending on line-oriented parsing.
+    """
+    records: list[dict[str, str]] = []
+    for chunk in raw.split("\x1e"):
+        chunk = chunk.strip("\n")
+        if not chunk:
+            continue
+        parts = chunk.split("\x1f", 3)
+        if len(parts) != 4:
+            continue
+        commit_hash, commit_date, subject, body = (part.strip() for part in parts)
+        if not commit_hash or not commit_date or not subject:
+            continue
+        records.append(
+            {
+                "commit": commit_hash,
+                "short_commit": commit_hash[:7],
+                "date": commit_date,
+                "subject": subject,
+                "body": body,
+            }
+        )
+    return records
+
+
+def discover_git_commit_history(*, start_date: str = START_DATE, end_date: str = END_DATE) -> list[dict[str, Any]]:
+    """Return research-relevant semantic commits as durable source inventory.
+
+    Git history is intentionally a first-class source because many March/April
+    research decisions predate the profit-moonshot-specific artifact directory.
+    Runtime scaffolding commits are filtered out; semantic commits remain.
+    """
+    cmd = [
+        "git",
+        "log",
+        f"--since={start_date} 00:00:00",
+        f"--until={end_date} 23:59:59",
+        "--date=short",
+        "--pretty=format:%H%x1f%ad%x1f%s%x1f%b%x1e",
+    ]
+    try:
+        result = subprocess.run(cmd, check=False, capture_output=True, text=True, encoding="utf-8")
+    except OSError:
+        return []
+    if result.returncode != 0:
+        return []
+
+    items: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for record in parse_git_log_records(result.stdout):
+        commit_hash = record["commit"]
+        if commit_hash in seen:
+            continue
+        seen.add(commit_hash)
+        subject = record["subject"]
+        body = record["body"]
+        if not _is_research_commit(subject, body):
+            continue
+        research_date = record["date"]
+        if not (start_date <= research_date <= end_date):
+            continue
+        text = f"{subject}\n{body}"
+        families = _families_from_text(text)
+        normalized_key = normalize_source_key(
+            source_type="git_commit",
+            path_or_url=f"git:{commit_hash}",
+            query_or_title=subject,
+        )
+        content_summary = _summary_from_text(
+            f"{record['short_commit']} {research_date} {subject}. {body}",
+            max_len=320,
+        )
+        items.append(
+            {
+                "inventory_id": normalized_key,
+                "research_date": research_date,
+                "all_research_dates": [research_date],
+                "source_type": "git_commit",
+                "query_or_title": subject,
+                "normalized_key": normalized_key,
+                "path_or_url": f"git:{commit_hash}",
+                "commit_hash": commit_hash,
+                "short_commit": record["short_commit"],
+                "content_summary": content_summary,
+                "consulted_history_summary": content_summary,
+                "what_was_used": _what_was_used_for_families(families),
+                "associated_strategy_families": families,
+                "decision_impact": _decision_impact_for_families(families),
+                "ledger_refs": [normalized_key],
+                "not_reconstructable": False,
+                "not_reconstructable_reason": "",
+                "staleness_policy": "Use as historical decision context; re-run tests/backtests before promotion.",
+                "recheck_before_use": False,
+                "do_not_repeat_note": (
+                    "Check this commit and linked artifacts before re-opening the same research lane."
+                ),
+            }
+        )
+    return sorted(items, key=lambda item: (str(item["research_date"]), str(item["path_or_url"])))
 
 
 def _external_inventory_items(local_items: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
@@ -475,10 +655,319 @@ def _artifact_paths_with(inventory: Sequence[Mapping[str, Any]], *tokens: str) -
     return paths[:12]
 
 
+def _commit_refs_with(inventory: Sequence[Mapping[str, Any]], *tokens: str) -> list[str]:
+    wanted = [token.lower() for token in tokens]
+    refs = []
+    for item in inventory:
+        if item.get("source_type") != "git_commit":
+            continue
+        text = f"{item.get('query_or_title')} {item.get('content_summary')}".lower()
+        if all(token in text for token in wanted):
+            refs.append(str(item.get("path_or_url")))
+    return refs[:12]
+
+
 def build_strategy_chronology(
     *, inventory: Sequence[Mapping[str, Any]], ledger: Sequence[Mapping[str, Any]]
 ) -> list[dict[str, Any]]:
     return [
+        _chronology_entry(
+            research_date="2026-03-02",
+            strategy_family="raw_first_live_data_foundation",
+            artifact_paths=(
+                _artifact_paths_with(inventory, "20260302")
+                + _commit_refs_with(inventory, "raw-first")
+                + _commit_refs_with(inventory, "live", "data")
+            )[:12],
+            hypothesis="Research metrics should be rebuilt on raw-first/live-data foundations before promotion decisions.",
+            primary_signal_type="research_infrastructure",
+            features=["raw-first ingestion", "live data decoupling", "Binance/live migration", "memory-safe refresh"],
+            universe="live crypto universe and exact-window research inputs",
+            timeframe="pre-profit-moonshot March data and refresh foundations",
+            split_periods="foundation work for later exact-window train/validation/OOS splits",
+            implementation_files=[
+                "scripts/research/run_candidate_research.py",
+                "src/lumina/live",
+                "src/lumina/backtesting",
+            ],
+            train_metrics="not a strategy-result lane; established data/replay prerequisites",
+            validation_metrics="not a strategy-result lane; established validation reproducibility",
+            oos_metrics="not a ranking lane; later live-equivalent OOS gates depend on it",
+            leverage_status="not a live leverage selection lane yet",
+            liquidation_status="liquidation/crowding features existed as strategy inputs but not final replay gates",
+            source_ledger_refs=_ledger_keys_with(
+                ledger=ledger,
+                families=["raw_first_data_pipeline", "exact_window_validation", "live_equivalent_validation"],
+            ),
+            advantages=["made later exact replay possible", "reduced data-path ambiguity"],
+            disadvantages=["does not itself prove alpha", "requires later strategy/live-equivalent gates"],
+            final_decision="preserve_as_foundation",
+            reason="March data/validation foundations are required context for later moonshot research claims.",
+        ),
+        _chronology_entry(
+            research_date="2026-03-08",
+            strategy_family="exact_window_timeframe_and_strategy_expansion",
+            artifact_paths=(
+                _artifact_paths_with(inventory, "20260308")
+                + _artifact_paths_with(inventory, "timeframe")
+                + _commit_refs_with(inventory, "exact-window")
+                + _commit_refs_with(inventory, "strategy")
+            )[:12],
+            hypothesis="Memory-safe exact-window sweeps can identify stronger timeframe/strategy candidates without split drift.",
+            primary_signal_type="dynamic_state_signal",
+            features=["timeframe sweep", "exact split validation", "strategy expansion", "candidate scoring"],
+            universe="candidate research universe before the May profit-moonshot naming",
+            timeframe="multi-timeframe exact-window research windows",
+            split_periods="exact train/validation/OOS windows where artifacts record them",
+            implementation_files=[
+                "scripts/research/run_candidate_research.py",
+                "scripts/research/exact_window_suite.py",
+            ],
+            train_metrics="candidate-specific in historical artifacts/commits",
+            validation_metrics="candidate-specific exact-window validation; no standalone live promotion",
+            oos_metrics="locked-OOS style evidence later became gate/report-only",
+            leverage_status="not uniformly live-integer constrained",
+            liquidation_status="not uniformly liquidation-aware",
+            source_ledger_refs=_ledger_keys_with(
+                ledger=ledger,
+                families=["exact_window_validation", "timeframe_sweep", "trend_momentum"],
+            ),
+            advantages=["broadened research search space", "kept split-window evidence explicit"],
+            disadvantages=["pre-live-gate rows can be misleading if reused without current checks"],
+            final_decision="carry_forward_as_search_context",
+            reason="Useful predecessor search history, but every row still needs current live/source/liquidation gates.",
+        ),
+        _chronology_entry(
+            research_date="2026-03-14",
+            strategy_family="dynamic_causal_portfolio_and_walk_forward_research",
+            artifact_paths=(
+                _artifact_paths_with(inventory, "20260314")
+                + _artifact_paths_with(inventory, "walk")
+                + _commit_refs_with(inventory, "portfolio")
+                + _commit_refs_with(inventory, "walk")
+            )[:12],
+            hypothesis="Dynamic causal and walk-forward portfolio allocation may improve robustness versus single-candidate ranking.",
+            primary_signal_type="dynamic_portfolio_allocator",
+            features=["dynamic causal allocation", "walk-forward tuning", "portfolio weights", "candidate ensembles"],
+            universe="candidate portfolio universe before later live-equivalent narrowing",
+            timeframe="walk-forward and latest-tail research windows",
+            split_periods="train/validation/OOS where historical artifacts recorded them",
+            implementation_files=[
+                "scripts/research/run_portfolio_followup.py",
+                "scripts/research/tune_portfolio_weights.py",
+            ],
+            train_metrics="portfolio-specific historical metrics; not directly comparable after later gates",
+            validation_metrics="walk-forward validation context only",
+            oos_metrics="historical OOS evidence; not sufficient for May live promotion",
+            leverage_status="not yet restricted to positive integer live leverage",
+            liquidation_status="not yet conservative Binance-style liquidation replay",
+            source_ledger_refs=_ledger_keys_with(
+                ledger=ledger,
+                families=["dynamic_portfolio_allocator", "walk_forward_validation"],
+            ),
+            advantages=["introduced ensemble/portfolio thinking", "surfaced allocator robustness needs"],
+            disadvantages=["pre-source-ledger and pre-liquidation gate", "can overfit if OOS is used for selection"],
+            final_decision="retain_as_allocator_predecessor",
+            reason="Allocator ideas informed later candidate-hybrid rules but cannot bypass current train/validation-only gates.",
+        ),
+        _chronology_entry(
+            research_date="2026-03-19",
+            strategy_family="strict_portfolio_validation_and_latest_tail",
+            artifact_paths=(
+                _artifact_paths_with(inventory, "20260319")
+                + _artifact_paths_with(inventory, "strict")
+                + _commit_refs_with(inventory, "validation")
+                + _commit_refs_with(inventory, "oos")
+            )[:12],
+            hypothesis="Strict portfolio validation and latest-tail checks can prevent fragile candidate promotion.",
+            primary_signal_type="validation_control_plane",
+            features=["strict validation", "latest-tail checks", "OOS materialization", "memory guard"],
+            universe="portfolio/candidate research universe with live-tail data concerns",
+            timeframe="March latest-tail and exact-window validation slices",
+            split_periods="strict train/validation/OOS split discipline",
+            implementation_files=[
+                "scripts/research/validate_portfolio_candidates.py",
+                "scripts/research/materialize_oos.py",
+            ],
+            train_metrics="used to enforce prerequisite checks, not to promote a final strategy here",
+            validation_metrics="strict validation evidence recorded by commits/artifacts",
+            oos_metrics="OOS evidence preserved but not later selection authority",
+            leverage_status="strict leverage tooling started emerging but was not final live policy",
+            liquidation_status="not yet the final split liquidation-count/margin-buffer contract",
+            source_ledger_refs=_ledger_keys_with(
+                ledger=ledger,
+                families=["live_equivalent_validation", "raw_first_data_pipeline"],
+            ),
+            advantages=["reduced false positives", "made memory/session limits explicit"],
+            disadvantages=["historical metrics need recalculation under May gates"],
+            final_decision="preserve_validation_precedent",
+            reason="Strict validation discipline is a predecessor to the later fail-closed live-promotion contract.",
+        ),
+        _chronology_entry(
+            research_date="2026-03-29",
+            strategy_family="regime_switching_and_archived_pair_challengers",
+            artifact_paths=(
+                _artifact_paths_with(inventory, "20260329")
+                + _artifact_paths_with(inventory, "regime")
+                + _commit_refs_with(inventory, "regime")
+                + _commit_refs_with(inventory, "pair")
+            )[:12],
+            hypothesis="Regime-switching/Kelly-sized allocators and archived pair blends might improve risk-adjusted OOS.",
+            primary_signal_type="regime_switching_allocator",
+            features=["regime switch", "weekly Kelly sizing", "archived pair blend", "sparse-symbol live tails"],
+            universe="saved allocators and archived pair challengers",
+            timeframe="late-March validation and live-tail continuity windows",
+            split_periods="strict validation slices; OOS evidence preserved for later comparison only",
+            implementation_files=[
+                "scripts/research/score_regime_switch_allocators.py",
+                "scripts/research/run_portfolio_followup.py",
+            ],
+            train_metrics="historical allocator/candidate-specific metrics",
+            validation_metrics="historical strict validation; not current promotion evidence",
+            oos_metrics="risk-adjusted OOS profile improved for some archived challengers but remains historical",
+            leverage_status="not final live-integer leverage policy",
+            liquidation_status="not final conservative liquidation replay",
+            source_ledger_refs=_ledger_keys_with(
+                ledger=ledger,
+                families=["regime_switching_allocator", "residual_pair_reversion"],
+            ),
+            advantages=["added allocator diversity", "made sparse-symbol/live-tail failure modes visible"],
+            disadvantages=["archived artifacts can be stale", "must not be promoted without current data refresh"],
+            final_decision="retain_but_revalidate_before_use",
+            reason="Regime and pair ideas remain useful hypotheses only after current train/validation/live gates rerun.",
+        ),
+        _chronology_entry(
+            research_date="2026-04-02",
+            strategy_family="portfolio_superiority_8gb_moonshot_and_leverage",
+            artifact_paths=(
+                _artifact_paths_with(inventory, "20260402")
+                + _artifact_paths_with(inventory, "portfolio_superiority")
+                + _commit_refs_with(inventory, "portfolio", "superiority")
+                + _commit_refs_with(inventory, "leverage")
+            )[:12],
+            hypothesis="Under-8GiB meta-search and leverage validation can find a superior live portfolio challenger.",
+            primary_signal_type="portfolio_meta_search",
+            features=["meta-search winners", "basis leakage guard", "strict leverage validation", "8GiB cap"],
+            universe="portfolio-superiority candidate set",
+            timeframe="April portfolio-superiority and saved-stream research windows",
+            split_periods="robust gate evidence and strict validation paths",
+            implementation_files=[
+                "scripts/research/run_portfolio_superiority.py",
+                "scripts/research/sweep_portfolio_leverage.py",
+            ],
+            train_metrics="meta-search/portfolio-specific; see April artifacts and commits",
+            validation_metrics="robust gate evidence; basis leakage explicitly guarded",
+            oos_metrics="follow-on challenger OOS evidence preserved but later gates supersede it",
+            leverage_status="strict leverage tooling existed; live positive-integer policy finalized later",
+            liquidation_status="not yet final Binance-style liquidation/margin replay",
+            source_ledger_refs=_ledger_keys_with(
+                ledger=ledger,
+                families=["dynamic_portfolio_allocator", "integer_leverage", "live_equivalent_validation"],
+            ),
+            advantages=["made 8GiB a hard research constraint", "surfaced leakage/basis risks"],
+            disadvantages=["portfolio-superiority artifacts are predecessors, not final live candidates"],
+            final_decision="preserve_as_moonshot_predecessor",
+            reason="April portfolio-superiority work explains the moonshot lineage but must be rerun under current gates.",
+        ),
+        _chronology_entry(
+            research_date="2026-04-16",
+            strategy_family="hybrid_reboot_and_profit_first_switch_replay",
+            artifact_paths=(
+                _artifact_paths_with(inventory, "20260416")
+                + _artifact_paths_with(inventory, "hybrid")
+                + _commit_refs_with(inventory, "hybrid")
+                + _commit_refs_with(inventory, "switch")
+            )[:12],
+            hypothesis="Profit-first hybrid switch thresholds and replayable policies may improve default portfolio routing.",
+            primary_signal_type="dynamic_hybrid_allocator",
+            features=["hybrid warm-up", "profit-first switch", "reboot split replay", "market-state coverage"],
+            universe="hybrid/reboot portfolio mode universe",
+            timeframe="April reboot split and switch-threshold replay windows",
+            split_periods="reboot split with replayed switch performance",
+            implementation_files=[
+                "scripts/research/replay_hybrid_switch.py",
+                "scripts/research/tune_profit_first_switch.py",
+            ],
+            train_metrics="switch-threshold-specific historical metrics",
+            validation_metrics="reboot validation context only",
+            oos_metrics="replayed switch outcomes preserved; not current live-promotion evidence",
+            leverage_status="hybrid source leverage not yet required to be integer for every active source",
+            liquidation_status="not final split liquidation replay",
+            source_ledger_refs=_ledger_keys_with(
+                ledger=ledger,
+                families=["dynamic_hybrid_allocator", "walk_forward_validation"],
+            ),
+            advantages=["made hybrid policy replayable", "separated warm-up/lookback mechanics"],
+            disadvantages=["hybrid rows can inherit invalid source sleeves", "coverage limits can cap replay trust"],
+            final_decision="retain_hybrid_design_with_source_gates",
+            reason="Hybrid mechanics are useful, but later candidate-derived hybrids must inherit source validity gates.",
+        ),
+        _chronology_entry(
+            research_date="2026-04-20",
+            strategy_family="production_carry_trend_and_portfolio_superiority_followup",
+            artifact_paths=(
+                _artifact_paths_with(inventory, "20260420")
+                + _artifact_paths_with(inventory, "carry")
+                + _commit_refs_with(inventory, "carry")
+                + _commit_refs_with(inventory, "trend")
+            )[:12],
+            hypothesis="A guarded production carry/trend sleeve and portfolio-superiority follow-up could become live-ready.",
+            primary_signal_type="production_candidate_sleeve",
+            features=["carry/trend retune", "production mode", "portfolio overlays", "candidate diversity"],
+            universe="production-safe carry/trend and portfolio-superiority candidate set",
+            timeframe="April production retune and follow-up windows",
+            split_periods="candidate research progress and portfolio optimization splits where recorded",
+            implementation_files=[
+                "scripts/research/run_production_carry_trend_retune.py",
+                "scripts/research/portfolio_superiority_followup.py",
+            ],
+            train_metrics="historical production-lane metrics in April reports",
+            validation_metrics="low-memory runner/retune validation; not current final selection",
+            oos_metrics="candidate progress artifacts preserve OOS context but do not promote alone",
+            leverage_status="live-readiness bridge existed before final integer-only policy",
+            liquidation_status="not final Binance-style liquidation replay",
+            source_ledger_refs=_ledger_keys_with(
+                ledger=ledger,
+                families=["funding_oi_carry", "trend_momentum", "dynamic_portfolio_allocator"],
+            ),
+            advantages=["kept production-lane constraints explicit", "improved observability"],
+            disadvantages=["still predecessor evidence", "requires current source/liquidation gate replay"],
+            final_decision="retain_as_production_predecessor",
+            reason="Carry/trend production lane is historical context until refreshed under current live candidate rules.",
+        ),
+        _chronology_entry(
+            research_date="2026-04-26",
+            strategy_family="live_equivalent_hybrid_and_full_universe_selection",
+            artifact_paths=(
+                _artifact_paths_with(inventory, "20260426")
+                + _artifact_paths_with(inventory, "live_equivalent")
+                + _commit_refs_with(inventory, "live-equivalent")
+                + _commit_refs_with(inventory, "hybrid")
+            )[:12],
+            hypothesis="Live-equivalent backtests and deployable-mode filters should separate research scores from live promotion.",
+            primary_signal_type="live_equivalent_validation",
+            features=["live-equivalent revalidation", "deployable HYBRID modes", "full-universe selection", "candidate reset"],
+            universe="full live-equivalent candidate universe before May profit search",
+            timeframe="late-April live-equivalent validation and artifact-reset windows",
+            split_periods="live-equivalent backtests and deployable portfolio modes",
+            implementation_files=[
+                "scripts/research/revalidate_live_equivalent_candidates.py",
+                "scripts/research/tune_hybrid_deployable_modes.py",
+            ],
+            train_metrics="candidate-specific live-equivalent backtest inputs",
+            validation_metrics="deployable-mode filtering evidence",
+            oos_metrics="not enough by itself; fail-closed until live-equivalent candidates pass",
+            leverage_status="deployable mode filtering existed before final integer leverage hard gate",
+            liquidation_status="not final liquidation/margin-buffer gate",
+            source_ledger_refs=_ledger_keys_with(
+                ledger=ledger,
+                families=["live_equivalent_validation", "dynamic_hybrid_allocator"],
+            ),
+            advantages=["separated research HYBRID scores from live-deployable modes", "forced fail-closed posture"],
+            disadvantages=["still needed refreshed May data and source-history metadata"],
+            final_decision="bridge_to_may_profit_moonshot",
+            reason="Late-April live-equivalent work is the direct predecessor to May profit-moonshot gates.",
+        ),
         _chronology_entry(
             research_date="2026-05-01",
             strategy_family="profit_first_strategy_factory_restart",
@@ -625,8 +1114,8 @@ def build_strategy_chronology(
             hypothesis="Future sessions should read a durable research history before new searches or tuning.",
             primary_signal_type="research_control_plane",
             features=["source_history_inventory", "source_search_ledger", "duplicate_search_guard"],
-            universe="all reconstructable profit-moonshot local artifacts from 2026-05-01 through 2026-05-10",
-            timeframe="2026-05-01..2026-05-10 research history",
+            universe="all reconstructable research artifacts and semantic git commits from 2026-03-01 through 2026-05-10",
+            timeframe="2026-03-01..2026-05-10 research history",
             split_periods="not applicable",
             implementation_files=["scripts/research/write_profit_moonshot_research_history.py"],
             train_metrics="not applicable",
@@ -691,14 +1180,20 @@ def _chronology_entry(
 
 
 def build_research_history_payload(
-    *, roots: Iterable[Path | str] = DEFAULT_ROOTS, generated_at_utc: str | None = None
+    *,
+    roots: Iterable[Path | str] = DEFAULT_ROOTS,
+    generated_at_utc: str | None = None,
+    include_git_history: bool = True,
 ) -> dict[str, Any]:
-    local_inventory = discover_source_history_inventory(roots)
+    artifact_inventory = discover_source_history_inventory(roots)
+    git_commit_history = discover_git_commit_history() if include_git_history else []
+    local_inventory = artifact_inventory + git_commit_history
     inventory = local_inventory + _external_inventory_items(local_inventory) + _not_reconstructable_items()
     ledger = build_source_search_ledger(inventory)
     chronology = build_strategy_chronology(inventory=inventory, ledger=ledger)
     return {
         "strategy_chronology": chronology,
+        "git_commit_history": git_commit_history,
         "source_history_inventory": inventory,
         "source_search_ledger": ledger,
         "decision_log": [
@@ -735,6 +1230,8 @@ def build_research_history_payload(
             "generated_at_utc": generated_at_utc or _utc_now_iso(),
             "date_range": f"{START_DATE}..{END_DATE}",
             "roots": [str(root) for root in roots],
+            "artifact_inventory_count": len(artifact_inventory),
+            "git_commit_count": len(git_commit_history),
             "local_inventory_count": len(local_inventory),
             "inventory_count": len(inventory),
             "ledger_count": len(ledger),
@@ -744,14 +1241,22 @@ def build_research_history_payload(
 
 def build_markdown(payload: Mapping[str, Any]) -> str:
     lines = [
-        "# Profit Moonshot Research History — Dynamic Restart Ledger",
+        "# Profit Moonshot Research History — March-to-May Dynamic Restart Ledger",
         "",
         "Future profit-moonshot sessions must read this file before repeating searches or promoting candidates.",
         "",
         "## Generation metadata",
     ]
     metadata = payload.get("generation_metadata") or {}
-    for key in ("schema_version", "generated_at_utc", "date_range", "local_inventory_count", "ledger_count"):
+    for key in (
+        "schema_version",
+        "generated_at_utc",
+        "date_range",
+        "artifact_inventory_count",
+        "git_commit_count",
+        "local_inventory_count",
+        "ledger_count",
+    ):
         lines.append(f"- {key}: `{metadata.get(key)}`")
 
     lines.extend(["", "## Strategy chronology"])
@@ -772,6 +1277,16 @@ def build_markdown(payload: Mapping[str, Any]) -> str:
                 f"- Source ledger refs: {', '.join(item.get('source_ledger_refs') or []) or 'none'}",
                 f"- Artifacts: {', '.join(item.get('artifact_paths') or []) or 'none'}",
             ]
+        )
+
+    lines.extend(["", "## Git commit research ledger"])
+    for commit in payload.get("git_commit_history") or []:
+        item = dict(commit)
+        lines.append(
+            "- "
+            f"{item.get('research_date')} `{item.get('short_commit')}` — "
+            f"{item.get('query_or_title')} "
+            f"({', '.join(item.get('associated_strategy_families') or [])})"
         )
 
     lines.extend(["", "## Source/history inventory"])
@@ -847,6 +1362,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--report-dir", default=str(DEFAULT_REPORT_DIR))
     parser.add_argument("--notepad-path", default=str(DEFAULT_NOTEPAD_PATH))
     parser.add_argument("--no-notepad", action="store_true")
+    parser.add_argument("--no-git-history", action="store_true")
     parser.add_argument("--generated-at-utc", default="")
     return parser.parse_args(argv)
 
@@ -857,6 +1373,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     payload = build_research_history_payload(
         roots=roots,
         generated_at_utc=str(args.generated_at_utc or "") or None,
+        include_git_history=not args.no_git_history,
     )
     paths = write_research_history_outputs(
         payload,
@@ -871,6 +1388,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             {
                 "ok": True,
                 "paths": {key: str(path) for key, path in paths.items()},
+                "git_commit_count": len(payload["git_commit_history"]),
                 "inventory_count": len(payload["source_history_inventory"]),
                 "ledger_count": len(payload["source_search_ledger"]),
                 "notepad_updated": notepad_updated,

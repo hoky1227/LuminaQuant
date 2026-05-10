@@ -20,6 +20,11 @@ Decision: `no_live_promotion`.
 - Final decision: `var/reports/profit_moonshot_20260501/dynamic_restart_full_noncalendar_20260510/final_decision/profit_moonshot_live_final_selection_latest.json`
 - Handoff: `docs/session_handoff_20260510_profit_moonshot_dynamic_restart_full_noncalendar.md`
 - Research history: `docs/profit_moonshot_research_history_20260510.md`
+  - corrected scope: `2026-03-01..2026-05-10`
+  - semantic git research commits included: `278`
+  - artifact inventory included: `2384`
+  - total inventory/ledger rows: `2667` / `2666`
+  - strategy chronology entries: `15`
 
 ## Guardrails retained
 
