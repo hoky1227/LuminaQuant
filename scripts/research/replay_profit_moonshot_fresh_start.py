@@ -118,6 +118,8 @@ class FreshSpec:
     calendar_short_months: tuple[int, ...] = ()
     calendar_long_symbol: str = ""
     calendar_short_symbol: str = ""
+    primary_symbol: str = ""
+    secondary_symbol: str = ""
     entry_days_of_month: tuple[int, ...] = ()
     calendar_veto_resid_z: float = 0.0
     calendar_veto_funding_abs: float = 0.0
@@ -163,6 +165,8 @@ class FreshSpec:
             "calendar_short_months": list(self.calendar_short_months),
             "calendar_long_symbol": self.calendar_long_symbol,
             "calendar_short_symbol": self.calendar_short_symbol,
+            "primary_symbol": self.primary_symbol,
+            "secondary_symbol": self.secondary_symbol,
             "entry_days_of_month": list(self.entry_days_of_month),
             "calendar_veto_resid_z": self.calendar_veto_resid_z,
             "calendar_veto_funding_abs": self.calendar_veto_funding_abs,
@@ -953,6 +957,59 @@ def _candidate_signal(spec: FreshSpec, arrays: dict[str, Any], idx: int) -> tupl
                 candidates.append((abs(resid_z) + abs(ret), symbol, "LONG"))
             if spec.allow_short and math.isfinite(resid_z) and resid_z <= -spec.threshold and ret <= -spec.min_abs_return:
                 candidates.append((abs(resid_z) + abs(ret), symbol, "SHORT"))
+        elif spec.family == "state_momentum_proxy":
+            primary_symbol = spec.primary_symbol or "TRXUSDT"
+            secondary_symbol = spec.secondary_symbol
+            resid_z = _array_value(arrays, f"{prefix}_resid_z_{lookback}h", idx)
+            flow_lookback = max(1, int(spec.flow_lookback_bars or 6))
+            flow = _array_value(arrays, f"{prefix}_flow_imbalance_{flow_lookback}h", idx)
+            if not math.isfinite(ret) or not math.isfinite(resid_z):
+                continue
+            regime_lookback = max(0, int(spec.adaptive_lookback_bars or 0))
+            regime_ret = np.nan
+            regime_resid_z = np.nan
+            if regime_lookback > lookback:
+                regime_ret = _array_value(arrays, f"{prefix}_ret_{regime_lookback}h", idx)
+                regime_resid_z = _array_value(arrays, f"{prefix}_resid_z_{regime_lookback}h", idx)
+                if not math.isfinite(regime_ret):
+                    continue
+            flow_score = 0.0 if not math.isfinite(flow) else flow
+            if (
+                spec.allow_long
+                and _calendar_target_match(symbol, primary_symbol)
+                and ret >= spec.min_abs_return
+                and resid_z >= spec.threshold
+                and (
+                    regime_lookback <= lookback
+                    or (
+                        regime_ret >= spec.min_abs_return
+                        and (
+                            spec.sharpe_rank_min <= 0.0
+                            or (math.isfinite(regime_resid_z) and regime_resid_z >= spec.sharpe_rank_min)
+                        )
+                    )
+                )
+                and (spec.flow_threshold <= 0.0 or flow_score >= spec.flow_threshold)
+            ):
+                candidates.append((abs(resid_z) + abs(ret) + max(0.0, flow_score), symbol, "LONG"))
+            if (
+                spec.allow_short
+                and (not secondary_symbol or _calendar_target_match(symbol, secondary_symbol))
+                and ret <= -spec.min_abs_return
+                and resid_z <= -spec.threshold
+                and (
+                    regime_lookback <= lookback
+                    or (
+                        regime_ret <= -spec.min_abs_return
+                        and (
+                            spec.sharpe_rank_min <= 0.0
+                            or (math.isfinite(regime_resid_z) and regime_resid_z <= -spec.sharpe_rank_min)
+                        )
+                    )
+                )
+                and (spec.flow_threshold <= 0.0 or flow_score <= -spec.flow_threshold)
+            ):
+                candidates.append((abs(resid_z) + abs(ret) + max(0.0, -flow_score), symbol, "SHORT"))
         elif spec.family == "cross_momentum":
             if not math.isfinite(ret) or abs(ret) < spec.min_abs_return:
                 continue
@@ -1311,6 +1368,105 @@ def _residual_pair_momentum_spread_signal(
     return long_symbol, short_symbol, "LONG_SPREAD", ""
 
 
+def _state_relative_strength_spread_signal(
+    spec: FreshSpec, arrays: dict[str, Any], idx: int
+) -> tuple[str, str, str, str]:
+    """Select a fixed-symbol state spread without month/day calendar inputs.
+
+    The rule is a causal proxy for the rejected TRX calendar spread: it only
+    enters when the current bar shows TRX-relative price momentum, residual
+    strength, and optional taker-flow confirmation versus the hedge leg.
+    """
+    blocked = _entry_window_block_reason(spec, arrays, idx)
+    if blocked:
+        return "", "", "", blocked
+    symbols = tuple(arrays["symbols"])
+    long_symbol = _resolve_calendar_symbol(symbols, spec.primary_symbol or "TRXUSDT")
+    short_symbol = _resolve_calendar_symbol(symbols, spec.secondary_symbol or "ETHUSDT")
+    if not long_symbol or not short_symbol or long_symbol == short_symbol:
+        return "", "", "", "state_spread_symbol_missing"
+
+    long_prefix = _symbol_prefix(long_symbol)
+    short_prefix = _symbol_prefix(short_symbol)
+    long_close = _array_value(arrays, f"{long_prefix}_close", idx)
+    short_close = _array_value(arrays, f"{short_prefix}_close", idx)
+    if (
+        not math.isfinite(long_close)
+        or long_close <= 0.0
+        or not math.isfinite(short_close)
+        or short_close <= 0.0
+    ):
+        return "", "", "", "state_spread_price_missing"
+
+    if spec.max_rv > 0.0:
+        long_rv = _array_value(arrays, f"{long_prefix}_rv_{spec.rv_lookback_bars}h", idx)
+        short_rv = _array_value(arrays, f"{short_prefix}_rv_{spec.rv_lookback_bars}h", idx)
+        if (
+            not math.isfinite(long_rv)
+            or not math.isfinite(short_rv)
+            or max(long_rv, short_rv) > spec.max_rv
+        ):
+            return "", "", "", "state_spread_rv_cap"
+
+    if spec.funding_abs_cap > 0.0:
+        long_funding = _array_value(arrays, f"{long_prefix}_funding_ffill", idx)
+        short_funding = _array_value(arrays, f"{short_prefix}_funding_ffill", idx)
+        if (
+            not math.isfinite(long_funding)
+            or not math.isfinite(short_funding)
+            or max(abs(long_funding), abs(short_funding)) > spec.funding_abs_cap
+        ):
+            return "", "", "", "state_spread_funding_cap"
+
+    lookback = int(spec.lookback_bars)
+    long_ret = _array_value(arrays, f"{long_prefix}_ret_{lookback}h", idx)
+    short_ret = _array_value(arrays, f"{short_prefix}_ret_{lookback}h", idx)
+    long_resid_z = _array_value(arrays, f"{long_prefix}_resid_z_{lookback}h", idx)
+    short_resid_z = _array_value(arrays, f"{short_prefix}_resid_z_{lookback}h", idx)
+    if (
+        not math.isfinite(long_ret)
+        or not math.isfinite(short_ret)
+        or not math.isfinite(long_resid_z)
+        or not math.isfinite(short_resid_z)
+    ):
+        return "", "", "", "signal_missing"
+
+    hedge = max(0.0, float(spec.spread_hedge_ratio))
+    spread_ret = long_ret - hedge * short_ret
+    resid_gap = long_resid_z - short_resid_z
+    threshold = max(0.0, float(spec.threshold))
+    min_abs_return = max(threshold, float(spec.min_abs_return))
+    min_resid_gap = max(0.0, float(spec.sharpe_rank_min))
+
+    if spec.flow_threshold > 0.0:
+        flow_lookback = max(1, int(spec.flow_lookback_bars or 6))
+        long_flow = _array_value(arrays, f"{long_prefix}_flow_imbalance_{flow_lookback}h", idx)
+        short_flow = _array_value(arrays, f"{short_prefix}_flow_imbalance_{flow_lookback}h", idx)
+        if not math.isfinite(long_flow) or not math.isfinite(short_flow):
+            return "", "", "", "state_spread_flow_missing"
+        flow_gap = long_flow - hedge * short_flow
+    else:
+        flow_gap = 0.0
+
+    if (
+        spec.allow_long
+        and spread_ret >= threshold
+        and resid_gap >= min_resid_gap
+        and (long_ret >= min_abs_return or short_ret <= -min_abs_return)
+        and (spec.flow_threshold <= 0.0 or flow_gap >= spec.flow_threshold)
+    ):
+        return long_symbol, short_symbol, "LONG_SPREAD", ""
+    if (
+        spec.allow_short
+        and spread_ret <= -threshold
+        and resid_gap <= -min_resid_gap
+        and (long_ret <= -min_abs_return or short_ret >= min_abs_return)
+        and (spec.flow_threshold <= 0.0 or flow_gap <= -spec.flow_threshold)
+    ):
+        return long_symbol, short_symbol, "SHORT_SPREAD", ""
+    return "", "", "", "signal_missing"
+
+
 def _run_calendar_spread_split(
     *,
     spec: FreshSpec,
@@ -1516,6 +1672,14 @@ def _run_split(
             split=split,
             include_equity=include_equity,
             signal_func=_residual_pair_momentum_spread_signal,
+        )
+    if spec.family == "state_relative_strength_spread":
+        return _run_calendar_spread_split(
+            spec=spec,
+            arrays=arrays,
+            split=split,
+            include_equity=include_equity,
+            signal_func=_state_relative_strength_spread_signal,
         )
     timestamps = arrays["timestamp"]
     start_ts = int(datetime.combine(split.start, datetime.min.time(), tzinfo=UTC).timestamp())
@@ -2037,6 +2201,141 @@ def _candidate_specs(arrays: dict[str, Any], symbols: list[str]) -> list[FreshSp
                     trailing_stop_floor_pct=0.005,
                     trailing_stop_cap_pct=0.014,
                 )
+    for lookback in (72, 168, 336):
+        for resid_z in (0.75, 1.0, 1.25):
+            for min_return in (0.012, 0.015, 0.018):
+                for hold in (96, 120, 168):
+                    for long_scale in (4.0, 5.9, 6.2):
+                        for short_scale in (6.0, 10.0):
+                            for take in (0.018, 0.024, 0.045):
+                                for flow_threshold in (0.0, 0.03):
+                                    flow_label = f"_fl{int(flow_threshold * 100)}" if flow_threshold else ""
+                                    name = (
+                                        f"fresh_state_trx_mom_lb{lookback}_"
+                                        f"z{int(resid_z * 100):03d}_ret{int(min_return * 10000)}_"
+                                        f"h{hold}_ls{int(long_scale * 100)}_ss{int(short_scale * 10)}_"
+                                        f"tp{int(take * 10000)}{flow_label}"
+                                    )
+                                    specs[name] = FreshSpec(
+                                        name=name,
+                                        family="state_momentum_proxy",
+                                        lookback_bars=lookback,
+                                        threshold=resid_z,
+                                        hold_bars=hold,
+                                        cooldown_bars=max(0, hold // 4),
+                                        stop_loss_pct=0.0,
+                                        take_profit_pct=take,
+                                        min_abs_return=min_return,
+                                        allow_long=True,
+                                        allow_short=True,
+                                        long_allocation_scale=long_scale,
+                                        short_allocation_scale=short_scale,
+                                        flow_lookback_bars=6,
+                                        flow_threshold=flow_threshold,
+                                        primary_symbol="TRXUSDT",
+                                        secondary_symbol="ETHUSDT",
+                                    )
+    for lookback in (72, 168):
+        for resid_z in (0.50, 0.75, 1.00):
+            for min_return in (0.006, 0.012, 0.015):
+                for hold in (72, 96, 120, 168):
+                    for long_scale in (4.0, 5.9, 6.2, 8.0):
+                        for take in (0.018, 0.024, 0.045, 0.060):
+                            name = (
+                                f"fresh_state_trx_longonly_lb{lookback}_z{int(resid_z * 100):03d}_"
+                                f"ret{int(min_return * 10000)}_h{hold}_"
+                                f"ls{int(long_scale * 100)}_tp{int(take * 10000)}"
+                            )
+                            specs[name] = FreshSpec(
+                                name=name,
+                                family="state_momentum_proxy",
+                                lookback_bars=lookback,
+                                threshold=resid_z,
+                                hold_bars=hold,
+                                cooldown_bars=max(0, hold // 4),
+                                stop_loss_pct=0.0,
+                                take_profit_pct=take,
+                                min_abs_return=min_return,
+                                allow_long=True,
+                                allow_short=False,
+                                long_allocation_scale=long_scale,
+                                short_allocation_scale=0.0,
+                                primary_symbol="TRXUSDT",
+                            )
+    for fast_lookback, regime_lookback in ((72, 168), (168, 336)):
+        for resid_z in (0.75, 1.0):
+            for regime_resid_z in (0.0, 0.50, 0.75):
+                for min_return in (0.012, 0.015):
+                    for hold in (96, 120, 168):
+                        for long_scale in (4.0, 5.9, 6.2):
+                            for short_scale in (6.0, 10.0):
+                                for take in (0.024, 0.045):
+                                    for flow_threshold in (0.0, 0.03):
+                                        flow_label = f"_fl{int(flow_threshold * 100)}" if flow_threshold else ""
+                                        name = (
+                                            f"fresh_state_trx_dual_mom_fast{fast_lookback}_reg{regime_lookback}_"
+                                            f"z{int(resid_z * 100):03d}_rz{int(regime_resid_z * 100):03d}_"
+                                            f"ret{int(min_return * 10000)}_h{hold}_"
+                                            f"ls{int(long_scale * 100)}_ss{int(short_scale * 10)}_"
+                                            f"tp{int(take * 10000)}{flow_label}"
+                                        )
+                                        specs[name] = FreshSpec(
+                                            name=name,
+                                            family="state_momentum_proxy",
+                                            lookback_bars=fast_lookback,
+                                            threshold=resid_z,
+                                            hold_bars=hold,
+                                            cooldown_bars=max(0, hold // 4),
+                                            stop_loss_pct=0.0,
+                                            take_profit_pct=take,
+                                            min_abs_return=min_return,
+                                            allow_long=True,
+                                            allow_short=True,
+                                            long_allocation_scale=long_scale,
+                                            short_allocation_scale=short_scale,
+                                            flow_lookback_bars=6,
+                                            flow_threshold=flow_threshold,
+                                            adaptive_lookback_bars=regime_lookback,
+                                            sharpe_rank_min=regime_resid_z,
+                                            primary_symbol="TRXUSDT",
+                                            secondary_symbol="ETHUSDT",
+                                        )
+    for lookback in (72, 168):
+        for threshold in (0.006, 0.012, 0.018):
+            for resid_gap in (0.50, 1.00):
+                for hold in (72, 120, 168):
+                    for hedge in (0.5, 1.0):
+                        for scale in (2.0, 3.0, 4.0):
+                            for take in (0.018, 0.024, 0.060):
+                                for flow_threshold in (0.0, 0.03):
+                                    flow_label = f"_fl{int(flow_threshold * 100)}" if flow_threshold else ""
+                                    name = (
+                                        f"fresh_state_trx_eth_spread_lb{lookback}_"
+                                        f"thr{int(threshold * 10000)}_zg{int(resid_gap * 100):03d}_"
+                                        f"h{hold}_hr{int(hedge * 100)}_sc{str(scale).replace('.', '')}_"
+                                        f"tp{int(take * 10000)}{flow_label}"
+                                    )
+                                    specs[name] = FreshSpec(
+                                        name=name,
+                                        family="state_relative_strength_spread",
+                                        lookback_bars=lookback,
+                                        threshold=threshold,
+                                        hold_bars=hold,
+                                        cooldown_bars=max(0, hold // 4),
+                                        stop_loss_pct=0.006,
+                                        take_profit_pct=take,
+                                        min_abs_return=threshold,
+                                        allow_long=True,
+                                        allow_short=True,
+                                        long_allocation_scale=scale,
+                                        short_allocation_scale=scale,
+                                        flow_lookback_bars=6,
+                                        flow_threshold=flow_threshold,
+                                        sharpe_rank_min=resid_gap,
+                                        primary_symbol="TRXUSDT",
+                                        secondary_symbol="ETHUSDT",
+                                        spread_hedge_ratio=hedge,
+                                    )
     calendar_pairs = (
         ("", ""),
         ("TRXUSDT", ""),
@@ -2466,8 +2765,9 @@ def _markdown(payload: dict[str, Any], rows: list[dict[str, Any]]) -> str:
         "",
         "- 기존 ETH shock-reversion incumbent/leadlag/context-wrapper를 쓰지 않고 raw-first data에서 새로 출발했다.",
         "- 신규 후보군: cross-sectional residual reversal, cross-sectional momentum, adaptive trend, cross-sectional Sharpe/rank selector, "
-        "funding-carry fade, funding+OI carry fade, taker-flow persistence/exhaustion, calendar rotation, "
-        "calendar-conditioned veto/day-window sleeves, TRX/ETH calendar spread, compression breakout.",
+        "funding-carry fade, funding+OI carry fade, taker-flow persistence/exhaustion, non-calendar TRX state-momentum proxy, "
+        "non-calendar TRX/ETH state-relative-strength spread, calendar rotation, calendar-conditioned veto/day-window sleeves, "
+        "TRX/ETH calendar spread, compression breakout.",
         "- Replay는 one-position, fee/slippage, 10% bar-volume fill cap, cooldown, stop/take/max-hold, 0.8% target allocation, $175 max order를 강제한다.",
         "",
         "## Gate policy",

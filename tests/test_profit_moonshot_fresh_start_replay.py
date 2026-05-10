@@ -417,6 +417,70 @@ def test_candidate_signal_calendar_rotation_selects_month_side() -> None:
     assert MODULE._candidate_signal(fixed_long, arrays, 1) == ("BTC/USDT", "LONG", "")
 
 
+def test_state_proxy_signals_do_not_depend_on_calendar_month() -> None:
+    arrays = {
+        "datetime": [
+            datetime(2026, 1, 15, tzinfo=UTC),
+            datetime(2026, 6, 15, tzinfo=UTC),
+        ],
+        "symbols": ("TRX/USDT", "ETH/USDT"),
+        "symbol_prefixes": ("trxusdt", "ethusdt"),
+        "trxusdt_close": np.array([20.0, 20.0]),
+        "ethusdt_close": np.array([100.0, 100.0]),
+        "trxusdt_ret_168h": np.array([0.025, 0.025]),
+        "ethusdt_ret_168h": np.array([-0.020, -0.020]),
+        "trxusdt_resid_z_168h": np.array([1.25, 1.25]),
+        "ethusdt_resid_z_168h": np.array([-1.10, -1.10]),
+        "trxusdt_flow_imbalance_6h": np.array([0.04, 0.04]),
+        "ethusdt_flow_imbalance_6h": np.array([-0.03, -0.03]),
+        "trxusdt_funding_ffill": np.array([0.0, 0.0]),
+        "ethusdt_funding_ffill": np.array([0.0, 0.0]),
+        "market_ret_168h": np.array([0.01, 0.01]),
+    }
+    spec = FreshSpec(
+        name="state_trx_momentum_proxy",
+        family="state_momentum_proxy",
+        lookback_bars=168,
+        threshold=1.0,
+        hold_bars=120,
+        cooldown_bars=0,
+        stop_loss_pct=0.0,
+        take_profit_pct=0.024,
+        min_abs_return=0.015,
+        primary_symbol="TRXUSDT",
+        secondary_symbol="ETHUSDT",
+        flow_lookback_bars=6,
+        flow_threshold=0.03,
+    )
+
+    assert MODULE._candidate_signal(spec, arrays, 0) == ("TRX/USDT", "LONG", "")
+    assert MODULE._candidate_signal(spec, arrays, 1) == ("TRX/USDT", "LONG", "")
+
+    spread = FreshSpec(
+        name="state_trx_eth_spread_proxy",
+        family="state_relative_strength_spread",
+        lookback_bars=168,
+        threshold=0.015,
+        hold_bars=120,
+        cooldown_bars=0,
+        stop_loss_pct=0.006,
+        take_profit_pct=0.024,
+        min_abs_return=0.015,
+        primary_symbol="TRXUSDT",
+        secondary_symbol="ETHUSDT",
+        flow_lookback_bars=6,
+        flow_threshold=0.03,
+        sharpe_rank_min=1.0,
+        spread_hedge_ratio=1.0,
+    )
+    assert MODULE._state_relative_strength_spread_signal(spread, arrays, 0) == (
+        "TRX/USDT",
+        "ETH/USDT",
+        "LONG_SPREAD",
+        "",
+    )
+
+
 def test_calendar_veto_and_day_window_do_not_promote_blocked_entries() -> None:
     arrays = {
         "datetime": [
@@ -764,6 +828,8 @@ def test_candidate_specs_include_external_inspired_families() -> None:
     assert "flow_imbalance_persistence" in families
     assert "flow_imbalance_exhaustion" in families
     assert "funding_oi_carry_fade" in families
+    assert "state_momentum_proxy" in families
+    assert "state_relative_strength_spread" in families
     assert "calendar_rotation" in families
     assert "residual_momentum" in families
     assert "adaptive_trend_fade" in families
@@ -777,6 +843,10 @@ def test_candidate_specs_include_external_inspired_families() -> None:
     names = {spec.name for spec in specs}
     assert any(name.startswith("fresh_calendar_trx_veto_") for name in names)
     assert any(name.startswith("fresh_calendar_trx_daywin_") for name in names)
+    assert any(name.startswith("fresh_state_trx_mom_") for name in names)
+    assert any(name.startswith("fresh_state_trx_longonly_") for name in names)
+    assert any(name.startswith("fresh_state_trx_dual_mom_") for name in names)
+    assert any(name.startswith("fresh_state_trx_eth_spread_") for name in names)
     assert any(name.startswith("fresh_pair_resid_revert_spread_") for name in names)
     assert any(name.startswith("fresh_pair_resid_mom_spread_") for name in names)
     assert any(name.startswith("fresh_compression_downside_short_") for name in names)

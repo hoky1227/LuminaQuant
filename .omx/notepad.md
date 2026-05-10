@@ -611,3 +611,10 @@ User corrected scope: do not only compare HYBRID. Need full universe: all saved 
 - Main artifacts: `docs/session_handoff_20260510_profit_moonshot_dynamic_restart_full_noncalendar.md`, `.omx/plans/profit_moonshot_dynamic_restart_full_noncalendar_result_20260510.md`, `var/reports/profit_moonshot_20260501/dynamic_restart_full_noncalendar_20260510/`, and regenerated research history under `docs/` + `var/reports/.../research_history/`.
 
 - 2026-05-10 research-history correction: expanded `docs/profit_moonshot_research_history_20260510.md` from May-only to `2026-03-01..2026-05-10` using semantic git commit history plus docs/.omx/var report artifacts. Regenerated counts: `git_commit_count=278`, `artifact_inventory_count=2384`, `inventory_count=2667`, `ledger_count=2666`, `strategy_chronology=15`; generator max RSS `192764 kB` (<8 GiB). Future sessions should treat March/April raw-first, exact-window, portfolio-superiority, regime/hybrid/live-equivalent work as predecessor context before repeating searches.
+
+## 2026-05-10 — calendar salvage state-proxy pass
+- Implemented non-calendar state proxy families in `scripts/research/replay_profit_moonshot_fresh_start.py`: `state_momentum_proxy`, `state_relative_strength_spread`, TRX long-only, and dual-momentum regime variants.
+- Tests added in `tests/test_profit_moonshot_fresh_start_replay.py` prove state proxy signals fire in January and June from identical causal state, not month buckets.
+- Combined replay: `var/reports/profit_moonshot_20260501/calendar_salvage_state_proxy_20260510/combined_replay/fresh_start_overhaul_replay_latest.json`; 7,092 specs, 0 success, 0 survivors, peak RSS 321.875 MiB.
+- Best research-only salvage seed: `fresh_state_trx_longonly_lb72_z050_ret60_h168_ls800_tp450`; train +0.50%, val +0.20%, OOS +1.09%, OOS MDD 0.22%, OOS Sharpe 4.94, OOS Sortino 6.14, 7 OOS trips.
+- Decision: keep as research seed, not live. Calendar-primary remains rejected; live requires current-base improvement + liquidation-aware validation.
