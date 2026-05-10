@@ -63,4 +63,5 @@ The forced current-base 5x is deployable under the relaxed tiny-liquidation rule
 - `ruff check .` passed.
 - `python -m compileall -q src scripts tests` passed.
 - `git diff --check` passed.
-- Lore commit/push and GitHub Actions are pending at this checkpoint.
+- Source Lore commit `ff1786da0233d2e39acab8c310e0cf3e2a2b0891` pushed to `private/main`.
+- GitHub Actions green for source commit: `private-ci` run `25619911800` success; `ci` run `25619911802` success.
