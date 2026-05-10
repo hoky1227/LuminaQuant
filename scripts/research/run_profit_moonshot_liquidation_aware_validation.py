@@ -1577,6 +1577,7 @@ def run_validation(args: argparse.Namespace) -> dict[str, Any]:
     payload = {
         "artifact_kind": "profit_moonshot_liquidation_aware_validation",
         "generated_at_utc": _utc_now_iso(),
+        "oos_end_date": oos_end.isoformat(),
         "policy": {
             "selection_inputs": ["train", "validation"],
             "locked_oos": "report_only_gate_only",

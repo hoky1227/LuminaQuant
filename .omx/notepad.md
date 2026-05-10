@@ -568,3 +568,11 @@ User corrected scope: do not only compare HYBRID. Need full universe: all saved 
 - Artifacts: .omx/plans/profit_moonshot_liquidation_tolerant_retune_20260510.md; docs/session_handoff_20260510_profit_moonshot_liquidation_tolerant_retune.md; var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/liquidation_tolerant_retune_20260510/liquidation_aware_current_base_latest.json.
 - Verification so far: targeted liquidation tests 9 passed; focused ruff passed; replay max RSS 267840 KiB. Full pytest/ruff/compileall/diff-check passed; source commit ff1786da0233d2e39acab8c310e0cf3e2a2b0891 pushed to private/main; GitHub Actions green: private-ci 25619911800 success, ci 25619911802 success.
 - Local full verification complete for liquidation-tolerant retune: targeted liquidation test 9 passed (max RSS 177180 KiB); replay max RSS 267840 KiB; full pytest 1229 passed in 303.57s/wall 4:38.21 (max RSS 2772424 KiB); ruff check ., compileall src/scripts/tests, and git diff --check passed. Source commit ff1786da0233d2e39acab8c310e0cf3e2a2b0891 pushed to private/main; GitHub Actions green: private-ci 25619911800 success, ci 25619911802 success.
+
+
+## 2026-05-10 profit moonshot live final selection
+- Final recommendation: promote liquidation-aware 5x direct candidate with zero liquidations across train/validation/OOS.
+- Winner: `fresh_portfolio_train_val_monthly_return_budget_fresh_calendar_trx_takeprofit_sethusdt_thr180_h168_ls620_ss120_tp600__fr_liquidation_aware_5x`; OOS return 14.6634%, MDD 1.9646%, return/MDD 7.463950, Sharpe 5.225099, Sortino 6.570666, smart Sortino 6.054326, Calmar 57.171779.
+- Current-base 2.3427x OOS return 6.4281%, MDD 0.9293%, return/MDD 6.9169. Forced 5x had one tiny validation liquidation; not selected because winner has zero liquidation.
+- Data cutoff 2026-05-09, memory peak 5069.789 MiB, targeted pytest 54 passed, full pytest 1236 passed, ruff/compileall/diff-check passed.
+- Artifacts under `var/reports/profit_moonshot_20260501/live_final_selection_20260510/`; handoff `docs/session_handoff_20260510_profit_moonshot_live_final_selection.md`.

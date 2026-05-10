@@ -1960,6 +1960,7 @@ def build_payload(args: argparse.Namespace) -> tuple[dict[str, Any], list[dict[s
     payload = {
         "artifact_kind": "profit_moonshot_fresh_portfolio_tuning",
         "generated_at_utc": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        "oos_end_date": oos_end.isoformat(),
         "candidate_csv": str(args.candidate_csv),
         "candidate_sleeve_count": len(pool),
         "portfolio_spec_count": len(portfolio_items),
