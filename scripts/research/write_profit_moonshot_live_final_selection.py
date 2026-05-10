@@ -27,6 +27,7 @@ MIN_OOS_SHARPE = 2.0
 MIN_OOS_SORTINO = 3.0
 MIN_OOS_SMART_SORTINO = 3.0
 MIN_OOS_CALMAR = 1.0
+LIVE_LEVERAGE_INTEGER_TOLERANCE = 1e-9
 DEFAULT_REQUIRED_SYMBOLS = "BTC/USDT,ETH/USDT,SOL/USDT,BNB/USDT,TRX/USDT"
 DEFAULT_OUTPUT_DIR = Path("var/reports/profit_moonshot_20260501/live_final_selection_20260510/final_decision")
 _TIME_RSS_RE = re.compile(r"Maximum resident set size \(kbytes\):\s*(\d+)")
@@ -52,6 +53,8 @@ METRICS_EXPLANATION = {
     "maximum_liquidation_event_drawdown": "Worst instantaneous drawdown at liquidation event.",
     "maximum_liquidation_equity_loss_fraction": "Worst equity fraction lost at liquidation event.",
     "account_wipeout": "Whether an event wiped the whole account; any true value blocks promotion.",
+    "live_integer_leverage": "Whether the row uses a positive integer leverage supported by the live venue/runner.",
+    "live_integer_source_leverage": "For hybrid rows, whether every active source candidate also uses positive integer leverage.",
     "memory_max_rss": "Maximum resident set size evidence; must stay below 8 GiB.",
 }
 
@@ -353,6 +356,13 @@ def _candidate_leverage(raw: Mapping[str, Any]) -> float:
     return _safe_float(raw.get("leverage"), CURRENT_BASE_LEVERAGE)
 
 
+def _live_integer_leverage_supported(leverage: Any) -> bool:
+    parsed = _safe_optional_float(leverage)
+    if parsed is None or parsed <= 0.0:
+        return False
+    return math.isclose(parsed, round(parsed), rel_tol=0.0, abs_tol=LIVE_LEVERAGE_INTEGER_TOLERANCE)
+
+
 def _candidate_sleeve_count(raw: Mapping[str, Any]) -> int:
     sleeves = raw.get("sleeves")
     if isinstance(sleeves, list | tuple):
@@ -432,6 +442,8 @@ def _current_base_oos(row: Mapping[str, Any] | None) -> dict[str, float]:
 def _decision_gates(
     *,
     kind: str,
+    leverage: float,
+    live_integer_source_leverage: bool,
     candidate_derived: bool,
     benchmark_only: bool,
     diagnostic_not_promoted: bool,
@@ -450,6 +462,7 @@ def _decision_gates(
     liquidation_count = int(_safe_float(liquidation.get("liquidation_count"), 0.0))
     selection_firewall = not bool(selection_policy.get("uses_locked_oos_for_selection"))
     locked_oos_ok = str(selection_policy.get("locked_oos") or "") == "report_only_gate_only"
+    live_integer_leverage = _live_integer_leverage_supported(leverage)
     evidence_available = bool(liquidation.get("evidence_available")) or kind in {"current_base", "direct_candidate"}
     margin_buffer_positive = margin_buffer is None or _safe_float(margin_buffer) > 0.0
     no_account_wipeout = not bool(liquidation.get("account_wipeout"))
@@ -474,6 +487,8 @@ def _decision_gates(
         and not bool(diagnostic_not_promoted)
         and selection_firewall
         and locked_oos_ok
+        and live_integer_leverage
+        and live_integer_source_leverage
         and liquidation_gate
         and performance_gate
     )
@@ -482,6 +497,8 @@ def _decision_gates(
         "deployable_candidate": deployable,
         "selection_firewall": selection_firewall,
         "locked_oos_report_gate_only": locked_oos_ok,
+        "live_integer_leverage": live_integer_leverage,
+        "live_integer_source_leverage": bool(live_integer_source_leverage),
         "liquidation_gate": liquidation_gate,
         "liquidation_evidence_available": evidence_available,
         "margin_buffer_positive": margin_buffer_positive,
@@ -517,8 +534,12 @@ def _comparison_row(
         score = formula_score
     policy = _selection_policy(raw, benchmark_only=benchmark_only)
     liquidation = _liquidation_summary(splits)
+    leverage = _candidate_leverage(raw)
+    live_integer_source_leverage = bool(raw.get("_live_integer_source_leverage", True))
     gates = _decision_gates(
         kind=kind,
+        leverage=leverage,
+        live_integer_source_leverage=live_integer_source_leverage,
         candidate_derived=candidate_derived,
         benchmark_only=benchmark_only,
         diagnostic_not_promoted=diagnostic_not_promoted,
@@ -533,7 +554,7 @@ def _comparison_row(
         "source_artifact": source_artifact,
         "candidate_derived": bool(candidate_derived),
         "benchmark_only": bool(benchmark_only),
-        "leverage": _candidate_leverage(raw),
+        "leverage": leverage,
         "sleeve_count": _candidate_sleeve_count(raw),
         "sleeves": list(raw.get("sleeves") or []),
         "selection_policy": policy,
@@ -543,6 +564,7 @@ def _comparison_row(
         "train_val_stability_formula": "frozen_weighted_train_validation_score_v1",
         "splits": splits,
         "liquidation": liquidation,
+        "non_integer_source_leverages": list(raw.get("_non_integer_source_leverages") or []),
         "decision_gates": gates,
         "rejection_reasons": _rejection_reasons(gates),
     }
@@ -611,6 +633,19 @@ def _candidate_portfolio_rows(candidate_payload: Mapping[str, Any]) -> list[tupl
 
 
 def _candidate_hybrid_rows(candidate_hybrid_payload: Mapping[str, Any]) -> list[tuple[str, str, Mapping[str, Any]]]:
+    def with_source_leverage_gate(raw: Mapping[str, Any]) -> dict[str, Any]:
+        out = dict(raw)
+        source_metrics = _as_dict(candidate_hybrid_payload.get("source_sleeve_metrics"))
+        source_ids = [str(item) for item in list(raw.get("sleeves") or []) if str(item)]
+        non_integer = []
+        for source_id in source_ids:
+            leverage = _safe_optional_float(_as_dict(source_metrics.get(source_id)).get("leverage"))
+            if not _live_integer_leverage_supported(leverage):
+                non_integer.append({"source_id": source_id, "leverage": leverage})
+        out["_non_integer_source_leverages"] = non_integer
+        out["_live_integer_source_leverage"] = bool(source_metrics) and bool(source_ids) and not non_integer
+        return out
+
     keys = [
         ("candidate_hybrid", "selected_by_train_validation"),
         ("candidate_hybrid", "best_candidate_hybrid"),
@@ -619,10 +654,10 @@ def _candidate_hybrid_rows(candidate_hybrid_payload: Mapping[str, Any]) -> list[
     for kind, key in keys:
         raw = candidate_hybrid_payload.get(key)
         if isinstance(raw, Mapping) and raw:
-            out.append((kind, key, raw))
+            out.append((kind, key, with_source_leverage_gate(raw)))
     for index, raw in enumerate(_as_list(candidate_hybrid_payload.get("tuning_results"))[:10], start=1):
         if isinstance(raw, Mapping) and raw:
-            out.append(("candidate_hybrid", f"tuning_results_top_{index:02d}", raw))
+            out.append(("candidate_hybrid", f"tuning_results_top_{index:02d}", with_source_leverage_gate(raw)))
     return out
 
 
@@ -946,6 +981,7 @@ def build_final_selection_payload(
             "uses_locked_oos_for_selection": False,
             "ranking_formula": "frozen_weighted_train_validation_score_v1",
             "benchmark_only_rows_ineligible": True,
+            "live_integer_leverage_required": True,
         },
         "data_cutoff": data_cutoff,
         "source_artifacts": sources,
@@ -955,6 +991,7 @@ def build_final_selection_payload(
         "memory_ledger": memory_ledger,
         "verification": {
             "required_tests": [
+                "tests/test_profit_moonshot_candidate_hybrid.py -q",
                 "tests/test_profit_moonshot_live_final_selection.py -q",
                 "tests/test_profit_moonshot_liquidation_aware_validation.py -q",
                 "full pytest",
@@ -975,6 +1012,7 @@ def _winner_summary(row: Mapping[str, Any] | None) -> dict[str, Any] | None:
         "name": row.get("name"),
         "kind": row.get("kind"),
         "source_artifact": row.get("source_artifact"),
+        "leverage": row.get("leverage"),
         "train_val_stability_score": row.get("train_val_stability_score"),
         "oos_total_return": _as_dict(_as_dict(row.get("splits")).get("oos")).get("total_return"),
         "oos_max_drawdown": _as_dict(_as_dict(row.get("splits")).get("oos")).get("max_drawdown"),
@@ -1016,8 +1054,8 @@ def build_markdown(payload: Mapping[str, Any]) -> str:
         "",
         "## Comparison rows",
         "",
-        "| Kind | Name | Candidate-derived | Benchmark-only | TV score | OOS return | OOS MDD | OOS return/MDD | Liq | Min buffer | Deployable |",
-        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| Kind | Name | Leverage | Integer live | Candidate-derived | Benchmark-only | TV score | OOS return | OOS MDD | OOS return/MDD | Liq | Min buffer | Deployable |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for row in list(payload.get("rows") or []):
         if not isinstance(row, Mapping):
@@ -1027,7 +1065,8 @@ def build_markdown(payload: Mapping[str, Any]) -> str:
         gates = _as_dict(row.get("decision_gates"))
         lines.append(
             "| "
-            f"`{row.get('kind')}` | `{row.get('name')}` | `{bool(row.get('candidate_derived'))}` | "
+            f"`{row.get('kind')}` | `{row.get('name')}` | {_fmt_float(row.get('leverage'))} | "
+            f"`{bool(gates.get('live_integer_leverage'))}` | `{bool(row.get('candidate_derived'))}` | "
             f"`{bool(row.get('benchmark_only'))}` | {_fmt_float(row.get('train_val_stability_score'))} | "
             f"{_fmt_pct(oos.get('total_return'))} | {_fmt_pct(oos.get('max_drawdown'))} | "
             f"{_fmt_float(oos.get('return_mdd'))} | {liq.get('liquidation_count')} | "

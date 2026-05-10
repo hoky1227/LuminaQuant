@@ -94,3 +94,10 @@ Decision impact: candidate-hybrid is useful comparison evidence, but it is **not
   - replay OOS return/MDD/R-MDD: `14.2041% / 1.9447% / 7.3039`
   - replay OOS Sharpe/Sortino/smart Sortino/Calmar: `5.1698 / 6.7407 / 6.2163 / 55.3698`
 - Final primary recommendation remains the zero-liquidation direct 5x candidate because it has no liquidation events and slightly better OOS return/R-MDD: `14.6634% / 7.4640`.
+
+## Integer-leverage live hardening addendum
+
+- Live implementation cannot use fractional leverage, so final selection now includes a hard `live_integer_leverage` gate. Fractional rows are retained only as benchmark/report rows and are rejected from `deployable_candidate`.
+- Candidate-derived hybrid was rebuilt with source-row integer leverage filtering before active hybrid construction. Current rebuilt hybrid had no fractional active sources: `22/22` considered source rows integer, `0` discarded; every active source input is `5x`.
+- Final decision JSON/MD were regenerated with `live_integer_leverage_required=true`; the selected winner remains the zero-liquidation direct `5x` candidate.
+- Verification after hardening: targeted tests `20 passed`; full pytest `1240 passed`; `ruff check .`, `python -m compileall -q .`, and `git diff --check` passed. Push/CI verification pending at this handoff line.

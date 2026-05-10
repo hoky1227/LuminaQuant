@@ -71,3 +71,11 @@ Implemented and ran the missing candidate-based hybrid lane (separate from legac
 - Added dynamic-weight liquidation replay for candidate-derived hybrid rows and made final selection prefer those replay metrics over allocator-only metrics.
 - Risk-pruned train/validation liquidation offender sleeves before final candidate-hybrid tuning; locked OOS stayed report-only/gate-only.
 - Result: candidate hybrid became deployable secondary evidence (`train/validation/OOS liq = 0/1/0`, tiny validation event only, min buffer > 9174, OOS replay +14.2041%, MDD 1.9447%, R/MDD 7.3039), but final selected live candidate remains the zero-liquidation direct 5x row.
+
+## Integer-leverage live hardening addendum
+
+- Added a hard live gate: `live_integer_leverage_required=true`; any non-positive, missing, or fractional leverage row is rejected from `deployable_candidate` with `live_integer_leverage=false`.
+- Rebuilt candidate-derived hybrid after adding source-row integer leverage filtering. The rebuilt artifact reports `source_candidate_rows=22`, `integer_leverage_source_candidate_rows=22`, `discarded_non_integer_leverage_source_count=0`; all 12 active hybrid source inputs are integer `5x`.
+- Fractional current-base `2.3427334297703024x` and fractional benchmark-like rows remain visible for comparison only, but cannot be selected for live deployment.
+- Winner unchanged: direct liquidation-aware `5x` candidate remains primary; candidate-derived hybrid remains secondary/contingency and now has integer-source-only provenance plus dynamic liquidation replay.
+- Latest local verification after hardening: targeted tests `20 passed`, full pytest `1240 passed`, `ruff check .` passed, `python -m compileall -q .` passed, `git diff --check` passed. Largest refreshed ledger RSS remains below 8 GiB.

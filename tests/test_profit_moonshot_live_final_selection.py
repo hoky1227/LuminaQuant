@@ -192,6 +192,11 @@ def _candidate_hybrid_payload_with_dynamic_replay() -> dict:
         "artifact_kind": "profit_moonshot_candidate_hybrid",
         "oos_end_date": "2026-05-10",
         "selected_by_train_validation": candidate_hybrid,
+        "source_sleeve_metrics": {
+            "a": {"leverage": 3.0},
+            "b": {"leverage": 3.0},
+            "c": {"leverage": 3.0},
+        },
         "memory_summary": {"peak_rss_bytes": 64 * 1024 * 1024, "under_8gib": True},
     }
 
@@ -314,6 +319,73 @@ def test_candidate_hybrid_uses_dynamic_replay_metrics_and_margin_evidence() -> N
     assert row["liquidation"]["evidence_available"] is True
     assert row["liquidation"]["minimum_margin_buffer"] == pytest.approx(1000.0)
     assert row["decision_gates"]["liquidation_gate"] is True
+    assert row["decision_gates"]["live_integer_source_leverage"] is True
+
+
+def test_candidate_hybrid_fractional_source_leverage_blocks_promotion() -> None:
+    refresh_payload = {
+        "ohlcv_results": [
+            {"symbol": "BTC/USDT", "after_ohlcv_max_utc": "2026-05-10T23:59:30Z"},
+            {"symbol": "ETH/USDT", "after_ohlcv_max_utc": "2026-05-10T23:59:30Z"},
+        ]
+    }
+    candidate_hybrid_payload = _candidate_hybrid_payload_with_dynamic_replay()
+    candidate_hybrid_payload["source_sleeve_metrics"]["b"]["leverage"] = 2.3427334297703024
+
+    payload = MODULE.build_final_selection_payload(
+        refresh_payload=refresh_payload,
+        candidate_portfolio_payload={},
+        liquidation_payload=_liquidation_payload(),
+        candidate_hybrid_payload=candidate_hybrid_payload,
+        legacy_hybrid_payload={},
+        source_artifacts={"candidate_hybrid_json": "candidate_hybrid.json"},
+        time_logs=[],
+        required_symbols=["BTC/USDT", "ETH/USDT"],
+    )
+
+    row = next(row for row in payload["rows"] if row["name"] == "candidate_hybrid_dynamic_replay")
+    assert row["decision_gates"]["live_integer_source_leverage"] is False
+    assert row["decision_gates"]["deployable_candidate"] is False
+    assert row["non_integer_source_leverages"][0]["source_id"] == "b"
+    assert row["non_integer_source_leverages"][0]["leverage"] == pytest.approx(2.3427334297703024)
+    assert "live_integer_source_leverage" in row["rejection_reasons"]
+
+
+def test_fractional_leverage_blocks_live_candidate_promotion() -> None:
+    refresh_payload = {
+        "ohlcv_results": [
+            {"symbol": "BTC/USDT", "after_ohlcv_max_utc": "2026-05-10T23:59:30Z"},
+            {"symbol": "ETH/USDT", "after_ohlcv_max_utc": "2026-05-10T23:59:30Z"},
+        ]
+    }
+    current_base = _candidate("current_base", train_return=0.10, val_return=0.08, oos_return=0.05)
+    current_base["leverage"] = 2.3427334297703024
+    fractional_candidate = _candidate("fractional_live_impossible", train_return=0.90, val_return=0.80, oos_return=0.70)
+    fractional_candidate["leverage"] = 2.3427334297703024
+    liquidation_payload = {
+        "artifact_kind": "profit_moonshot_liquidation_aware_validation",
+        "oos_end_date": "2026-05-10",
+        "current_base_reference_result": current_base,
+        "promoted_candidate": fractional_candidate,
+        "memory_summary": {"peak_rss_bytes": 256 * 1024 * 1024, "under_8gib": True},
+    }
+
+    payload = MODULE.build_final_selection_payload(
+        refresh_payload=refresh_payload,
+        candidate_portfolio_payload={},
+        liquidation_payload=liquidation_payload,
+        legacy_hybrid_payload={},
+        source_artifacts={},
+        time_logs=[],
+        required_symbols=["BTC/USDT", "ETH/USDT"],
+    )
+
+    row = next(row for row in payload["rows"] if row["name"] == "fractional_live_impossible")
+    assert row["decision_gates"]["live_integer_leverage"] is False
+    assert row["decision_gates"]["deployable_candidate"] is False
+    assert "live_integer_leverage" in row["rejection_reasons"]
+    assert payload["winner"] is None
+    assert payload["recommendation"] == "no_live_promotion"
 
 
 def test_account_wipeout_blocks_candidate_even_with_positive_return() -> None:

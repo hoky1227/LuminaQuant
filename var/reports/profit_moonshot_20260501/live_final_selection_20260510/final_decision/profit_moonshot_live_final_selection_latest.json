@@ -64,7 +64,7 @@
     "stale_artifact_oos_end_dates": [],
     "status": "derived_from_refresh"
   },
-  "generated_at_utc": "2026-05-10T08:24:46.224909Z",
+  "generated_at_utc": "2026-05-10T08:54:55.037988Z",
   "memory_ledger": {
     "entries": [
       {
@@ -84,8 +84,8 @@
       {
         "artifact_index": 3,
         "kind": "artifact_memory_summary",
-        "peak_rss_bytes": 58687488,
-        "peak_rss_mib": 55.969,
+        "peak_rss_bytes": 58490880,
+        "peak_rss_mib": 55.781,
         "under_8gib": true
       },
       {
@@ -112,8 +112,8 @@
       {
         "kind": "time_log",
         "path": "var/reports/profit_moonshot_20260501/live_final_selection_20260510/runner_evidence/candidate_hybrid_time.log",
-        "peak_rss_bytes": 338165760,
-        "peak_rss_mib": 322.5,
+        "peak_rss_bytes": 338100224,
+        "peak_rss_mib": 322.438,
         "under_8gib": true
       },
       {
@@ -140,36 +140,36 @@
       {
         "kind": "time_log",
         "path": "var/reports/profit_moonshot_20260501/live_final_selection_20260510/runner_evidence/targeted_tests_time.log",
-        "peak_rss_bytes": 182013952,
-        "peak_rss_mib": 173.582,
+        "peak_rss_bytes": 180764672,
+        "peak_rss_mib": 172.391,
         "under_8gib": true
       },
       {
         "kind": "time_log",
         "path": "var/reports/profit_moonshot_20260501/live_final_selection_20260510/runner_evidence/full_pytest_time.log",
-        "peak_rss_bytes": 2811043840,
-        "peak_rss_mib": 2680.82,
+        "peak_rss_bytes": 2817540096,
+        "peak_rss_mib": 2687.016,
         "under_8gib": true
       },
       {
         "kind": "time_log",
         "path": "var/reports/profit_moonshot_20260501/live_final_selection_20260510/runner_evidence/ruff_time.log",
-        "peak_rss_bytes": 26906624,
-        "peak_rss_mib": 25.66,
+        "peak_rss_bytes": 24961024,
+        "peak_rss_mib": 23.805,
         "under_8gib": true
       },
       {
         "kind": "time_log",
         "path": "var/reports/profit_moonshot_20260501/live_final_selection_20260510/runner_evidence/compileall_time.log",
-        "peak_rss_bytes": 15335424,
-        "peak_rss_mib": 14.625,
+        "peak_rss_bytes": 17039360,
+        "peak_rss_mib": 16.25,
         "under_8gib": true
       },
       {
         "kind": "time_log",
         "path": "var/reports/profit_moonshot_20260501/live_final_selection_20260510/runner_evidence/git_diff_check_time.log",
-        "peak_rss_bytes": 7094272,
-        "peak_rss_mib": 6.766,
+        "peak_rss_bytes": 7061504,
+        "peak_rss_mib": 6.734,
         "under_8gib": true
       }
     ],
@@ -184,6 +184,8 @@
     "downside_volatility": "Downside-only volatility where available.",
     "fills": "Executed fill count; helps detect starved or overactive sleeves.",
     "liquidation_count": "Number of liquidation events in the split.",
+    "live_integer_leverage": "Whether the row uses a positive integer leverage supported by the live venue/runner.",
+    "live_integer_source_leverage": "For hybrid rows, whether every active source candidate also uses positive integer leverage.",
     "max_drawdown": "Largest peak-to-trough equity loss in the split; lower is safer.",
     "maximum_liquidation_equity_loss_fraction": "Worst equity fraction lost at liquidation event.",
     "maximum_liquidation_event_drawdown": "Worst instantaneous drawdown at liquidation event.",
@@ -209,6 +211,7 @@
       "name": "current_base_tuple_liquidation_aware_2.34273x",
       "reasons": [
         "eligible_for_candidate_live_promotion",
+        "live_integer_leverage",
         "oos_return_beats_current_base",
         "oos_return_mdd_beats_current_base"
       ]
@@ -302,6 +305,7 @@
       "kind": "candidate_portfolio",
       "name": "fresh_portfolio_train_val_monthly_return_budget_fresh_calendar_trx_takeprofit_sethusdt_thr180_h168_ls620_ss120_tp600__fresh_calendar_trx_takeprofit_sethusdt_thr120_h120_ls620_ss120_tp600__fresh_pair_resid_revert_spread_lb24_z150_h120_sc10_st100_tp400_all__fresh_calendar_trx_takeprofit_sethusdt_thr180_h168_ls530_ss120_tp600",
       "reasons": [
+        "live_integer_leverage",
         "liquidation_gate",
         "liquidation_evidence_available",
         "oos_mdd_within_25pct_budget",
@@ -445,6 +449,7 @@
       "kind": "candidate_hybrid",
       "name": "candidate_hybrid_online_rank_02_candidate_hybrid_input_07_fresh_portfolio_train_val_monthly_",
       "reasons": [
+        "live_integer_source_leverage",
         "liquidation_gate",
         "liquidation_evidence_available"
       ]
@@ -455,6 +460,7 @@
       "kind": "candidate_hybrid",
       "name": "candidate_hybrid_online_rank_03_candidate_hybrid_input_08_fresh_portfolio_train_val_monthly_",
       "reasons": [
+        "live_integer_source_leverage",
         "liquidation_gate",
         "liquidation_evidence_available"
       ]
@@ -465,6 +471,7 @@
       "kind": "candidate_hybrid",
       "name": "candidate_hybrid_online_rank_04_candidate_hybrid_input_01_fresh_portfolio_train_val_monthly_",
       "reasons": [
+        "live_integer_source_leverage",
         "liquidation_gate",
         "liquidation_evidence_available"
       ]
@@ -475,6 +482,7 @@
       "kind": "candidate_hybrid",
       "name": "candidate_hybrid_online_rank_05_candidate_hybrid_input_07_fresh_portfolio_train_val_monthly_",
       "reasons": [
+        "live_integer_source_leverage",
         "liquidation_gate",
         "liquidation_evidence_available"
       ]
@@ -485,6 +493,7 @@
       "kind": "candidate_hybrid",
       "name": "candidate_hybrid_online_rank_06_candidate_hybrid_input_08_fresh_portfolio_train_val_monthly_",
       "reasons": [
+        "live_integer_source_leverage",
         "liquidation_gate",
         "liquidation_evidence_available"
       ]
@@ -495,6 +504,7 @@
       "kind": "candidate_hybrid",
       "name": "candidate_hybrid_online_rank_07_candidate_hybrid_input_01_fresh_portfolio_train_val_monthly_",
       "reasons": [
+        "live_integer_source_leverage",
         "liquidation_gate",
         "liquidation_evidence_available"
       ]
@@ -505,6 +515,7 @@
       "kind": "candidate_hybrid",
       "name": "candidate_hybrid_online_rank_08_candidate_hybrid_input_07_fresh_portfolio_train_val_monthly_",
       "reasons": [
+        "live_integer_source_leverage",
         "liquidation_gate",
         "liquidation_evidence_available"
       ]
@@ -515,6 +526,7 @@
       "kind": "candidate_hybrid",
       "name": "candidate_hybrid_online_rank_09_candidate_hybrid_input_08_fresh_portfolio_train_val_monthly_",
       "reasons": [
+        "live_integer_source_leverage",
         "liquidation_gate",
         "liquidation_evidence_available"
       ]
@@ -525,6 +537,7 @@
       "kind": "candidate_hybrid",
       "name": "candidate_hybrid_online_rank_10_candidate_hybrid_input_01_fresh_portfolio_train_val_monthly_",
       "reasons": [
+        "live_integer_source_leverage",
         "liquidation_gate",
         "liquidation_evidence_available"
       ]
@@ -536,6 +549,7 @@
       "name": "legacy_hybrid_benchmark",
       "reasons": [
         "eligible_for_candidate_live_promotion",
+        "live_integer_leverage",
         "liquidation_gate",
         "liquidation_evidence_available",
         "oos_return_beats_current_base",
@@ -573,6 +587,8 @@
         "eligible_for_candidate_live_promotion": false,
         "liquidation_evidence_available": true,
         "liquidation_gate": true,
+        "live_integer_leverage": false,
+        "live_integer_source_leverage": true,
         "locked_oos_report_gate_only": true,
         "margin_buffer_positive": true,
         "no_account_wipeout": true,
@@ -598,8 +614,10 @@
         "minimum_margin_ratio": 85.82393690949337
       },
       "name": "current_base_tuple_liquidation_aware_2.34273x",
+      "non_integer_source_leverages": [],
       "rejection_reasons": [
         "eligible_for_candidate_live_promotion",
+        "live_integer_leverage",
         "oos_return_beats_current_base",
         "oos_return_mdd_beats_current_base"
       ],
@@ -718,6 +736,8 @@
         "eligible_for_candidate_live_promotion": true,
         "liquidation_evidence_available": true,
         "liquidation_gate": true,
+        "live_integer_leverage": true,
+        "live_integer_source_leverage": true,
         "locked_oos_report_gate_only": true,
         "margin_buffer_positive": true,
         "no_account_wipeout": true,
@@ -743,6 +763,7 @@
         "minimum_margin_ratio": 41.121303823239366
       },
       "name": "fresh_portfolio_train_val_monthly_return_budget_fresh_calendar_trx_takeprofit_sethusdt_thr180_h168_ls620_ss120_tp600__fr_liquidation_aware_5x",
+      "non_integer_source_leverages": [],
       "rejection_reasons": [],
       "selection_policy": {
         "benchmark_only": false,
@@ -858,6 +879,8 @@
         "eligible_for_candidate_live_promotion": true,
         "liquidation_evidence_available": true,
         "liquidation_gate": true,
+        "live_integer_leverage": true,
+        "live_integer_source_leverage": true,
         "locked_oos_report_gate_only": true,
         "margin_buffer_positive": true,
         "no_account_wipeout": true,
@@ -883,6 +906,7 @@
         "minimum_margin_ratio": 37.18513090255406
       },
       "name": "current_base_tuple_liquidation_aware_5x",
+      "non_integer_source_leverages": [],
       "rejection_reasons": [],
       "selection_policy": {
         "benchmark_only": false,
@@ -999,6 +1023,8 @@
         "eligible_for_candidate_live_promotion": true,
         "liquidation_evidence_available": true,
         "liquidation_gate": true,
+        "live_integer_leverage": true,
+        "live_integer_source_leverage": true,
         "locked_oos_report_gate_only": true,
         "margin_buffer_positive": true,
         "no_account_wipeout": true,
@@ -1024,6 +1050,7 @@
         "minimum_margin_ratio": 65.68912687295045
       },
       "name": "fresh_portfolio_train_val_monthly_return_budget_fresh_calendar_trx_takeprofit_sethusdt_thr180_h120_ls620_ss120_tp600__fr_liquidation_aware_4x",
+      "non_integer_source_leverages": [],
       "rejection_reasons": [
         "oos_return_mdd_beats_current_base",
         "oos_sortino_ok",
@@ -1143,6 +1170,8 @@
         "eligible_for_candidate_live_promotion": true,
         "liquidation_evidence_available": true,
         "liquidation_gate": true,
+        "live_integer_leverage": true,
+        "live_integer_source_leverage": true,
         "locked_oos_report_gate_only": true,
         "margin_buffer_positive": true,
         "no_account_wipeout": true,
@@ -1168,6 +1197,7 @@
         "minimum_margin_ratio": 89.7697964042706
       },
       "name": "fresh_portfolio_train_val_monthly_return_budget_fresh_calendar_trx_takeprofit_sethusdt_thr180_h120_ls620_ss120_tp600__fr_liquidation_aware_3x",
+      "non_integer_source_leverages": [],
       "rejection_reasons": [
         "oos_return_beats_current_base",
         "oos_return_mdd_beats_current_base",
@@ -1288,6 +1318,8 @@
         "eligible_for_candidate_live_promotion": true,
         "liquidation_evidence_available": true,
         "liquidation_gate": true,
+        "live_integer_leverage": true,
+        "live_integer_source_leverage": true,
         "locked_oos_report_gate_only": true,
         "margin_buffer_positive": true,
         "no_account_wipeout": true,
@@ -1313,6 +1345,7 @@
         "minimum_margin_ratio": 137.91598818543892
       },
       "name": "fresh_portfolio_train_val_monthly_return_budget_fresh_calendar_trx_takeprofit_sethusdt_thr180_h120_ls620_ss120_tp600__fr_liquidation_aware_2x",
+      "non_integer_source_leverages": [],
       "rejection_reasons": [
         "oos_return_beats_current_base",
         "oos_return_mdd_beats_current_base",
@@ -1433,6 +1466,8 @@
         "eligible_for_candidate_live_promotion": true,
         "liquidation_evidence_available": true,
         "liquidation_gate": true,
+        "live_integer_leverage": true,
+        "live_integer_source_leverage": true,
         "locked_oos_report_gate_only": true,
         "margin_buffer_positive": true,
         "no_account_wipeout": true,
@@ -1458,6 +1493,7 @@
         "minimum_margin_ratio": 39.84705856702339
       },
       "name": "fresh_portfolio_train_val_monthly_return_budget_fresh_calendar_trx_takeprofit_sethusdt_thr180_h168_ls620_ss120_tp600__fr_liquidation_aware_4x",
+      "non_integer_source_leverages": [],
       "rejection_reasons": [
         "oos_return_mdd_beats_current_base"
       ],
@@ -1576,6 +1612,8 @@
         "eligible_for_candidate_live_promotion": true,
         "liquidation_evidence_available": true,
         "liquidation_gate": true,
+        "live_integer_leverage": true,
+        "live_integer_source_leverage": true,
         "locked_oos_report_gate_only": true,
         "margin_buffer_positive": true,
         "no_account_wipeout": true,
@@ -1601,6 +1639,7 @@
         "minimum_margin_ratio": 41.121303823239366
       },
       "name": "fresh_portfolio_train_val_monthly_return_budget_fresh_calendar_trx_takeprofit_sethusdt_thr120_h120_ls620_ss120_tp600__fr_liquidation_aware_5x",
+      "non_integer_source_leverages": [],
       "rejection_reasons": [],
       "selection_policy": {
         "benchmark_only": false,
@@ -1716,6 +1755,8 @@
         "eligible_for_candidate_live_promotion": true,
         "liquidation_evidence_available": true,
         "liquidation_gate": false,
+        "live_integer_leverage": true,
+        "live_integer_source_leverage": true,
         "locked_oos_report_gate_only": true,
         "margin_buffer_positive": true,
         "no_account_wipeout": true,
@@ -1741,6 +1782,7 @@
         "minimum_margin_ratio": 51.23872881839206
       },
       "name": "fresh_portfolio_train_val_monthly_return_budget_fresh_calendar_trx_takeprofit_sethusdt_thr180_h120_ls620_ss120_tp600__fr_liquidation_aware_5x",
+      "non_integer_source_leverages": [],
       "rejection_reasons": [
         "liquidation_gate",
         "tiny_liquidation_tolerance_ok",
@@ -1862,6 +1904,8 @@
         "eligible_for_candidate_live_promotion": true,
         "liquidation_evidence_available": false,
         "liquidation_gate": false,
+        "live_integer_leverage": true,
+        "live_integer_source_leverage": true,
         "locked_oos_report_gate_only": true,
         "margin_buffer_positive": true,
         "no_account_wipeout": true,
@@ -1887,6 +1931,7 @@
         "minimum_margin_ratio": null
       },
       "name": "fresh_portfolio_train_val_monthly_return_budget_fresh_calendar_trx_takeprofit_sethusdt_thr180_h168_ls620_ss120_tp600__fresh_calendar_trx_takeprofit_sethusdt_thr180_h120_ls620_ss120_tp600__fresh_calendar_trx_takeprofit_sethusdt_thr180_h168_ls600_ss120_tp600__fresh_calendar_trx_takeprofit_sethusdt_thr180_h120_ls600_ss120_tp600__fresh_pair_resid_revert_spread_lb24_z150_h120_sc10_st100_tp400_all",
+      "non_integer_source_leverages": [],
       "rejection_reasons": [
         "liquidation_gate",
         "liquidation_evidence_available",
@@ -2009,6 +2054,8 @@
         "eligible_for_candidate_live_promotion": true,
         "liquidation_evidence_available": false,
         "liquidation_gate": false,
+        "live_integer_leverage": false,
+        "live_integer_source_leverage": true,
         "locked_oos_report_gate_only": true,
         "margin_buffer_positive": true,
         "no_account_wipeout": true,
@@ -2034,7 +2081,9 @@
         "minimum_margin_ratio": null
       },
       "name": "fresh_portfolio_train_val_monthly_return_budget_fresh_calendar_trx_takeprofit_sethusdt_thr180_h168_ls620_ss120_tp600__fresh_calendar_trx_takeprofit_sethusdt_thr120_h120_ls620_ss120_tp600__fresh_pair_resid_revert_spread_lb24_z150_h120_sc10_st100_tp400_all__fresh_calendar_trx_takeprofit_sethusdt_thr180_h168_ls530_ss120_tp600",
+      "non_integer_source_leverages": [],
       "rejection_reasons": [
+        "live_integer_leverage",
         "liquidation_gate",
         "liquidation_evidence_available",
         "oos_mdd_within_25pct_budget",
@@ -2160,6 +2209,8 @@
         "eligible_for_candidate_live_promotion": true,
         "liquidation_evidence_available": false,
         "liquidation_gate": false,
+        "live_integer_leverage": true,
+        "live_integer_source_leverage": true,
         "locked_oos_report_gate_only": true,
         "margin_buffer_positive": true,
         "no_account_wipeout": true,
@@ -2185,6 +2236,7 @@
         "minimum_margin_ratio": null
       },
       "name": "fresh_portfolio_train_val_monthly_return_budget_fresh_calendar_trx_takeprofit_sethusdt_thr150_h120_ls620_ss120_tp600__fresh_calendar_trx_takeprofit_sethusdt_thr120_h120_ls620_ss120_tp600__fresh_calendar_trx_takeprofit_sweakest_thr120_h120_ls620_ss120_tp450__fresh_pair_resid_revert_spread_lb24_z150_h120_sc10_st100_tp400_all",
+      "non_integer_source_leverages": [],
       "rejection_reasons": [
         "liquidation_gate",
         "liquidation_evidence_available",
@@ -2306,6 +2358,8 @@
         "eligible_for_candidate_live_promotion": true,
         "liquidation_evidence_available": false,
         "liquidation_gate": false,
+        "live_integer_leverage": true,
+        "live_integer_source_leverage": true,
         "locked_oos_report_gate_only": true,
         "margin_buffer_positive": true,
         "no_account_wipeout": true,
@@ -2331,6 +2385,7 @@
         "minimum_margin_ratio": null
       },
       "name": "fresh_portfolio_train_val_monthly_return_budget_fresh_calendar_trx_takeprofit_sethusdt_thr150_h120_ls620_ss120_tp600__fresh_calendar_trx_takeprofit_sethusdt_thr120_h120_ls620_ss120_tp600__fresh_calendar_trx_takeprofit_sweakest_thr120_h120_ls620_ss120_tp450",
+      "non_integer_source_leverages": [],
       "rejection_reasons": [
         "liquidation_gate",
         "liquidation_evidence_available",
@@ -2451,6 +2506,8 @@
         "eligible_for_candidate_live_promotion": true,
         "liquidation_evidence_available": false,
         "liquidation_gate": false,
+        "live_integer_leverage": true,
+        "live_integer_source_leverage": true,
         "locked_oos_report_gate_only": true,
         "margin_buffer_positive": true,
         "no_account_wipeout": true,
@@ -2476,6 +2533,7 @@
         "minimum_margin_ratio": null
       },
       "name": "fresh_portfolio_train_val_monthly_return_budget_fresh_calendar_trx_takeprofit_sethusdt_thr180_h168_ls620_ss120_tp600__fresh_calendar_trx_takeprofit_sethusdt_thr150_h168_ls620_ss120_tp600__fresh_calendar_trx_takeprofit_sethusdt_thr120_h120_ls620_ss120_tp600__fresh_pair_resid_revert_spread_lb24_z150_h120_sc10_st100_tp400_all",
+      "non_integer_source_leverages": [],
       "rejection_reasons": [
         "liquidation_gate",
         "liquidation_evidence_available",
@@ -2596,6 +2654,8 @@
         "eligible_for_candidate_live_promotion": true,
         "liquidation_evidence_available": false,
         "liquidation_gate": false,
+        "live_integer_leverage": true,
+        "live_integer_source_leverage": true,
         "locked_oos_report_gate_only": true,
         "margin_buffer_positive": true,
         "no_account_wipeout": true,
@@ -2621,6 +2681,7 @@
         "minimum_margin_ratio": null
       },
       "name": "fresh_portfolio_train_val_monthly_return_budget_fresh_calendar_trx_takeprofit_sethusdt_thr150_h168_ls620_ss120_tp600__fresh_calendar_trx_takeprofit_sethusdt_thr120_h120_ls620_ss120_tp600__fresh_calendar_trx_takeprofit_sweakest_thr120_h120_ls620_ss120_tp450",
+      "non_integer_source_leverages": [],
       "rejection_reasons": [
         "liquidation_gate",
         "liquidation_evidence_available",
@@ -2741,6 +2802,8 @@
         "eligible_for_candidate_live_promotion": true,
         "liquidation_evidence_available": false,
         "liquidation_gate": false,
+        "live_integer_leverage": true,
+        "live_integer_source_leverage": true,
         "locked_oos_report_gate_only": true,
         "margin_buffer_positive": true,
         "no_account_wipeout": true,
@@ -2766,6 +2829,7 @@
         "minimum_margin_ratio": null
       },
       "name": "fresh_portfolio_train_val_monthly_return_budget_fresh_calendar_trx_takeprofit_sethusdt_thr150_h168_ls620_ss120_tp600__fresh_calendar_trx_takeprofit_sethusdt_thr120_h120_ls620_ss120_tp600__fresh_calendar_trx_takeprofit_sethusdt_thr180_h168_ls600_ss120_tp600__fresh_pair_resid_revert_spread_lb24_z150_h120_sc10_st100_tp400_all",
+      "non_integer_source_leverages": [],
       "rejection_reasons": [
         "liquidation_gate",
         "liquidation_evidence_available",
@@ -2887,6 +2951,8 @@
         "eligible_for_candidate_live_promotion": true,
         "liquidation_evidence_available": false,
         "liquidation_gate": false,
+        "live_integer_leverage": true,
+        "live_integer_source_leverage": true,
         "locked_oos_report_gate_only": true,
         "margin_buffer_positive": true,
         "no_account_wipeout": true,
@@ -2912,6 +2978,7 @@
         "minimum_margin_ratio": null
       },
       "name": "fresh_portfolio_train_val_monthly_return_budget_fresh_calendar_trx_takeprofit_sethusdt_thr150_h168_ls620_ss120_tp600__fresh_calendar_trx_takeprofit_sethusdt_thr120_h120_ls620_ss120_tp600__fresh_calendar_trx_takeprofit_sethusdt_thr180_h168_ls590_ss120_tp600__fresh_pair_resid_revert_spread_lb24_z150_h120_sc10_st100_tp400_all",
+      "non_integer_source_leverages": [],
       "rejection_reasons": [
         "liquidation_gate",
         "liquidation_evidence_available",
@@ -3033,6 +3100,8 @@
         "eligible_for_candidate_live_promotion": true,
         "liquidation_evidence_available": false,
         "liquidation_gate": false,
+        "live_integer_leverage": true,
+        "live_integer_source_leverage": true,
         "locked_oos_report_gate_only": true,
         "margin_buffer_positive": true,
         "no_account_wipeout": true,
@@ -3058,6 +3127,7 @@
         "minimum_margin_ratio": null
       },
       "name": "fresh_portfolio_train_val_monthly_return_budget_fresh_calendar_trx_takeprofit_sethusdt_thr150_h168_ls620_ss120_tp600__fresh_calendar_trx_takeprofit_sethusdt_thr120_h120_ls620_ss120_tp600__fresh_calendar_trx_takeprofit_sethusdt_thr180_h168_ls580_ss120_tp600__fresh_pair_resid_revert_spread_lb24_z150_h120_sc10_st100_tp400_all",
+      "non_integer_source_leverages": [],
       "rejection_reasons": [
         "liquidation_gate",
         "liquidation_evidence_available",
@@ -3179,6 +3249,8 @@
         "eligible_for_candidate_live_promotion": true,
         "liquidation_evidence_available": false,
         "liquidation_gate": false,
+        "live_integer_leverage": true,
+        "live_integer_source_leverage": true,
         "locked_oos_report_gate_only": true,
         "margin_buffer_positive": true,
         "no_account_wipeout": true,
@@ -3204,6 +3276,7 @@
         "minimum_margin_ratio": null
       },
       "name": "fresh_portfolio_train_val_monthly_return_budget_fresh_calendar_trx_takeprofit_sethusdt_thr180_h168_ls620_ss120_tp600__fresh_calendar_trx_takeprofit_sethusdt_thr150_h168_ls620_ss120_tp600__fresh_calendar_trx_takeprofit_sethusdt_thr120_h120_ls620_ss120_tp600",
+      "non_integer_source_leverages": [],
       "rejection_reasons": [
         "liquidation_gate",
         "liquidation_evidence_available",
@@ -3324,6 +3397,8 @@
         "eligible_for_candidate_live_promotion": true,
         "liquidation_evidence_available": false,
         "liquidation_gate": false,
+        "live_integer_leverage": true,
+        "live_integer_source_leverage": true,
         "locked_oos_report_gate_only": true,
         "margin_buffer_positive": true,
         "no_account_wipeout": true,
@@ -3349,6 +3424,7 @@
         "minimum_margin_ratio": null
       },
       "name": "fresh_portfolio_train_val_monthly_return_budget_fresh_calendar_trx_takeprofit_sethusdt_thr150_h168_ls620_ss120_tp600__fresh_calendar_trx_takeprofit_sethusdt_thr120_h120_ls620_ss120_tp600__fresh_calendar_trx_takeprofit_sethusdt_thr180_h168_ls560_ss120_tp600__fresh_pair_resid_revert_spread_lb24_z150_h120_sc10_st100_tp400_all",
+      "non_integer_source_leverages": [],
       "rejection_reasons": [
         "liquidation_gate",
         "liquidation_evidence_available",
@@ -3470,6 +3546,8 @@
         "eligible_for_candidate_live_promotion": true,
         "liquidation_evidence_available": false,
         "liquidation_gate": false,
+        "live_integer_leverage": true,
+        "live_integer_source_leverage": true,
         "locked_oos_report_gate_only": true,
         "margin_buffer_positive": true,
         "no_account_wipeout": true,
@@ -3495,6 +3573,7 @@
         "minimum_margin_ratio": null
       },
       "name": "fresh_portfolio_train_val_monthly_return_budget_fresh_calendar_trx_takeprofit_sethusdt_thr150_h168_ls620_ss120_tp600__fresh_calendar_trx_takeprofit_sethusdt_thr120_h120_ls620_ss120_tp600__fresh_calendar_trx_takeprofit_sethusdt_thr180_h168_ls600_ss120_tp600",
+      "non_integer_source_leverages": [],
       "rejection_reasons": [
         "liquidation_gate",
         "liquidation_evidence_available",
@@ -3615,6 +3694,8 @@
         "eligible_for_candidate_live_promotion": true,
         "liquidation_evidence_available": true,
         "liquidation_gate": true,
+        "live_integer_leverage": true,
+        "live_integer_source_leverage": true,
         "locked_oos_report_gate_only": true,
         "margin_buffer_positive": true,
         "no_account_wipeout": true,
@@ -3640,6 +3721,7 @@
         "minimum_margin_ratio": 36.836002996298845
       },
       "name": "candidate_hybrid_online_rank_01_candidate_hybrid_input_01_fresh_portfolio_train_val_monthly_",
+      "non_integer_source_leverages": [],
       "rejection_reasons": [],
       "selection_policy": {
         "benchmark_only": false,
@@ -3764,6 +3846,8 @@
         "eligible_for_candidate_live_promotion": true,
         "liquidation_evidence_available": false,
         "liquidation_gate": false,
+        "live_integer_leverage": true,
+        "live_integer_source_leverage": false,
         "locked_oos_report_gate_only": true,
         "margin_buffer_positive": true,
         "no_account_wipeout": true,
@@ -3789,7 +3873,9 @@
         "minimum_margin_ratio": null
       },
       "name": "candidate_hybrid_online_rank_02_candidate_hybrid_input_07_fresh_portfolio_train_val_monthly_",
+      "non_integer_source_leverages": [],
       "rejection_reasons": [
+        "live_integer_source_leverage",
         "liquidation_gate",
         "liquidation_evidence_available"
       ],
@@ -3903,6 +3989,8 @@
         "eligible_for_candidate_live_promotion": true,
         "liquidation_evidence_available": false,
         "liquidation_gate": false,
+        "live_integer_leverage": true,
+        "live_integer_source_leverage": false,
         "locked_oos_report_gate_only": true,
         "margin_buffer_positive": true,
         "no_account_wipeout": true,
@@ -3928,7 +4016,9 @@
         "minimum_margin_ratio": null
       },
       "name": "candidate_hybrid_online_rank_03_candidate_hybrid_input_08_fresh_portfolio_train_val_monthly_",
+      "non_integer_source_leverages": [],
       "rejection_reasons": [
+        "live_integer_source_leverage",
         "liquidation_gate",
         "liquidation_evidence_available"
       ],
@@ -4042,6 +4132,8 @@
         "eligible_for_candidate_live_promotion": true,
         "liquidation_evidence_available": false,
         "liquidation_gate": false,
+        "live_integer_leverage": true,
+        "live_integer_source_leverage": false,
         "locked_oos_report_gate_only": true,
         "margin_buffer_positive": true,
         "no_account_wipeout": true,
@@ -4067,7 +4159,9 @@
         "minimum_margin_ratio": null
       },
       "name": "candidate_hybrid_online_rank_04_candidate_hybrid_input_01_fresh_portfolio_train_val_monthly_",
+      "non_integer_source_leverages": [],
       "rejection_reasons": [
+        "live_integer_source_leverage",
         "liquidation_gate",
         "liquidation_evidence_available"
       ],
@@ -4181,6 +4275,8 @@
         "eligible_for_candidate_live_promotion": true,
         "liquidation_evidence_available": false,
         "liquidation_gate": false,
+        "live_integer_leverage": true,
+        "live_integer_source_leverage": false,
         "locked_oos_report_gate_only": true,
         "margin_buffer_positive": true,
         "no_account_wipeout": true,
@@ -4206,7 +4302,9 @@
         "minimum_margin_ratio": null
       },
       "name": "candidate_hybrid_online_rank_05_candidate_hybrid_input_07_fresh_portfolio_train_val_monthly_",
+      "non_integer_source_leverages": [],
       "rejection_reasons": [
+        "live_integer_source_leverage",
         "liquidation_gate",
         "liquidation_evidence_available"
       ],
@@ -4320,6 +4418,8 @@
         "eligible_for_candidate_live_promotion": true,
         "liquidation_evidence_available": false,
         "liquidation_gate": false,
+        "live_integer_leverage": true,
+        "live_integer_source_leverage": false,
         "locked_oos_report_gate_only": true,
         "margin_buffer_positive": true,
         "no_account_wipeout": true,
@@ -4345,7 +4445,9 @@
         "minimum_margin_ratio": null
       },
       "name": "candidate_hybrid_online_rank_06_candidate_hybrid_input_08_fresh_portfolio_train_val_monthly_",
+      "non_integer_source_leverages": [],
       "rejection_reasons": [
+        "live_integer_source_leverage",
         "liquidation_gate",
         "liquidation_evidence_available"
       ],
@@ -4459,6 +4561,8 @@
         "eligible_for_candidate_live_promotion": true,
         "liquidation_evidence_available": false,
         "liquidation_gate": false,
+        "live_integer_leverage": true,
+        "live_integer_source_leverage": false,
         "locked_oos_report_gate_only": true,
         "margin_buffer_positive": true,
         "no_account_wipeout": true,
@@ -4484,7 +4588,9 @@
         "minimum_margin_ratio": null
       },
       "name": "candidate_hybrid_online_rank_07_candidate_hybrid_input_01_fresh_portfolio_train_val_monthly_",
+      "non_integer_source_leverages": [],
       "rejection_reasons": [
+        "live_integer_source_leverage",
         "liquidation_gate",
         "liquidation_evidence_available"
       ],
@@ -4598,6 +4704,8 @@
         "eligible_for_candidate_live_promotion": true,
         "liquidation_evidence_available": false,
         "liquidation_gate": false,
+        "live_integer_leverage": true,
+        "live_integer_source_leverage": false,
         "locked_oos_report_gate_only": true,
         "margin_buffer_positive": true,
         "no_account_wipeout": true,
@@ -4623,7 +4731,9 @@
         "minimum_margin_ratio": null
       },
       "name": "candidate_hybrid_online_rank_08_candidate_hybrid_input_07_fresh_portfolio_train_val_monthly_",
+      "non_integer_source_leverages": [],
       "rejection_reasons": [
+        "live_integer_source_leverage",
         "liquidation_gate",
         "liquidation_evidence_available"
       ],
@@ -4737,6 +4847,8 @@
         "eligible_for_candidate_live_promotion": true,
         "liquidation_evidence_available": false,
         "liquidation_gate": false,
+        "live_integer_leverage": true,
+        "live_integer_source_leverage": false,
         "locked_oos_report_gate_only": true,
         "margin_buffer_positive": true,
         "no_account_wipeout": true,
@@ -4762,7 +4874,9 @@
         "minimum_margin_ratio": null
       },
       "name": "candidate_hybrid_online_rank_09_candidate_hybrid_input_08_fresh_portfolio_train_val_monthly_",
+      "non_integer_source_leverages": [],
       "rejection_reasons": [
+        "live_integer_source_leverage",
         "liquidation_gate",
         "liquidation_evidence_available"
       ],
@@ -4876,6 +4990,8 @@
         "eligible_for_candidate_live_promotion": true,
         "liquidation_evidence_available": false,
         "liquidation_gate": false,
+        "live_integer_leverage": true,
+        "live_integer_source_leverage": false,
         "locked_oos_report_gate_only": true,
         "margin_buffer_positive": true,
         "no_account_wipeout": true,
@@ -4901,7 +5017,9 @@
         "minimum_margin_ratio": null
       },
       "name": "candidate_hybrid_online_rank_10_candidate_hybrid_input_01_fresh_portfolio_train_val_monthly_",
+      "non_integer_source_leverages": [],
       "rejection_reasons": [
+        "live_integer_source_leverage",
         "liquidation_gate",
         "liquidation_evidence_available"
       ],
@@ -5015,6 +5133,8 @@
         "eligible_for_candidate_live_promotion": false,
         "liquidation_evidence_available": false,
         "liquidation_gate": false,
+        "live_integer_leverage": false,
+        "live_integer_source_leverage": true,
         "locked_oos_report_gate_only": true,
         "margin_buffer_positive": true,
         "no_account_wipeout": true,
@@ -5040,8 +5160,10 @@
         "minimum_margin_ratio": null
       },
       "name": "legacy_hybrid_benchmark",
+      "non_integer_source_leverages": [],
       "rejection_reasons": [
         "eligible_for_candidate_live_promotion",
+        "live_integer_leverage",
         "liquidation_gate",
         "liquidation_evidence_available",
         "oos_return_beats_current_base",
@@ -5160,6 +5282,8 @@
         "eligible_for_candidate_live_promotion": false,
         "liquidation_evidence_available": false,
         "liquidation_gate": false,
+        "live_integer_leverage": true,
+        "live_integer_source_leverage": true,
         "locked_oos_report_gate_only": true,
         "margin_buffer_positive": true,
         "no_account_wipeout": true,
@@ -5185,6 +5309,7 @@
         "minimum_margin_ratio": null
       },
       "name": "cash",
+      "non_integer_source_leverages": [],
       "rejection_reasons": [
         "eligible_for_candidate_live_promotion",
         "liquidation_gate",
@@ -5300,6 +5425,7 @@
   ],
   "selection_policy": {
     "benchmark_only_rows_ineligible": true,
+    "live_integer_leverage_required": true,
     "locked_oos": "report_only_gate_only",
     "ranking_formula": "frozen_weighted_train_validation_score_v1",
     "selection_inputs": [
@@ -5319,6 +5445,7 @@
   "verification": {
     "finalized": false,
     "required_tests": [
+      "tests/test_profit_moonshot_candidate_hybrid.py -q",
       "tests/test_profit_moonshot_live_final_selection.py -q",
       "tests/test_profit_moonshot_liquidation_aware_validation.py -q",
       "full pytest",
@@ -5330,6 +5457,7 @@
   },
   "winner": {
     "kind": "direct_candidate",
+    "leverage": 5.0,
     "liquidation_count": 0,
     "minimum_margin_buffer": 8514.066649257515,
     "name": "fresh_portfolio_train_val_monthly_return_budget_fresh_calendar_trx_takeprofit_sethusdt_thr180_h168_ls620_ss120_tp600__fr_liquidation_aware_5x",

@@ -63,3 +63,10 @@ Use **`fresh_portfolio_train_val_monthly_return_budget_fresh_calendar_trx_takepr
 - Keep locked-OOS gate-only/report-only; never optimize selection using OOS.
 - Forced current-base 5x is acceptable only under the relaxed tiny-liquidation rule, but the recommended live candidate has stricter zero-liquidation evidence.
 - Use a staged live rollout with ordinary operational kill-switches; this repository run is backtest/replay evidence, not a live order instruction.
+
+## Integer-leverage live hardening addendum
+
+- Live deployability now requires positive integer leverage. The final decision artifact records `live_integer_leverage_required=true`; fractional/missing leverage candidates are rejected via `live_integer_leverage=false`.
+- Candidate-derived hybrid was rebuilt after adding source-row integer leverage filtering. Rebuilt provenance: `source_candidate_rows=22`, `integer_leverage_source_candidate_rows=22`, `discarded_non_integer_leverage_source_count=0`; all active candidate-hybrid sources are integer `5x`.
+- Final primary remains the direct zero-liquidation `5x` candidate. The candidate-derived hybrid remains a secondary/contingency row with integer-source-only provenance and dynamic liquidation replay evidence.
+- Latest local verification: targeted tests `20 passed`; full pytest `1240 passed`; ruff/compileall/git-diff-check passed.

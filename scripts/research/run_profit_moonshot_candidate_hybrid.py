@@ -51,6 +51,7 @@ DEFAULT_MARKET_ROOT = REPO_ROOT / "data/market_parquet"
 DEFAULT_SYMBOLS = "BTC/USDT,ETH/USDT,SOL/USDT,BNB/USDT,TRX/USDT"
 RUN_NAME = "profit_moonshot_candidate_hybrid"
 STARTING_EQUITY = 10_000.0
+LIVE_LEVERAGE_INTEGER_TOLERANCE = 1e-9
 
 
 def _load_module(path: Path, name: str) -> Any:
@@ -87,6 +88,37 @@ def _safe_optional_float(value: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     return float(parsed) if math.isfinite(parsed) else None
+
+
+def _live_integer_leverage_supported(value: Any) -> bool:
+    parsed = _safe_optional_float(value)
+    if parsed is None or parsed <= 0.0:
+        return False
+    return math.isclose(parsed, round(parsed), rel_tol=0.0, abs_tol=LIVE_LEVERAGE_INTEGER_TOLERANCE)
+
+
+def _discarded_non_integer_leverage_source(row: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "name": str(row.get("name") or ""),
+        "source_kind": str(row.get("_candidate_hybrid_source_kind") or ""),
+        "source_key": str(row.get("_candidate_hybrid_source_key") or ""),
+        "source_artifact": str(row.get("_candidate_hybrid_source_artifact") or ""),
+        "leverage": _safe_optional_float(row.get("leverage")),
+        "reason": "non_integer_or_missing_live_leverage",
+    }
+
+
+def _partition_live_integer_candidate_rows(
+    candidate_rows: Iterable[Mapping[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    accepted: list[dict[str, Any]] = []
+    discarded: list[dict[str, Any]] = []
+    for row in candidate_rows:
+        if _live_integer_leverage_supported(row.get("leverage")):
+            accepted.append(dict(row))
+        else:
+            discarded.append(_discarded_non_integer_leverage_source(row))
+    return accepted, discarded
 
 
 def _utc_now_iso() -> str:
@@ -1045,6 +1077,10 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
         liquidation_payload=liquidation_payload,
         max_rows=int(args.max_candidate_rows),
     )
+    raw_source_candidate_row_count = len(candidate_rows)
+    candidate_rows, discarded_non_integer_leverage_sources = _partition_live_integer_candidate_rows(candidate_rows)
+    if not candidate_rows:
+        raise RuntimeError("all candidate-hybrid source rows were discarded by integer-leverage live gate")
     required_sleeves = sorted({name for row in candidate_rows for name in list(row.get("sleeves") or [])})
     missing_sleeves = [name for name in required_sleeves if name not in specs_by_name]
     available_sleeves = [name for name in required_sleeves if name in specs_by_name]
@@ -1228,7 +1264,11 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
         "candidate_basis": {
             "candidate_portfolio_json": str(args.candidate_portfolio_json),
             "liquidation_json": str(args.liquidation_json),
-            "source_candidate_rows": len(candidate_rows),
+            "source_candidate_rows": raw_source_candidate_row_count,
+            "integer_leverage_source_candidate_rows": len(candidate_rows),
+            "live_integer_leverage_required": True,
+            "discarded_non_integer_leverage_source_count": len(discarded_non_integer_leverage_sources),
+            "discarded_non_integer_leverage_sources": discarded_non_integer_leverage_sources,
             "available_sleeve_count": len(available_sleeves),
             "missing_sleeves": missing_sleeves,
             "active_hybrid_input_count": len(active),
@@ -1291,6 +1331,7 @@ def _markdown(payload: Mapping[str, Any]) -> str:
     replay_oos = dict(dict(splits.get("oos") or {}).get("dynamic_liquidation_replay_metrics") or {})
     liquidation_replay = dict(payload.get("liquidation_replay") or {})
     replay_summaries = dict(liquidation_replay.get("split_summaries") or {})
+    candidate_basis = dict(payload.get("candidate_basis") or {})
     lines = [
         "# Profit moonshot candidate-derived hybrid",
         "",
@@ -1298,7 +1339,9 @@ def _markdown(payload: Mapping[str, Any]) -> str:
         f"- oos_end_date: `{payload.get('oos_end_date')}`",
         "- selection basis: train/validation-only candidate hybrid tuning",
         "- locked-OOS: report-only / gate-only",
+        "- live leverage policy: integer leverage source rows only",
         "- liquidation replay: dynamic candidate weights + source leverage + conservative Binance-style margin model",
+        f"- discarded non-integer/missing leverage sources: `{int(_safe_float(candidate_basis.get('discarded_non_integer_leverage_source_count'), 0.0))}`",
         "",
         "## Selected candidate hybrid",
         "",
