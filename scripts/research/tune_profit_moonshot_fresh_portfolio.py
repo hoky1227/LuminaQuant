@@ -1357,20 +1357,31 @@ def _improved_candidate_from_gates(gates: dict[str, bool]) -> bool:
     if any(
         key in gates
         for key in (
+            "liquidation_within_tolerance",
             "liquidation_free",
             "margin_buffer_positive",
             "all_splits_liquidation_safe",
             "train_validation_liquidation_safe",
         )
     ):
-        required.extend(
-            [
-                "liquidation_free",
-                "margin_buffer_positive",
-                "all_splits_liquidation_safe",
-                "train_validation_liquidation_safe",
-            ]
-        )
+        if "liquidation_within_tolerance" in gates:
+            required.extend(
+                [
+                    "liquidation_within_tolerance",
+                    "margin_buffer_positive",
+                    "all_splits_liquidation_within_tolerance",
+                    "train_validation_liquidation_within_tolerance",
+                ]
+            )
+        else:
+            required.extend(
+                [
+                    "liquidation_free",
+                    "margin_buffer_positive",
+                    "all_splits_liquidation_safe",
+                    "train_validation_liquidation_safe",
+                ]
+            )
     return all(bool(gates.get(key)) for key in required)
 
 

@@ -485,6 +485,11 @@ def _liquidation_margin_evidence(
     counts: list[int] = []
     buffers: list[float] = []
     ratios: list[float] = []
+    event_drawdowns: list[float] = []
+    event_loss_fractions: list[float] = []
+    allowed_total_liquidations: list[int] = []
+    max_allowed_event_drawdowns: list[float] = []
+    max_allowed_loss_fractions: list[float] = []
     visited: set[int] = set()
 
     def visit(value: Any) -> None:
@@ -505,15 +510,39 @@ def _liquidation_margin_evidence(
                 parsed_ratio = _safe_float(value.get("minimum_margin_ratio"))
                 if parsed_ratio is not None:
                     ratios.append(float(parsed_ratio))
+            for key in ("maximum_liquidation_event_drawdown", "event_drawdown"):
+                if key in value:
+                    parsed_drawdown = _safe_float(value.get(key))
+                    if parsed_drawdown is not None:
+                        event_drawdowns.append(float(parsed_drawdown))
+            for key in ("maximum_liquidation_equity_loss_fraction", "equity_loss_fraction"):
+                if key in value:
+                    parsed_loss = _safe_float(value.get(key))
+                    if parsed_loss is not None:
+                        event_loss_fractions.append(float(parsed_loss))
+            tolerance = value.get("liquidation_tolerance")
+            if isinstance(tolerance, Mapping):
+                parsed_allowed = _safe_float(tolerance.get("allowed_total_liquidations"))
+                if parsed_allowed is not None:
+                    allowed_total_liquidations.append(max(0, int(parsed_allowed)))
+                parsed_event_drawdown = _safe_float(tolerance.get("max_liquidation_event_drawdown"))
+                if parsed_event_drawdown is not None:
+                    max_allowed_event_drawdowns.append(float(parsed_event_drawdown))
+                parsed_loss = _safe_float(tolerance.get("max_liquidation_equity_loss_fraction"))
+                if parsed_loss is not None:
+                    max_allowed_loss_fractions.append(float(parsed_loss))
             for key in (
                 "liquidation_aware_validation",
                 "liquidation_validation",
                 "margin_validation",
                 "margin_safety",
+                "policy",
                 "metrics",
                 "splits",
                 "forced_5x",
                 "selected_by_train_validation",
+                "selected_by_train_validation_retune",
+                "best_deployable_train_validation_retune",
                 "current_base_reference_result",
             ):
                 if key in value:
@@ -529,6 +558,11 @@ def _liquidation_margin_evidence(
         "liquidation_count": max(counts) if counts else None,
         "minimum_margin_buffer": min(buffers) if buffers else None,
         "minimum_margin_ratio": min(ratios) if ratios else None,
+        "maximum_liquidation_event_drawdown": max(event_drawdowns) if event_drawdowns else None,
+        "maximum_liquidation_equity_loss_fraction": max(event_loss_fractions) if event_loss_fractions else None,
+        "allowed_total_liquidations": max(allowed_total_liquidations) if allowed_total_liquidations else None,
+        "max_liquidation_event_drawdown": min(max_allowed_event_drawdowns) if max_allowed_event_drawdowns else None,
+        "max_liquidation_equity_loss_fraction": min(max_allowed_loss_fractions) if max_allowed_loss_fractions else None,
     }
 
 
@@ -587,6 +621,11 @@ def _candidate_return_quality_check(
     liquidation_count = liquidation_evidence["liquidation_count"]
     minimum_margin_buffer = liquidation_evidence["minimum_margin_buffer"]
     minimum_margin_ratio = liquidation_evidence["minimum_margin_ratio"]
+    maximum_liquidation_event_drawdown = liquidation_evidence["maximum_liquidation_event_drawdown"]
+    maximum_liquidation_equity_loss_fraction = liquidation_evidence["maximum_liquidation_equity_loss_fraction"]
+    allowed_total_liquidations = liquidation_evidence["allowed_total_liquidations"]
+    max_liquidation_event_drawdown = liquidation_evidence["max_liquidation_event_drawdown"]
+    max_liquidation_equity_loss_fraction = liquidation_evidence["max_liquidation_equity_loss_fraction"]
     details = {
         "minimum_stable_monthly_return": MIN_STABLE_MONTHLY_RETURN,
         "minimum_buffered_train_monthly_return": MIN_BUFFERED_TRAIN_MONTHLY_RETURN,
@@ -634,6 +673,11 @@ def _candidate_return_quality_check(
         "liquidation_count": liquidation_count,
         "minimum_margin_buffer": minimum_margin_buffer,
         "minimum_margin_ratio": minimum_margin_ratio,
+        "maximum_liquidation_event_drawdown": maximum_liquidation_event_drawdown,
+        "maximum_liquidation_equity_loss_fraction": maximum_liquidation_equity_loss_fraction,
+        "allowed_total_liquidations": allowed_total_liquidations,
+        "max_liquidation_event_drawdown": max_liquidation_event_drawdown,
+        "max_liquidation_equity_loss_fraction": max_liquidation_equity_loss_fraction,
     }
     current_base_return_check = (
         oos_return is not None
@@ -670,8 +714,27 @@ def _candidate_return_quality_check(
         else raw_val_monthly >= MIN_RAW_VAL_MONTHLY_RETURN
     )
     integer_leverage_check = no_improvement_base_retained or abs(leverage - round(leverage)) <= 1e-9
-    liquidation_check = True if liquidation_count is None else int(liquidation_count) == 0
+    if liquidation_count is None:
+        liquidation_check = True
+    elif allowed_total_liquidations is not None:
+        liquidation_check = int(liquidation_count) <= int(allowed_total_liquidations)
+    else:
+        liquidation_check = int(liquidation_count) == 0
     margin_buffer_check = True if minimum_margin_buffer is None else float(minimum_margin_buffer) > 0.0
+    if liquidation_count is None or int(liquidation_count) == 0:
+        liquidation_event_drawdown_check = True
+        liquidation_loss_fraction_check = True
+    else:
+        liquidation_event_drawdown_check = (
+            maximum_liquidation_event_drawdown is not None
+            and max_liquidation_event_drawdown is not None
+            and float(maximum_liquidation_event_drawdown) <= float(max_liquidation_event_drawdown)
+        )
+        liquidation_loss_fraction_check = (
+            maximum_liquidation_equity_loss_fraction is not None
+            and max_liquidation_equity_loss_fraction is not None
+            and float(maximum_liquidation_equity_loss_fraction) <= float(max_liquidation_equity_loss_fraction)
+        )
     checks = (
         train_monthly is not None and train_monthly >= MIN_STABLE_MONTHLY_RETURN,
         train_monthly is not None and train_monthly >= MIN_BUFFERED_TRAIN_MONTHLY_RETURN
@@ -683,6 +746,8 @@ def _candidate_return_quality_check(
         integer_leverage_check,
         liquidation_check,
         margin_buffer_check,
+        liquidation_event_drawdown_check,
+        liquidation_loss_fraction_check,
         train_sharpe is not None and train_sharpe >= MIN_TRAIN_SHARPE,
         train_sortino is not None and train_sortino >= MIN_TRAIN_SORTINO,
         train_calmar is not None and train_calmar >= MIN_TRAIN_CALMAR,

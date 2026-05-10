@@ -144,6 +144,111 @@ def test_liquidation_gates_accept_validation_split_name() -> None:
     assert MODULE._liquidation_safe_for_promotion(gates) is True
 
 
+def test_tiny_liquidation_tolerance_allows_small_event_with_positive_buffers() -> None:
+    tolerance = MODULE.LiquidationTolerance(
+        allowed_total_liquidations=1,
+        allowed_split_liquidations=1,
+        max_liquidation_event_drawdown=0.005,
+        max_liquidation_equity_loss_fraction=0.005,
+    )
+    candidate = {
+        "splits": {
+            "train": {
+                "liquidation_count": 0,
+                "minimum_margin_buffer": 25.0,
+                "maximum_liquidation_event_drawdown": 0.0,
+                "maximum_liquidation_equity_loss_fraction": 0.0,
+            },
+            "validation": {
+                "liquidation_count": 1,
+                "minimum_margin_buffer": 20.0,
+                "maximum_liquidation_event_drawdown": 0.0016,
+                "maximum_liquidation_equity_loss_fraction": 0.0005,
+            },
+            "oos": {
+                "liquidation_count": 0,
+                "minimum_margin_buffer": 30.0,
+                "maximum_liquidation_event_drawdown": 0.0,
+                "maximum_liquidation_equity_loss_fraction": 0.0,
+            },
+        }
+    }
+
+    gates = MODULE._liquidation_promotion_gates(candidate, tolerance=tolerance)
+
+    assert gates["liquidation_free"] is False
+    assert gates["liquidation_within_tolerance"] is True
+    assert gates["split_liquidations_within_tolerance"] is True
+    assert gates["liquidation_event_drawdown_within_tolerance"] is True
+    assert MODULE._liquidation_safe_for_promotion(gates) is True
+
+
+def test_tiny_liquidation_tolerance_still_blocks_excess_or_buffer_failure() -> None:
+    tolerance = MODULE.LiquidationTolerance(
+        allowed_total_liquidations=1,
+        allowed_split_liquidations=1,
+        max_liquidation_event_drawdown=0.005,
+        max_liquidation_equity_loss_fraction=0.005,
+    )
+    gates = MODULE._liquidation_promotion_gates(
+        {
+            "splits": {
+                "train": {"liquidation_count": 0, "minimum_margin_buffer": 1.0},
+                "validation": {
+                    "liquidation_count": 2,
+                    "minimum_margin_buffer": 1.0,
+                    "maximum_liquidation_event_drawdown": 0.001,
+                },
+                "oos": {"liquidation_count": 0, "minimum_margin_buffer": 1.0},
+            }
+        },
+        tolerance=tolerance,
+    )
+
+    assert gates["split_liquidations_within_tolerance"] is False
+    assert gates["liquidation_within_tolerance"] is False
+    assert MODULE._liquidation_safe_for_promotion(gates) is False
+
+
+def test_tolerant_train_validation_selection_still_ignores_locked_oos() -> None:
+    tolerance = MODULE.LiquidationTolerance(
+        allowed_total_liquidations=1,
+        allowed_split_liquidations=1,
+        max_liquidation_event_drawdown=0.005,
+        max_liquidation_equity_loss_fraction=0.005,
+    )
+    grid = [
+        {
+            "leverage": 4,
+            "splits": {
+                "train": {"liquidation_count": 0, "minimum_margin_buffer": 10.0},
+                "validation": {
+                    "liquidation_count": 1,
+                    "minimum_margin_buffer": 5.0,
+                    "maximum_liquidation_event_drawdown": 0.001,
+                    "maximum_liquidation_equity_loss_fraction": 0.0005,
+                },
+                "oos": {"liquidation_count": 9, "minimum_margin_buffer": -1.0},
+            },
+            "train_val_score": 4.0,
+        },
+        {
+            "leverage": 5,
+            "splits": {
+                "train": {"liquidation_count": 2, "minimum_margin_buffer": 5.0},
+                "validation": {"liquidation_count": 0, "minimum_margin_buffer": 5.0},
+                "oos": {"liquidation_count": 0, "minimum_margin_buffer": 5.0},
+            },
+            "train_val_score": 99.0,
+        },
+    ]
+
+    selected = MODULE._select_train_validation_leverage(grid, tolerance=tolerance)
+
+    assert selected["leverage"] == 4
+    assert selected["selection_policy"]["uses_locked_oos_for_selection"] is False
+
+
 def test_validator_rejects_promoted_candidate_with_unsafe_liquidation_evidence(tmp_path: Path) -> None:
     validator_path = ROOT / "scripts" / "research" / "validate_profit_moonshot_pass_under_8gb.py"
     spec = importlib.util.spec_from_file_location("validate_profit_moonshot_pass_under_8gb_for_liq", validator_path)

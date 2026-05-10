@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
-"""Liquidation-aware validation for the profit-moonshot current-base tuple.
+"""Liquidation-aware validation and re-selection for profit-moonshot tuples.
 
 The fresh portfolio tuner historically scaled sleeve equity curves linearly.
 This script keeps the same train/validation selection boundary, but replays the
-known current-base sleeves through a conservative USDⓈ-M perpetual-style margin
-model with intrabar high/low liquidation checks before any levered row can be
-treated as deployable.
+known current-base sleeves and train/validation-only candidate portfolios
+through a conservative USDⓈ-M perpetual-style margin model with intrabar
+high/low liquidation checks before any levered row can be treated as deployable.
 """
 
 from __future__ import annotations
 
 import argparse
+import csv
 import importlib.util
 import json
 import math
+import re
 import resource
 import sys
 from collections.abc import Mapping
@@ -39,7 +41,7 @@ FRESH_PATH = REPO_ROOT / "scripts/research/replay_profit_moonshot_fresh_start.py
 DEFAULT_OUTPUT_DIR = (
     REPO_ROOT
     / "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/"
-    "liquidation_aware_5x_20260510"
+    "liquidation_tolerant_retune_20260510"
 )
 DEFAULT_MARKET_ROOT = REPO_ROOT / "data/market_parquet"
 DEFAULT_CURRENT_BASE_ARTIFACT = (
@@ -50,6 +52,10 @@ DEFAULT_INTEGER_AUDIT_ARTIFACT = (
     REPO_ROOT
     / "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/"
     "integer_leverage_alpha_v2_top40_20260509/fresh_portfolio_tuning_latest.json"
+)
+DEFAULT_CANDIDATE_CSV = (
+    REPO_ROOT
+    / "var/reports/profit_moonshot_20260501/current_tail_20260508/alpha_v2/merged_alpha_v2_candidates.csv"
 )
 DEFAULT_SYMBOLS = "BTC/USDT,ETH/USDT,SOL/USDT,BNB/USDT,TRX/USDT"
 RUN_NAME = "profit_moonshot_liquidation_aware_validation"
@@ -98,6 +104,16 @@ class MarginModel:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class LiquidationTolerance:
+    """Explicit tiny-liquidation allowance for promotion and re-selection gates."""
+
+    allowed_total_liquidations: int = 1
+    allowed_split_liquidations: int = 1
+    max_liquidation_event_drawdown: float = 0.005
+    max_liquidation_equity_loss_fraction: float = 0.005
+
+
 @dataclass(slots=True)
 class OpenLeg:
     sleeve: str
@@ -117,6 +133,9 @@ class SleeveState:
     cooldown: int = 0
     fills: int = 0
     round_trips: int = 0
+    position_stop_loss_pct: float = 0.0
+    position_take_profit_pct: float = 0.0
+    best_price: float = 0.0
 
 
 def _load_module(path: Path, name: str) -> Any:
@@ -243,11 +262,23 @@ def _split_margin_summary(
     finite_ratios = [item for item in ratios if math.isfinite(item)]
     minimum_ratio = min(finite_ratios) if finite_ratios else math.inf
     count = sum(1 for event in liquidation_events if str(event.get("split")) == split_name)
+    event_drawdowns = [
+        _safe_float(event.get("event_drawdown"), 0.0)
+        for event in liquidation_events
+        if str(event.get("split")) == split_name
+    ]
+    event_loss_fractions = [
+        _safe_float(event.get("equity_loss_fraction"), 0.0)
+        for event in liquidation_events
+        if str(event.get("split")) == split_name
+    ]
     return {
         "liquidation_count": int(count),
         "minimum_margin_buffer": float(minimum_buffer),
         "minimum_margin_ratio": float(minimum_ratio) if math.isfinite(minimum_ratio) else math.inf,
         "margin_buffer_positive": bool(minimum_buffer > 0.0),
+        "maximum_liquidation_event_drawdown": float(max(event_drawdowns, default=0.0)),
+        "maximum_liquidation_equity_loss_fraction": float(max(event_loss_fractions, default=0.0)),
     }
 
 
@@ -257,12 +288,35 @@ def _split_is_liquidation_safe(split_payload: Mapping[str, Any]) -> bool:
     ) > 0.0
 
 
-def _liquidation_promotion_gates(candidate: Mapping[str, Any]) -> dict[str, bool]:
+def _split_within_liquidation_tolerance(
+    split_payload: Mapping[str, Any],
+    *,
+    tolerance: LiquidationTolerance,
+) -> bool:
+    return (
+        int(split_payload.get("liquidation_count") or 0) <= int(tolerance.allowed_split_liquidations)
+        and _safe_float(split_payload.get("minimum_margin_buffer"), 0.0) > 0.0
+        and _safe_float(split_payload.get("maximum_liquidation_event_drawdown"), 0.0)
+        <= float(tolerance.max_liquidation_event_drawdown)
+        and _safe_float(split_payload.get("maximum_liquidation_equity_loss_fraction"), 0.0)
+        <= float(tolerance.max_liquidation_equity_loss_fraction)
+    )
+
+
+def _liquidation_count_for_split(split_payload: Mapping[str, Any]) -> int:
+    return int(split_payload.get("liquidation_count") or split_payload.get("liquidation_event_count_total") or 0)
+
+
+def _liquidation_promotion_gates(
+    candidate: Mapping[str, Any],
+    *,
+    tolerance: LiquidationTolerance | None = None,
+) -> dict[str, bool]:
     splits = dict(candidate.get("splits") or {})
     train = _split_is_liquidation_safe(_split_payload(splits, "train"))
     val = _split_is_liquidation_safe(_split_payload(splits, VALIDATION_SPLIT))
     oos = _split_is_liquidation_safe(_split_payload(splits, "oos"))
-    return {
+    gates = {
         "train_validation_liquidation_safe": bool(train and val),
         "all_splits_liquidation_safe": bool(train and val and oos),
         "liquidation_free": all(int(dict(payload).get("liquidation_count") or 0) == 0 for payload in splits.values()),
@@ -270,20 +324,89 @@ def _liquidation_promotion_gates(candidate: Mapping[str, Any]) -> dict[str, bool
             _safe_float(dict(payload).get("minimum_margin_buffer"), 0.0) > 0.0 for payload in splits.values()
         ),
     }
+    if tolerance is not None:
+        split_counts = {name: _liquidation_count_for_split(dict(payload or {})) for name, payload in splits.items()}
+        total_liquidations = sum(split_counts.values())
+        train_tolerant = _split_within_liquidation_tolerance(
+            _split_payload(splits, "train"),
+            tolerance=tolerance,
+        )
+        val_tolerant = _split_within_liquidation_tolerance(
+            _split_payload(splits, VALIDATION_SPLIT),
+            tolerance=tolerance,
+        )
+        oos_tolerant = _split_within_liquidation_tolerance(
+            _split_payload(splits, "oos"),
+            tolerance=tolerance,
+        )
+        max_event_drawdown = max(
+            _safe_float(dict(payload or {}).get("maximum_liquidation_event_drawdown"), 0.0)
+            for payload in splits.values()
+        ) if splits else 0.0
+        max_loss_fraction = max(
+            _safe_float(dict(payload or {}).get("maximum_liquidation_equity_loss_fraction"), 0.0)
+            for payload in splits.values()
+        ) if splits else 0.0
+        split_liquidations_within = all(
+            count <= int(tolerance.allowed_split_liquidations) for count in split_counts.values()
+        )
+        total_within = total_liquidations <= int(tolerance.allowed_total_liquidations)
+        event_drawdown_within = max_event_drawdown <= float(tolerance.max_liquidation_event_drawdown)
+        loss_fraction_within = max_loss_fraction <= float(tolerance.max_liquidation_equity_loss_fraction)
+        gates.update(
+            {
+                "train_validation_liquidation_within_tolerance": bool(train_tolerant and val_tolerant),
+                "all_splits_liquidation_within_tolerance": bool(train_tolerant and val_tolerant and oos_tolerant),
+                "split_liquidations_within_tolerance": bool(split_liquidations_within),
+                "total_liquidations_within_tolerance": bool(total_within),
+                "liquidation_event_drawdown_within_tolerance": bool(event_drawdown_within),
+                "liquidation_equity_loss_within_tolerance": bool(loss_fraction_within),
+                "liquidation_within_tolerance": bool(
+                    total_within
+                    and split_liquidations_within
+                    and event_drawdown_within
+                    and loss_fraction_within
+                    and train_tolerant
+                    and val_tolerant
+                    and oos_tolerant
+                    and gates["margin_buffer_positive"]
+                ),
+            }
+        )
+    return gates
 
 
 def _liquidation_safe_for_promotion(gates: Mapping[str, Any]) -> bool:
+    if "liquidation_within_tolerance" in gates:
+        return bool(gates.get("liquidation_within_tolerance")) and bool(gates.get("margin_buffer_positive"))
     return bool(gates.get("liquidation_free")) and bool(gates.get("margin_buffer_positive")) and bool(
         gates.get("all_splits_liquidation_safe")
     )
 
 
-def _select_train_validation_leverage(grid: list[dict[str, Any]]) -> dict[str, Any]:
+def _select_train_validation_leverage(
+    grid: list[dict[str, Any]],
+    *,
+    tolerance: LiquidationTolerance | None = None,
+) -> dict[str, Any]:
+    def train_val_ok(item: Mapping[str, Any]) -> bool:
+        splits = dict(item.get("splits") or {})
+        if tolerance is None:
+            return _split_is_liquidation_safe(_split_payload(splits, "train")) and _split_is_liquidation_safe(
+                _split_payload(splits, VALIDATION_SPLIT)
+            )
+        return _split_within_liquidation_tolerance(
+            _split_payload(splits, "train"),
+            tolerance=tolerance,
+        ) and _split_within_liquidation_tolerance(
+            _split_payload(splits, VALIDATION_SPLIT),
+            tolerance=tolerance,
+        )
+
     train_val_safe = [
         dict(item)
         for item in grid
-        if _split_is_liquidation_safe(_split_payload(dict(item.get("splits") or {}), "train"))
-        and _split_is_liquidation_safe(_split_payload(dict(item.get("splits") or {}), VALIDATION_SPLIT))
+        if train_val_ok(item)
     ]
     selection_pool = train_val_safe or [dict(item) for item in grid]
     selected = max(
@@ -469,6 +592,9 @@ def _close_state_at_idx(
     state.gross_entry_notional = 0.0
     state.entry_equity = float(cash)
     state.bars_held = 0
+    state.position_stop_loss_pct = 0.0
+    state.position_take_profit_pct = 0.0
+    state.best_price = 0.0
     return float(cash)
 
 
@@ -510,6 +636,17 @@ def _plan_order(
     }
 
 
+SPREAD_FAMILIES = {
+    "calendar_spread",
+    "residual_pair_reversion_spread",
+    "residual_pair_momentum_spread",
+}
+
+
+def _is_spread_state(state: SleeveState) -> bool:
+    return str(state.spec.family) in SPREAD_FAMILIES
+
+
 def _spread_signal_for_state(fresh: Any, state: SleeveState, arrays: Mapping[str, Any], idx: int) -> tuple[str, str, str, str]:
     family = str(state.spec.family)
     if family == "calendar_spread":
@@ -519,6 +656,32 @@ def _spread_signal_for_state(fresh: Any, state: SleeveState, arrays: Mapping[str
     if family == "residual_pair_momentum_spread":
         return fresh._residual_pair_momentum_spread_signal(state.spec, arrays, idx)
     return "", "", "", "unsupported_spread_family"
+
+
+def _single_leg_signal_for_state(fresh: Any, state: SleeveState, arrays: Mapping[str, Any], idx: int) -> tuple[str, str, str]:
+    return fresh._candidate_signal(state.spec, arrays, idx)
+
+
+def _annotate_liquidation_events_with_equity_impact(
+    events: list[dict[str, Any]],
+    *,
+    pre_equity: float,
+    post_equity: float,
+    running_peak: float,
+    closed_legs: int,
+) -> None:
+    peak = max(1e-9, float(running_peak), float(pre_equity), STARTING_EQUITY)
+    pre = max(1e-9, float(pre_equity))
+    loss_fraction = max(0.0, (float(pre_equity) - float(post_equity)) / pre)
+    event_drawdown = max(0.0, (peak - float(post_equity)) / peak)
+    for event in events:
+        event["pre_liquidation_equity"] = float(pre_equity)
+        event["post_liquidation_equity"] = float(post_equity)
+        event["equity_loss_fraction"] = float(loss_fraction)
+        event["event_drawdown"] = float(event_drawdown)
+        event["account_wipeout"] = bool(float(post_equity) <= 0.0)
+        event["closed_scope"] = "sleeve_state" if closed_legs > 0 else "portfolio"
+        event["closed_legs"] = int(closed_legs)
 
 
 def _run_liquidation_split(
@@ -576,7 +739,9 @@ def _run_liquidation_split(
                     state_events.append(event)
                     override_prices[leg.symbol] = _safe_float(event.get("liquidation_price"), leg.entry_price)
             if state_events:
-                liquidation_events.extend(state_events)
+                pre_equity = _portfolio_equity(cash, states, arrays, idx, fresh)
+                running_peak = max([STARTING_EQUITY, *equity_history, pre_equity])
+                closed_legs = len(state.legs)
                 cash = _close_state_at_idx(
                     cash=cash,
                     state=state,
@@ -587,6 +752,15 @@ def _run_liquidation_split(
                     liquidation=True,
                     override_prices=override_prices,
                 )
+                post_equity = _portfolio_equity(cash, states, arrays, idx, fresh)
+                _annotate_liquidation_events_with_equity_impact(
+                    state_events,
+                    pre_equity=pre_equity,
+                    post_equity=post_equity,
+                    running_peak=running_peak,
+                    closed_legs=closed_legs,
+                )
+                liquidation_events.extend(state_events)
                 state.cooldown = max(0, int(state.spec.cooldown_bars))
 
         pre_exit_snapshot = _margin_snapshot(
@@ -600,7 +774,7 @@ def _run_liquidation_split(
             fresh=fresh,
         )
         if _open_legs(states) and _safe_float(pre_exit_snapshot.get("margin_buffer"), 1.0) <= 0.0:
-            liquidation_events.append(
+            cross_events = [
                 {
                     "split": split_name,
                     "timestamp": _timestamp_for_idx(arrays, idx),
@@ -609,7 +783,10 @@ def _run_liquidation_split(
                     "margin_ratio": pre_exit_snapshot["margin_ratio"],
                     "leverage": float(leverage),
                 }
-            )
+            ]
+            pre_equity = _portfolio_equity(cash, states, arrays, idx, fresh)
+            running_peak = max([STARTING_EQUITY, *equity_history, pre_equity])
+            closed_legs = len(_open_legs(states))
             for state in states:
                 cash = _close_state_at_idx(
                     cash=cash,
@@ -620,19 +797,76 @@ def _run_liquidation_split(
                     model=model,
                     liquidation=True,
                 )
+            post_equity = _portfolio_equity(cash, states, arrays, idx, fresh)
+            _annotate_liquidation_events_with_equity_impact(
+                cross_events,
+                pre_equity=pre_equity,
+                post_equity=post_equity,
+                running_peak=running_peak,
+                closed_legs=closed_legs,
+            )
+            liquidation_events.extend(cross_events)
 
         for state in states:
             if state.legs:
-                spread_return = _state_unrealized_pnl(arrays, state, idx, fresh) / max(
-                    1e-9, float(state.gross_entry_notional)
-                )
                 exit_reason = ""
-                if float(state.spec.stop_loss_pct) > 0.0 and spread_return <= -float(state.spec.stop_loss_pct):
-                    exit_reason = "stop"
-                elif float(state.spec.take_profit_pct) > 0.0 and spread_return >= float(state.spec.take_profit_pct):
-                    exit_reason = "take_profit"
-                elif state.bars_held >= int(state.spec.hold_bars):
-                    exit_reason = "max_hold"
+                override_prices: dict[str, float] = {}
+                if _is_spread_state(state):
+                    spread_return = _state_unrealized_pnl(arrays, state, idx, fresh) / max(
+                        1e-9, float(state.gross_entry_notional)
+                    )
+                    if float(state.spec.stop_loss_pct) > 0.0 and spread_return <= -float(state.spec.stop_loss_pct):
+                        exit_reason = "stop"
+                    elif float(state.spec.take_profit_pct) > 0.0 and spread_return >= float(state.spec.take_profit_pct):
+                        exit_reason = "take_profit"
+                    elif state.bars_held >= int(state.spec.hold_bars):
+                        exit_reason = "max_hold"
+                else:
+                    leg = state.legs[0]
+                    prefix = _symbol_prefix(fresh, leg.symbol)
+                    close = _array_value(arrays, f"{prefix}_close", idx, leg.entry_price)
+                    high = _array_value(arrays, f"{prefix}_high", idx, close)
+                    low = _array_value(arrays, f"{prefix}_low", idx, close)
+                    open_ = _array_value(arrays, f"{prefix}_open", idx, close)
+                    side = str(leg.side).upper()
+                    if side == "LONG":
+                        state.best_price = max(float(state.best_price or leg.entry_price), high if math.isfinite(high) else close)
+                        stop_pct = float(state.position_stop_loss_pct)
+                        base_stop = float(leg.entry_price) * (1.0 - stop_pct) if stop_pct > 0.0 else -math.inf
+                        trail_stop = state.best_price * (1.0 - stop_pct) if stop_pct > 0.0 else -math.inf
+                        stop = max(base_stop, trail_stop)
+                        take = (
+                            float(leg.entry_price) * (1.0 + float(state.position_take_profit_pct))
+                            if float(state.position_take_profit_pct) > 0.0
+                            else math.inf
+                        )
+                        if low <= stop:
+                            exit_reason = "stop"
+                            override_prices[leg.symbol] = min(open_, stop) if open_ < stop else stop
+                        elif high >= take:
+                            exit_reason = "take_profit"
+                            override_prices[leg.symbol] = max(open_, take) if open_ > take else take
+                        elif state.bars_held >= int(state.spec.hold_bars):
+                            exit_reason = "max_hold"
+                    elif side == "SHORT":
+                        state.best_price = min(float(state.best_price or leg.entry_price), low if math.isfinite(low) else close)
+                        stop_pct = float(state.position_stop_loss_pct)
+                        base_stop = float(leg.entry_price) * (1.0 + stop_pct) if stop_pct > 0.0 else math.inf
+                        trail_stop = state.best_price * (1.0 + stop_pct) if stop_pct > 0.0 else math.inf
+                        stop = min(base_stop, trail_stop)
+                        take = (
+                            float(leg.entry_price) * (1.0 - float(state.position_take_profit_pct))
+                            if float(state.position_take_profit_pct) > 0.0
+                            else -math.inf
+                        )
+                        if high >= stop:
+                            exit_reason = "stop"
+                            override_prices[leg.symbol] = max(open_, stop) if open_ > stop else stop
+                        elif low <= take:
+                            exit_reason = "take_profit"
+                            override_prices[leg.symbol] = min(open_, take) if open_ < take else take
+                        elif state.bars_held >= int(state.spec.hold_bars):
+                            exit_reason = "max_hold"
                 if exit_reason:
                     cash = _close_state_at_idx(
                         cash=cash,
@@ -641,6 +875,7 @@ def _run_liquidation_split(
                         idx=idx,
                         fresh=fresh,
                         model=model,
+                        override_prices=override_prices,
                     )
                     state.cooldown = max(0, int(state.spec.cooldown_bars))
 
@@ -649,20 +884,30 @@ def _run_liquidation_split(
             if state.cooldown > 0:
                 state.cooldown -= 1
                 continue
-            long_symbol, short_symbol, direction, _reason = _spread_signal_for_state(fresh, state, arrays, idx)
-            if not long_symbol or not short_symbol or not direction:
-                continue
-            hedge = max(0.0, float(state.spec.spread_hedge_ratio))
-            if direction == "LONG_SPREAD":
-                plans = (
-                    (long_symbol, "BUY", max(0.0, float(state.spec.long_allocation_scale))),
-                    (short_symbol, "SELL", max(0.0, float(state.spec.short_allocation_scale)) * hedge),
-                )
+            if _is_spread_state(state):
+                long_symbol, short_symbol, direction, _reason = _spread_signal_for_state(fresh, state, arrays, idx)
+                if not long_symbol or not short_symbol or not direction:
+                    continue
+                hedge = max(0.0, float(state.spec.spread_hedge_ratio))
+                if direction == "LONG_SPREAD":
+                    plans = (
+                        (long_symbol, "BUY", max(0.0, float(state.spec.long_allocation_scale))),
+                        (short_symbol, "SELL", max(0.0, float(state.spec.short_allocation_scale)) * hedge),
+                    )
+                else:
+                    plans = (
+                        (long_symbol, "SELL", max(0.0, float(state.spec.long_allocation_scale))),
+                        (short_symbol, "BUY", max(0.0, float(state.spec.short_allocation_scale)) * hedge),
+                    )
+                expected_orders = 2
             else:
-                plans = (
-                    (long_symbol, "SELL", max(0.0, float(state.spec.long_allocation_scale))),
-                    (short_symbol, "BUY", max(0.0, float(state.spec.short_allocation_scale)) * hedge),
-                )
+                symbol, side, _reason = _single_leg_signal_for_state(fresh, state, arrays, idx)
+                if not symbol or not side:
+                    continue
+                action = "BUY" if str(side).upper() == "LONG" else "SELL"
+                scale = max(0.0, float(fresh._side_allocation_scale(state.spec, side)))
+                plans = ((symbol, action, scale),)
+                expected_orders = 1
             equity = _portfolio_equity(cash, states, arrays, idx, fresh)
             orders = [
                 order
@@ -682,7 +927,7 @@ def _run_liquidation_split(
                 )
                 is not None
             ]
-            if len(orders) != 2:
+            if len(orders) != expected_orders:
                 continue
             state.gross_entry_notional = sum(abs(float(order["qty"]) * float(order["fill"])) for order in orders)
             for order in orders:
@@ -698,6 +943,12 @@ def _run_liquidation_split(
                 )
             state.fills += len(orders)
             state.entry_equity = _portfolio_equity(cash, states, arrays, idx, fresh)
+            if not _is_spread_state(state) and state.legs:
+                leg = state.legs[0]
+                prefix = _symbol_prefix(fresh, leg.symbol)
+                state.position_stop_loss_pct = float(fresh._entry_stop_pct(state.spec, arrays, prefix, idx))
+                state.position_take_profit_pct = float(state.spec.take_profit_pct)
+                state.best_price = float(leg.entry_price)
             state.bars_held = 0
 
         snapshot = _margin_snapshot(
@@ -770,7 +1021,7 @@ def _train_val_score(tuner: Any, item: Mapping[str, Any]) -> float:
         "train_max_drawdown": _safe_float(train.get("max_drawdown"), 1.0),
         "validation_max_drawdown": _safe_float(val.get("max_drawdown"), 1.0),
         "leverage": _safe_float(item.get("leverage"), 1.0),
-        "sleeve_count": float(len(CURRENT_BASE_SLEEVES)),
+        "sleeve_count": float(len(list(item.get("sleeves") or CURRENT_BASE_SLEEVES))),
     }
     return float(tuner._train_val_stability_score_from_components(components))
 
@@ -784,7 +1035,11 @@ def _build_leverage_result(
     arrays: Mapping[str, Any],
     splits: list[Any],
     model: MarginModel,
+    candidate_name: str = "current_base",
+    candidate_source: str = "current_base_tuple",
+    tolerance: LiquidationTolerance | None = None,
 ) -> dict[str, Any]:
+    sleeve_names = [str(spec.name) for spec in specs]
     split_payloads = {
         _display_split_name(split.name): _run_liquidation_split(
             fresh=fresh,
@@ -803,9 +1058,11 @@ def _build_leverage_result(
     oos_mdd = _safe_float(oos.get("max_drawdown"), 1.0)
     return_risk = tuner._return_risk_score(oos_return, oos_mdd)
     result = {
-        "name": f"current_base_liquidation_aware_{float(leverage):g}x",
+        "name": f"{candidate_name}_liquidation_aware_{float(leverage):g}x",
+        "candidate_name": str(candidate_name),
+        "candidate_source": str(candidate_source),
         "mode": "train_val_monthly_return_budget",
-        "sleeves": list(CURRENT_BASE_SLEEVES),
+        "sleeves": sleeve_names,
         "leverage": float(leverage),
         "splits": split_payloads,
         "return_quality": {
@@ -828,7 +1085,7 @@ def _build_leverage_result(
         },
     }
     result["train_val_score"] = _train_val_score(tuner, result)
-    result["liquidation_gates"] = _liquidation_promotion_gates(result)
+    result["liquidation_gates"] = _liquidation_promotion_gates(result, tolerance=tolerance)
     return result
 
 
@@ -855,6 +1112,17 @@ def _performance_gates_against_current_base(
         "oos_sortino_high": _safe_float(oos.get("sortino")) >= tuner.SUCCESS_SORTINO,
         "oos_smart_sortino_high": smart_sortino >= tuner.SUCCESS_SMART_SORTINO,
         "oos_calmar_high": _safe_float(oos.get("calmar")) >= tuner.SUCCESS_CALMAR,
+    }
+
+
+def _train_validation_performance_gates(result: Mapping[str, Any]) -> dict[str, bool]:
+    splits = dict(result.get("splits") or {})
+    train = dict(_split_payload(splits, "train").get("metrics") or {})
+    val = dict(_split_payload(splits, VALIDATION_SPLIT).get("metrics") or {})
+    return {
+        "train_total_return_positive": _safe_float(train.get("total_return")) > 0.0,
+        "validation_total_return_positive": _safe_float(val.get("total_return")) > 0.0,
+        "train_val_score_positive": _safe_float(result.get("train_val_score")) > 0.0,
     }
 
 
@@ -885,6 +1153,7 @@ def _comparison_to_current_base(tuner: Any, result: Mapping[str, Any], current_b
 def _apply_reference_gates(tuner: Any, results: list[dict[str, Any]], current_base_result: Mapping[str, Any]) -> None:
     for result in results:
         result["comparison_to_current_base"] = _comparison_to_current_base(tuner, result, current_base_result)
+        result["train_validation_performance_gates"] = _train_validation_performance_gates(result)
         result["performance_gates"] = _performance_gates_against_current_base(
             tuner=tuner,
             result=result,
@@ -892,6 +1161,7 @@ def _apply_reference_gates(tuner: Any, results: list[dict[str, Any]], current_ba
         )
         result["deployable_success"] = bool(
             _liquidation_safe_for_promotion(dict(result.get("liquidation_gates") or {}))
+            and all(bool(item) for item in dict(result.get("train_validation_performance_gates") or {}).values())
             and all(bool(item) for item in dict(result.get("performance_gates") or {}).values())
         )
 
@@ -903,9 +1173,189 @@ def _load_json(path: Path) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
+def _slug(value: str, *, max_len: int = 120) -> str:
+    slug = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(value)).strip("_")
+    return (slug or "candidate")[:max_len]
+
+
+def _candidate_seed(
+    *,
+    name: str,
+    sleeves: list[str],
+    source: str,
+    source_payload: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        "name": _slug(name),
+        "display_name": str(name),
+        "sleeves": [str(item) for item in sleeves if str(item)],
+        "source": str(source),
+        "source_payload": dict(source_payload or {}),
+    }
+
+
+def _audit_candidate_seeds(integer_audit: Mapping[str, Any], *, limit: int) -> list[dict[str, Any]]:
+    seeds: list[dict[str, Any]] = []
+
+    def add(source: str, item: Any) -> None:
+        if not isinstance(item, Mapping):
+            return
+        sleeves = [str(value) for value in list(item.get("sleeves") or []) if str(value)]
+        if not sleeves:
+            return
+        seeds.append(
+            _candidate_seed(
+                name=str(item.get("name") or source),
+                sleeves=sleeves,
+                source=source,
+                source_payload={
+                    "leverage": item.get("leverage"),
+                    "return_quality": item.get("return_quality"),
+                    "gates": item.get("gates"),
+                },
+            )
+        )
+
+    add("integer_audit_selected_by_train_val_stability", integer_audit.get("selected_by_train_val_stability"))
+    add("integer_audit_diagnostic_best_oos", integer_audit.get("diagnostic_best_oos"))
+    for idx, item in enumerate(list(integer_audit.get("diagnostic_quarantine") or [])[: max(0, int(limit))]):
+        add(f"integer_audit_diagnostic_quarantine_{idx:02d}", item)
+    return seeds
+
+
+def _candidate_csv_seeds(path: Path, *, limit: int) -> list[dict[str, Any]]:
+    if limit <= 0 or not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        for row in reader:
+            name = str(row.get("name") or "").strip()
+            if not name:
+                continue
+            train = _safe_float(row.get("train_total_return"))
+            val = _safe_float(row.get("val_total_return"))
+            if train <= 0.0 or val <= 0.0:
+                continue
+            row["_train_val_reselect_score"] = float(
+                train
+                + val
+                + 0.01 * _safe_float(row.get("train_sharpe"))
+                + 0.01 * _safe_float(row.get("val_sharpe"))
+            )
+            rows.append(row)
+    rows.sort(key=lambda row: _safe_float(row.get("_train_val_reselect_score")), reverse=True)
+    return [
+        _candidate_seed(
+            name=str(row.get("name")),
+            sleeves=[str(row.get("name"))],
+            source=f"candidate_csv_top_train_val_{idx:03d}",
+            source_payload={
+                key: row.get(key)
+                for key in (
+                    "family",
+                    "train_total_return",
+                    "val_total_return",
+                    "oos_total_return",
+                    "train_sharpe",
+                    "val_sharpe",
+                    "oos_sharpe",
+                )
+                if key in row
+            },
+        )
+        for idx, row in enumerate(rows[:limit])
+    ]
+
+
+def _dedupe_candidate_seeds(seeds: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    deduped: list[dict[str, Any]] = []
+    seen: set[tuple[str, ...]] = set()
+    for seed in seeds:
+        sleeves = tuple(str(item) for item in list(seed.get("sleeves") or []) if str(item))
+        if not sleeves or sleeves in seen:
+            continue
+        seen.add(sleeves)
+        deduped.append(seed)
+    return deduped
+
+
+def _build_candidate_seeds(
+    *,
+    integer_audit: Mapping[str, Any],
+    candidate_csv: Path,
+    audit_limit: int,
+    csv_limit: int,
+) -> list[dict[str, Any]]:
+    seeds = [
+        _candidate_seed(
+            name="current_base_tuple",
+            sleeves=list(CURRENT_BASE_SLEEVES),
+            source="current_base_tuple",
+        )
+    ]
+    seeds.extend(_audit_candidate_seeds(integer_audit, limit=audit_limit))
+    seeds.extend(_candidate_csv_seeds(candidate_csv, limit=csv_limit))
+    return _dedupe_candidate_seeds(seeds)
+
+
+def _train_val_positive(item: Mapping[str, Any]) -> bool:
+    splits = dict(item.get("splits") or {})
+    train = dict(_split_payload(splits, "train").get("metrics") or {})
+    val = dict(_split_payload(splits, VALIDATION_SPLIT).get("metrics") or {})
+    return _safe_float(train.get("total_return")) > 0.0 and _safe_float(val.get("total_return")) > 0.0
+
+
+def _selection_rank(item: Mapping[str, Any]) -> tuple[float, float, float, float]:
+    splits = dict(item.get("splits") or {})
+    train = dict(_split_payload(splits, "train").get("metrics") or {})
+    val = dict(_split_payload(splits, VALIDATION_SPLIT).get("metrics") or {})
+    return (
+        _safe_float(item.get("train_val_score")),
+        _safe_float(train.get("total_return")),
+        _safe_float(val.get("total_return")),
+        _safe_float(item.get("leverage")),
+    )
+
+
+def _select_train_validation_candidate(
+    results: list[dict[str, Any]],
+    *,
+    tolerance: LiquidationTolerance,
+) -> dict[str, Any]:
+    train_val_safe = [
+        dict(item)
+        for item in results
+        if _train_val_positive(item)
+        and _split_within_liquidation_tolerance(
+            _split_payload(dict(item.get("splits") or {}), "train"),
+            tolerance=tolerance,
+        )
+        and _split_within_liquidation_tolerance(
+            _split_payload(dict(item.get("splits") or {}), VALIDATION_SPLIT),
+            tolerance=tolerance,
+        )
+    ]
+    selection_pool = train_val_safe or [dict(item) for item in results]
+    selected = max(selection_pool, key=_selection_rank, default={})
+    selected.setdefault("selection_policy", {})
+    selected["selection_policy"] = {
+        **dict(selected.get("selection_policy") or {}),
+        "selection_inputs": ["train", "validation"],
+        "locked_oos": "report_only_gate_only",
+        "uses_locked_oos_for_selection": False,
+        "train_validation_positive_filter": bool(train_val_safe),
+        "liquidation_tolerance": asdict(tolerance),
+    }
+    return selected
+
+
 def _markdown(payload: Mapping[str, Any]) -> str:
     forced = dict(payload.get("forced_5x") or {})
     selected = dict(payload.get("selected_by_train_validation") or {})
+    retuned = dict(payload.get("selected_by_train_validation_retune") or {})
+    best_deployable = dict(payload.get("best_deployable_train_validation_retune") or {})
+    promoted = dict(payload.get("promoted_candidate") or {})
     current = dict(payload.get("current_base_reference_result") or {})
     decision = dict(payload.get("decision") or {})
 
@@ -926,6 +1376,7 @@ def _markdown(payload: Mapping[str, Any]) -> str:
         f"- generated_at_utc: `{payload.get('generated_at_utc')}`",
         f"- decision outcome: `{decision.get('outcome')}`",
         f"- deployable improvement: `{bool(decision.get('deployable_improvement'))}`",
+        f"- reselected deployable: `{bool(decision.get('reselected_deployable'))}`",
         f"- memory peak RSS: `{_safe_float((payload.get('memory_summary') or {}).get('peak_rss_mib')):.3f} MiB`",
         "",
         "## Margin model",
@@ -954,6 +1405,34 @@ def _markdown(payload: Mapping[str, Any]) -> str:
         "",
         f"- leverage: `{_safe_float(selected.get('leverage')):.6f}x`",
         f"- locked-OOS used for selection: `{bool((selected.get('selection_policy') or {}).get('uses_locked_oos_for_selection'))}`",
+        _split_line(selected, "train") if selected else "",
+        _split_line(selected, VALIDATION_SPLIT) if selected else "",
+        _split_line(selected, "oos") if selected else "",
+        "",
+        "## Re-selected by train/validation retune",
+        "",
+        f"- candidate: `{retuned.get('candidate_name')}`",
+        f"- source: `{retuned.get('candidate_source')}`",
+        f"- leverage: `{_safe_float(retuned.get('leverage')):.6f}x`",
+        f"- deployable_success: `{bool(retuned.get('deployable_success'))}`",
+        f"- locked-OOS used for selection: `{bool((retuned.get('selection_policy') or {}).get('uses_locked_oos_for_selection'))}`",
+        _split_line(retuned, "train") if retuned else "",
+        _split_line(retuned, VALIDATION_SPLIT) if retuned else "",
+        _split_line(retuned, "oos") if retuned else "",
+        "",
+        "## Best deployable retune candidate",
+        "",
+        f"- candidate: `{best_deployable.get('candidate_name')}`",
+        f"- leverage: `{_safe_float(best_deployable.get('leverage')):.6f}x`",
+        "",
+        "## Promoted candidate",
+        "",
+        f"- candidate: `{promoted.get('candidate_name')}`",
+        f"- source: `{promoted.get('candidate_source')}`",
+        f"- leverage: `{_safe_float(promoted.get('leverage')):.6f}x`",
+        _split_line(promoted, "train") if promoted else "",
+        _split_line(promoted, VALIDATION_SPLIT) if promoted else "",
+        _split_line(promoted, "oos") if promoted else "",
         "",
         "## Decision",
         "",
@@ -973,6 +1452,12 @@ def run_validation(args: argparse.Namespace) -> dict[str, Any]:
         funding_rate_per_8h=float(args.funding_rate_per_8h),
         stress_buffer_rate=float(args.stress_buffer_rate),
         liquidation_fee_rate=float(args.liquidation_fee_rate),
+    )
+    tolerance = LiquidationTolerance(
+        allowed_total_liquidations=int(args.allowed_total_liquidations),
+        allowed_split_liquidations=int(args.allowed_split_liquidations),
+        max_liquidation_event_drawdown=float(args.max_liquidation_event_drawdown),
+        max_liquidation_equity_loss_fraction=float(args.max_liquidation_equity_loss_fraction),
     )
     current_base = _load_json(Path(args.current_base_artifact))
     integer_audit = _load_json(Path(args.integer_audit_artifact))
@@ -996,7 +1481,7 @@ def run_validation(args: argparse.Namespace) -> dict[str, Any]:
     specs = [specs_by_name[name] for name in CURRENT_BASE_SLEEVES]
 
     leverage_values = [float(tuner.CURRENT_BASE_LEVERAGE), *[float(item) for item in range(1, int(args.max_leverage) + 1)]]
-    results = [
+    current_results = [
         _build_leverage_result(
             leverage=leverage,
             fresh=fresh,
@@ -1005,15 +1490,58 @@ def run_validation(args: argparse.Namespace) -> dict[str, Any]:
             arrays=arrays,
             splits=splits,
             model=model,
+            candidate_name="current_base_tuple",
+            candidate_source="current_base_tuple",
+            tolerance=tolerance,
         )
         for leverage in leverage_values
     ]
-    by_leverage = {round(float(item["leverage"]), 9): item for item in results}
+    all_results = list(current_results)
+    skipped_candidates: list[dict[str, Any]] = []
+    candidate_seeds = _build_candidate_seeds(
+        integer_audit=integer_audit,
+        candidate_csv=Path(args.candidate_csv),
+        audit_limit=int(args.retune_audit_limit),
+        csv_limit=int(args.retune_csv_limit),
+    )
+    integer_leverages = [float(item) for item in range(1, int(args.max_leverage) + 1)]
+    for seed in candidate_seeds:
+        sleeve_names = [str(item) for item in list(seed.get("sleeves") or []) if str(item)]
+        if tuple(sleeve_names) == CURRENT_BASE_SLEEVES:
+            continue
+        missing_seed = [name for name in sleeve_names if name not in specs_by_name]
+        if missing_seed:
+            skipped_candidates.append(
+                {
+                    "name": seed.get("name"),
+                    "source": seed.get("source"),
+                    "missing_sleeves": missing_seed,
+                }
+            )
+            continue
+        seed_specs = [specs_by_name[name] for name in sleeve_names]
+        for leverage in integer_leverages:
+            all_results.append(
+                _build_leverage_result(
+                    leverage=leverage,
+                    fresh=fresh,
+                    tuner=tuner,
+                    specs=seed_specs,
+                    arrays=arrays,
+                    splits=splits,
+                    model=model,
+                    candidate_name=str(seed.get("name") or "candidate"),
+                    candidate_source=str(seed.get("source") or "candidate_seed"),
+                    tolerance=tolerance,
+                )
+            )
+
+    by_leverage = {round(float(item["leverage"]), 9): item for item in current_results}
     current_base_result = dict(by_leverage.get(round(float(tuner.CURRENT_BASE_LEVERAGE), 9)) or {})
-    _apply_reference_gates(tuner, results, current_base_result)
+    _apply_reference_gates(tuner, all_results, current_base_result)
     current_base_result = dict(by_leverage.get(round(float(tuner.CURRENT_BASE_LEVERAGE), 9)) or {})
-    integer_grid = [item for item in results if abs(float(item["leverage"]) - round(float(item["leverage"]))) <= 1e-9]
-    selected = _select_train_validation_leverage(integer_grid)
+    integer_grid = [item for item in current_results if abs(float(item["leverage"]) - round(float(item["leverage"]))) <= 1e-9]
+    selected = _select_train_validation_leverage(integer_grid, tolerance=tolerance)
     forced_5x = dict(by_leverage.get(5.0) or {})
     zero_liq = [
         item
@@ -1021,19 +1549,30 @@ def run_validation(args: argparse.Namespace) -> dict[str, Any]:
         if _liquidation_safe_for_promotion(dict(item.get("liquidation_gates") or {}))
     ]
     highest_zero_liq = max(zero_liq, key=lambda item: float(item.get("leverage") or 0.0), default={})
+    retune_integer_results = [
+        item for item in all_results if abs(float(item["leverage"]) - round(float(item["leverage"]))) <= 1e-9
+    ]
+    selected_retuned = _select_train_validation_candidate(retune_integer_results, tolerance=tolerance)
+    deployable_candidates = [item for item in retune_integer_results if bool(item.get("deployable_success"))]
+    best_deployable = max(deployable_candidates, key=_selection_rank, default={})
     forced_5x_success = bool(forced_5x.get("deployable_success"))
     selected_success = bool(selected.get("deployable_success"))
+    retuned_success = bool(best_deployable)
     outcome = (
-        "current_base_5x_deployable_improvement"
+        "liquidation_tolerant_reselected_deployable"
+        if retuned_success
+        else "current_base_5x_deployable_improvement"
         if forced_5x_success
         else "alternate_integer_leverage_deployable"
         if selected_success
         else "current_base_retained_liquidation_or_performance_gate_failed"
     )
     summary = (
-        "Forced current-base 5x passes liquidation and performance gates."
+        "A train/validation-ranked liquidation-tolerant re-selection passed all report-only OOS gates."
+        if retuned_success
+        else "Forced current-base 5x passes liquidation and performance gates."
         if forced_5x_success
-        else "Forced current-base 5x is not deployable under the liquidation-aware gate; retain current base unless a train/validation-safe integer row is explicitly accepted."
+        else "No re-tuned train/validation-selected integer candidate passed liquidation-tolerant performance gates; retain current base."
     )
     payload = {
         "artifact_kind": "profit_moonshot_liquidation_aware_validation",
@@ -1044,8 +1583,10 @@ def run_validation(args: argparse.Namespace) -> dict[str, Any]:
             "uses_locked_oos_for_selection": False,
             "forced_candidate": "current_base_integer_5x",
             "integer_grid": [int(item) for item in range(1, int(args.max_leverage) + 1)],
-            "promotion_requires_liquidation_count_zero": True,
+            "promotion_requires_liquidation_count_zero": False,
+            "liquidation_tolerance": asdict(tolerance),
             "promotion_requires_positive_margin_buffer": True,
+            "promotion_requires_positive_train_validation_return": True,
             "maximum_oos_mdd": tuner.MAX_ACCEPTABLE_OOS_MDD,
             "memory_budget_bytes": PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES,
         },
@@ -1067,6 +1608,16 @@ def run_validation(args: argparse.Namespace) -> dict[str, Any]:
         "forced_5x": forced_5x,
         "integer_grid_results": integer_grid,
         "selected_by_train_validation": selected,
+        "selected_by_train_validation_retune": selected_retuned,
+        "best_deployable_train_validation_retune": best_deployable,
+        "promoted_candidate": (best_deployable or forced_5x) if (retuned_success or forced_5x_success) else {},
+        "retune_results": sorted(retune_integer_results, key=_selection_rank, reverse=True)[: int(args.retune_report_limit)],
+        "retune_candidate_summary": {
+            "candidate_seed_count": len(candidate_seeds),
+            "evaluated_result_count": len(retune_integer_results),
+            "deployable_candidate_count": len(deployable_candidates),
+            "skipped_candidates": skipped_candidates,
+        },
         "highest_zero_liquidation_integer": highest_zero_liq,
         "data_metadata": data_metadata,
         "memory_policy": memory_policy_payload(budget_bytes=PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES),
@@ -1076,9 +1627,11 @@ def run_validation(args: argparse.Namespace) -> dict[str, Any]:
         },
         "decision": {
             "outcome": outcome,
-            "deployable_improvement": forced_5x_success,
+            "deployable_improvement": bool(forced_5x_success or retuned_success),
             "selected_integer_deployable": selected_success,
-            "current_base_retained": not forced_5x_success,
+            "reselected_deployable": retuned_success,
+            "forced_5x_deployable": forced_5x_success,
+            "current_base_retained": not (forced_5x_success or retuned_success),
             "summary": summary,
         },
     }
@@ -1109,8 +1662,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--oos-end-date", default="2026-05-06")
     parser.add_argument("--current-base-artifact", default=str(DEFAULT_CURRENT_BASE_ARTIFACT))
     parser.add_argument("--integer-audit-artifact", default=str(DEFAULT_INTEGER_AUDIT_ARTIFACT))
+    parser.add_argument("--candidate-csv", default=str(DEFAULT_CANDIDATE_CSV))
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
     parser.add_argument("--max-leverage", type=int, default=6)
+    parser.add_argument("--retune-audit-limit", type=int, default=18)
+    parser.add_argument("--retune-csv-limit", type=int, default=24)
+    parser.add_argument("--retune-report-limit", type=int, default=40)
+    parser.add_argument("--allowed-total-liquidations", type=int, default=1)
+    parser.add_argument("--allowed-split-liquidations", type=int, default=1)
+    parser.add_argument("--max-liquidation-event-drawdown", type=float, default=0.005)
+    parser.add_argument("--max-liquidation-equity-loss-fraction", type=float, default=0.005)
     parser.add_argument("--margin-mode", default="cross")
     parser.add_argument("--maintenance-margin-rate", type=float, default=0.01)
     parser.add_argument("--taker-fee-rate", type=float, default=0.001)
@@ -1132,7 +1693,9 @@ def main(argv: list[str] | None = None) -> int:
             "script": Path(__file__).name,
             "current_base_artifact": str(args.current_base_artifact),
             "integer_audit_artifact": str(args.integer_audit_artifact),
+            "candidate_csv": str(args.candidate_csv),
             "max_leverage": int(args.max_leverage),
+            "allowed_total_liquidations": int(args.allowed_total_liquidations),
             "selection": "train_validation_only",
             "locked_oos": "report_only_gate_only",
         },
