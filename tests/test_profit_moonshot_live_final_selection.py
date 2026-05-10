@@ -171,6 +171,31 @@ def _candidate_hybrid_payload() -> dict:
     }
 
 
+def _candidate_hybrid_payload_with_dynamic_replay() -> dict:
+    candidate_hybrid = _candidate("candidate_hybrid_dynamic_replay", train_return=0.80, val_return=0.70, oos_return=0.60)
+    candidate_hybrid["train_val_stability_score"] = 99.0
+    for split_name, replay_return in (("train", 0.11), ("val", 0.10), ("oos", 0.07)):
+        split_payload = candidate_hybrid["splits"][split_name]
+        split_payload["dynamic_liquidation_replay_metrics"] = _metrics(
+            total_return=replay_return,
+            max_drawdown=0.02,
+            sharpe=4.0,
+            sortino=5.0,
+            calmar=20.0,
+            smart_sortino=4.5,
+        )
+        split_payload["minimum_margin_buffer"] = 1000.0
+        split_payload["minimum_margin_ratio"] = 10.0
+        split_payload["liquidation_count"] = 0
+        split_payload["liquidation_event_count_total"] = 0
+    return {
+        "artifact_kind": "profit_moonshot_candidate_hybrid",
+        "oos_end_date": "2026-05-10",
+        "selected_by_train_validation": candidate_hybrid,
+        "memory_summary": {"peak_rss_bytes": 64 * 1024 * 1024, "under_8gib": True},
+    }
+
+
 def test_latest_complete_oos_end_date_uses_previous_day_for_intraday_minimum() -> None:
     refresh_payload = {
         "ohlcv_results": [
@@ -263,6 +288,32 @@ def test_payload_ranks_by_train_validation_not_locked_oos_and_labels_hybrid() ->
     assert "minimum_margin_buffer" in payload["metrics_explanation"]
     assert payload["source_artifacts"]["refresh_json"] == "refresh.json"
     assert payload["source_artifacts"]["candidate_hybrid_json"] == "candidate_hybrid.json"
+
+
+def test_candidate_hybrid_uses_dynamic_replay_metrics_and_margin_evidence() -> None:
+    refresh_payload = {
+        "ohlcv_results": [
+            {"symbol": "BTC/USDT", "after_ohlcv_max_utc": "2026-05-10T23:59:30Z"},
+            {"symbol": "ETH/USDT", "after_ohlcv_max_utc": "2026-05-10T23:59:30Z"},
+        ]
+    }
+
+    payload = MODULE.build_final_selection_payload(
+        refresh_payload=refresh_payload,
+        candidate_portfolio_payload={},
+        liquidation_payload=_liquidation_payload(),
+        candidate_hybrid_payload=_candidate_hybrid_payload_with_dynamic_replay(),
+        legacy_hybrid_payload={},
+        source_artifacts={"candidate_hybrid_json": "candidate_hybrid.json"},
+        time_logs=[],
+        required_symbols=["BTC/USDT", "ETH/USDT"],
+    )
+
+    row = next(row for row in payload["rows"] if row["name"] == "candidate_hybrid_dynamic_replay")
+    assert row["splits"]["oos"]["total_return"] == pytest.approx(0.07)
+    assert row["liquidation"]["evidence_available"] is True
+    assert row["liquidation"]["minimum_margin_buffer"] == pytest.approx(1000.0)
+    assert row["decision_gates"]["liquidation_gate"] is True
 
 
 def test_account_wipeout_blocks_candidate_even_with_positive_return() -> None:

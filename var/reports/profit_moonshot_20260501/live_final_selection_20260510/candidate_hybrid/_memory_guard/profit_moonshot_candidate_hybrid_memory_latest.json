@@ -4,10 +4,10 @@
   "budget_mib": 6656.0,
   "context": {
     "full_tuning_result_count": 108,
-    "selected": "candidate_hybrid_online_rank_01_candidate_hybrid_input_05_fresh_portfolio_train_val_monthly_"
+    "selected": "candidate_hybrid_online_rank_01_candidate_hybrid_input_01_fresh_portfolio_train_val_monthly_"
   },
   "error": null,
-  "generated_at": "2026-05-10T06:50:14.303758+00:00",
+  "generated_at": "2026-05-10T08:18:08.932992+00:00",
   "hard_limit_bytes": 5583457484,
   "hard_limit_mib": 5324.799999237061,
   "hard_trigger_count": 0,
@@ -29,8 +29,8 @@
     "total_memory_cap_gib": 8.0
   },
   "output_dir": "/home/hoky/Quants-agent/LuminaQuant/var/reports/profit_moonshot_20260501/live_final_selection_20260510/candidate_hybrid",
-  "peak_rss_bytes": 57147392,
-  "peak_rss_mib": 54.5,
+  "peak_rss_bytes": 58687488,
+  "peak_rss_mib": 55.96875,
   "rss_log_path": "/home/hoky/Quants-agent/LuminaQuant/var/reports/profit_moonshot_20260501/live_final_selection_20260510/candidate_hybrid/_memory_guard/profit_moonshot_candidate_hybrid_rss_latest.jsonl",
   "run_name": "profit_moonshot_candidate_hybrid",
   "sample_count": 1,

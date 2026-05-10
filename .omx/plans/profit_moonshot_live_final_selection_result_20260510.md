@@ -65,3 +65,9 @@ Implemented and ran the missing candidate-based hybrid lane (separate from legac
 - Selected candidate-hybrid: OOS return `+7.3573%`, MDD `2.6858%`, return/MDD `2.7393`, Sharpe `3.5505`, Sortino `4.9816`, smart Sortino `4.4464`, Calmar `17.5808`.
 - Gate result: comparison-only, not promoted; it lacks dynamic-weight liquidation replay evidence and fails to beat current-base return/MDD.
 - Final selection unchanged: zero-liquidation 5x direct candidate remains recommended.
+
+## Candidate-hybrid risk remediation addendum
+
+- Added dynamic-weight liquidation replay for candidate-derived hybrid rows and made final selection prefer those replay metrics over allocator-only metrics.
+- Risk-pruned train/validation liquidation offender sleeves before final candidate-hybrid tuning; locked OOS stayed report-only/gate-only.
+- Result: candidate hybrid became deployable secondary evidence (`train/validation/OOS liq = 0/1/0`, tiny validation event only, min buffer > 9174, OOS replay +14.2041%, MDD 1.9447%, R/MDD 7.3039), but final selected live candidate remains the zero-liquidation direct 5x row.

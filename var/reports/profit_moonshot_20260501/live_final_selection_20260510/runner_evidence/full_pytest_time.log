@@ -14,27 +14,27 @@
 ........................................................................ [ 81%]
 ........................................................................ [ 87%]
 ........................................................................ [ 93%]
-........................................................................ [ 99%]
-............                                                             [100%]
-1236 passed in 330.61s (0:05:30)
+........................................................................ [ 98%]
+.............                                                            [100%]
+1237 passed in 317.18s (0:05:17)
 	Command being timed: ".venv/bin/pytest -q"
-	User time (seconds): 308.37
-	System time (seconds): 21.52
-	Percent of CPU this job got: 108%
-	Elapsed (wall clock) time (h:mm:ss or m:ss): 5:02.97
+	User time (seconds): 289.58
+	System time (seconds): 23.27
+	Percent of CPU this job got: 107%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 4:50.07
 	Average shared text size (kbytes): 0
 	Average unshared data size (kbytes): 0
 	Average stack size (kbytes): 0
 	Average total size (kbytes): 0
-	Maximum resident set size (kbytes): 2788568
+	Maximum resident set size (kbytes): 2745160
 	Average resident set size (kbytes): 0
-	Major (requiring I/O) page faults: 309
-	Minor (reclaiming a frame) page faults: 1844685
-	Voluntary context switches: 322257
-	Involuntary context switches: 5180
+	Major (requiring I/O) page faults: 297
+	Minor (reclaiming a frame) page faults: 1830776
+	Voluntary context switches: 315879
+	Involuntary context switches: 5226
 	Swaps: 0
-	File system inputs: 34720
-	File system outputs: 150816
+	File system inputs: 31184
+	File system outputs: 150832
 	Socket messages sent: 0
 	Socket messages received: 0
 	Signals delivered: 0

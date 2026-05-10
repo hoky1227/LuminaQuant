@@ -294,7 +294,7 @@ def _metric_from_quality(raw: Mapping[str, Any], split_name: str, metric: str) -
 
 def _normalize_split(raw: Mapping[str, Any], split_name: str) -> dict[str, Any]:
     source = _raw_split(raw, split_name)
-    metrics = _as_dict(source.get("metrics"))
+    metrics = _as_dict(source.get("dynamic_liquidation_replay_metrics")) or _as_dict(source.get("metrics"))
     total_return = _safe_optional_float(metrics.get("total_return", metrics.get("raw_total_return")))
     if total_return is None:
         total_return = _metric_from_quality(raw, split_name, "total_return")

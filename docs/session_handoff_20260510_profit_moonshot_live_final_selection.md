@@ -79,3 +79,18 @@ After user review, the missing non-legacy candidate-hybrid lane was implemented 
 - Memory: candidate-hybrid time log max RSS 327,856 KiB / artifact peak RSS 320.172 MiB, below 8 GiB.
 
 Decision impact: candidate-hybrid is useful comparison evidence, but it is **not live-promoted** because (1) it does not beat current-base return/MDD (`2.7393` vs current-base `6.9169`), and (2) it does not yet have a dedicated dynamic-weight liquidation replay/margin-buffer proof. The live recommendation therefore remains the zero-liquidation 5x direct candidate.
+
+## Risk-handling addendum — candidate-derived hybrid dynamic liquidation replay
+
+- Implemented `dynamic_weight_candidate_hybrid_margin_replay_v1` in `scripts/research/run_profit_moonshot_candidate_hybrid.py` so candidate-derived hybrid rows are no longer promoted from allocator-only returns.
+- Replay uses dynamic daily candidate weights, source-candidate leverage, conservative Binance-style maintenance/fee/slippage/funding/stress/liquidation buffers, and intrabar high/low liquidation checks.
+- Initial candidate-hybrid replay exposed train liquidation risk in `candidate_hybrid_input_06/12/13`; follow-up risk pruning removed the offending train/validation liquidation source sleeves:
+  - `fresh_calendar_rot_lethusdt_sweakest_lb168_thr200_h120_sc80_st0`
+  - `fresh_pair_resid_revert_spread_lb24_z150_h72_sc10_st100_tp240_asiaus`
+- Risk-pruned candidate hybrid is now deployable as a secondary/contingency row under the tiny-liquidation tolerance:
+  - train/validation/OOS liquidation count: `0 / 1 / 0`
+  - validation liquidation impact: max event drawdown `0.0000998172`, equity loss fraction `0.0000080897`, no account wipeout
+  - min margin buffer train/validation/OOS: `9174.8746 / 9764.4797 / 9834.0897`
+  - replay OOS return/MDD/R-MDD: `14.2041% / 1.9447% / 7.3039`
+  - replay OOS Sharpe/Sortino/smart Sortino/Calmar: `5.1698 / 6.7407 / 6.2163 / 55.3698`
+- Final primary recommendation remains the zero-liquidation direct 5x candidate because it has no liquidation events and slightly better OOS return/R-MDD: `14.6634% / 7.4640`.
