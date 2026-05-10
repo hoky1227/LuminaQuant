@@ -476,6 +476,62 @@ def _smart_sortino(monthly_return: float | None, max_drawdown: float | None, sor
     return sortino * return_floor_factor * drawdown_budget_factor
 
 
+def _liquidation_margin_evidence(
+    result: Mapping[str, Any],
+    candidate_payload: Mapping[str, Any],
+    source_candidate: Mapping[str, Any],
+) -> dict[str, float | int | None]:
+    """Return strongest liquidation/margin evidence when a promoted artifact provides it."""
+    counts: list[int] = []
+    buffers: list[float] = []
+    ratios: list[float] = []
+    visited: set[int] = set()
+
+    def visit(value: Any) -> None:
+        if id(value) in visited:
+            return
+        visited.add(id(value))
+        if isinstance(value, Mapping):
+            for key in ("liquidation_count", "liquidations", "liquidation_event_count_total"):
+                if key in value:
+                    parsed = _safe_float(value.get(key))
+                    if parsed is not None:
+                        counts.append(max(0, int(parsed)))
+            if "minimum_margin_buffer" in value:
+                parsed_buffer = _safe_float(value.get("minimum_margin_buffer"))
+                if parsed_buffer is not None:
+                    buffers.append(float(parsed_buffer))
+            if "minimum_margin_ratio" in value:
+                parsed_ratio = _safe_float(value.get("minimum_margin_ratio"))
+                if parsed_ratio is not None:
+                    ratios.append(float(parsed_ratio))
+            for key in (
+                "liquidation_aware_validation",
+                "liquidation_validation",
+                "margin_validation",
+                "margin_safety",
+                "metrics",
+                "splits",
+                "forced_5x",
+                "selected_by_train_validation",
+                "current_base_reference_result",
+            ):
+                if key in value:
+                    visit(value.get(key))
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                visit(item)
+
+    for source in (result, candidate_payload, source_candidate):
+        visit(source)
+
+    return {
+        "liquidation_count": max(counts) if counts else None,
+        "minimum_margin_buffer": min(buffers) if buffers else None,
+        "minimum_margin_ratio": min(ratios) if ratios else None,
+    }
+
+
 def _candidate_return_quality_check(
     result: Mapping[str, Any],
     candidate_payload: Mapping[str, Any],
@@ -527,6 +583,10 @@ def _candidate_return_quality_check(
     no_improvement_base_retained = _no_improvement_base_retained(result, candidate_payload)
     if oos_smart_sortino is None:
         oos_smart_sortino = _smart_sortino(oos_monthly, oos_mdd, oos_sortino)
+    liquidation_evidence = _liquidation_margin_evidence(result, candidate_payload, source_candidate)
+    liquidation_count = liquidation_evidence["liquidation_count"]
+    minimum_margin_buffer = liquidation_evidence["minimum_margin_buffer"]
+    minimum_margin_ratio = liquidation_evidence["minimum_margin_ratio"]
     details = {
         "minimum_stable_monthly_return": MIN_STABLE_MONTHLY_RETURN,
         "minimum_buffered_train_monthly_return": MIN_BUFFERED_TRAIN_MONTHLY_RETURN,
@@ -571,6 +631,9 @@ def _candidate_return_quality_check(
         "locked_oos_sortino": oos_sortino,
         "locked_oos_smart_sortino": oos_smart_sortino,
         "locked_oos_calmar": oos_calmar,
+        "liquidation_count": liquidation_count,
+        "minimum_margin_buffer": minimum_margin_buffer,
+        "minimum_margin_ratio": minimum_margin_ratio,
     }
     current_base_return_check = (
         oos_return is not None
@@ -607,6 +670,8 @@ def _candidate_return_quality_check(
         else raw_val_monthly >= MIN_RAW_VAL_MONTHLY_RETURN
     )
     integer_leverage_check = no_improvement_base_retained or abs(leverage - round(leverage)) <= 1e-9
+    liquidation_check = True if liquidation_count is None else int(liquidation_count) == 0
+    margin_buffer_check = True if minimum_margin_buffer is None else float(minimum_margin_buffer) > 0.0
     checks = (
         train_monthly is not None and train_monthly >= MIN_STABLE_MONTHLY_RETURN,
         train_monthly is not None and train_monthly >= MIN_BUFFERED_TRAIN_MONTHLY_RETURN
@@ -616,6 +681,8 @@ def _candidate_return_quality_check(
         raw_train_check,
         raw_val_check,
         integer_leverage_check,
+        liquidation_check,
+        margin_buffer_check,
         train_sharpe is not None and train_sharpe >= MIN_TRAIN_SHARPE,
         train_sortino is not None and train_sortino >= MIN_TRAIN_SORTINO,
         train_calmar is not None and train_calmar >= MIN_TRAIN_CALMAR,
