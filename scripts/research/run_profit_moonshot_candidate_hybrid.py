@@ -52,6 +52,8 @@ DEFAULT_SYMBOLS = "BTC/USDT,ETH/USDT,SOL/USDT,BNB/USDT,TRX/USDT"
 RUN_NAME = "profit_moonshot_candidate_hybrid"
 STARTING_EQUITY = 10_000.0
 LIVE_LEVERAGE_INTEGER_TOLERANCE = 1e-9
+_SOURCE_LEDGER_REF_FIELDS = ("source_ledger_refs", "source_search_ledger_refs", "source_ledger_ref")
+_RESEARCH_HISTORY_REF_FIELDS = ("research_history_refs", "research_history_ref", "source_history_refs")
 
 
 def _load_module(path: Path, name: str) -> Any:
@@ -118,6 +120,117 @@ def _partition_live_integer_candidate_rows(
             accepted.append(dict(row))
         else:
             discarded.append(_discarded_non_integer_leverage_source(row))
+    return accepted, discarded
+
+
+def _row_refs(row: Mapping[str, Any], fields: Iterable[str]) -> list[str]:
+    refs: list[str] = []
+    for field in fields:
+        value = row.get(field)
+        values = value if isinstance(value, list | tuple | set) else [value]
+        for item in values:
+            token = str(item or "").strip()
+            if token and token not in refs:
+                refs.append(token)
+    return refs
+
+
+def _source_metadata_present(row: Mapping[str, Any]) -> bool:
+    return bool(_row_refs(row, _SOURCE_LEDGER_REF_FIELDS)) and bool(
+        _row_refs(row, _RESEARCH_HISTORY_REF_FIELDS)
+    )
+
+
+def _calendar_primary_source_invalid(row: Mapping[str, Any]) -> bool:
+    validity = row.get("strategy_validity")
+    if isinstance(validity, Mapping):
+        return not bool(validity.get("pass"))
+    for sleeve in list(row.get("sleeves") or []):
+        token = str(sleeve or "").lower()
+        if "calendar" in token or "month" in token:
+            return True
+    primary_signal = str(row.get("primary_signal_type") or "").lower()
+    return "calendar" in primary_signal or "seasonality" in primary_signal
+
+
+def _split_like_sources(row: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    sources: list[Mapping[str, Any]] = [row]
+    splits = row.get("splits")
+    if isinstance(splits, Mapping):
+        for split in splits.values():
+            if isinstance(split, Mapping):
+                sources.append(split)
+                metrics = split.get("metrics")
+                if isinstance(metrics, Mapping):
+                    sources.append(metrics)
+    return sources
+
+
+def _source_liquidation_unsafe(row: Mapping[str, Any]) -> bool:
+    liquidation_count = 0
+    min_buffers: list[float] = []
+    account_wipeout = False
+    for source in _split_like_sources(row):
+        liquidation_count = max(
+            liquidation_count,
+            int(
+                _safe_float(
+                    source.get("liquidation_count", source.get("liquidation_event_count_total")),
+                    0.0,
+                )
+            ),
+        )
+        buffer_value = _safe_optional_float(source.get("minimum_margin_buffer"))
+        if buffer_value is not None:
+            min_buffers.append(buffer_value)
+        account_wipeout = account_wipeout or bool(source.get("account_wipeout"))
+        for event in list(source.get("liquidation_events") or []):
+            if isinstance(event, Mapping):
+                account_wipeout = account_wipeout or bool(event.get("account_wipeout"))
+    return bool(account_wipeout) or liquidation_count > 0 or any(value <= 0.0 for value in min_buffers)
+
+
+def _source_candidate_rejection_reasons(row: Mapping[str, Any]) -> list[str]:
+    reasons: list[str] = []
+    if not _live_integer_leverage_supported(row.get("leverage")):
+        reasons.append("non_integer_or_missing_live_leverage")
+
+    validity = row.get("strategy_validity")
+    if isinstance(validity, Mapping) and not bool(validity.get("pass")):
+        reasons.append("strategy_validity_rejected")
+    elif _calendar_primary_source_invalid(row):
+        reasons.append("calendar_primary_source_invalid")
+
+    if not _source_metadata_present(row):
+        reasons.append("research_history_source_metadata_missing")
+    if _source_liquidation_unsafe(row):
+        reasons.append("liquidation_source_unsafe")
+    return reasons
+
+
+def _discarded_source_candidate_row(row: Mapping[str, Any], reasons: list[str]) -> dict[str, Any]:
+    return {
+        "name": str(row.get("name") or ""),
+        "source_kind": str(row.get("_candidate_hybrid_source_kind") or ""),
+        "source_key": str(row.get("_candidate_hybrid_source_key") or ""),
+        "source_artifact": str(row.get("_candidate_hybrid_source_artifact") or ""),
+        "leverage": _safe_optional_float(row.get("leverage")),
+        "reason": reasons[0] if reasons else "source_live_gate_rejected",
+        "reasons": list(reasons),
+    }
+
+
+def _partition_live_source_candidate_rows(
+    candidate_rows: Iterable[Mapping[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    accepted: list[dict[str, Any]] = []
+    discarded: list[dict[str, Any]] = []
+    for row in candidate_rows:
+        reasons = _source_candidate_rejection_reasons(row)
+        if reasons:
+            discarded.append(_discarded_source_candidate_row(row, reasons))
+        else:
+            accepted.append(dict(row))
     return accepted, discarded
 
 
@@ -376,6 +489,11 @@ def _build_candidate_hybrid_rows(
                     "source_kind": str(source_row.get("_candidate_hybrid_source_kind") or ""),
                     "source_key": str(source_row.get("_candidate_hybrid_source_key") or ""),
                     "source_artifact": str(source_row.get("_candidate_hybrid_source_artifact") or ""),
+                    "source_ledger_refs": _row_refs(source_row, _SOURCE_LEDGER_REF_FIELDS),
+                    "source_search_ledger_refs": _row_refs(source_row, _SOURCE_LEDGER_REF_FIELDS),
+                    "research_history_refs": _row_refs(source_row, _RESEARCH_HISTORY_REF_FIELDS),
+                    "strategy_validity": dict(source_row.get("strategy_validity") or {"pass": True}),
+                    "liquidation_gate": not _source_liquidation_unsafe(source_row),
                     "mode": str(source_row.get("mode") or "train_val_monthly_return_budget"),
                     "leverage": _safe_float(source_row.get("leverage"), 1.0),
                     "weights": [_safe_float(item) for item in list(source_row.get("weights") or [])],
@@ -906,6 +1024,32 @@ def _attach_liquidation_evidence(record: dict[str, Any], replay: Mapping[str, An
     return out
 
 
+def _attach_source_metadata(record: dict[str, Any], active_rows: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
+    out = dict(record)
+    ledger_refs: list[str] = []
+    history_refs: list[str] = []
+    for row in active_rows:
+        metadata = dict(row.get("metadata") or {})
+        for ref in list(metadata.get("source_ledger_refs") or []):
+            token = str(ref or "").strip()
+            if token and token not in ledger_refs:
+                ledger_refs.append(token)
+        for ref in list(metadata.get("research_history_refs") or []):
+            token = str(ref or "").strip()
+            if token and token not in history_refs:
+                history_refs.append(token)
+    out["source_ledger_refs"] = ledger_refs
+    out["research_history_refs"] = history_refs
+    out["source_live_gate_policy"] = {
+        "all_active_sources_passed_before_hybrid_construction": True,
+        "integer_leverage_required": True,
+        "calendar_primary_source_rejected": True,
+        "research_history_source_metadata_required": True,
+        "liquidation_unsafe_source_rejected": True,
+    }
+    return out
+
+
 def _dynamic_train_val_components(tuner: Any, record: Mapping[str, Any]) -> dict[str, float]:
     splits = dict(record.get("splits") or {})
     train = dict(dict(splits.get("train") or {}).get("dynamic_liquidation_replay_metrics") or {})
@@ -1078,9 +1222,70 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
         max_rows=int(args.max_candidate_rows),
     )
     raw_source_candidate_row_count = len(candidate_rows)
-    candidate_rows, discarded_non_integer_leverage_sources = _partition_live_integer_candidate_rows(candidate_rows)
+    candidate_rows, discarded_source_candidate_rows = _partition_live_source_candidate_rows(candidate_rows)
+    discarded_non_integer_leverage_sources = [
+        dict(row)
+        for row in discarded_source_candidate_rows
+        if "non_integer_or_missing_live_leverage" in list(row.get("reasons") or [])
+    ]
     if not candidate_rows:
-        raise RuntimeError("all candidate-hybrid source rows were discarded by integer-leverage live gate")
+        split_config = hybrid.HybridSplitConfig(oos_end=oos_end.isoformat())
+        return {
+            "artifact_kind": "profit_moonshot_candidate_hybrid",
+            "generated_at_utc": _utc_now_iso(),
+            "oos_end_date": oos_end.isoformat(),
+            "status": "no_live_source_candidates",
+            "selection_basis": "candidate_derived_online_hybrid_train_validation_only",
+            "selection_policy": {
+                "selection_inputs": ["train", "validation"],
+                "locked_oos": "report_only_gate_only",
+                "uses_locked_oos_for_selection": False,
+                "tuning_objective": "frozen_weighted_train_validation_score_v1",
+            },
+            "split_windows": split_config.as_payload(),
+            "candidate_basis": {
+                "candidate_portfolio_json": str(args.candidate_portfolio_json),
+                "liquidation_json": str(args.liquidation_json),
+                "source_candidate_rows": raw_source_candidate_row_count,
+                "integer_leverage_source_candidate_rows": 0,
+                "live_source_gate_accepted_candidate_rows": 0,
+                "source_live_gate_policy": {
+                    "integer_leverage_required": True,
+                    "calendar_primary_source_rejected": True,
+                    "research_history_source_metadata_required": True,
+                    "liquidation_unsafe_source_rejected": True,
+                },
+                "live_integer_leverage_required": True,
+                "discarded_non_integer_leverage_source_count": len(
+                    discarded_non_integer_leverage_sources
+                ),
+                "discarded_non_integer_leverage_sources": discarded_non_integer_leverage_sources,
+                "discarded_source_candidate_count": len(discarded_source_candidate_rows),
+                "discarded_source_candidates": discarded_source_candidate_rows,
+                "available_sleeve_count": 0,
+                "missing_sleeves": [],
+                "active_hybrid_input_count": 0,
+                "default_candidates": [],
+                "risk_pruned_active_id_prefixes": [],
+                "risk_pruned_source_sleeves": [],
+            },
+            "liquidation_replay": {
+                "engine": "dynamic_weight_candidate_hybrid_margin_replay_v1",
+                "margin_model": asdict(liq.MarginModel()),
+                "split_summaries": {},
+            },
+            "data_metadata": data_metadata,
+            "source_sleeve_metrics": {},
+            "selected_by_train_validation": {},
+            "best_candidate_hybrid": {},
+            "tuning_results": [],
+            "full_tuning_result_count": 0,
+            "final_allocation": {},
+            "peak_rss_mib": _rss_mib(),
+            "memory_policy": memory_policy_payload(
+                budget_bytes=PORTFOLIO_FOLLOWUP_EXPLICIT_BUDGET_BYTES
+            ),
+        }
     required_sleeves = sorted({name for row in candidate_rows for name in list(row.get("sleeves") or [])})
     missing_sleeves = [name for name in required_sleeves if name not in specs_by_name]
     available_sleeves = [name for name in required_sleeves if name in specs_by_name]
@@ -1222,15 +1427,19 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
     )
     selected_record = _attach_liquidation_evidence(selected_record, dynamic_liquidation_replay, tuner=tuner)
     selected_record = _use_dynamic_replay_score(tuner, selected_record)
+    selected_record = _attach_source_metadata(selected_record, active)
     top_records = [
-        _candidate_hybrid_record(
-            tuner=tuner,
-            result=item["result"],
-            score=_safe_float(item.get("score")),
-            rank=idx,
-            config=hybrid.HybridOnlineConfig(**dict(item["config"])),
-            default_name=str(item["default_name"]),
-            selected=idx == 1,
+        _attach_source_metadata(
+            _candidate_hybrid_record(
+                tuner=tuner,
+                result=item["result"],
+                score=_safe_float(item.get("score")),
+                rank=idx,
+                config=hybrid.HybridOnlineConfig(**dict(item["config"])),
+                default_name=str(item["default_name"]),
+                selected=idx == 1,
+            ),
+            active,
         )
         for idx, item in enumerate(ranked[: int(args.report_top_n)], start=1)
     ]
@@ -1242,6 +1451,11 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
             "mode": dict(row.get("metadata") or {}).get("mode"),
             "leverage": dict(row.get("metadata") or {}).get("leverage"),
             "sleeves": dict(row.get("metadata") or {}).get("sleeves"),
+            "source_ledger_refs": dict(row.get("metadata") or {}).get("source_ledger_refs", []),
+            "source_search_ledger_refs": dict(row.get("metadata") or {}).get("source_search_ledger_refs", []),
+            "research_history_refs": dict(row.get("metadata") or {}).get("research_history_refs", []),
+            "strategy_validity": dict(row.get("metadata") or {}).get("strategy_validity", {"pass": True}),
+            "liquidation_gate": dict(row.get("metadata") or {}).get("liquidation_gate", True),
             "train": dict(row.get("train") or {}),
             "validation": dict(row.get("val") or {}),
             "oos": dict(row.get("oos") or {}),
@@ -1266,9 +1480,18 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
             "liquidation_json": str(args.liquidation_json),
             "source_candidate_rows": raw_source_candidate_row_count,
             "integer_leverage_source_candidate_rows": len(candidate_rows),
+            "live_source_gate_accepted_candidate_rows": len(candidate_rows),
+            "source_live_gate_policy": {
+                "integer_leverage_required": True,
+                "calendar_primary_source_rejected": True,
+                "research_history_source_metadata_required": True,
+                "liquidation_unsafe_source_rejected": True,
+            },
             "live_integer_leverage_required": True,
             "discarded_non_integer_leverage_source_count": len(discarded_non_integer_leverage_sources),
             "discarded_non_integer_leverage_sources": discarded_non_integer_leverage_sources,
+            "discarded_source_candidate_count": len(discarded_source_candidate_rows),
+            "discarded_source_candidates": discarded_source_candidate_rows,
             "available_sleeve_count": len(available_sleeves),
             "missing_sleeves": missing_sleeves,
             "active_hybrid_input_count": len(active),
@@ -1478,7 +1701,7 @@ def main(argv: list[str] | None = None) -> int:
                 "json": str(output_dir / "candidate_hybrid_latest.json"),
                 "markdown": str(output_dir / "candidate_hybrid_latest.md"),
                 "peak_rss_mib": payload["peak_rss_mib"],
-                "status": "completed",
+                "status": str(payload.get("status") or "completed"),
             },
             ensure_ascii=False,
             sort_keys=True,

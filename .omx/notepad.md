@@ -593,3 +593,19 @@ User corrected scope: do not only compare HYBRID. Need full universe: all saved 
 - Artifacts: `var/reports/profit_moonshot_20260501/live_final_selection_20260510/final_decision/`, `.../strategy_validity_audit/`, `docs/session_handoff_20260510_profit_moonshot_strategy_validity_audit.md`, `.omx/plans/profit_moonshot_strategy_validity_audit_result_20260510.md`.
 - Targeted tests passed: `uv run pytest -q tests/test_profit_moonshot_live_final_selection.py tests/test_profit_moonshot_strategy_validity_audit.py` → 17 passed.
 - Full verification completed for strategy-validity audit: targeted 27 passed (max RSS 168.98 MiB), full pytest 1253 passed (max RSS 2658.05 MiB), ruff passed, compileall passed, git diff --check passed. All verification RSS remained below 8 GiB.
+
+## 2026-05-10 — Profit moonshot dynamic restart research-history pointer
+- Future profit-moonshot sessions must read `docs/profit_moonshot_research_history_20260510.md` before repeating source searches, replaying candidates, or considering live promotion.
+- Machine-readable ledger: `var/reports/profit_moonshot_20260501/research_history/profit_moonshot_research_history_latest.json`; Markdown mirror: `var/reports/profit_moonshot_20260501/research_history/profit_moonshot_research_history_latest.md`.
+- Ledger guardrails: calendar-primary month/asset rules are rejected by default, locked-OOS is gate/report-only, non-integer leverage is benchmark-only, and candidate-derived hybrids inherit source-candidate validity/leverage/liquidation/source-ledger defects.
+
+- Profit moonshot dynamic restart: read docs/profit_moonshot_research_history_20260510.md before new source searches, tuning, or live promotion decisions.
+
+## 2026-05-10 — profit moonshot dynamic restart full non-calendar result
+
+- Reconciled `execute-approved-prof-88fa3129`: task-1 was a read-only probe failure superseded by completed task-6; all team tasks completed and team shut down to free memory.
+- Added/updated research-history guardrails and source provenance gates; candidate-derived hybrid now writes a fail-closed `no_live_source_candidates` artifact instead of crashing when all sources are invalid.
+- Ran full non-calendar dynamic replay: `4429` specs, `0` replay survivors, `0` success candidates, max RSS `288.621 MiB`.
+- Ran portfolio tuning: `140` portfolio specs, `0` success candidates, best diagnostic residual-pair portfolio not promoted; max RSS `270.043 MiB`.
+- Candidate hybrid accepted `0/8` source rows; final decision `no_live_promotion`, deployable rows `0/14`, memory ledger under 8 GiB.
+- Main artifacts: `docs/session_handoff_20260510_profit_moonshot_dynamic_restart_full_noncalendar.md`, `.omx/plans/profit_moonshot_dynamic_restart_full_noncalendar_result_20260510.md`, `var/reports/profit_moonshot_20260501/dynamic_restart_full_noncalendar_20260510/`, and regenerated research history under `docs/` + `var/reports/.../research_history/`.

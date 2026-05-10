@@ -56,6 +56,7 @@ METRICS_EXPLANATION = {
     "live_integer_leverage": "Whether the row uses a positive integer leverage supported by the live venue/runner.",
     "live_integer_source_leverage": "For hybrid rows, whether every active source candidate also uses positive integer leverage.",
     "strategy_validity_passed": "Source-aware thesis/rule validation of the primary signal and source sleeves.",
+    "source_metadata_present": "Whether candidate rows link to durable research-history and source-search ledger references.",
     "memory_max_rss": "Maximum resident set size evidence; must stay below 8 GiB.",
 }
 
@@ -89,6 +90,8 @@ _REQUIRED_STRATEGY_VALIDITY_KEYS = {
     "audited_sleeves",
     "audit_sources",
 }
+_SOURCE_LEDGER_REF_FIELDS = ("source_ledger_refs", "source_search_ledger_refs", "source_ledger_ref")
+_RESEARCH_HISTORY_REF_FIELDS = ("research_history_refs", "research_history_ref", "source_history_refs")
 
 
 @dataclass(frozen=True, slots=True)
@@ -629,6 +632,42 @@ def _strategy_validity(
     }
 
 
+def _metadata_refs(raw: Mapping[str, Any], fields: Iterable[str]) -> list[str]:
+    refs: list[str] = []
+    for field in fields:
+        for value in _as_list(raw.get(field)):
+            token = str(value or "").strip()
+            if token and token not in refs:
+                refs.append(token)
+    return refs
+
+
+def _source_metadata(
+    *,
+    raw: Mapping[str, Any],
+    source_artifact: str,
+    candidate_derived: bool,
+    benchmark_only: bool,
+) -> dict[str, Any]:
+    source_ledger_refs = _metadata_refs(raw, _SOURCE_LEDGER_REF_FIELDS)
+    research_history_refs = _metadata_refs(raw, _RESEARCH_HISTORY_REF_FIELDS)
+    required = bool(candidate_derived) and not bool(benchmark_only)
+    missing_reasons = []
+    if required and not source_ledger_refs:
+        missing_reasons.append("source_ledger_refs_missing")
+    if required and not research_history_refs:
+        missing_reasons.append("research_history_refs_missing")
+    return {
+        "required_for_live_promotion": required,
+        "present": not missing_reasons,
+        "source_ledger_refs": source_ledger_refs,
+        "research_history_refs": research_history_refs,
+        "source_artifact": source_artifact,
+        "rejection_reasons": ["source_metadata_missing"] if missing_reasons else [],
+        "missing_fields": missing_reasons,
+    }
+
+
 def _decision_gates(
     *,
     kind: str,
@@ -642,6 +681,8 @@ def _decision_gates(
     liquidation: Mapping[str, Any],
     current_base_oos: Mapping[str, Any],
     strategy_validity: Mapping[str, Any] | None,
+    source_metadata: Mapping[str, Any] | None,
+    live_source_candidate_metadata: bool,
 ) -> dict[str, Any]:
     oos = _as_dict(splits.get("oos"))
     oos_return = _safe_float(oos.get("total_return"))
@@ -655,6 +696,7 @@ def _decision_gates(
     locked_oos_ok = str(selection_policy.get("locked_oos") or "") == "report_only_gate_only"
     strategy_validity_present = _strategy_validity_metadata_present(strategy_validity)
     strategy_validity_pass = _strategy_validity_passes(strategy_validity)
+    source_metadata_present = bool(_as_dict(source_metadata).get("present"))
     live_integer_leverage = _live_integer_leverage_supported(leverage)
     evidence_available = bool(liquidation.get("evidence_available")) or kind in {"current_base", "direct_candidate"}
     margin_buffer_positive = margin_buffer is None or _safe_float(margin_buffer) > 0.0
@@ -681,6 +723,8 @@ def _decision_gates(
         and selection_firewall
         and locked_oos_ok
         and strategy_validity_pass
+        and source_metadata_present
+        and live_source_candidate_metadata
         and live_integer_leverage
         and live_integer_source_leverage
         and liquidation_gate
@@ -693,6 +737,9 @@ def _decision_gates(
         "locked_oos_report_gate_only": locked_oos_ok,
         "strategy_validity_metadata_present": strategy_validity_present,
         "strategy_validity_passed": strategy_validity_pass,
+        "source_metadata_present": source_metadata_present,
+        "research_history_source_metadata_present": source_metadata_present,
+        "live_source_candidate_metadata": bool(live_source_candidate_metadata),
         "live_integer_leverage": live_integer_leverage,
         "live_integer_source_leverage": bool(live_integer_source_leverage),
         "liquidation_gate": liquidation_gate,
@@ -710,6 +757,7 @@ def _decision_gates(
         "diagnostic_not_promoted": bool(diagnostic_not_promoted),
         "strategy_validity": strategy_validity,
         "strategy_validity_pass": strategy_validity_pass,
+        "source_metadata": source_metadata,
     }
 
 
@@ -734,9 +782,16 @@ def _comparison_row(
     liquidation = _liquidation_summary(splits)
     leverage = _candidate_leverage(raw)
     live_integer_source_leverage = bool(raw.get("_live_integer_source_leverage", True))
+    live_source_candidate_metadata = bool(raw.get("_live_source_candidate_metadata", True))
     strategy_validity = _strategy_validity(
         kind=kind,
         name=name,
+        raw=raw,
+        source_artifact=source_artifact,
+        candidate_derived=candidate_derived,
+        benchmark_only=bool(benchmark_only),
+    )
+    source_metadata = _source_metadata(
         raw=raw,
         source_artifact=source_artifact,
         candidate_derived=candidate_derived,
@@ -754,6 +809,8 @@ def _comparison_row(
         liquidation=liquidation,
         current_base_oos=current_base_oos,
         strategy_validity=strategy_validity,
+        source_metadata=source_metadata,
+        live_source_candidate_metadata=live_source_candidate_metadata,
     )
     return {
         "name": name,
@@ -772,6 +829,8 @@ def _comparison_row(
         "splits": splits,
         "liquidation": liquidation,
         "strategy_validity": strategy_validity,
+        "source_metadata": source_metadata,
+        "source_candidate_gate_failures": list(raw.get("_source_candidate_gate_failures") or []),
         "non_integer_source_leverages": list(raw.get("_non_integer_source_leverages") or []),
         "decision_gates": gates,
         "rejection_reasons": _rejection_reasons(gates, strategy_validity),
@@ -791,8 +850,23 @@ def _rejection_reasons(gates: Mapping[str, Any], strategy_validity: Mapping[str,
                 reasons.append(reason)
         if not bool(strategy_gate.get("pass")) and "strategy_validity_rejected" not in reasons:
             reasons.append("strategy_validity_rejected")
+    source_metadata_gate = gates.get("source_metadata")
+    if isinstance(source_metadata_gate, Mapping):
+        for reason in _as_list(source_metadata_gate.get("rejection_reasons")):
+            if isinstance(reason, str) and reason not in reasons:
+                reasons.append(reason)
     for key, value in gates.items():
-        if key in {"deployable_candidate", "diagnostic_not_promoted", "strategy_validity", "strategy_validity_pass"}:
+        if key in {
+            "deployable_candidate",
+            "diagnostic_not_promoted",
+            "strategy_validity",
+            "strategy_validity_pass",
+            "source_metadata",
+        }:
+            continue
+        if key == "source_metadata_present" and value is False:
+            if "source_metadata_missing" not in reasons:
+                reasons.append("source_metadata_missing")
             continue
         if value is False:
             reasons.append(key)
@@ -853,6 +927,44 @@ def _candidate_portfolio_rows(candidate_payload: Mapping[str, Any]) -> list[tupl
     return out
 
 
+def _hybrid_source_candidate_failures(
+    source_metrics: Mapping[str, Any], source_ids: Iterable[str]
+) -> list[dict[str, Any]]:
+    failures: list[dict[str, Any]] = []
+    for source_id in source_ids:
+        metrics = _as_dict(source_metrics.get(source_id))
+        reasons: list[str] = []
+        if not metrics:
+            reasons.append("source_metric_missing")
+        validity = _as_dict(metrics.get("strategy_validity"))
+        if validity and not bool(validity.get("pass")):
+            reasons.append("strategy_validity_rejected")
+        source_metadata = _source_metadata(
+            raw=metrics,
+            source_artifact=str(metrics.get("source_artifact") or source_id),
+            candidate_derived=True,
+            benchmark_only=False,
+        )
+        if not bool(source_metadata.get("present")):
+            reasons.append("research_history_source_metadata_missing")
+        liquidation_gate = metrics.get("liquidation_gate")
+        if liquidation_gate is False:
+            reasons.append("liquidation_source_unsafe")
+        oos = _as_dict(metrics.get("oos"))
+        if int(_safe_float(oos.get("liquidation_count"), 0.0)) > 0:
+            reasons.append("liquidation_source_unsafe")
+        margin_buffer = _safe_optional_float(oos.get("minimum_margin_buffer"))
+        if margin_buffer is not None and margin_buffer <= 0.0:
+            reasons.append("liquidation_source_unsafe")
+        deduped = []
+        for reason in reasons:
+            if reason not in deduped:
+                deduped.append(reason)
+        if deduped:
+            failures.append({"source_id": source_id, "reasons": deduped})
+    return failures
+
+
 def _candidate_hybrid_rows(candidate_hybrid_payload: Mapping[str, Any]) -> list[tuple[str, str, Mapping[str, Any]]]:
     def with_source_leverage_gate(raw: Mapping[str, Any]) -> dict[str, Any]:
         out = dict(raw)
@@ -863,8 +975,11 @@ def _candidate_hybrid_rows(candidate_hybrid_payload: Mapping[str, Any]) -> list[
             leverage = _safe_optional_float(_as_dict(source_metrics.get(source_id)).get("leverage"))
             if not _live_integer_leverage_supported(leverage):
                 non_integer.append({"source_id": source_id, "leverage": leverage})
+        source_failures = _hybrid_source_candidate_failures(source_metrics, source_ids)
         out["_non_integer_source_leverages"] = non_integer
         out["_live_integer_source_leverage"] = bool(source_metrics) and bool(source_ids) and not non_integer
+        out["_source_candidate_gate_failures"] = source_failures
+        out["_live_source_candidate_metadata"] = bool(source_metrics) and bool(source_ids) and not source_failures
         return out
 
     keys = [
@@ -1205,6 +1320,7 @@ def build_final_selection_payload(
             "live_integer_leverage_required": True,
             "live_integer_source_leverage_required": True,
             "strategy_validity_required": True,
+            "research_history_source_metadata_required": True,
             "calendar_primary_alpha_rejected": True,
             "no_new_alpha_search": True,
         },

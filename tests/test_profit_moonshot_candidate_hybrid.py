@@ -26,3 +26,67 @@ def test_candidate_hybrid_discards_fractional_or_missing_source_leverage() -> No
     assert [row["name"] for row in accepted] == ["integer_ok"]
     assert [row["name"] for row in discarded] == ["fractional_bad", "missing_bad"]
     assert {row["reason"] for row in discarded} == {"non_integer_or_missing_live_leverage"}
+
+
+def test_candidate_hybrid_live_source_gate_discards_untraceable_or_invalid_rows() -> None:
+    rows = [
+        {
+            "name": "live_ok",
+            "leverage": 5.0,
+            "strategy_validity": {"pass": True},
+            "research_history_refs": ["strategy_chronology:live_ok"],
+            "source_search_ledger_refs": ["local_artifact:live_ok"],
+            "splits": {
+                "train": {"liquidation_count": 0, "minimum_margin_buffer": 1.0},
+                "validation": {"liquidation_count": 0, "minimum_margin_buffer": 1.0},
+                "oos": {"liquidation_count": 0, "minimum_margin_buffer": 1.0},
+            },
+        },
+        {
+            "name": "calendar_bad",
+            "leverage": 5.0,
+            "strategy_validity": {"pass": False},
+            "research_history_refs": ["strategy_chronology:calendar_bad"],
+            "source_search_ledger_refs": ["local_artifact:calendar_bad"],
+            "splits": {
+                "train": {"liquidation_count": 0, "minimum_margin_buffer": 1.0},
+                "validation": {"liquidation_count": 0, "minimum_margin_buffer": 1.0},
+                "oos": {"liquidation_count": 0, "minimum_margin_buffer": 1.0},
+            },
+        },
+        {
+            "name": "source_untraceable",
+            "leverage": 5.0,
+            "strategy_validity": {"pass": True},
+            "splits": {
+                "train": {"liquidation_count": 0, "minimum_margin_buffer": 1.0},
+                "validation": {"liquidation_count": 0, "minimum_margin_buffer": 1.0},
+                "oos": {"liquidation_count": 0, "minimum_margin_buffer": 1.0},
+            },
+        },
+        {
+            "name": "liquidation_unsafe",
+            "leverage": 5.0,
+            "strategy_validity": {"pass": True},
+            "research_history_refs": ["strategy_chronology:liquidation_unsafe"],
+            "source_search_ledger_refs": ["local_artifact:liquidation_unsafe"],
+            "splits": {
+                "train": {"liquidation_count": 0, "minimum_margin_buffer": 1.0},
+                "validation": {"liquidation_count": 0, "minimum_margin_buffer": 1.0},
+                "oos": {"liquidation_count": 0, "minimum_margin_buffer": -0.1},
+            },
+        },
+    ]
+
+    accepted, discarded = MODULE._partition_live_source_candidate_rows(rows)
+
+    assert [row["name"] for row in accepted] == ["live_ok"]
+    assert {row["name"] for row in discarded} == {
+        "calendar_bad",
+        "source_untraceable",
+        "liquidation_unsafe",
+    }
+    reasons = {row["name"]: row["reasons"] for row in discarded}
+    assert reasons["calendar_bad"] == ["strategy_validity_rejected"]
+    assert reasons["source_untraceable"] == ["research_history_source_metadata_missing"]
+    assert reasons["liquidation_unsafe"] == ["liquidation_source_unsafe"]

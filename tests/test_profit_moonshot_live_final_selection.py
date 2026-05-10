@@ -87,6 +87,11 @@ def _candidate(
         "name": name,
         "leverage": 3.0,
         "sleeves": sleeves if sleeves is not None else ["a", "b", "c"],
+        "research_history_refs": [
+            "strategy_chronology:fixture_dynamic_candidate",
+            "docs/profit_moonshot_research_history_20260510.md#unit",
+        ],
+        "source_search_ledger_refs": ["local_artifact:fixture_dynamic_candidate"],
         "splits": {
             "train": _split(
                 total_return=train_return,
@@ -116,6 +121,7 @@ def _candidate(
             "locked_oos": "report_only_gate_only",
             "uses_locked_oos_for_selection": False,
         },
+        "source_ledger_refs": ["local:unit-profit-moonshot-source"],
     }
 
 
@@ -124,6 +130,11 @@ def _candidate_with_sleeves(name: str, sleeve_names: list[str], *, oos_return: f
         "name": name,
         "leverage": 3.0,
         "sleeves": sleeve_names,
+        "research_history_refs": [
+            "strategy_chronology:fixture_dynamic_candidate",
+            "docs/profit_moonshot_research_history_20260510.md#unit",
+        ],
+        "source_search_ledger_refs": ["local_artifact:fixture_dynamic_candidate"],
         "splits": {
             "train": _split(total_return=0.2, max_drawdown=0.04, sharpe=3.0, sortino=4.0, calmar=10.0),
             "val": _split(total_return=0.2, max_drawdown=0.03, sharpe=6.0, sortino=7.0, calmar=30.0),
@@ -134,6 +145,7 @@ def _candidate_with_sleeves(name: str, sleeve_names: list[str], *, oos_return: f
             "locked_oos": "report_only_gate_only",
             "uses_locked_oos_for_selection": False,
         },
+        "source_ledger_refs": ["local:unit-profit-moonshot-source"],
     }
 
 
@@ -213,9 +225,27 @@ def _candidate_hybrid_payload_with_dynamic_replay() -> dict:
         "oos_end_date": "2026-05-10",
         "selected_by_train_validation": candidate_hybrid,
         "source_sleeve_metrics": {
-            "a": {"leverage": 3.0},
-            "b": {"leverage": 3.0},
-            "c": {"leverage": 3.0},
+            "a": {
+                "leverage": 3.0,
+                "strategy_validity": {"pass": True},
+                "research_history_refs": ["strategy_chronology:source_a"],
+                "source_search_ledger_refs": ["local_artifact:source_a"],
+                "liquidation_gate": True,
+            },
+            "b": {
+                "leverage": 3.0,
+                "strategy_validity": {"pass": True},
+                "research_history_refs": ["strategy_chronology:source_b"],
+                "source_search_ledger_refs": ["local_artifact:source_b"],
+                "liquidation_gate": True,
+            },
+            "c": {
+                "leverage": 3.0,
+                "strategy_validity": {"pass": True},
+                "research_history_refs": ["strategy_chronology:source_c"],
+                "source_search_ledger_refs": ["local_artifact:source_c"],
+                "liquidation_gate": True,
+            },
         },
         "memory_summary": {"peak_rss_bytes": 64 * 1024 * 1024, "under_8gib": True},
     }
@@ -512,6 +542,36 @@ def test_fractional_leverage_blocks_live_candidate_promotion() -> None:
     assert payload["recommendation"] == "no_live_promotion"
 
 
+def test_missing_research_history_source_metadata_blocks_live_promotion() -> None:
+    refresh_payload = {
+        "ohlcv_results": [
+            {"symbol": "BTC/USDT", "after_ohlcv_max_utc": "2026-05-10T23:59:30Z"},
+            {"symbol": "ETH/USDT", "after_ohlcv_max_utc": "2026-05-10T23:59:30Z"},
+        ]
+    }
+    liquidation = _liquidation_payload()
+    liquidation["promoted_candidate"].pop("source_ledger_refs", None)
+    liquidation["promoted_candidate"].pop("research_history_refs", None)
+    liquidation.pop("selected_by_train_validation_retune", None)
+
+    payload = MODULE.build_final_selection_payload(
+        refresh_payload=refresh_payload,
+        candidate_portfolio_payload={},
+        liquidation_payload=liquidation,
+        legacy_hybrid_payload={},
+        source_artifacts={"liquidation_json": "liquidation.json"},
+        time_logs=[],
+        required_symbols=["BTC/USDT", "ETH/USDT"],
+    )
+
+    row = next(row for row in payload["rows"] if row["name"] == "train_val_winner")
+    assert row["source_metadata"]["present"] is False
+    assert row["decision_gates"]["source_metadata_present"] is False
+    assert row["decision_gates"]["deployable_candidate"] is False
+    assert "source_metadata_missing" in row["rejection_reasons"]
+    assert payload["winner"] is None
+
+
 def test_account_wipeout_blocks_candidate_even_with_positive_return() -> None:
     refresh_payload = {
         "ohlcv_results": [
@@ -611,3 +671,74 @@ def test_memory_ledger_parses_time_logs_and_flags_over_8gib(tmp_path: Path) -> N
 
     assert ledger["under_8gib"] is False
     assert [entry["under_8gib"] for entry in ledger["entries"]] == [True, True, False]
+
+
+def test_missing_research_history_source_metadata_blocks_promotion() -> None:
+    refresh_payload = {
+        "ohlcv_results": [
+            {"symbol": "BTC/USDT", "after_ohlcv_max_utc": "2026-05-10T23:59:30Z"},
+            {"symbol": "ETH/USDT", "after_ohlcv_max_utc": "2026-05-10T23:59:30Z"},
+        ]
+    }
+    candidate = _candidate("source_untraceable", train_return=0.90, val_return=0.80, oos_return=0.70)
+    candidate.pop("research_history_refs")
+    candidate.pop("source_search_ledger_refs")
+    liquidation_payload = {
+        "artifact_kind": "profit_moonshot_liquidation_aware_validation",
+        "oos_end_date": "2026-05-10",
+        "current_base_reference_result": _candidate("current_base", train_return=0.10, val_return=0.08, oos_return=0.05),
+        "promoted_candidate": candidate,
+        "memory_summary": {"peak_rss_bytes": 256 * 1024 * 1024, "under_8gib": True},
+    }
+
+    payload = MODULE.build_final_selection_payload(
+        refresh_payload=refresh_payload,
+        candidate_portfolio_payload={},
+        liquidation_payload=liquidation_payload,
+        legacy_hybrid_payload={},
+        source_artifacts={},
+        time_logs=[],
+        required_symbols=["BTC/USDT", "ETH/USDT"],
+    )
+
+    row = next(row for row in payload["rows"] if row["name"] == "source_untraceable")
+    assert row["decision_gates"]["research_history_source_metadata_present"] is False
+    assert row["decision_gates"]["deployable_candidate"] is False
+    assert "research_history_source_metadata_present" in row["rejection_reasons"]
+    assert payload["winner"] is None
+
+
+def test_candidate_hybrid_inherits_invalid_source_metadata_gate() -> None:
+    refresh_payload = {
+        "ohlcv_results": [
+            {"symbol": "BTC/USDT", "after_ohlcv_max_utc": "2026-05-10T23:59:30Z"},
+            {"symbol": "ETH/USDT", "after_ohlcv_max_utc": "2026-05-10T23:59:30Z"},
+        ]
+    }
+    candidate_hybrid_payload = _candidate_hybrid_payload_with_dynamic_replay()
+    candidate_hybrid_payload["source_sleeve_metrics"]["b"]["strategy_validity"] = {
+        "pass": False,
+        "rejection_reasons": ["calendar_primary_alpha_unsupported"],
+    }
+
+    payload = MODULE.build_final_selection_payload(
+        refresh_payload=refresh_payload,
+        candidate_portfolio_payload={},
+        liquidation_payload=_liquidation_payload(),
+        candidate_hybrid_payload=candidate_hybrid_payload,
+        legacy_hybrid_payload={},
+        source_artifacts={"candidate_hybrid_json": "candidate_hybrid.json"},
+        time_logs=[],
+        required_symbols=["BTC/USDT", "ETH/USDT"],
+    )
+
+    row = next(row for row in payload["rows"] if row["name"] == "candidate_hybrid_dynamic_replay")
+    assert row["decision_gates"]["live_source_candidate_metadata"] is False
+    assert row["decision_gates"]["deployable_candidate"] is False
+    assert row["source_candidate_gate_failures"] == [
+        {
+            "source_id": "b",
+            "reasons": ["strategy_validity_rejected"],
+        }
+    ]
+    assert "live_source_candidate_metadata" in row["rejection_reasons"]
